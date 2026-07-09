@@ -19,6 +19,10 @@ import { getDragBridge, setDragBridge } from '../../utils/dragBridge';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 
 const SWIPE_THRESHOLD = 60; // px — minimum drag distance to trigger slide change
+// Single source of truth for the slide-track transition — the seamless-loop snap
+// restores exactly this string on the DOM node (React won't rewrite an unchanged
+// style prop, so the two must never drift apart).
+const TRACK_TRANSITION = 'transform 280ms ease-out';
 // px the pointer must travel before a swipe takes over. Below this we never
 // capture the pointer, so taps/clicks reach interactive children (switches,
 // buttons) unharmed; only a real horizontal drag starts paging.
@@ -88,8 +92,8 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
     // transition lands on the clone, the transform snaps (without animation)
     // to the real slide the clone stands for.
     const [wrap, setWrap] = useState<null | 'fwd' | 'back'>(null);
-    const [noAnim, setNoAnim] = useState(false);
     const wrapTimerRef = useRef<number | null>(null);
+    const trackRef = useRef<HTMLDivElement | null>(null);
     // Tracks an in-progress pointer interaction before it's promoted to a swipe.
     // `captured` flips true once movement crosses DRAG_START_THRESHOLD; only then
     // do we grab the pointer and start moving the slide track.
@@ -136,23 +140,38 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
     // only active once the viewport is measured (and never in editMode, where
     // clones would duplicate the slide-CRUD controls).
     const smoothLoop = loop && !editMode && children.length > 1 && viewportW > 0;
-    const finishWrap = () => {
+    const finishWrap = (dir: 'fwd' | 'back') => {
         if (wrapTimerRef.current !== null) {
             clearTimeout(wrapTimerRef.current);
             wrapTimerRef.current = null;
         }
-        setNoAnim(true);
-        setWrap(null);
-        // Two frames: let the snapped transform paint before re-enabling the
-        // transition, otherwise the browser would animate the snap itself.
-        requestAnimationFrame(() => requestAnimationFrame(() => setNoAnim(false)));
+        // Snap from the clone to the real slide synchronously on the DOM node:
+        // transition off, move, force a reflow so the jump is committed without
+        // animation, then restore the transition. Doing this via state and
+        // requestAnimationFrame is racy (iOS Safari can paint the re-enabled
+        // transition together with the moved transform — the snap then animates
+        // as a fast sweep across the whole row).
+        const el = trackRef.current;
+        if (el && viewportW > 0) {
+            const targetIndex = (dir === 'fwd' ? 0 : children.length - 1) + 1; // +1: clone up front
+            el.style.transition = 'none';
+            el.style.transform = `translate3d(${-(targetIndex * viewportW)}px, 0, 0)`;
+            void el.offsetWidth; // forced reflow — commits the un-animated jump
+            el.style.transition = TRACK_TRANSITION;
+        }
+        setWrap(null); // the next render computes the same transform — no visual change
     };
+    const finishWrapRef = useRef(finishWrap);
+    finishWrapRef.current = finishWrap;
     const startWrap = (dir: 'fwd' | 'back') => {
         setWrap(dir);
         setActive(dir === 'fwd' ? 0 : children.length - 1);
-        // Safety net: if the transitionend event is lost (hidden tab, etc.) a
-        // stuck wrap would lock navigation — snap shortly after the 280ms anyway.
-        wrapTimerRef.current = window.setTimeout(finishWrap, 400);
+        // Safety net: an interrupted transition fires no transitionend (only
+        // transitioncancel) and a hidden tab may drop the event entirely — a
+        // stuck wrap would lock navigation, so snap shortly after the 280ms
+        // anyway. Via ref so the timeout uses the freshest closure, and with
+        // the direction passed explicitly (the stale closure's `wrap` is null).
+        wrapTimerRef.current = window.setTimeout(() => finishWrapRef.current(dir), 400);
     };
     const goTo = (i: number) => {
         if (children.length === 0) return;
@@ -180,7 +199,10 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
 
     // ── Pointer drag / swipe ─────────────────────────────────────────────────
     const onPointerDown = (e: React.PointerEvent) => {
-        if (editMode || children.length < 2) return;
+        // `wrap` guard: a drag during the wrap animation would interrupt the
+        // transition (transitioncancel — no transitionend) and visually tear
+        // the track; swipes resume as soon as the snap has landed.
+        if (editMode || wrap !== null || children.length < 2) return;
         // Only react to primary button / single-touch
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         // Record the start but DON'T capture yet — capturing here would swallow the
@@ -440,16 +462,17 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
                         // renders the shifted transform directly instead of animating the
                         // track from its clone-less position.
                         key={smoothLoop ? 'looped' : 'plain'}
+                        ref={trackRef}
                         className="absolute inset-0 flex"
                         onTransitionEnd={(e) => {
                             // A finished wrap animation sits on a clone — snap (without
                             // animation) to the real slide the clone stands for.
                             if (!wrap || e.target !== e.currentTarget || e.propertyName !== 'transform') return;
-                            finishWrap();
+                            finishWrap(wrap);
                         }}
                         style={{
                             transform: `translate3d(${translateX}px, 0, 0)`,
-                            transition: drag || noAnim ? 'none' : 'transform 280ms ease-out',
+                            transition: drag ? 'none' : TRACK_TRANSITION,
                             width: `${(children.length + (smoothLoop ? 2 : 0)) * 100}%`,
                             // Keep the slide track promoted to its own compositor layer so
                             // each transition just moves an existing texture instead of
