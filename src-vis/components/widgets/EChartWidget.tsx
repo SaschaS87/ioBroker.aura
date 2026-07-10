@@ -558,7 +558,12 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             axisLine: { show: echartShowXAxis, lineStyle: { color: '#444' } },
             splitLine: { show: false },
             // Day mode: frame exactly the selected calendar day, even when data is sparse.
-            ...(dayWindow ? { min: dayWindow.start, max: dayWindow.end } : {}),
+            // Explicit null (= auto) when leaving day mode: options are applied in
+            // merge mode, where an omitted key keeps its previous value — the axis
+            // would stay clamped to the browsed day after switching back to a
+            // rolling range (y rescaled with the new data, x stuck on the old day).
+            min: dayWindow ? dayWindow.start : null,
+            max: dayWindow ? dayWindow.end : null,
         },
         yAxis: [leftAxis, rightAxis],
         series: seriesList,
