@@ -12,3 +12,6 @@
 - Advanced chart - a range without recorded changes draws a flat line at the current value instead of "no data"
 - Advanced chart - fixed periodic chart flicker when adapters re-write unchanged values
 - Panels - loop now wraps seamlessly onto the first/last slide instead of rewinding across the whole row
+- Advanced chart - stale history responses no longer override a newer range/day selection after rapid day stepping
+- Advanced chart - legend keeps to a single scrollable line on narrow widgets instead of wrapping
+- Advanced chart - day-nav date label moved left of the buttons so they no longer shift when it appears

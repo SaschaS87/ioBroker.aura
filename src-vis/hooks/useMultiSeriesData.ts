@@ -156,6 +156,11 @@ export function useMultiSeriesData(
 ): Map<string, SeriesDataResult> {
     const [resultsMap, setResultsMap] = useState<Map<string, SeriesDataResult>>(new Map());
     const mountedRef = useRef(true);
+    // Fetch generation — bumped on every (re)fetch pass. Responses carry the
+    // generation they were issued under and are dropped if a newer pass has
+    // started since: rapid range/day switching fires overlapping getHistory
+    // calls, and a late stale response must not override the newest selection.
+    const fetchGenRef = useRef(0);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -181,6 +186,8 @@ export function useMultiSeriesData(
     // Fetch history for all series
     useEffect(() => {
         if (!connected || series.length === 0) return;
+        const gen = ++fetchGenRef.current;
+        const isStale = () => !mountedRef.current || gen !== fetchGenRef.current;
 
         // Mark all as loading
         setResultsMap((prev) => {
@@ -250,7 +257,7 @@ export function useMultiSeriesData(
                 count: 1000,
             })
                 .then((entries: HistoryEntry[]) => {
-                    if (!mountedRef.current) return;
+                    if (isStale()) return;
                     let data: [number, number][] = entries
                         .filter(
                             (e): e is { ts: number; val: number; ack?: boolean; q?: number } =>
@@ -278,9 +285,11 @@ export function useMultiSeriesData(
                     }
                     // Empty window — a change-logged datapoint simply had no changes in the
                     // range. Seed the current value from the live state so the widget can
-                    // draw a flat line at it instead of reporting "no data".
+                    // draw a flat line at it instead of reporting "no data". Absolute (past-
+                    // day) windows stay unseeded: today's live value says nothing about a
+                    // browsed past day — the widget renders those as a flat zero line.
                     const finish = (state: ioBrokerState | null) => {
-                        if (!mountedRef.current) return;
+                        if (isStale()) return;
                         const val = typeof state?.val === 'number' ? (state.val as number) : null;
                         setResultsMap((prev) => {
                             const next = new Map(prev);
@@ -288,13 +297,17 @@ export function useMultiSeriesData(
                             return next;
                         });
                     };
+                    if (hasAbsWindow) {
+                        finish(null);
+                        return;
+                    }
                     const cached = getStateFromCache(s.datapointId);
                     if (cached) finish(cached);
                     else if (getState) getState(s.datapointId).then(finish).catch(() => finish(null));
                     else finish(null);
                 })
                 .catch(() => {
-                    if (!mountedRef.current) return;
+                    if (isStale()) return;
                     setResultsMap((prev) => {
                         const next = new Map(prev);
                         const existing = next.get(s.id);

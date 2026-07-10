@@ -529,7 +529,20 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
                 return `${timeStr}<br/>${lines.join('<br/>')}`;
             },
         },
-        legend: echartShowLegend ? { show: true, textStyle: { color: '#888', fontSize: 11 }, top: 4 } : { show: false },
+        legend: echartShowLegend
+            ? {
+                  show: true,
+                  // 'scroll' keeps the legend to a single line on narrow widgets
+                  // (paging arrows for the overflow) instead of wrapping the
+                  // entries into a second row that eats chart height.
+                  type: 'scroll',
+                  textStyle: { color: '#888', fontSize: 11 },
+                  pageIconColor: '#888',
+                  pageIconInactiveColor: '#444',
+                  pageTextStyle: { color: '#888', fontSize: 10 },
+                  top: 4,
+              }
+            : { show: false },
         grid: {
             left: echartShowYAxis ? 60 : 6,
             right: hasRightAxis && echartShowYAxis ? 60 : 6,
@@ -626,6 +639,20 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
     const dayNavControls =
         dayNav && hasHistory ? (
             <div className="flex items-center gap-1 shrink-0">
+                {/* Date label sits LEFT of the buttons: it grows into the free space,
+                    so the three buttons keep their position when it (dis)appears. */}
+                {dayWindow && (
+                    <span
+                        className="text-[10px] font-medium mr-1 whitespace-nowrap"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
+                        {new Date(dayWindow.start).toLocaleDateString('de-DE', {
+                            weekday: 'short',
+                            day: '2-digit',
+                            month: '2-digit',
+                        })}
+                    </span>
+                )}
                 <button
                     className="nodrag px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity"
                     style={navBtnStyle(false)}
@@ -651,18 +678,6 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
                 >
                     <ChevronRight size={12} />
                 </button>
-                {dayWindow && (
-                    <span
-                        className="text-[10px] font-medium ml-1 whitespace-nowrap"
-                        style={{ color: 'var(--text-secondary)' }}
-                    >
-                        {new Date(dayWindow.start).toLocaleDateString('de-DE', {
-                            weekday: 'short',
-                            day: '2-digit',
-                            month: '2-digit',
-                        })}
-                    </span>
-                )}
             </div>
         ) : null;
 
