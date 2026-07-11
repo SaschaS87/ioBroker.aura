@@ -15,3 +15,5 @@
 - Advanced chart - stale history responses no longer override a newer range/day selection after rapid day stepping
 - Advanced chart - legend keeps to a single scrollable line on narrow widgets instead of wrapping
 - Advanced chart - day-nav date label moved left of the buttons so they no longer shift when it appears
+- Room climate - new collapsible widget type: slim temperature bar that expands inline on mobile (humidity, min/max, range presets, day navigation, history chart) and opens the same details as a popup on desktop
+- Room climate - humidity datapoint, history instance, decimals and font sizes configurable per widget in the editor

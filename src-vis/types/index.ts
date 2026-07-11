@@ -50,6 +50,7 @@ export type WidgetType =
     | 'httpRequest'
     | 'button'
     | 'climate'
+    | 'roomclimate'
     | 'universal'
     | 'enum'
     | 'light'
@@ -328,6 +329,7 @@ export type ClickAction =
     | { kind: 'popup-switch' }
     | { kind: 'popup-shutter' }
     | { kind: 'popup-mediaplayer' }
+    | { kind: 'popup-roomtemperature'; temperatureDp?: string; humidityDp?: string; historyInstance?: string }
     | { kind: 'popup-image'; url?: string; dp?: string; fit?: 'contain' | 'cover' }
     | {
           kind: 'popup-iframe';

@@ -104,7 +104,10 @@ function modeLabel(kind: ClickAction['kind']): string {
             return 'Popup: Rolladen';
         case 'popup-mediaplayer':
             return 'Popup: Mediaplayer';
+        case 'popup-roomtemperature':
+            return 'Popup: Raumklima';
     }
+    return '';
 }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {

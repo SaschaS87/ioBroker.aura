@@ -9,6 +9,7 @@ import { ThermostatPopupBody } from './ThermostatPopupBody';
 import { SwitchPopupBody } from './SwitchPopupBody';
 import { ShutterPopupBody } from './ShutterPopupBody';
 import { MediaplayerPopupBody } from './MediaplayerPopupBody';
+import { RoomtemperaturePopupBody } from './RoomtemperaturePopupBody';
 import { ImagePopupBody } from './ImagePopupBody';
 import { IframePopupBody } from './IframePopupBody';
 import { JsonPopupBody } from './JsonPopupBody';
@@ -55,6 +56,8 @@ function getTitle(widget: WidgetConfig, action: ClickAction): string {
             return 'Rolladen';
         case 'popup-mediaplayer':
             return 'Mediaplayer';
+        case 'popup-roomtemperature':
+            return 'Raumklima';
         case 'popup-image':
             return 'Bild';
         case 'popup-iframe':
@@ -130,6 +133,8 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                 return <ShutterPopupBody widget={widget} />;
             case 'popup-mediaplayer':
                 return <MediaplayerPopupBody widget={widget} />;
+            case 'popup-roomtemperature':
+                return <RoomtemperaturePopupBody widget={widget} action={action as Extract<ClickAction, { kind: 'popup-roomtemperature' }>} />;
             case 'popup-image':
                 return <ImagePopupBody action={action} />;
             case 'popup-iframe':

@@ -105,6 +105,10 @@ const ChartWidget = lazyWithReload(() => import('../widgets/ChartWidget').then((
 const ClimateWidget = lazyWithReload(() =>
     import('../widgets/ClimateWidget').then((m) => ({ default: m.ClimateWidget })),
 );
+// RoomClimateWidget pulls in echarts via RoomClimateDetails — lazy like the chart widgets.
+const RoomClimateWidget = lazyWithReload(() =>
+    import('../widgets/RoomClimateWidget').then((m) => ({ default: m.RoomClimateWidget })),
+);
 const EChartWidget = lazyWithReload(() => import('../widgets/EChartWidget').then((m) => ({ default: m.EChartWidget })));
 const EChartsPresetWidget = lazyWithReload(() =>
     import('../widgets/EChartsPresetWidget').then((m) => ({ default: m.EChartsPresetWidget })),
@@ -377,6 +381,7 @@ function getWidgetMap() {
         httpRequest: HttpRequestWidget,
         button: ButtonWidget,
         climate: ClimateWidget,
+        roomclimate: RoomClimateWidget,
         universal: UniversalWidget,
         enum: EnumWidget,
         light: LightWidget,
@@ -1374,6 +1379,137 @@ function ClimateConfig({
             </div>
 
             {/* History-Konfiguration */}
+            <ChartHistoryConfig config={config} onConfigChange={onConfigChange} />
+        </>
+    );
+}
+
+// ── RoomClimateConfig ─────────────────────────────────────────────────────────
+// Config panel for the collapsible room-climate bar. The temperature dp is the
+// widget's main datapoint; humidity + history instance are editable here so
+// new sensors can be wired up entirely from the admin UI.
+function RoomClimateConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (target: 'climate_humidityDp') => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const { defaultDecimals } = useGlobalSettingsStore();
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Raumklima
+            </p>
+
+            {/* Luftfeuchtigkeit DP */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Luftfeuchtigkeit (optional)
+                </label>
+                <div className="flex gap-1">
+                    <input
+                        type="text"
+                        value={(o.humidityDatapoint as string) ?? ''}
+                        onChange={(e) => set({ humidityDatapoint: e.target.value || undefined })}
+                        placeholder="optional"
+                        className={inputCls}
+                        style={inputStyle}
+                    />
+                    <button
+                        onClick={() => onPickerOpen('climate_humidityDp')}
+                        className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                        style={btnStyle}
+                        title="Aus ioBroker wählen"
+                    >
+                        <Database size={13} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Schriftgrößen */}
+            <div className="flex gap-2 mb-2">
+                <div className="flex-1">
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                        Schrift Name (px)
+                    </label>
+                    <input
+                        type="number"
+                        min={10}
+                        max={28}
+                        value={(o.nameFontSize as number) ?? 17}
+                        onChange={(e) => set({ nameFontSize: Number(e.target.value) || undefined })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={inputStyle}
+                    />
+                </div>
+                <div className="flex-1">
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                        Schrift Wert (px)
+                    </label>
+                    <input
+                        type="number"
+                        min={12}
+                        max={36}
+                        value={(o.valueFontSize as number) ?? 20}
+                        onChange={(e) => set({ valueFontSize: Number(e.target.value) || undefined })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={inputStyle}
+                    />
+                </div>
+            </div>
+
+            {/* Dezimalstellen */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Dezimalstellen
+                </label>
+                <div className="flex gap-1">
+                    <input
+                        type="number"
+                        min={0}
+                        max={4}
+                        disabled={o.decimals === undefined}
+                        value={(o.decimals as number) ?? defaultDecimals}
+                        onChange={(e) => set({ decimals: Number(e.target.value) })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={{
+                            background: 'var(--app-bg)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--app-border)',
+                            opacity: o.decimals === undefined ? 0.5 : 1,
+                        }}
+                    />
+                    <button
+                        onClick={() => set({ decimals: o.decimals === undefined ? defaultDecimals : undefined })}
+                        title={
+                            o.decimals === undefined
+                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
+                                : 'Auf globale Einstellung zurücksetzen'
+                        }
+                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
+                        style={{
+                            background: o.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
+                            color: o.decimals === undefined ? '#fff' : 'var(--text-secondary)',
+                        }}
+                    >
+                        Global
+                    </button>
+                </div>
+            </div>
+
+            {/* History-Konfiguration (Adapter-Instanz + Zeitraum) */}
             <ChartHistoryConfig config={config} onConfigChange={onConfigChange} />
         </>
     );
@@ -5554,7 +5690,10 @@ export function WidgetFrame({
         isTransparent ||
         config.type === 'iframe' ||
         config.type === 'map' ||
-        config.type === 'echartsPreset';
+        config.type === 'echartsPreset' ||
+        // roomclimate pads itself: horizontal = widgetPadding (stays aligned with
+        // other widgets), vertical fixed compact for the slim collapsed bar.
+        config.type === 'roomclimate';
 
     return (
         <div
@@ -8473,6 +8612,13 @@ export function WidgetFrame({
                         )}
                         {config.type === 'climate' && (
                             <ClimateConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(t) => setPickerTarget(t)}
+                            />
+                        )}
+                        {config.type === 'roomclimate' && (
+                            <RoomClimateConfig
                                 config={config}
                                 onConfigChange={onConfigChange}
                                 onPickerOpen={(t) => setPickerTarget(t)}

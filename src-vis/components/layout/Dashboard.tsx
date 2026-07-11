@@ -306,6 +306,9 @@ export function Dashboard({
                                                         const autoHeight =
                                                             w.type === 'group' ||
                                                             w.type === 'mediaplayer' ||
+                                                            // roomclimate grows when its inline details
+                                                            // panel expands — the bars below move down.
+                                                            w.type === 'roomclimate' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&
                                                                 wl !== 'minimal' &&
