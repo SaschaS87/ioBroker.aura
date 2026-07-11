@@ -51,6 +51,7 @@ export type WidgetType =
     | 'button'
     | 'climate'
     | 'roomclimate'
+    | 'rainstation'
     | 'universal'
     | 'enum'
     | 'light'

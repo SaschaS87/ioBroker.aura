@@ -17,3 +17,4 @@
 - Advanced chart - day-nav date label moved left of the buttons so they no longer shift when it appears
 - Room climate - new collapsible widget type: slim temperature bar that expands inline on mobile (humidity, min/max, range presets, day navigation, history chart) and opens the same details as a popup on desktop
 - Room climate - humidity datapoint, history instance, decimals and font sizes configurable per widget in the editor
+- Rain station - new switcher card widget: pages through multiple rain stations (chevrons + dots) showing today's sum and last hour big, yesterday and current rate as a footer line; stations fully editor-configurable

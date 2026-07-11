@@ -98,6 +98,7 @@ import { SwitchWidget } from '../widgets/SwitchWidget';
 import { ValueWidget } from '../widgets/ValueWidget';
 import { DimmerWidget } from '../widgets/DimmerWidget';
 import { ThermostatWidget } from '../widgets/ThermostatWidget';
+import { RainStationWidget, type RainStationDef } from '../widgets/RainStationWidget';
 // Chart widgets are heavy (recharts ~380 KB, echarts ~1.1 MB) and only used on
 // dashboards that actually have chart widgets — lazy-loaded so they don't
 // block first paint of the rest of the dashboard.
@@ -382,6 +383,7 @@ function getWidgetMap() {
         button: ButtonWidget,
         climate: ClimateWidget,
         roomclimate: RoomClimateWidget,
+        rainstation: RainStationWidget,
         universal: UniversalWidget,
         enum: EnumWidget,
         light: LightWidget,
@@ -1511,6 +1513,127 @@ function RoomClimateConfig({
 
             {/* History-Konfiguration (Adapter-Instanz + Zeitraum) */}
             <ChartHistoryConfig config={config} onConfigChange={onConfigChange} />
+        </>
+    );
+}
+
+// ── RainStationConfig ─────────────────────────────────────────────────────────
+// Config panel for the rain-station switcher card: an editable list of
+// stations, each with a name and four rain datapoints (all picker-backed), so
+// new stations can be wired up entirely from the admin UI.
+const RAIN_DP_FIELDS: { key: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp'; label: string }[] = [
+    { key: 'todayDp', label: 'Heute (Tagessumme)' },
+    { key: 'lastHourDp', label: 'Letzte Stunde' },
+    { key: 'yesterdayDp', label: 'Gestern' },
+    { key: 'currentDp', label: 'Aktuell (Momentanwert)' },
+];
+
+function RainStationConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (idx: number, field: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp') => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const stations = ((o.stations as RainStationDef[]) ?? []).map((s) => ({ ...s }));
+    const setStations = (list: RainStationDef[]) => set({ stations: list });
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Regen-Stationen
+            </p>
+
+            {/* Untertitel */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Untertitel
+                </label>
+                <input
+                    type="text"
+                    value={(o.subtitle as string) ?? 'Netatmo-Station'}
+                    onChange={(e) => set({ subtitle: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                />
+            </div>
+
+            {stations.map((st, i) => (
+                <div
+                    key={i}
+                    className="mb-2 p-2 rounded-lg"
+                    style={{ border: '1px solid var(--app-border)' }}
+                >
+                    <div className="flex gap-1 mb-1.5">
+                        <input
+                            type="text"
+                            value={st.name ?? ''}
+                            placeholder={`Station ${i + 1} – Name`}
+                            onChange={(e) => {
+                                const list = stations.map((s) => ({ ...s }));
+                                list[i].name = e.target.value;
+                                setStations(list);
+                            }}
+                            className={inputCls}
+                            style={inputStyle}
+                        />
+                        <button
+                            onClick={() => setStations(stations.filter((_, k) => k !== i))}
+                            className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                            style={btnStyle}
+                            title="Station entfernen"
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    </div>
+                    {RAIN_DP_FIELDS.map((f) => (
+                        <div key={f.key} className="mb-1.5">
+                            <label className="text-[11px] mb-0.5 block" style={{ color: 'var(--text-secondary)' }}>
+                                {f.label}
+                            </label>
+                            <div className="flex gap-1">
+                                <input
+                                    type="text"
+                                    value={(st[f.key] as string) ?? ''}
+                                    onChange={(e) => {
+                                        const list = stations.map((s) => ({ ...s }));
+                                        list[i][f.key] = e.target.value || undefined;
+                                        setStations(list);
+                                    }}
+                                    className={inputCls}
+                                    style={inputStyle}
+                                />
+                                <button
+                                    onClick={() => onPickerOpen(i, f.key)}
+                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                    style={btnStyle}
+                                    title="Aus ioBroker wählen"
+                                >
+                                    <Database size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ))}
+
+            <button
+                onClick={() => setStations([...stations, {}])}
+                className="w-full text-xs rounded-lg px-2.5 py-2 hover:opacity-80"
+                style={btnStyle}
+            >
+                + Station hinzufügen
+            </button>
         </>
     );
 }
@@ -5295,6 +5418,7 @@ export function WidgetFrame({
         | 'http_response_dp'
         | 'climate_humidityDp'
         | 'climate_targetDp'
+        | 'rainstation_dp'
         | 'iframe_urlDp'
         | 'image_dp'
         | 'light_switchDp'
@@ -5330,6 +5454,10 @@ export function WidgetFrame({
         idx: 0,
         field: 'latDp',
     });
+    const [rainStationPicker, setRainStationPicker] = useState<{
+        idx: number;
+        field: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp';
+    }>({ idx: 0, field: 'todayDp' });
     const [mapQuickViewPicker, setMapQuickViewPicker] = useState<{ idx: number; field: 'jsonDp' | 'latDp' | 'lonDp' }>({
         idx: 0,
         field: 'latDp',
@@ -8622,6 +8750,16 @@ export function WidgetFrame({
                                 config={config}
                                 onConfigChange={onConfigChange}
                                 onPickerOpen={(t) => setPickerTarget(t)}
+                            />
+                        )}
+                        {config.type === 'rainstation' && (
+                            <RainStationConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(idx, field) => {
+                                    setRainStationPicker({ idx, field });
+                                    setPickerTarget('rainstation_dp');
+                                }}
                             />
                         )}
                         {config.type === 'echart' && <EChartConfig config={config} onConfigChange={onConfigChange} />}
@@ -16111,6 +16249,12 @@ export function WidgetFrame({
                             onConfigChange({ ...config, options: { ...config.options, wakeUpDp: id } });
                         } else if (pickerTarget === 'camera_urlDp') {
                             onConfigChange({ ...config, options: { ...config.options, streamUrlDp: id } });
+                        } else if (pickerTarget === 'rainstation_dp') {
+                            const list = [...(((config.options?.stations as RainStationDef[]) ?? []).map((s) => ({ ...s })))];
+                            if (list[rainStationPicker.idx]) {
+                                list[rainStationPicker.idx][rainStationPicker.field] = id;
+                                onConfigChange({ ...config, options: { ...config.options, stations: list } });
+                            }
                         } else if (pickerTarget === 'climate_humidityDp') {
                             onConfigChange({ ...config, options: { ...config.options, humidityDatapoint: id } });
                         } else if (pickerTarget === 'climate_targetDp') {
