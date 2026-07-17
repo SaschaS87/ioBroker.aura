@@ -19,14 +19,38 @@ export function useDatapoint(ref: string) {
     const [state, setDatapointState] = useState<ioBrokerState | null>(() => (id ? getStateFromCache(id) : null));
 
     useEffect(() => {
-        if (!id || !connected) return;
+        // The ref can CHANGE while mounted (e.g. widgets with a built-in source
+        // switcher). An empty ref must clear the previous datapoint's value
+        // instead of keeping it on screen.
+        if (!id) {
+            setDatapointState(null);
+            return;
+        }
+        if (!connected) return;
 
-        // Skip the socket round-trip when the prefetch already populated the cache.
-        // The subscribe callback below delivers any subsequent value changes.
-        if (!getStateFromCache(id)) {
+        const cached = getStateFromCache(id);
+        if (cached) {
+            // Sync the state to the NEW id's cached value. Merely skipping the
+            // fetch (as before) kept showing the previous id's value until the
+            // new datapoint happened to push a change — stale display when a
+            // widget switches its datapoint at runtime.
+            setDatapointState(cached);
+        } else {
+            let cancelled = false;
             getState(id).then((initialState) => {
-                if (initialState) setDatapointState(initialState);
+                // Guard against out-of-order responses when the id changes
+                // quickly: a slow answer for an old id must not overwrite the
+                // current one.
+                if (initialState && !cancelled) setDatapointState(initialState);
             });
+            // Live-Updates abonnieren
+            const unsubscribe = subscribe(id, (newState) => {
+                setDatapointState(newState);
+            });
+            return () => {
+                cancelled = true;
+                unsubscribe();
+            };
         }
 
         // Live-Updates abonnieren
