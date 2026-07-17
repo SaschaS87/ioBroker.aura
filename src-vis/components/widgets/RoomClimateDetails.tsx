@@ -114,7 +114,19 @@ export function RoomClimateDetails({
             // date even on 6h/24h views).
             xAxis: {
                 type: 'time' as const,
-                axisLabel: { color: '#888', fontSize: 10 },
+                axisLabel: {
+                    color: '#888',
+                    fontSize: 10,
+                    // Same as EChartWidget: in day mode force hour labels (right
+                    // edge = 24:00) instead of ECharts' day numbers at midnight
+                    // edges; explicit null on leave (merge would keep it).
+                    formatter: dayWindow
+                        ? (val: number) =>
+                              val === dayWindow.end
+                                  ? '24:00'
+                                  : new Date(val).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+                        : null,
+                },
                 axisTick: { show: true },
                 axisLine: { show: true, lineStyle: { color: '#444' } },
                 splitLine: { show: false },

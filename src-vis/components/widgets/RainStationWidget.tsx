@@ -47,7 +47,15 @@ export function RainStationWidget({ config, editMode }: WidgetProps) {
         return () => window.clearInterval(iv);
     }, [lastChangedTs]);
 
-    const num = (v: unknown) => (typeof v === 'number' ? formatNum(v, decimals) : '–');
+    // While ALL four values are still unloaded (initial fetches queued behind
+    // the charts' history requests right after app start), show a loading
+    // ellipsis instead of a misleading dash; real gaps keep the dash.
+    const initialLoading =
+        typeof vToday !== 'number' &&
+        typeof vHour !== 'number' &&
+        typeof vYesterday !== 'number' &&
+        typeof vCurrent !== 'number';
+    const num = (v: unknown) => (typeof v === 'number' ? formatNum(v, decimals) : initialLoading ? '…' : '–');
     const step = (d: number) => {
         if (n < 2) return;
         setIdx((i) => (Math.min(i, n - 1) + d + n) % n);
