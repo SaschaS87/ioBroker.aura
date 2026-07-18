@@ -553,22 +553,14 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
         xAxis: {
             type: 'time',
             show: echartShowXAxis,
-            axisLabel: {
-                show: echartShowXAxis,
-                color: '#888',
-                fontSize: 10,
-                // Day mode frames one calendar day: ECharts' automatic labels put
-                // the DAY NUMBER at the midnight edges (e.g. "17"/"18" framing
-                // July 17) — confusing on a single-day view. Force hour labels,
-                // with the right edge reading 24:00. Explicit null on leave
-                // (options are merged — an omitted key would stick).
-                formatter: dayWindow
-                    ? (val: number) =>
-                          val === dayWindow.end
-                              ? '24:00'
-                              : new Date(val).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                    : null,
-            },
+            // Deliberately NO custom formatter/interval here — also in day mode.
+            // ECharts' automatic time-axis labelling adapts the tick count to the
+            // available width; two hand-rolled attempts (fixed hour formatter,
+            // then minInterval+hideOverlap) each produced worse artefacts on
+            // narrow widgets (colliding labels / missing edge labels). If the
+            // day-mode axis should ever look different, define the target look
+            // with Sascha FIRST, then verify at mobile width.
+            axisLabel: { show: echartShowXAxis, color: '#888', fontSize: 10 },
             axisTick: { show: echartShowXAxis },
             axisLine: { show: echartShowXAxis, lineStyle: { color: '#444' } },
             splitLine: { show: false },
