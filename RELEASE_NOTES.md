@@ -21,4 +21,4 @@
 - Rain station - values still loading right after app start show an ellipsis instead of misleading dashes
 - Advanced chart - bar series keep empty windows empty instead of injecting a flat substitute line; two synthetic points on the window edges derailed the time-axis tick layout on empty day views
 - Advanced chart - day stepping no longer animates the window transition (the old day edge visibly flew across the chart)
-- Advanced chart - an empty day view keeps a readable 0-1 y-axis frame instead of a blank axis
+- Advanced chart - views without visible data keep a readable axis frame (time window + 0-1 value axis) instead of blank axes; the fallback is legend-aware, so hiding all series no longer blanks the chart

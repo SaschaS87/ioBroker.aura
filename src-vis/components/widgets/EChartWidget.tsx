@@ -1,5 +1,5 @@
 import ReactECharts from 'echarts-for-react';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { BarChart2, ChevronLeft, ChevronRight, Loader } from 'lucide-react';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import {
@@ -176,6 +176,39 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
 
     const allLoading = echartSeries.length > 0 && echartSeries.every((s) => seriesDataMap.get(s.id)?.loading);
     const hasAnyData = echartSeries.some((s) => (seriesDataMap.get(s.id)?.data.length ?? 0) > 0);
+
+    // Track which series the user hid via the legend, so the axes can tell
+    // "no VISIBLE data" apart from "no data at all" (a hidden series with data
+    // must not count — ECharts scales axes over visible series only). Initial
+    // state comes from echartJsonExtra's legend.selected (used to start with a
+    // subset of stations visible).
+    const [legendHidden, setLegendHidden] = useState<Record<string, boolean>>(() => {
+        try {
+            const extra = echartJsonExtra ? (JSON.parse(echartJsonExtra) as Record<string, unknown>) : {};
+            const selected = ((extra.legend as Record<string, unknown> | undefined)?.selected ?? {}) as Record<
+                string,
+                boolean
+            >;
+            const hidden: Record<string, boolean> = {};
+            for (const [name, sel] of Object.entries(selected)) if (sel === false) hidden[name] = true;
+            return hidden;
+        } catch {
+            return {};
+        }
+    });
+    const onChartEvents = useMemo(
+        () => ({
+            legendselectchanged: (p: { selected: Record<string, boolean> }) => {
+                const hidden: Record<string, boolean> = {};
+                for (const [name, sel] of Object.entries(p.selected ?? {})) if (sel === false) hidden[name] = true;
+                setLegendHidden(hidden);
+            },
+        }),
+        [],
+    );
+    const visibleHasData = echartSeries.some(
+        (s) => !legendHidden[s.name] && (seriesDataMap.get(s.id)?.data.length ?? 0) > 0,
+    );
 
     // In the popup editor the series datapoints are {{placeholders}} that can't resolve,
     // so there is no real data. Render representative sample curves instead of "Keine Daten".
@@ -461,18 +494,12 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
         axisTick: { show: echartShowYAxis },
         axisLine: { show: echartShowYAxis, lineStyle: { color: '#444' } },
         splitLine: { show: echartShowYAxis && echartShowGridLines, lineStyle: { color: '#333' } },
-        // With no visible data at all (empty browsed day, bar series stay empty)
-        // a scale axis renders NO labels. The extent callbacks return null =
-        // auto whenever visible data exists, and fall back to a 0..1 frame on a
-        // fully empty view — so a data-less day still shows a readable axis.
-        min:
-            echartLeftMin !== undefined
-                ? echartLeftMin
-                : (v: { min: number }) => (Number.isFinite(v.min) ? null : 0),
-        max:
-            echartLeftMax !== undefined
-                ? echartLeftMax
-                : (v: { max: number }) => (Number.isFinite(v.max) ? null : 1),
+        // With no visible data (empty browsed day/range — bar series stay empty,
+        // hidden-by-legend series don't count) a scale axis renders NO labels.
+        // Plain-number 0..1 fallback only in that case; with visible data the
+        // axis stays fully automatic (null), pixel-identical to before.
+        min: echartLeftMin !== undefined ? echartLeftMin : visibleHasData ? null : 0,
+        max: echartLeftMax !== undefined ? echartLeftMax : visibleHasData ? null : 1,
     };
 
     const rightAxis: Record<string, unknown> = hasRightAxis
@@ -584,13 +611,20 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             axisTick: { show: echartShowXAxis },
             axisLine: { show: echartShowXAxis, lineStyle: { color: '#444' } },
             splitLine: { show: false },
-            // Day mode: frame exactly the selected calendar day, even when data is sparse.
-            // Explicit null (= auto) when leaving day mode: options are applied in
-            // merge mode, where an omitted key keeps its previous value — the axis
-            // would stay clamped to the browsed day after switching back to a
-            // rolling range (y rescaled with the new data, x stuck on the old day).
-            min: dayWindow ? dayWindow.start : null,
-            max: dayWindow ? dayWindow.end : null,
+            // Day mode: frame exactly the selected calendar day, even when data is
+            // sparse (explicit values — merged options would keep a stale clamp).
+            // Rolling mode: fully automatic (null) whenever visible data exists;
+            // without any visible data frame the selected rolling window — with
+            // bar series keeping empty windows truly empty (91befe6c), a rain-free
+            // range would lose its whole time axis otherwise. Plain numbers only:
+            // extent CALLBACKS made ECharts print full-precision timestamps at the
+            // axis edges even on data days.
+            min: dayWindow
+                ? dayWindow.start
+                : visibleHasData
+                  ? null
+                  : Date.now() - rangeToMs(activeRange, activeCustomVal, activeCustomUnit),
+            max: dayWindow ? dayWindow.end : visibleHasData ? null : Date.now(),
         },
         yAxis: [leftAxis, rightAxis],
         series: seriesList,
@@ -807,6 +841,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
                     <ReactECharts
                         ref={chartRef}
                         option={merged}
+                        onEvents={onChartEvents}
                         style={{ width: '100%', height: '100%' }}
                         opts={{ renderer: 'canvas' }}
                     />
