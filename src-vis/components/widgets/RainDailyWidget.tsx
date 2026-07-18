@@ -6,9 +6,9 @@ import type { WidgetProps } from '../../types';
 import { formatNum } from '../../utils/formatValue';
 import type { RainStationDef } from './RainStationWidget';
 
-type RangeKey = '7d' | '14d' | 'month';
+type RangeKey = '7d' | '14d' | 'month' | 'day';
 
-const RANGE_LABELS: Record<RangeKey, string> = { '7d': '7 Tage', '14d': '14 Tage', month: 'Monat' };
+const RANGE_LABELS: Record<RangeKey, string> = { '7d': '7 Tage', '14d': '14 Tage', month: 'Monat', day: 'Tag' };
 
 // One calendar day in the visible window. `total` carries the honest tri-state:
 // number (incl. 0 = dry) / null = no data recorded for that day.
@@ -93,6 +93,9 @@ export function RainDailyWidget({ config }: WidgetProps) {
     const [range, setRange] = useState<RangeKey>(((o.raindailyDefaultRange as RangeKey) ?? '7d'));
     const [offset, setOffset] = useState(0);
     const [days, setDays] = useState<DayCell[] | null>(null);
+    // Raw counter entries of the visible single day — only kept in day mode,
+    // where the hourly bars are derived from the counter's jumps.
+    const [dayPts, setDayPts] = useState<{ ts: number; val: number }[] | null>(null);
     const [loading, setLoading] = useState(false);
     const fetchGenRef = useRef(0);
     const mountedRef = useRef(true);
@@ -125,6 +128,9 @@ export function RainDailyWidget({ config }: WidgetProps) {
                 isFuture: start > today0.getTime(),
             };
         };
+        if (range === 'day') {
+            return [mk(addDays(today0, offset))];
+        }
         if (range === 'month') {
             const first = new Date(today0.getFullYear(), today0.getMonth() + offset, 1);
             const out: DayCell[] = [];
@@ -170,6 +176,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
                     .filter((e) => e.ts < cells[cells.length - 1].end)
                     .sort((a, b) => a.ts - b.ts);
                 computeDayTotals(pts, cells);
+                setDayPts(cells.length === 1 ? pts.filter((p) => p.ts >= cells[0].start) : null);
                 setDays(cells);
                 setLoading(false);
             })
@@ -188,13 +195,72 @@ export function RainDailyWidget({ config }: WidgetProps) {
         );
     }, [days, liveVal]);
 
+    // Day mode: hourly cells from the counter's jumps. The counter starts at 0
+    // after the midnight reset, so the running baseline starts at 0; each hour's
+    // rain is "last counter value in the hour minus the baseline", and hours
+    // without a log entry are genuinely dry (an unchanged counter means no rain —
+    // the crawler writes every ~5 min while it rains). The live value acts as a
+    // virtual last entry so the current hour's bar grows in real time.
+    const hourCells = useMemo((): DayCell[] | null => {
+        if (range !== 'day' || !viewDays || viewDays.length !== 1) return null;
+        const day = viewDays[0];
+        const now = Date.now();
+        const hours = Math.round((day.end - day.start) / 3_600_000);
+        const cells: DayCell[] = [];
+        const pts = [...(dayPts ?? [])];
+        if (day.isToday && typeof liveVal === 'number') pts.push({ ts: now, val: liveVal });
+        pts.sort((a, b) => a.ts - b.ts);
+        let baseline = 0;
+        let i = 0;
+        for (let h = 0; h < hours; h++) {
+            const hs = day.start + h * 3_600_000;
+            const he = hs + 3_600_000;
+            let last: number | null = null;
+            while (i < pts.length && pts[i].ts < he) {
+                if (pts[i].ts >= hs) last = pts[i].val;
+                i++;
+            }
+            let total: number | null;
+            if (day.total === null || hs > now) {
+                total = null;
+            } else if (last === null) {
+                total = 0;
+            } else {
+                total = Math.max(0, Math.round((last - baseline) * 1000) / 1000);
+                baseline = last;
+            }
+            cells.push({
+                start: hs,
+                end: he,
+                date: new Date(hs),
+                total,
+                isToday: day.isToday && now >= hs && now < he,
+                isFuture: hs > now,
+            });
+        }
+        return cells;
+    }, [range, viewDays, dayPts, liveVal]);
+
     const stats = useMemo(() => {
         if (!viewDays) return null;
+        if (range === 'day') {
+            const t = viewDays[0]?.total;
+            if (t === null || t === undefined) return { sum: null as number | null, rainUnits: 0 };
+            const rainHours = (hourCells ?? []).filter((c) => (c.total ?? 0) > 0).length;
+            return { sum: t as number | null, rainUnits: rainHours };
+        }
         const known = viewDays.filter((d) => d.total !== null);
         const sum = known.reduce((a, d) => a + (d.total as number), 0);
         const rainDays = known.filter((d) => (d.total as number) > 0).length;
-        return { sum, rainDays };
-    }, [viewDays]);
+        return { sum: sum as number | null, rainUnits: rainDays };
+    }, [viewDays, range, hourCells]);
+
+    // Drill-down: a tap on a day (bar or month cell) jumps into that day's hourly view.
+    const gotoDay = (cell: DayCell) => {
+        const today0 = startOfDay(new Date()).getTime();
+        setRange('day');
+        setOffset(Math.round((cell.start - today0) / 86_400_000));
+    };
 
     // ── Chart area measuring (SVG is laid out in real pixels, no viewBox scaling) ──
     const chartRef = useRef<HTMLDivElement>(null);
@@ -213,9 +279,11 @@ export function RainDailyWidget({ config }: WidgetProps) {
     const fmtDay = (d: Date) =>
         d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
     const periodLabel =
-        range === 'month'
-            ? windowDays[0].date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-            : `${fmtDay(windowDays[0].date)} – ${fmtDay(windowDays[windowDays.length - 1].date)}`;
+        range === 'day'
+            ? windowDays[0].date.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+            : range === 'month'
+              ? windowDays[0].date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+              : `${fmtDay(windowDays[0].date)} – ${fmtDay(windowDays[windowDays.length - 1].date)}`;
 
     if (n === 0) {
         return (
@@ -236,10 +304,23 @@ export function RainDailyWidget({ config }: WidgetProps) {
                 </span>
                 {stats && (
                     <span className="ml-auto flex items-baseline gap-2 shrink-0 text-[12px] font-semibold">
-                        <span style={{ color: 'var(--accent)' }}>Σ {formatNum(stats.sum, decimals)} mm</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>
-                            {stats.rainDays} {stats.rainDays === 1 ? 'Regentag' : 'Regentage'}
-                        </span>
+                        {stats.sum === null ? (
+                            <span style={{ color: 'var(--text-secondary)' }}>keine Daten</span>
+                        ) : (
+                            <>
+                                <span style={{ color: 'var(--accent)' }}>Σ {fmtTotal(stats.sum, decimals)} mm</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>
+                                    {stats.rainUnits}{' '}
+                                    {range === 'day'
+                                        ? stats.rainUnits === 1
+                                            ? 'Regenstunde'
+                                            : 'Regenstunden'
+                                        : stats.rainUnits === 1
+                                          ? 'Regentag'
+                                          : 'Regentage'}
+                                </span>
+                            </>
+                        )}
                     </span>
                 )}
             </div>
@@ -268,7 +349,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
                     <button
                         className={chipCls}
                         style={chipStyle(false)}
-                        title={range === 'month' ? 'Einen Monat zurück' : 'Zeitraum zurück'}
+                        title={range === 'month' ? 'Einen Monat zurück' : range === 'day' ? 'Einen Tag zurück' : 'Zeitraum zurück'}
                         onClick={() => setOffset((v) => v - 1)}
                     >
                         <ChevronLeft size={12} />
@@ -284,7 +365,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
                     <button
                         className={`${chipCls} disabled:opacity-40`}
                         style={chipStyle(false)}
-                        title={range === 'month' ? 'Einen Monat vor' : 'Zeitraum vor'}
+                        title={range === 'month' ? 'Einen Monat vor' : range === 'day' ? 'Einen Tag vor' : 'Zeitraum vor'}
                         disabled={offset >= 0}
                         onClick={() => setOffset((v) => (v < 0 ? v + 1 : v))}
                     >
@@ -315,11 +396,32 @@ export function RainDailyWidget({ config }: WidgetProps) {
 
             {/* Body: bar chart or month grid */}
             {range === 'month' ? (
-                <MonthGrid days={viewDays} decimals={decimals} loading={loading} />
+                <MonthGrid days={viewDays} decimals={decimals} loading={loading} onSelectDay={gotoDay} />
             ) : (
                 <div ref={chartRef} className="flex-1 min-h-0 relative">
-                    {viewDays && size.w > 40 && size.h > 40 && (
-                        <BarChart days={viewDays} w={size.w} h={size.h} decimals={decimals} />
+                    {range === 'day' && viewDays && viewDays[0].total === null ? (
+                        <div
+                            className="absolute inset-2 flex items-center justify-center rounded-lg text-xs"
+                            style={{
+                                color: 'var(--text-secondary)',
+                                border: '1px dashed var(--app-border)',
+                            }}
+                        >
+                            keine Daten für diesen Tag
+                        </div>
+                    ) : (
+                        (range === 'day' ? hourCells : viewDays) &&
+                        size.w > 40 &&
+                        size.h > 40 && (
+                            <BarChart
+                                days={(range === 'day' ? hourCells : viewDays) as DayCell[]}
+                                w={size.w}
+                                h={size.h}
+                                decimals={decimals}
+                                hourMode={range === 'day'}
+                                onSelectDay={range === 'day' ? undefined : gotoDay}
+                            />
+                        )
                     )}
                     {!viewDays && (
                         <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -343,23 +445,38 @@ function niceMax(v: number): number {
 
 const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
-function BarChart({ days, w, h, decimals }: { days: DayCell[]; w: number; h: number; decimals: number }) {
+function BarChart({
+    days,
+    w,
+    h,
+    decimals,
+    hourMode,
+    onSelectDay,
+}: {
+    days: DayCell[];
+    w: number;
+    h: number;
+    decimals: number;
+    hourMode?: boolean;
+    onSelectDay?: (cell: DayCell) => void;
+}) {
     const padL = 26;
     const padT = 14;
     const padB = 16;
     const innerW = w - padL - 4;
     const innerH = h - padT - padB;
-    const maxVal = niceMax(Math.max(0, ...days.map((d) => d.total ?? 0)));
+    const rawMax = Math.max(0, ...days.map((d) => d.total ?? 0));
+    const maxVal = niceMax(rawMax);
     const y = (v: number) => padT + innerH - (v / maxVal) * innerH;
     const slotW = innerW / days.length;
-    const barW = Math.max(6, Math.min(slotW * 0.62, 34));
+    const barW = Math.max(hourMode ? 4 : 6, Math.min(slotW * 0.62, 34));
     const showValues = slotW >= 22;
     const labelEvery = slotW >= 34 ? 1 : 2;
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maxVal);
     const fmtTick = (v: number) => (Number.isInteger(v) ? String(v) : formatNum(v, 1));
 
     return (
-        <svg width={w} height={h} className="block">
+        <svg width={w} height={h} className="block nodrag">
             {ticks.map((tv) => (
                 <g key={tv}>
                     <line x1={padL} x2={w - 2} y1={y(tv)} y2={y(tv)} stroke="var(--app-border)" strokeWidth={1} />
@@ -368,17 +485,47 @@ function BarChart({ days, w, h, decimals }: { days: DayCell[]; w: number; h: num
                     </text>
                 </g>
             ))}
+            {hourMode &&
+                [0, 6, 12, 18, 24].map((hh) => (
+                    <text
+                        key={hh}
+                        x={padL + (hh / days.length) * innerW}
+                        y={h - 4}
+                        textAnchor={hh === 0 ? 'start' : hh === 24 ? 'end' : 'middle'}
+                        fontSize={9}
+                        fill="var(--text-secondary)"
+                    >
+                        {String(hh).padStart(2, '0')}
+                    </text>
+                ))}
             {days.map((d, i) => {
                 const cx = padL + i * slotW + slotW / 2;
                 const bx = cx - barW / 2;
                 const label = `${WD[d.date.getDay()]} ${d.date.getDate()}.`;
-                const tip = `${d.date.toLocaleDateString('de-DE')}: ${
-                    d.total === null ? 'keine Daten' : `${fmtTotal(d.total, decimals)} mm${d.isToday ? ' (läuft)' : ''}`
-                }`;
-                const showXLabel = i % labelEvery === 0 || d.isToday;
+                const hh = d.date.getHours();
+                const tip = hourMode
+                    ? `${d.date.toLocaleDateString('de-DE')}, ${String(hh).padStart(2, '0')}–${String(hh + 1).padStart(2, '0')} Uhr: ${
+                          d.total === null ? '' : `${fmtTotal(d.total, decimals)} mm${d.isToday ? ' (läuft)' : ''}`
+                      }`
+                    : `${d.date.toLocaleDateString('de-DE')}: ${
+                          d.total === null ? 'keine Daten' : `${fmtTotal(d.total, decimals)} mm${d.isToday ? ' (läuft)' : ''}`
+                      }`;
+                const showXLabel = !hourMode && (i % labelEvery === 0 || d.isToday);
+                // Hour bars are too narrow for labels everywhere — mark only the day's peak (and the live hour).
+                const showValue = d.total !== null && !d.isFuture && (hourMode
+                    ? d.total > 0 && (showValues || (d.total === rawMax && rawMax > 0))
+                    : showValues);
+                const clickable = !!onSelectDay && !d.isFuture;
                 return (
-                    <g key={d.start}>
+                    <g
+                        key={d.start}
+                        onClick={clickable ? () => onSelectDay(d) : undefined}
+                        style={clickable ? { cursor: 'pointer' } : undefined}
+                    >
                         <title>{tip}</title>
+                        {clickable && (
+                            <rect x={padL + i * slotW} y={padT} width={slotW} height={innerH + padB} fill="transparent" />
+                        )}
                         {d.isFuture ? null : d.total === null ? (
                             <>
                                 <rect
@@ -420,7 +567,7 @@ function BarChart({ days, w, h, decimals }: { days: DayCell[]; w: number; h: num
                                 strokeDasharray={d.isToday ? '4 3' : undefined}
                             />
                         )}
-                        {showValues && d.total !== null && !d.isFuture && (
+                        {showValue && d.total !== null && (
                             <text
                                 x={cx}
                                 y={(d.total === 0 ? y(0) : Math.min(y(d.total), y(0) - 2)) - 4}
@@ -451,7 +598,17 @@ function BarChart({ days, w, h, decimals }: { days: DayCell[]; w: number; h: num
     );
 }
 
-function MonthGrid({ days, decimals, loading }: { days: DayCell[] | null; decimals: number; loading: boolean }) {
+function MonthGrid({
+    days,
+    decimals,
+    loading,
+    onSelectDay,
+}: {
+    days: DayCell[] | null;
+    decimals: number;
+    loading: boolean;
+    onSelectDay?: (cell: DayCell) => void;
+}) {
     if (!days) {
         return (
             <div className="flex-1 flex items-center justify-center text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -487,7 +644,7 @@ function MonthGrid({ days, decimals, loading }: { days: DayCell[] | null; decima
                     return (
                         <div
                             key={i}
-                            className="relative rounded-md flex items-center justify-center min-h-0 overflow-hidden"
+                            className="nodrag relative rounded-md flex items-center justify-center min-h-0 overflow-hidden"
                             style={{
                                 background: d.total === null ? 'transparent' : 'var(--app-border)',
                                 border: d.isToday
@@ -495,8 +652,10 @@ function MonthGrid({ days, decimals, loading }: { days: DayCell[] | null; decima
                                     : d.total === null
                                       ? '1px dashed var(--app-border)'
                                       : 'none',
+                                cursor: onSelectDay ? 'pointer' : undefined,
                             }}
                             title={title}
+                            onClick={onSelectDay ? () => onSelectDay(d) : undefined}
                         >
                             {intensity > 0 && (
                                 <div
