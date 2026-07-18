@@ -13,6 +13,7 @@
 - Advanced chart - fixed periodic chart flicker when adapters re-write unchanged values
 - Panels - loop now wraps seamlessly onto the first/last slide instead of rewinding across the whole row
 - Advanced chart - stale history responses no longer override a newer range/day selection after rapid day stepping
+- Daily rain widget (new) - one bar per calendar day computed client-side from raw rain_today history (7/14-day bars, month calendar grid); distinguishes dry days (0) from data gaps (–), today's bar grows live
 - Advanced chart - legend keeps to a single scrollable line on narrow widgets instead of wrapping
 - Advanced chart - day-nav date label moved left of the buttons so they no longer shift when it appears
 - Room climate - new collapsible widget type: slim temperature bar that expands inline on mobile (humidity, min/max, range presets, day navigation, history chart) and opens the same details as a popup on desktop

@@ -99,6 +99,7 @@ import { ValueWidget } from '../widgets/ValueWidget';
 import { DimmerWidget } from '../widgets/DimmerWidget';
 import { ThermostatWidget } from '../widgets/ThermostatWidget';
 import { RainStationWidget, type RainStationDef } from '../widgets/RainStationWidget';
+import { RainDailyWidget } from '../widgets/RainDailyWidget';
 // Chart widgets are heavy (recharts ~380 KB, echarts ~1.1 MB) and only used on
 // dashboards that actually have chart widgets — lazy-loaded so they don't
 // block first paint of the rest of the dashboard.
@@ -384,6 +385,7 @@ function getWidgetMap() {
         climate: ClimateWidget,
         roomclimate: RoomClimateWidget,
         rainstation: RainStationWidget,
+        raindaily: RainDailyWidget,
         universal: UniversalWidget,
         enum: EnumWidget,
         light: LightWidget,
@@ -1624,6 +1626,114 @@ function RainStationConfig({
                             </div>
                         </div>
                     ))}
+                </div>
+            ))}
+
+            <button
+                onClick={() => setStations([...stations, {}])}
+                className="w-full text-xs rounded-lg px-2.5 py-2 hover:opacity-80"
+                style={btnStyle}
+            >
+                + Station hinzufügen
+            </button>
+        </>
+    );
+}
+
+// ── RainDailyConfig ───────────────────────────────────────────────────────────
+// Same options.stations shape as the rainstation card (only todayDp is used),
+// so both rain widgets can share one configured station list — plus the history
+// instance the raw rain_today entries are read from.
+
+function RainDailyConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (idx: number) => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const stations = ((o.stations as RainStationDef[]) ?? []).map((s) => ({ ...s }));
+    const setStations = (list: RainStationDef[]) => set({ stations: list });
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Regenmenge pro Tag
+            </p>
+
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    History-Instanz
+                </label>
+                <input
+                    type="text"
+                    value={(o.historyInstance as string) ?? 'influxdb.0'}
+                    onChange={(e) => set({ historyInstance: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                />
+            </div>
+
+            {stations.map((st, i) => (
+                <div key={i} className="mb-2 p-2 rounded-lg" style={{ border: '1px solid var(--app-border)' }}>
+                    <div className="flex gap-1 mb-1.5">
+                        <input
+                            type="text"
+                            value={st.name ?? ''}
+                            placeholder={`Station ${i + 1} – Name`}
+                            onChange={(e) => {
+                                const list = stations.map((s) => ({ ...s }));
+                                list[i].name = e.target.value;
+                                setStations(list);
+                            }}
+                            className={inputCls}
+                            style={inputStyle}
+                        />
+                        <button
+                            onClick={() => setStations(stations.filter((_, k) => k !== i))}
+                            className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                            style={btnStyle}
+                            title="Station entfernen"
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    </div>
+                    <div className="mb-1.5">
+                        <label className="text-[11px] mb-0.5 block" style={{ color: 'var(--text-secondary)' }}>
+                            Tagesmenge (rain_today)
+                        </label>
+                        <div className="flex gap-1">
+                            <input
+                                type="text"
+                                value={st.todayDp ?? ''}
+                                onChange={(e) => {
+                                    const list = stations.map((s) => ({ ...s }));
+                                    list[i].todayDp = e.target.value || undefined;
+                                    setStations(list);
+                                }}
+                                className={inputCls}
+                                style={inputStyle}
+                            />
+                            <button
+                                onClick={() => onPickerOpen(i)}
+                                className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                style={btnStyle}
+                                title="Aus ioBroker wählen"
+                            >
+                                <Database size={13} />
+                            </button>
+                        </div>
+                    </div>
                 </div>
             ))}
 
@@ -8758,6 +8868,16 @@ export function WidgetFrame({
                                 onConfigChange={onConfigChange}
                                 onPickerOpen={(idx, field) => {
                                     setRainStationPicker({ idx, field });
+                                    setPickerTarget('rainstation_dp');
+                                }}
+                            />
+                        )}
+                        {config.type === 'raindaily' && (
+                            <RainDailyConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(idx) => {
+                                    setRainStationPicker({ idx, field: 'todayDp' });
                                     setPickerTarget('rainstation_dp');
                                 }}
                             />
