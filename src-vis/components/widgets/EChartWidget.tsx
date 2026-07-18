@@ -213,6 +213,12 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             !r.loading &&
             (dayWindow !== null || !!effectiveSeries[idx]?.historyInstance)
         ) {
+            // Flat substitute lines are for LINE-type series (a change-logged
+            // counter that simply didn't change). For BAR series an empty window
+            // must stay empty: a bar series whose only points are the two window
+            // edges derails ECharts' time-axis tick layout (labels collapse into
+            // the middle) — proven by comparing empty vs. one-real-point days.
+            if (echartSeries[idx]?.chartType === 'bar') return data;
             return flatLineData(r.current);
         }
         return data;
