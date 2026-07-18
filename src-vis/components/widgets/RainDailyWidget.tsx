@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ChevronLeft, ChevronRight, CloudRain } from 'lucide-react';
+import { BarChart3, ChevronLeft, ChevronRight, CloudRain, LayoutGrid } from 'lucide-react';
 import { getHistoryDirect } from '../../hooks/useIoBroker';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import type { WidgetProps } from '../../types';
@@ -91,6 +91,10 @@ export function RainDailyWidget({ config }: WidgetProps) {
 
     const [stationIdx, setStationIdx] = useState(0);
     const [range, setRange] = useState<RangeKey>(((o.raindailyDefaultRange as RangeKey) ?? '7d'));
+    // Month view style: calendar grid (patterns at a glance) or day bars (compare amounts).
+    const [monthStyle, setMonthStyle] = useState<'grid' | 'bars'>(
+        ((o.raindailyMonthStyle as 'grid' | 'bars') ?? 'grid'),
+    );
     const [offset, setOffset] = useState(0);
     const [days, setDays] = useState<DayCell[] | null>(null);
     // Raw counter entries of the visible single day — only kept in day mode,
@@ -274,7 +278,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, [range]);
+    }, [range, monthStyle]);
 
     const fmtDay = (d: Date) =>
         d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
@@ -341,6 +345,26 @@ export function RainDailyWidget({ config }: WidgetProps) {
                             {RANGE_LABELS[r]}
                         </button>
                     ))}
+                    {range === 'month' && (
+                        <>
+                            <button
+                                className={chipCls}
+                                style={chipStyle(monthStyle === 'grid')}
+                                title="Kalender-Raster"
+                                onClick={() => setMonthStyle('grid')}
+                            >
+                                <LayoutGrid size={12} />
+                            </button>
+                            <button
+                                className={chipCls}
+                                style={chipStyle(monthStyle === 'bars')}
+                                title="Tagesbalken"
+                                onClick={() => setMonthStyle('bars')}
+                            >
+                                <BarChart3 size={12} />
+                            </button>
+                        </>
+                    )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
                     <span className="text-[10px] font-medium mr-1 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
@@ -395,7 +419,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
             )}
 
             {/* Body: bar chart or month grid */}
-            {range === 'month' ? (
+            {range === 'month' && monthStyle === 'grid' ? (
                 <MonthGrid days={viewDays} decimals={decimals} loading={loading} onSelectDay={gotoDay} />
             ) : (
                 <div ref={chartRef} className="flex-1 min-h-0 relative">
@@ -471,7 +495,9 @@ function BarChart({
     const slotW = innerW / days.length;
     const barW = Math.max(hourMode ? 4 : 6, Math.min(slotW * 0.62, 34));
     const showValues = slotW >= 22;
-    const labelEvery = slotW >= 34 ? 1 : 2;
+    // Narrow slots (14/30-day views on mobile) thin out the x labels instead of
+    // letting them collide; every bar keeps its tooltip.
+    const labelEvery = slotW >= 34 ? 1 : slotW >= 17 ? 2 : 5;
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maxVal);
     const fmtTick = (v: number) => (Number.isInteger(v) ? String(v) : formatNum(v, 1));
 
@@ -511,10 +537,15 @@ function BarChart({
                           d.total === null ? 'keine Daten' : `${fmtTotal(d.total, decimals)} mm${d.isToday ? ' (läuft)' : ''}`
                       }`;
                 const showXLabel = !hourMode && (i % labelEvery === 0 || d.isToday);
-                // Hour bars are too narrow for labels everywhere — mark only the day's peak (and the live hour).
-                const showValue = d.total !== null && !d.isFuture && (hourMode
-                    ? d.total > 0 && (showValues || (d.total === rawMax && rawMax > 0))
-                    : showValues);
+                // Narrow bars (hour mode, 30-day view) are too tight for labels
+                // everywhere — always mark at least the period's peak. Hour mode
+                // never labels dry hours (24 zeros would be pure noise).
+                const showValue =
+                    d.total !== null &&
+                    !d.isFuture &&
+                    (hourMode
+                        ? d.total > 0 && (showValues || d.total === rawMax)
+                        : showValues || (d.total === rawMax && rawMax > 0));
                 const clickable = !!onSelectDay && !d.isFuture;
                 return (
                     <g
