@@ -461,8 +461,18 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
         axisTick: { show: echartShowYAxis },
         axisLine: { show: echartShowYAxis, lineStyle: { color: '#444' } },
         splitLine: { show: echartShowYAxis && echartShowGridLines, lineStyle: { color: '#333' } },
-        ...(echartLeftMin !== undefined ? { min: echartLeftMin } : {}),
-        ...(echartLeftMax !== undefined ? { max: echartLeftMax } : {}),
+        // With no visible data at all (empty browsed day, bar series stay empty)
+        // a scale axis renders NO labels. The extent callbacks return null =
+        // auto whenever visible data exists, and fall back to a 0..1 frame on a
+        // fully empty view — so a data-less day still shows a readable axis.
+        min:
+            echartLeftMin !== undefined
+                ? echartLeftMin
+                : (v: { min: number }) => (Number.isFinite(v.min) ? null : 0),
+        max:
+            echartLeftMax !== undefined
+                ? echartLeftMax
+                : (v: { max: number }) => (Number.isFinite(v.max) ? null : 1),
     };
 
     const rightAxis: Record<string, unknown> = hasRightAxis
@@ -503,6 +513,10 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
 
     const option: Record<string, unknown> = {
         backgroundColor: 'transparent',
+        // Day stepping remounts the whole window; the axis/series morph animation
+        // visibly "flies" the old day edge across the chart. No animation in day
+        // mode (explicit true outside — options are merged).
+        animation: dayWindow === null,
         tooltip: {
             trigger: 'axis',
             backgroundColor: 'var(--app-surface, #1e1e1e)',

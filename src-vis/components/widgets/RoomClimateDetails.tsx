@@ -107,6 +107,8 @@ export function RoomClimateDetails({
     const echartsOption = useMemo(() => {
         return {
             backgroundColor: 'transparent',
+            // Same as EChartWidget: no morph animation while stepping days.
+            animation: dayWindow === null,
             grid: { left: 44, right: 12, top: 8, bottom: 24 },
             // Same axis as EChartWidget: no custom label formatter — ECharts'
             // automatic time-axis labels show hours for short ranges and the day
