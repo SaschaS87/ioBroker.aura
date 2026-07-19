@@ -345,26 +345,6 @@ export function RainDailyWidget({ config }: WidgetProps) {
                             {RANGE_LABELS[r]}
                         </button>
                     ))}
-                    {range === 'month' && (
-                        <>
-                            <button
-                                className={chipCls}
-                                style={chipStyle(monthStyle === 'grid')}
-                                title="Kalender-Raster"
-                                onClick={() => setMonthStyle('grid')}
-                            >
-                                <LayoutGrid size={12} />
-                            </button>
-                            <button
-                                className={chipCls}
-                                style={chipStyle(monthStyle === 'bars')}
-                                title="Tagesbalken"
-                                onClick={() => setMonthStyle('bars')}
-                            >
-                                <BarChart3 size={12} />
-                            </button>
-                        </>
-                    )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
                     <span className="text-[10px] font-medium mr-1 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
@@ -418,7 +398,35 @@ export function RainDailyWidget({ config }: WidgetProps) {
                 </div>
             )}
 
-            {/* Body: bar chart or month grid */}
+            {/* Body: bar chart or month grid. In month mode a grid/bars toggle floats
+                in the top-right corner; pt-5 reserves a clear strip for it so it never
+                overlaps the weekday header or the tallest bar. */}
+            <div className={`flex-1 min-h-0 flex flex-col relative ${range === 'month' ? 'pt-5' : ''}`}>
+            {range === 'month' && (
+                <div
+                    className="nodrag absolute top-0 right-0 z-10 flex gap-0.5 rounded-md p-0.5"
+                    style={{ background: 'var(--app-bg)' }}
+                >
+                    <button
+                        className="rounded px-1.5 py-0.5 leading-none"
+                        style={chipStyle(monthStyle === 'grid')}
+                        title="Kalender-Raster"
+                        aria-label="Kalender-Raster"
+                        onClick={() => setMonthStyle('grid')}
+                    >
+                        <LayoutGrid size={13} />
+                    </button>
+                    <button
+                        className="rounded px-1.5 py-0.5 leading-none"
+                        style={chipStyle(monthStyle === 'bars')}
+                        title="Tagesbalken"
+                        aria-label="Tagesbalken"
+                        onClick={() => setMonthStyle('bars')}
+                    >
+                        <BarChart3 size={13} />
+                    </button>
+                </div>
+            )}
             {range === 'month' && monthStyle === 'grid' ? (
                 <MonthGrid days={viewDays} decimals={decimals} loading={loading} onSelectDay={gotoDay} />
             ) : (
@@ -454,6 +462,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
                     )}
                 </div>
             )}
+            </div>
         </div>
     );
 }
@@ -500,6 +509,9 @@ function BarChart({
     const labelEvery = slotW >= 34 ? 1 : slotW >= 17 ? 2 : 5;
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maxVal);
     const fmtTick = (v: number) => (Number.isInteger(v) ? String(v) : formatNum(v, 1));
+    // "Heute" always gets a label; suppress a regular label right next to it so the
+    // two don't collide (e.g. "So 19" and "Di 21" in a 30-slot month bar view).
+    const todayIdx = days.findIndex((d) => d.isToday);
 
     return (
         <svg width={w} height={h} className="block nodrag">
@@ -527,7 +539,9 @@ function BarChart({
             {days.map((d, i) => {
                 const cx = padL + i * slotW + slotW / 2;
                 const bx = cx - barW / 2;
-                const label = `${WD[d.date.getDay()]} ${d.date.getDate()}.`;
+                // Thinned-out views (14/30-day) drop the weekday and keep just the day
+                // number, so labels stay narrow enough not to collide with a neighbour.
+                const label = slotW < 34 ? `${d.date.getDate()}.` : `${WD[d.date.getDay()]} ${d.date.getDate()}.`;
                 const hh = d.date.getHours();
                 const tip = hourMode
                     ? `${d.date.toLocaleDateString('de-DE')}, ${String(hh).padStart(2, '0')}–${String(hh + 1).padStart(2, '0')} Uhr: ${
@@ -536,7 +550,10 @@ function BarChart({
                     : `${d.date.toLocaleDateString('de-DE')}: ${
                           d.total === null ? 'keine Daten' : `${fmtTotal(d.total, decimals)} mm${d.isToday ? ' (läuft)' : ''}`
                       }`;
-                const showXLabel = !hourMode && (i % labelEvery === 0 || d.isToday);
+                const showXLabel =
+                    !hourMode &&
+                    (d.isToday ||
+                        (i % labelEvery === 0 && (todayIdx < 0 || Math.abs(i - todayIdx) >= 2)));
                 // Narrow bars (hour mode, 30-day view) are too tight for labels
                 // everywhere — always mark at least the period's peak. Hour mode
                 // never labels dry hours (24 zeros would be pure noise).
