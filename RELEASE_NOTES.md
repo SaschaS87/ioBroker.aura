@@ -25,3 +25,5 @@
 - Advanced chart - bar series keep empty windows empty instead of injecting a flat substitute line; two synthetic points on the window edges derailed the time-axis tick layout on empty day views
 - Advanced chart - day stepping no longer animates the window transition (the old day edge visibly flew across the chart)
 - Advanced chart - views without visible data keep a readable axis frame (time window + 0-1 value axis) instead of blank axes; the fallback is legend-aware, so hiding all series no longer blanks the chart
+- Heating (new) - heat-pump widget for STIEBEL ELTRON LWZ: a mode-aware status card that turns green while heating, blue while preparing hot water and neutral when idle, showing "compressor on since X min" and pump/defrost/electric-booster indicators
+- Heating - a 2x2 tile row below the status card shows flow/return temperature, spread, volume flow and outside temperature; renders frameless at full column width to match the other widgets

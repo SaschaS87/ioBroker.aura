@@ -309,6 +309,9 @@ export function Dashboard({
                                                             // roomclimate grows when its inline details
                                                             // panel expands — the bars below move down.
                                                             w.type === 'roomclimate' ||
+                                                            // heating grows with its tiles / accordion content
+                                                            // so it never overflows its grid cell.
+                                                            w.type === 'heating' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&
                                                                 wl !== 'minimal' &&

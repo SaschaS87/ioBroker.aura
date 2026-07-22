@@ -111,6 +111,10 @@ const ClimateWidget = lazyWithReload(() =>
 const RoomClimateWidget = lazyWithReload(() =>
     import('../widgets/RoomClimateWidget').then((m) => ({ default: m.RoomClimateWidget })),
 );
+// HeatingWidget will pull in echarts for its detail chart later — lazy from the start.
+const HeatingWidget = lazyWithReload(() =>
+    import('../widgets/HeatingWidget').then((m) => ({ default: m.HeatingWidget })),
+);
 const EChartWidget = lazyWithReload(() => import('../widgets/EChartWidget').then((m) => ({ default: m.EChartWidget })));
 const EChartsPresetWidget = lazyWithReload(() =>
     import('../widgets/EChartsPresetWidget').then((m) => ({ default: m.EChartsPresetWidget })),
@@ -386,6 +390,7 @@ function getWidgetMap() {
         roomclimate: RoomClimateWidget,
         rainstation: RainStationWidget,
         raindaily: RainDailyWidget,
+        heating: HeatingWidget,
         universal: UniversalWidget,
         enum: EnumWidget,
         light: LightWidget,
@@ -5931,7 +5936,10 @@ export function WidgetFrame({
         config.type === 'echartsPreset' ||
         // roomclimate pads itself: horizontal = widgetPadding (stays aligned with
         // other widgets), vertical fixed compact for the slim collapsed bar.
-        config.type === 'roomclimate';
+        config.type === 'roomclimate' ||
+        // heating: no outer frame (transparent) + no frame padding, so the inner
+        // status card and tiles span the full column width — each its own card.
+        config.type === 'heating';
 
     return (
         <div
