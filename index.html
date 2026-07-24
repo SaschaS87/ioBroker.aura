@@ -59,17 +59,33 @@
          propagiert auf iOS NICHT sauber bis #root). */
       body:has(.aura-page) { display: flex; flex-direction: column; }
       #root { flex: 1 1 auto; min-height: 0; }
-      /* Seitliche Notch-Raender (nur im Querformat relevant) */
+      /* Seitliche Notch-Raender: .aura-page haelt den Inhalt aus der Safe-Area
+         (links/rechts) heraus. Der Hintergrund dieser Streifen ist das dunkle
+         --app-bg (Inline-Style von .aura-page) -> UNTER der Tab-Leiste "atmen" die
+         Seitenstreifen im gleichen Dunkelblau wie der Inhalt (nicht eingeklemmt). */
       .aura-page {
         padding-left: env(safe-area-inset-left);
         padding-right: env(safe-area-inset-right);
       }
-      /* Kopfzeile ("Verbunden"-Leiste) bis unter die Statusleiste ziehen, damit
-         der Streifen hinter Uhr/WLAN/Akku die Kopfzeilen-Farbe (--app-surface)
-         bekommt - hell wie dunkel. 1rem = der urspruengliche py-4-Innenabstand. */
+      /* Kopfzeile UND Tab-Leiste randlos (full-bleed): ihre Flaeche (--app-surface)
+         und ihre untere Trennlinie laufen ueber die GANZE Breite - auch durch die
+         Notch-Streifen. Dazu per negativer Margin bis an die Bildschirmkante ziehen
+         und die Safe-Area als Innenabstand wieder aufschlagen, damit Logo/Tabs NICHT
+         unter die Notch rutschen. Die Kopfzeile zieht zusaetzlich bis unter die
+         Statusleiste (env(safe-area-inset-top)). Desktop: env(...) = 0 -> kein Effekt. */
       .aura-page .aura-header {
+        margin-left: calc(-1 * env(safe-area-inset-left));
+        margin-right: calc(-1 * env(safe-area-inset-right));
         padding-top: calc(0.5rem + env(safe-area-inset-top));
         padding-bottom: 0.5rem;
+        padding-left: calc(1rem + env(safe-area-inset-left));
+        padding-right: calc(1rem + env(safe-area-inset-right));
+      }
+      .aura-page .aura-tabs {
+        margin-left: calc(-1 * env(safe-area-inset-left));
+        margin-right: calc(-1 * env(safe-area-inset-right));
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
       }
       /* NUR der Dashboard-Inhalt scrollt (bei Bedarf) und haelt einen KLEINEN
          Abstand zum Home-Indicator. overscroll-behavior stoppt das Weiterziehen
