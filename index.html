@@ -3,9 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Aura" />
     <title>Aura – ioBroker Dashboard</title>
+    <script>
+      /* Statusleisten-Symbole (Uhr/WLAN/Akku) an Auras Hell/Dunkel-Modus koppeln:
+         dunkler Modus -> weisse Symbole (black-translucent), heller Modus ->
+         dunkle Symbole (default). Aura setzt dazu die Klasse 'dark' auf <html>.
+         iOS liest den Wert beim App-Start; nach einem Live-Wechsel ggf. die App
+         einmal schliessen und neu oeffnen, damit die Symbolfarbe umspringt. */
+      (function () {
+        var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        var KEY = 'aura-status-dark';
+        try {
+          var cached = localStorage.getItem(KEY);
+          if (meta && cached !== null) {
+            meta.setAttribute('content', cached === '1' ? 'black-translucent' : 'default');
+          }
+        } catch (e) {}
+        function sync() {
+          var dark = document.documentElement.classList.contains('dark');
+          if (meta) meta.setAttribute('content', dark ? 'black-translucent' : 'default');
+          try { localStorage.setItem(KEY, dark ? '1' : '0'); } catch (e) {}
+        }
+        new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        document.addEventListener('DOMContentLoaded', sync);
+      })();
+    </script>
     <style>
+      /* iOS-Homescreen-App: randlos. Auras Theme-Hintergrund fuellt die ganze
+         Flaeche bis an alle Kanten -> kein toter Balken oben/unten. Der Inhalt
+         wird nur aus Dynamic Island (oben) und Home-Indicator (unten) gehalten,
+         der Hintergrund laeuft darunter durch. */
+      html, body { background: var(--app-bg, #0f172a); }
+      /* Vollbild bis zur PHYSISCHEN Unterkante. iOS gibt einer Homescreen-Web-App
+         ein Fenster, das um env(safe-area-inset-bottom) (Home-Indicator, ~34px)
+         kuerzer ist als der Screen (per Messung belegt: innerHeight endet 34px
+         ueber der Kante). Deshalb Hoehe = 100dvh + safe-area-inset-bottom, damit
+         der Inhalt die Home-Indicator-Zone mitfuellt (kein toter Streifen unten).
+         KEIN position:fixed (reicht auf iOS nicht in die Zone). Gummiband gesperrt
+         per overflow:hidden + overscroll-behavior. Nur Frontend (:has(.aura-page)),
+         Admin bleibt normal scrollbar. */
+      html:has(.aura-page), body:has(.aura-page) {
+        height: calc(100dvh + env(safe-area-inset-bottom));
+        min-height: calc(100dvh + env(safe-area-inset-bottom));
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      /* Body als Flex-Spalte, #root fuellt sie per flex:1 -> die volle Hoehe
+         propagiert bis .aura-page/Scroll durch (die height:100%-Prozentkette
+         propagiert auf iOS NICHT sauber bis #root). */
+      body:has(.aura-page) { display: flex; flex-direction: column; }
+      #root { flex: 1 1 auto; min-height: 0; }
+      /* Seitliche Notch-Raender (nur im Querformat relevant) */
+      .aura-page {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+      /* Kopfzeile ("Verbunden"-Leiste) bis unter die Statusleiste ziehen, damit
+         der Streifen hinter Uhr/WLAN/Akku die Kopfzeilen-Farbe (--app-surface)
+         bekommt - hell wie dunkel. 1rem = der urspruengliche py-4-Innenabstand. */
+      .aura-page .aura-header {
+        padding-top: calc(0.5rem + env(safe-area-inset-top));
+        padding-bottom: 0.5rem;
+      }
+      /* NUR der Dashboard-Inhalt scrollt (bei Bedarf) und haelt einen KLEINEN
+         Abstand zum Home-Indicator. overscroll-behavior stoppt das Weiterziehen
+         auf die ganze Seite. Nicht die Tab-Leiste/Widget-Zeilen (gleiche Klasse). */
+      .aura-page .aura-scroll.inset-0 {
+        padding-bottom: 0.25rem;
+        overscroll-behavior: contain;
+      }
       #aura-boot {
         position: fixed; inset: 0;
         display: flex; flex-direction: column;
