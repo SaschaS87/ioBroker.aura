@@ -34,3 +34,5 @@
 - Charts - one shared navigation across heating, room climate and daily rain: Tag / 7 Tage / Monat chips, a date field that opens a Tag/Monat/Jahr wheel picker, and prev / Heute / next arrows that page by the active unit
 - Room climate - chart adopts the shared Tag / 7 Tage / Monat pager with the date-jump picker (replaces the old 6h/24h/7d/30d ranges)
 - Daily rain - chart adopts the same shared pager; the separate 14-day view was dropped for one consistent Tag / 7 Tage / Monat set
+- Heating - new collapsible "Warmwasser" box: hot-water actual temperature (sawtooth) over the reheat hysteresis band, with the target line
+- Heating - Heizkreis chart uses a fixed 0–70 °C scale by default (grows only if readings exceed it); Betrieb box got extra height so its legend no longer overlaps the compressor/pump timeline

@@ -33,6 +33,10 @@ const C = {
     soll: '#e0922f', // orange (HK1 target flow)
     verdichter: '#eab308', // yellow (compressor)
     pumpe: '#9ca3af', // grey (circuit pump)
+    wwIst: '#e8873a', // orange (hot-water actual temp — the hero line)
+    wwSoll: '#2f7fd6', // blue (hot-water target)
+    wwBand: 'rgba(47,127,214,0.16)', // light-blue hysteresis fill
+    wwHys: '#5aa0e0', // light-blue dashed band edges
     axis: '#888',
     axisLine: '#444',
     grid: '#333',
@@ -76,6 +80,13 @@ function buildBand(vl: Pt[], rl: Pt[]): { base: Pt[]; delta: Pt[] } {
     return { base, delta };
 }
 
+/** Fixed temperature-axis max: `base` by default, grown to the next 10° step only if data exceeds it. */
+function scaleMax(base: number, ...series: Pt[][]): number {
+    let m = 0;
+    for (const s of series) for (const p of s) if (p[1] > m) m = p[1];
+    return m > base ? Math.ceil(m / 10) * 10 : base;
+}
+
 /** Contiguous on-intervals (value ≥ 0.5) from a 0/1 series; an open run closes at windowEnd. */
 function onIntervals(pts: Pt[], windowEnd: number): [number, number, number][] {
     const iv: [number, number, number][] = [];
@@ -93,13 +104,18 @@ function onIntervals(pts: Pt[], windowEnd: number): [number, number, number][] {
 }
 
 export interface HeatingDetailsProps {
-    variant: 'circuit' | 'operation';
+    variant: 'circuit' | 'operation' | 'water';
     historyInstance: string;
     vorlaufDp: string;
     ruecklaufDp: string;
     sollDp?: string;
     verdichterDp?: string;
     pumpeDp?: string;
+    // Hot-water ('water') variant:
+    wwIstDp?: string;
+    wwSollDp?: string;
+    wwHysObenDp?: string;
+    wwHysUntenDp?: string;
     initialMode?: PeriodMode;
     chartHeight?: number;
 }
@@ -112,6 +128,10 @@ export function HeatingDetails({
     sollDp = '',
     verdichterDp = '',
     pumpeDp = '',
+    wwIstDp = '',
+    wwSollDp = '',
+    wwHysObenDp = '',
+    wwHysUntenDp = '',
     initialMode = 'day',
     chartHeight = 200,
 }: HeatingDetailsProps) {
@@ -143,6 +163,16 @@ export function HeatingDetails({
     });
 
     const echartSeries: EChartSeriesConfig[] = useMemo(() => {
+        if (variant === 'water') {
+            const list: EChartSeriesConfig[] = [];
+            // WW actual temp is dense (~1/2 min); raw keeps the sawtooth on day/week,
+            // month falls back to bucketing (overview) to stay under the point cap.
+            if (wwIstDp) list.push(win('wwIst', wwIstDp, C.wwIst, { raw: mode !== 'month' }));
+            if (wwSollDp) list.push(win('wwSoll', wwSollDp, C.wwSoll));
+            if (wwHysObenDp) list.push(win('wwOben', wwHysObenDp, C.wwHys));
+            if (wwHysUntenDp) list.push(win('wwUnten', wwHysUntenDp, C.wwHys));
+            return list;
+        }
         const list: EChartSeriesConfig[] = [
             win('vl', vorlaufDp, C.vorlauf, { raw: true }),
             win('rl', ruecklaufDp, C.ruecklauf, { raw: true }),
@@ -155,7 +185,7 @@ export function HeatingDetails({
         }
         return list;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [variant, vorlaufDp, ruecklaufDp, sollDp, verdichterDp, pumpeDp, historyInstance, viewWindow]);
+    }, [variant, vorlaufDp, ruecklaufDp, sollDp, verdichterDp, pumpeDp, wwIstDp, wwSollDp, wwHysObenDp, wwHysUntenDp, mode, historyInstance, viewWindow]);
 
     const dataMap = useMultiSeriesData(echartSeries, connected, subscribe, getState);
     const get = (id: string): Pt[] => dataMap.get(id)?.data ?? [];
@@ -164,7 +194,10 @@ export function HeatingDetails({
     const vl = get('vl');
     const rl = get('rl');
     const band = useMemo(() => buildBand(vl, rl), [vl, rl]);
-    const hasData = vl.length > 0 || rl.length > 0;
+    // Hot-water hysteresis band (reheat trigger zone): fill between UNTEN and OBEN.
+    const hysBand = useMemo(() => buildBand(get('wwOben'), get('wwUnten')), [dataMap]);
+    const hasData =
+        variant === 'water' ? get('wwIst').length > 0 || get('wwOben').length > 0 : vl.length > 0 || rl.length > 0;
 
     const xMin = viewWindow.start;
     const xMax = viewWindow.end;
@@ -233,6 +266,9 @@ export function HeatingDetails({
             legend.push('HK1-Soll');
         }
 
+        // Default temperature scale 0–60 °C; grow only if the data exceeds it.
+        const yMax = scaleMax(60, vl, rl, sollDp ? get('soll') : []);
+
         return {
             backgroundColor: 'transparent',
             animation: false,
@@ -248,7 +284,8 @@ export function HeatingDetails({
             },
             yAxis: {
                 type: 'value' as const,
-                scale: true,
+                min: 0,
+                max: yMax,
                 axisLabel: { ...commonAxisLabel, formatter: '{value}°' },
                 axisLine: { show: true, lineStyle: { color: C.axisLine } },
                 splitLine: { show: true, lineStyle: { color: C.grid } },
@@ -284,6 +321,8 @@ export function HeatingDetails({
     const operationOption = useMemo(() => {
         const verd = onIntervals(get('verd'), intervalEnd).map((iv) => [iv[0], iv[1], 1]);
         const pump = onIntervals(get('pump'), intervalEnd).map((iv) => [iv[0], iv[1], 0]);
+        // Default temperature scale 0–60 °C; grow only if the data exceeds it.
+        const yMax = scaleMax(60, vl, rl);
 
         const rowRect = (color: string) => ({
             type: 'custom' as const,
@@ -324,8 +363,8 @@ export function HeatingDetails({
                 itemHeight: 8,
             },
             grid: [
-                { left: 40, right: 12, top: 8, height: '52%' },
-                { left: 40, right: 12, top: '66%', height: '20%' },
+                { left: 40, right: 12, top: 10, height: '46%' },
+                { left: 40, right: 12, top: '60%', height: '20%' },
             ],
             xAxis: [
                 {
@@ -351,7 +390,8 @@ export function HeatingDetails({
                 {
                     type: 'value' as const,
                     gridIndex: 0,
-                    scale: true,
+                    min: 0,
+                    max: yMax,
                     axisLabel: { ...commonAxisLabel, formatter: '{value}°' },
                     axisLine: { show: true, lineStyle: { color: C.axisLine } },
                     splitLine: { show: true, lineStyle: { color: C.grid } },
@@ -395,6 +435,96 @@ export function HeatingDetails({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax]);
 
+    const waterOption = useMemo(() => {
+        const wwIst = get('wwIst');
+        const oben = get('wwOben');
+        const unten = get('wwUnten');
+
+        // Default temperature scale 0–60 °C; grow only if the data exceeds it.
+        const yMax = scaleMax(60, wwIst, oben);
+
+        const series: Record<string, unknown>[] = [];
+        const legend: string[] = [];
+        // Hysteresis band (reheat trigger zone): two stacked series spanning
+        // UNTEN..OBEN, BOTH named 'Hysterese' so the single legend entry toggles
+        // the whole band (fill + both dashed edges) on and off together.
+        if (oben.length || unten.length) {
+            series.push(
+                { name: 'Hysterese', type: 'line', stack: 'hys', data: hysBand.base, itemStyle: { color: C.wwHys }, areaStyle: { color: 'transparent' }, lineStyle: { color: C.wwHys, width: 1, type: 'dashed' }, showSymbol: false },
+                { name: 'Hysterese', type: 'line', stack: 'hys', data: hysBand.delta, itemStyle: { color: C.wwHys }, areaStyle: { color: C.wwBand }, lineStyle: { color: C.wwHys, width: 1, type: 'dashed' }, showSymbol: false },
+            );
+            legend.push('Hysterese');
+        }
+        if (wwSollDp) {
+            series.push({ name: 'WW-Soll', type: 'line', step: 'end', data: get('wwSoll'), itemStyle: { color: C.wwSoll }, lineStyle: { color: C.wwSoll, width: 1.5 }, showSymbol: false });
+            legend.push('WW-Soll');
+        }
+        // WW actual temp — the hero line, drawn last (on top).
+        series.push({ name: 'WW-Ist', type: 'line', data: wwIst, itemStyle: { color: C.wwIst }, lineStyle: { color: C.wwIst, width: 2 }, showSymbol: false });
+        legend.push('WW-Ist');
+
+        return {
+            backgroundColor: 'transparent',
+            animation: false,
+            grid: { left: 40, right: 12, top: 10, bottom: 40 },
+            legend: { data: legend, bottom: 0, textStyle: { color: C.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
+            xAxis: {
+                type: 'time' as const,
+                axisLabel: commonAxisLabel,
+                axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                splitLine: { show: false },
+                min: xMin,
+                max: xMax,
+            },
+            yAxis: {
+                type: 'value' as const,
+                min: 0,
+                max: yMax,
+                axisLabel: { ...commonAxisLabel, formatter: '{value}°' },
+                axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                splitLine: { show: true, lineStyle: { color: C.grid } },
+            },
+            tooltip: {
+                trigger: 'axis' as const,
+                ...tooltipBase,
+                formatter: (params: unknown) => {
+                    const all = (params as { seriesName: string; value: [number, number]; marker: string }[]).filter(
+                        (p) => p.seriesName && Array.isArray(p.value),
+                    );
+                    if (!all.length) return '';
+                    const t = new Date(all[0].value[0]).toLocaleString('de-DE', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                    });
+                    const lines: string[] = [];
+                    for (const p of all.filter((p) => p.seriesName !== 'Hysterese')) {
+                        const v = p.value[1];
+                        lines.push(`${p.marker} ${p.seriesName}: <b>${typeof v === 'number' ? formatNum(v, 1) : v}°C</b>`);
+                    }
+                    // Collapse the two 'Hysterese' series (UNTEN + delta) into one range line.
+                    const hys = all
+                        .filter((p) => p.seriesName === 'Hysterese')
+                        .map((p) => p.value[1])
+                        .filter((v) => typeof v === 'number') as number[];
+                    if (hys.length >= 2) {
+                        const lo = Math.max(hys[0], hys[1]);
+                        const width = Math.min(hys[0], hys[1]);
+                        lines.push(
+                            `<span style="display:inline-block;margin-right:4px;width:9px;height:9px;background:${C.wwHys}"></span>Hysterese: <b>${formatNum(lo, 1)}–${formatNum(lo + width, 1)}°C</b>`,
+                        );
+                    }
+                    return `${t}<br/>${lines.join('<br/>')}`;
+                },
+            },
+            series,
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataMap, hysBand, wwSollDp, xMin, xMax]);
+
+    const activeOption = variant === 'circuit' ? circuitOption : variant === 'operation' ? operationOption : waterOption;
+
     return (
         <div className="flex flex-col gap-2 w-full">
             <ChartPeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />
@@ -413,7 +543,7 @@ export function HeatingDetails({
                 )}
                 {hasData && (
                     <ReactECharts
-                        option={variant === 'circuit' ? circuitOption : operationOption}
+                        option={activeOption}
                         style={{ width: '100%', height: '100%' }}
                         opts={{ renderer: 'canvas' }}
                         notMerge

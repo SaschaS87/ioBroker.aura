@@ -39,6 +39,11 @@ const DEFAULT_DP = {
     chartRuecklaufDp: 'javascript.0.LWZ.HKP_RÜCKLAUFTEMP',
     chartSpreizungDp: 'javascript.0.LWZ.HKP_SPREIZUNG',
     sollHk1Dp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.SOLLWERT_HK1',
+    // Warmwasser chart
+    wwIstDp: 'stiebel-isg.0.Info.ANLAGE.WARMWASSER.WW_ISTTEMP',
+    wwSollDp: 'stiebel-isg.0.Info.ANLAGE.WARMWASSER.WW_SOLLTEMP',
+    wwHysObenDp: 'javascript.0.LWZ.WW_HYSTEMP_OBEN',
+    wwHysUntenDp: 'javascript.0.LWZ.WW_HYSTEMP_UNTEN',
     wmHeizenDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_HEIZEN_SUMME',
     wmWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_WW_SUMME',
     pHeizungDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LEISTUNGSAUFNAHME.P_HEIZUNG_SUMME',
@@ -137,8 +142,8 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const dp = (k: DpKey) => (o[k] as string) || DEFAULT_DP[k];
     const historyInstance = (o.historyInstance as string) || 'influxdb.0';
-    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | null>(null);
-    const toggleBox = (b: 'heizkreis' | 'betrieb') => {
+    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | null>(null);
+    const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser') => {
         if (editMode) return;
         setOpenBox((cur) => (cur === b ? null : b));
     };
@@ -258,6 +263,24 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
                         ruecklaufDp={dp('chartRuecklaufDp')}
                         verdichterDp={dp('verdichterDp')}
                         pumpeDp={dp('pumpeDp')}
+                        chartHeight={250}
+                    />
+                </CollapsibleBox>
+                <CollapsibleBox
+                    title="Warmwasser"
+                    subtitle="Ist · Soll · Hysterese"
+                    open={openBox === 'warmwasser'}
+                    onToggle={() => toggleBox('warmwasser')}
+                >
+                    <HeatingDetails
+                        variant="water"
+                        historyInstance={historyInstance}
+                        vorlaufDp={dp('chartVorlaufDp')}
+                        ruecklaufDp={dp('chartRuecklaufDp')}
+                        wwIstDp={dp('wwIstDp')}
+                        wwSollDp={dp('wwSollDp')}
+                        wwHysObenDp={dp('wwHysObenDp')}
+                        wwHysUntenDp={dp('wwHysUntenDp')}
                     />
                 </CollapsibleBox>
             </div>
