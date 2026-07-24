@@ -280,7 +280,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         addMode: 'free',
         widgetGroup: 'control',
         mock: { t: 'Regenmenge pro Tag', v: '4.4', u: 'mm' },
-        hint: 'Ein Balken je Kalendertag aus rain_today (7/14 Tage), Monatsansicht als Kalender-Raster; heutiger Balken läuft live mit',
+        hint: 'Ein Balken je Kalendertag aus rain_today (Tag / 7 Tage / Monat), Monatsansicht als Kalender-Raster; heutiger Balken läuft live mit',
     },
     {
         type: 'heating',

@@ -27,3 +27,10 @@
 - Advanced chart - views without visible data keep a readable axis frame (time window + 0-1 value axis) instead of blank axes; the fallback is legend-aware, so hiding all series no longer blanks the chart
 - Heating (new) - heat-pump widget for STIEBEL ELTRON LWZ: a mode-aware status card that turns green while heating, blue while preparing hot water and neutral when idle, showing "compressor on since X min" and pump/defrost/electric-booster indicators
 - Heating - a 2x2 tile row below the status card shows flow/return temperature, spread, volume flow and outside temperature; renders frameless at full column width to match the other widgets
+- Heating - all eleven displayed datapoints (mode/compressor, pump/defrost/booster, flow/return/spread/volume/outside) are now editor-configurable via picker fields grouped by section; an empty field falls back to the built-in LWZ/stiebel default, shown as a greyed placeholder
+- Heating - collapsible "Heizkreis" box: a flow/return spread band (green fill between the lines) with the HK1 target line; drawn from full-resolution history so the runs read smoothly
+- Heating - collapsible "Betrieb" box: the same spread band above a compact on/off timeline strip for compressor and circuit pump, so temperature runs read against their run times
+- Heating - chart views Tag / 7 Tage / Monat, with prev/next paging by day, week or month; tap the date to open a Tag/Monat/Jahr wheel picker and jump straight to any past period
+- Charts - one shared navigation across heating, room climate and daily rain: Tag / 7 Tage / Monat chips, a date field that opens a Tag/Monat/Jahr wheel picker, and prev / Heute / next arrows that page by the active unit
+- Room climate - chart adopts the shared Tag / 7 Tage / Monat pager with the date-jump picker (replaces the old 6h/24h/7d/30d ranges)
+- Daily rain - chart adopts the same shared pager; the separate 14-day view was dropped for one consistent Tag / 7 Tage / Monat set

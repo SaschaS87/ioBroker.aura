@@ -1753,6 +1753,126 @@ function RainDailyConfig({
     );
 }
 
+// ── HeatingConfig ─────────────────────────────────────────────────────────────
+// Config panel for the heating widget (STIEBEL LWZ 304 Trend). Every datapoint
+// the stage-1 widget shows is picker-backed here, so the sensors can be rewired
+// entirely from the admin UI. An empty field falls back to the real LWZ/stiebel
+// default baked into HeatingWidget — the placeholder shows that default so the
+// user always sees which datapoint is actually live.
+//
+// NOTE: this default map mirrors DEFAULT_DP in HeatingWidget.tsx. It is used ONLY
+// for the greyed-out placeholder (cosmetic); the real runtime fallback lives in
+// the widget. Keep the two in sync when datapoints change.
+const HEATING_DEFAULT_DP: Record<string, string> = {
+    heizenDp: 'javascript.0.LWZ.HEIZEN',
+    warmwasserDp: 'javascript.0.LWZ.WARMWASSERAUFBEREITUNG',
+    verdichterDp: 'javascript.0.LWZ.VERDICHTER',
+    pumpeDp: 'javascript.0.LWZ.HEIZKREISPUMPE',
+    abtauenDp: 'javascript.0.LWZ.ABTAUEN_VERDAMPFER',
+    heizstabDp: 'javascript.0.LWZ.ELEKTRISCHE_NACHERWÄRMUNG',
+    vorlaufDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.VORLAUFTEMP',
+    ruecklaufDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.RÜCKLAUFTEMP',
+    spreizungDp: 'javascript.0.LWZ.SPREIZUNG',
+    volumenstromDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.VOLUMENSTROM',
+    aussenDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.AUSSENTEMPERATUR',
+};
+
+// Grouped so the panel reads like the widget: mode switch, process icons, tiles.
+const HEATING_DP_GROUPS: { title: string; fields: { key: string; label: string }[] }[] = [
+    {
+        title: 'Status & Modus',
+        fields: [
+            { key: 'heizenDp', label: 'Heizen aktiv (grün)' },
+            { key: 'warmwasserDp', label: 'Warmwasser aktiv (blau)' },
+            { key: 'verdichterDp', label: 'Verdichter (für „seit X min")' },
+        ],
+    },
+    {
+        title: 'Prozess-Anzeigen',
+        fields: [
+            { key: 'pumpeDp', label: 'Heizkreispumpe' },
+            { key: 'abtauenDp', label: 'Abtauen Verdampfer' },
+            { key: 'heizstabDp', label: 'Elektr. Nacherwärmung (Heizstab)' },
+        ],
+    },
+    {
+        title: 'Messwerte (Kacheln)',
+        fields: [
+            { key: 'vorlaufDp', label: 'Vorlauftemperatur' },
+            { key: 'ruecklaufDp', label: 'Rücklauftemperatur' },
+            { key: 'spreizungDp', label: 'Spreizung' },
+            { key: 'volumenstromDp', label: 'Volumenstrom' },
+            { key: 'aussenDp', label: 'Außentemperatur' },
+        ],
+    },
+];
+
+function HeatingConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (field: string) => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                Heizung – Datenpunkte
+            </p>
+            <p className="text-[10px] mb-2" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
+                Leer lassen = grau angezeigter Standard-Datenpunkt wird verwendet.
+            </p>
+
+            {HEATING_DP_GROUPS.map((grp) => (
+                <div key={grp.title} className="mb-2">
+                    <div
+                        className="text-[10px] font-semibold uppercase tracking-wider pt-1 mb-1"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
+                        {grp.title}
+                    </div>
+                    {grp.fields.map((f) => (
+                        <div key={f.key} className="mb-1.5">
+                            <label className="text-[11px] mb-0.5 block" style={{ color: 'var(--text-secondary)' }}>
+                                {f.label}
+                            </label>
+                            <div className="flex gap-1">
+                                <input
+                                    type="text"
+                                    value={(o[f.key] as string) ?? ''}
+                                    placeholder={HEATING_DEFAULT_DP[f.key] ?? 'optional'}
+                                    onChange={(e) => set({ [f.key]: e.target.value || undefined })}
+                                    className={inputCls}
+                                    style={inputStyle}
+                                />
+                                <button
+                                    onClick={() => onPickerOpen(f.key)}
+                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                    style={btnStyle}
+                                    title="Aus ioBroker wählen"
+                                >
+                                    <Database size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ))}
+        </>
+    );
+}
+
 // ── Single-panel coordinator ──────────────────────────────────────────────────
 // Ensures only one widget has an open dropdown at a time.
 
@@ -5534,6 +5654,7 @@ export function WidgetFrame({
         | 'climate_humidityDp'
         | 'climate_targetDp'
         | 'rainstation_dp'
+        | 'heating_dp'
         | 'iframe_urlDp'
         | 'image_dp'
         | 'light_switchDp'
@@ -5573,6 +5694,8 @@ export function WidgetFrame({
         idx: number;
         field: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp';
     }>({ idx: 0, field: 'todayDp' });
+    // Which heating option key the generic 'heating_dp' picker writes back into.
+    const [heatingPickerField, setHeatingPickerField] = useState<string>('heizenDp');
     const [mapQuickViewPicker, setMapQuickViewPicker] = useState<{ idx: number; field: 'jsonDp' | 'latDp' | 'lonDp' }>({
         idx: 0,
         field: 'latDp',
@@ -8887,6 +9010,16 @@ export function WidgetFrame({
                                 onPickerOpen={(idx) => {
                                     setRainStationPicker({ idx, field: 'todayDp' });
                                     setPickerTarget('rainstation_dp');
+                                }}
+                            />
+                        )}
+                        {config.type === 'heating' && (
+                            <HeatingConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(field) => {
+                                    setHeatingPickerField(field);
+                                    setPickerTarget('heating_dp');
                                 }}
                             />
                         )}
@@ -15961,7 +16094,9 @@ export function WidgetFrame({
                     currentValue={
                         pickerTarget === 'datapoint' || pickerTarget === 'universal-dp'
                             ? config.datapoint
-                            : pickerTarget === 'map_marker'
+                            : pickerTarget === 'heating_dp'
+                              ? ((config.options?.[heatingPickerField] as string) ?? '')
+                              : pickerTarget === 'map_marker'
                               ? (((config.options?.markers as Array<Record<string, unknown>>)?.[mapMarkerPicker.idx]?.[
                                     mapMarkerPicker.field
                                 ] as string) ?? '')
@@ -16383,6 +16518,8 @@ export function WidgetFrame({
                                 list[rainStationPicker.idx][rainStationPicker.field] = id;
                                 onConfigChange({ ...config, options: { ...config.options, stations: list } });
                             }
+                        } else if (pickerTarget === 'heating_dp') {
+                            onConfigChange({ ...config, options: { ...config.options, [heatingPickerField]: id } });
                         } else if (pickerTarget === 'climate_humidityDp') {
                             onConfigChange({ ...config, options: { ...config.options, humidityDatapoint: id } });
                         } else if (pickerTarget === 'climate_targetDp') {

@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { BarChart3, ChevronLeft, ChevronRight, CloudRain, LayoutGrid } from 'lucide-react';
+import { BarChart3, CloudRain, LayoutGrid } from 'lucide-react';
 import { getHistoryDirect } from '../../hooks/useIoBroker';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import type { WidgetProps } from '../../types';
 import { formatNum } from '../../utils/formatValue';
 import type { RainStationDef } from './RainStationWidget';
+import { ChartPeriodNav } from './ChartPeriodNav';
+import type { PeriodMode } from '../../utils/chartPeriod';
 
-type RangeKey = '7d' | '14d' | 'month' | 'day';
+type RangeKey = '7d' | 'month' | 'day';
 
-const RANGE_LABELS: Record<RangeKey, string> = { '7d': '7 Tage', '14d': '14 Tage', month: 'Monat', day: 'Tag' };
+// Map this widget's internal range keys to the shared period model and back, so
+// it shares the Tag / 7 Tage / Monat pager (incl. the wheel date-jump).
+const R2M: Record<RangeKey, PeriodMode> = { day: 'day', '7d': 'week', month: 'month' };
+const M2R: Record<PeriodMode, RangeKey> = { day: 'day', week: '7d', month: 'month' };
 
 // One calendar day in the visible window. `total` carries the honest tri-state:
 // number (incl. 0 = dry) / null = no data recorded for that day.
@@ -77,7 +82,6 @@ function fmtTotal(v: number, decimals: number): string {
     return formatNum(v, decimals);
 }
 
-const chipCls = 'nodrag shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity';
 const chipStyle = (active: boolean): CSSProperties => ({
     background: active ? 'var(--accent)' : 'var(--app-border)',
     color: active ? '#fff' : 'var(--text-secondary)',
@@ -90,7 +94,11 @@ export function RainDailyWidget({ config }: WidgetProps) {
     const decimals = (o.decimals as number) ?? 1;
 
     const [stationIdx, setStationIdx] = useState(0);
-    const [range, setRange] = useState<RangeKey>(((o.raindailyDefaultRange as RangeKey) ?? '7d'));
+    const [range, setRange] = useState<RangeKey>(() => {
+        const r = o.raindailyDefaultRange as string | undefined;
+        // '14d' was dropped when the pager unified to Tag / 7 Tage / Monat.
+        return r === 'day' || r === '7d' || r === 'month' ? r : '7d';
+    });
     // Month view style: calendar grid (patterns at a glance) or day bars (compare amounts).
     const [monthStyle, setMonthStyle] = useState<'grid' | 'bars'>(
         ((o.raindailyMonthStyle as 'grid' | 'bars') ?? 'grid'),
@@ -143,7 +151,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
             }
             return out;
         }
-        const len = range === '7d' ? 7 : 14;
+        const len = 7;
         const lastStart = addDays(today0, offset * len);
         const out: DayCell[] = [];
         for (let k = len - 1; k >= 0; k--) out.push(mk(addDays(lastStart, -k)));
@@ -280,15 +288,6 @@ export function RainDailyWidget({ config }: WidgetProps) {
         return () => ro.disconnect();
     }, [range, monthStyle]);
 
-    const fmtDay = (d: Date) =>
-        d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-    const periodLabel =
-        range === 'day'
-            ? windowDays[0].date.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })
-            : range === 'month'
-              ? windowDays[0].date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-              : `${fmtDay(windowDays[0].date)} – ${fmtDay(windowDays[windowDays.length - 1].date)}`;
-
     if (n === 0) {
         return (
             <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--text-secondary)' }}>
@@ -329,53 +328,17 @@ export function RainDailyWidget({ config }: WidgetProps) {
                 )}
             </div>
 
-            {/* Range chips + period pager */}
-            <div className="flex items-center gap-1 shrink-0 mb-1 min-w-0">
-                <div className="nodrag flex gap-1 min-w-0 overflow-x-auto aura-no-scrollbar">
-                    {(Object.keys(RANGE_LABELS) as RangeKey[]).map((r) => (
-                        <button
-                            key={r}
-                            className={chipCls}
-                            style={chipStyle(range === r)}
-                            onClick={() => {
-                                setRange(r);
-                                setOffset(0);
-                            }}
-                        >
-                            {RANGE_LABELS[r]}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex items-center gap-1 shrink-0 ml-auto">
-                    <span className="text-[10px] font-medium mr-1 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-                        {periodLabel}
-                    </span>
-                    <button
-                        className={chipCls}
-                        style={chipStyle(false)}
-                        title={range === 'month' ? 'Einen Monat zurück' : range === 'day' ? 'Einen Tag zurück' : 'Zeitraum zurück'}
-                        onClick={() => setOffset((v) => v - 1)}
-                    >
-                        <ChevronLeft size={12} />
-                    </button>
-                    <button
-                        className={chipCls}
-                        style={chipStyle(offset === 0)}
-                        title="Zum aktuellen Zeitraum"
-                        onClick={() => setOffset(0)}
-                    >
-                        Heute
-                    </button>
-                    <button
-                        className={`${chipCls} disabled:opacity-40`}
-                        style={chipStyle(false)}
-                        title={range === 'month' ? 'Einen Monat vor' : range === 'day' ? 'Einen Tag vor' : 'Zeitraum vor'}
-                        disabled={offset >= 0}
-                        onClick={() => setOffset((v) => (v < 0 ? v + 1 : v))}
-                    >
-                        <ChevronRight size={12} />
-                    </button>
-                </div>
+            {/* Range chips + period pager (shared across all dashboard charts) */}
+            <div className="shrink-0 mb-1 min-w-0">
+                <ChartPeriodNav
+                    mode={R2M[range]}
+                    offset={offset}
+                    onMode={(m) => {
+                        setRange(M2R[m]);
+                        setOffset(0);
+                    }}
+                    onOffset={setOffset}
+                />
             </div>
 
             {/* Station chips */}

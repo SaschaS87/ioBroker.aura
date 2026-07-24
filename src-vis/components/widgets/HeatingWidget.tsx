@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Flame, Droplet, Power, RefreshCw, Snowflake, Zap, type LucideIcon } from 'lucide-react';
+import { useState, useEffect, type ReactNode } from 'react';
+import { Flame, Droplet, Power, RefreshCw, Snowflake, Zap, ChevronDown, type LucideIcon } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
+import { HeatingDetails } from './HeatingDetails';
 import type { WidgetProps } from '../../types';
 
 /**
@@ -32,6 +33,12 @@ const DEFAULT_DP = {
     ruecklaufDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.RÜCKLAUFTEMP',
     spreizungDp: 'javascript.0.LWZ.SPREIZUNG',
     volumenstromDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.VOLUMENSTROM',
+    // Chart-only datapoints: the pump-gated LWZ helpers that carry real history
+    // in InfluxDB (the tiles above use the momentary stiebel Info.* values).
+    chartVorlaufDp: 'javascript.0.LWZ.HKP_VORLAUFTEMP',
+    chartRuecklaufDp: 'javascript.0.LWZ.HKP_RÜCKLAUFTEMP',
+    chartSpreizungDp: 'javascript.0.LWZ.HKP_SPREIZUNG',
+    sollHk1Dp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.SOLLWERT_HK1',
     wmHeizenDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_HEIZEN_SUMME',
     wmWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_WW_SUMME',
     pHeizungDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LEISTUNGSAUFNAHME.P_HEIZUNG_SUMME',
@@ -80,9 +87,61 @@ function Tile({ label, value, color }: { label: string; value: string; color?: s
     );
 }
 
-export function HeatingWidget({ config }: WidgetProps) {
+// Collapsible card (mobile-first). Header toggles an inline panel below it; the
+// widget is on the autoHeight list, so the cell grows to fit the expanded chart.
+function CollapsibleBox({
+    title,
+    subtitle,
+    open,
+    onToggle,
+    children,
+}: {
+    title: string;
+    subtitle?: string;
+    open: boolean;
+    onToggle: () => void;
+    children: ReactNode;
+}) {
+    return (
+        <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}>
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle();
+                }}
+                className="flex items-center w-full text-left focus:outline-none"
+                style={{ background: 'transparent', padding: '11px 12px', gap: 10 }}
+            >
+                <span className="flex-1" style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 500 }}>
+                    {title}
+                    {subtitle && (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{subtitle}</span>
+                    )}
+                </span>
+                <ChevronDown
+                    size={16}
+                    className="shrink-0 transition-transform duration-200"
+                    style={{ color: 'var(--text-secondary)', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                />
+            </button>
+            {open && (
+                <div style={{ borderTop: '1px solid var(--widget-border)', padding: '10px 12px 12px' }} onClick={(e) => e.stopPropagation()}>
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export function HeatingWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const dp = (k: DpKey) => (o[k] as string) || DEFAULT_DP[k];
+    const historyInstance = (o.historyInstance as string) || 'influxdb.0';
+    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | null>(null);
+    const toggleBox = (b: 'heizkreis' | 'betrieb') => {
+        if (editMode) return;
+        setOpenBox((cur) => (cur === b ? null : b));
+    };
 
     const { value: heizenVal } = useDatapoint(dp('heizenDp'));
     const { value: warmwasserVal } = useDatapoint(dp('warmwasserDp'));
@@ -168,6 +227,39 @@ export function HeatingWidget({ config }: WidgetProps) {
                 <Tile label="Spreizung" value={spreizung !== null ? `${formatNum(spreizung, 1)} K` : '–'} color="#2f7fd6" />
                 <Tile label="Volumenstrom" value={volumenstrom !== null ? `${formatNum(volumenstrom, 0)} l/min` : '–'} />
                 <Tile label="Außentemperatur" value={aussen !== null ? `${formatNum(aussen, 1)} °C` : '–'} />
+            </div>
+
+            {/* Collapsible detail boxes (charts mount only when opened) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                <CollapsibleBox
+                    title="Heizkreis"
+                    subtitle="Vorlauf/Rücklauf · HK1-Soll"
+                    open={openBox === 'heizkreis'}
+                    onToggle={() => toggleBox('heizkreis')}
+                >
+                    <HeatingDetails
+                        variant="circuit"
+                        historyInstance={historyInstance}
+                        vorlaufDp={dp('chartVorlaufDp')}
+                        ruecklaufDp={dp('chartRuecklaufDp')}
+                        sollDp={dp('sollHk1Dp')}
+                    />
+                </CollapsibleBox>
+                <CollapsibleBox
+                    title="Betrieb"
+                    subtitle="Was lief wann"
+                    open={openBox === 'betrieb'}
+                    onToggle={() => toggleBox('betrieb')}
+                >
+                    <HeatingDetails
+                        variant="operation"
+                        historyInstance={historyInstance}
+                        vorlaufDp={dp('chartVorlaufDp')}
+                        ruecklaufDp={dp('chartRuecklaufDp')}
+                        verdichterDp={dp('verdichterDp')}
+                        pumpeDp={dp('pumpeDp')}
+                    />
+                </CollapsibleBox>
             </div>
         </div>
     );

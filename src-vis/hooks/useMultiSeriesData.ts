@@ -28,6 +28,14 @@ export interface EChartSeriesConfig {
      * let the chart interpolate across days.
      */
     aggregate?: 'average' | 'minmax' | 'max' | 'min' | 'total';
+    /**
+     * Override the automatic aggregation bucket. `0` forces RAW data (no bucketing) — right for
+     * sparse, minute-resolution helpers whose sharp ramps get flattened by the default 15-min/1-h
+     * buckets. A positive value sets the bucket size in ms.
+     */
+    historyStepMs?: number;
+    /** Max points to fetch (default 1000). Raise for raw high-density fetches. */
+    historyMaxCount?: number;
 }
 
 export interface SeriesDataResult {
@@ -180,6 +188,8 @@ export function useMultiSeriesData(
             s.historyStart,
             s.historyEnd,
             s.aggregate,
+            s.historyStepMs,
+            s.historyMaxCount,
         ]),
     );
 
@@ -242,11 +252,13 @@ export function useMultiSeriesData(
             const now = Date.now();
             const end = hasAbsWindow ? Math.min(s.historyEnd as number, now) : now;
             const start = hasAbsWindow ? (s.historyStart as number) : end - rangeMs;
-            const step = hasAbsWindow
+            let step = hasAbsWindow
                 ? getStepForMs(rangeMs)
                 : range === 'custom'
                   ? getStepForMs(rangeMs)
                   : RANGE_STEP[range];
+            // Per-series override: 0 → raw (no bucketing), >0 → explicit bucket ms.
+            if (typeof s.historyStepMs === 'number') step = s.historyStepMs > 0 ? s.historyStepMs : undefined;
 
             getHistoryDirect(s.datapointId, {
                 instance: s.historyInstance,
@@ -254,7 +266,7 @@ export function useMultiSeriesData(
                 end,
                 step,
                 aggregate: step ? (s.aggregate ?? 'average') : 'none',
-                count: 1000,
+                count: s.historyMaxCount ?? 1000,
             })
                 .then((entries: HistoryEntry[]) => {
                     if (isStale()) return;

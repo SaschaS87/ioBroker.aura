@@ -1,5 +1,4 @@
 import type { WidgetConfig, ClickAction } from '../../../types';
-import type { EChartTimeRange } from '../../../hooks/useMultiSeriesData';
 import { RoomClimateDetails } from '../RoomClimateDetails';
 
 interface Props {
@@ -24,8 +23,6 @@ export function RoomtemperaturePopupBody({ widget, action }: Props) {
                 title={widget.title ?? 'Temperatur'}
                 decimals={widget.options?.decimals as number | undefined}
                 showCurrentHeader
-                initialRange={(widget.options?.echartRange as EChartTimeRange | undefined) ?? '24h'}
-                enableDayNav={(widget.options?.echartDayNav as boolean | undefined) ?? true}
             />
         </div>
     );

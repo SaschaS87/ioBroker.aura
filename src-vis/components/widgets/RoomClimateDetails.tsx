@@ -1,15 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { BarChart2, ChevronLeft, ChevronRight, Droplets, Loader, TrendingDown, TrendingUp } from 'lucide-react';
+import { BarChart2, Droplets, Loader, TrendingDown, TrendingUp } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
-import { useMultiSeriesData, type EChartSeriesConfig, type EChartTimeRange } from '../../hooks/useMultiSeriesData';
+import { useMultiSeriesData, type EChartSeriesConfig } from '../../hooks/useMultiSeriesData';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
 import { formatNum } from '../../utils/formatValue';
-import { RANGE_LABELS } from '../../hooks/useChartHistory';
-
-// Same default window set as the rain tab (no 1h).
-const DEFAULT_RANGES: EChartTimeRange[] = ['6h', '24h', '7d', '30d'];
+import { ChartPeriodNav } from './ChartPeriodNav';
+import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 
 // Muted accents (soft coral / blue-gray) — deliberately calmer than the theme's
 // signal colors. ECharts renders to canvas, so the chart colors must be literal
@@ -29,8 +27,7 @@ export interface RoomClimateDetailsProps {
     decimals?: number;
     /** Big current temp + humidity header (popup: yes, inline expand: no). */
     showCurrentHeader?: boolean;
-    initialRange?: EChartTimeRange;
-    enableDayNav?: boolean;
+    initialMode?: PeriodMode;
     chartHeight?: number;
 }
 
@@ -41,8 +38,7 @@ export function RoomClimateDetails({
     title = 'Temperatur',
     decimals: decimalsProp,
     showCurrentHeader = true,
-    initialRange = '24h',
-    enableDayNav = true,
+    initialMode = 'day',
     chartHeight = 192,
 }: RoomClimateDetailsProps) {
     const { subscribe, getState, connected } = useIoBroker();
@@ -54,18 +50,9 @@ export function RoomClimateDetails({
     const temp = typeof rawTemp === 'number' ? rawTemp : null;
     const humidity = typeof rawHumidity === 'number' ? rawHumidity : null;
 
-    const [activeRange, setActiveRange] = useState<EChartTimeRange>(initialRange);
-    const [dayOffset, setDayOffset] = useState<number | null>(null);
-
-    const dayWindow = useMemo(() => {
-        if (!enableDayNav || dayOffset === null) return null;
-        const d = new Date();
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + dayOffset);
-        const e = new Date(d);
-        e.setDate(e.getDate() + 1);
-        return { start: d.getTime(), end: e.getTime() };
-    }, [enableDayNav, dayOffset]);
+    const [mode, setMode] = useState<PeriodMode>(initialMode);
+    const [offset, setOffset] = useState(0);
+    const viewWindow = useMemo(() => periodWindow(mode, offset), [mode, offset]);
 
     const echartSeries: EChartSeriesConfig[] = useMemo(
         () => [
@@ -80,12 +67,11 @@ export function RoomClimateDetails({
                 yAxisIndex: 0,
                 smooth: true,
                 lineWidth: 2,
-                ...(dayWindow
-                    ? { historyStart: dayWindow.start, historyEnd: dayWindow.end }
-                    : { historyRange: activeRange }),
+                historyStart: viewWindow.start,
+                historyEnd: viewWindow.end,
             },
         ],
-        [temperatureDp, title, historyInstance, activeRange, dayWindow],
+        [temperatureDp, title, historyInstance, viewWindow],
     );
 
     const seriesDataMap = useMultiSeriesData(echartSeries, connected, subscribe, getState);
@@ -107,24 +93,16 @@ export function RoomClimateDetails({
     const echartsOption = useMemo(() => {
         return {
             backgroundColor: 'transparent',
-            // Same as EChartWidget: no morph animation while stepping days.
-            animation: dayWindow === null,
+            animation: false,
             grid: { left: 44, right: 12, top: 8, bottom: 24 },
-            // Same axis as EChartWidget: no custom label formatter — ECharts'
-            // automatic time-axis labels show hours for short ranges and the day
-            // number at midnight boundaries (a hand-rolled formatter printed the
-            // date even on 6h/24h views).
             xAxis: {
                 type: 'time' as const,
-                // No custom formatter/interval — ECharts' automatic labelling
-                // (same reasoning as EChartWidget: hand-rolled variants produced
-                // worse artefacts on narrow widths).
                 axisLabel: { color: '#888', fontSize: 10 },
                 axisTick: { show: true },
                 axisLine: { show: true, lineStyle: { color: '#444' } },
                 splitLine: { show: false },
-                min: dayWindow ? dayWindow.start : null,
-                max: dayWindow ? dayWindow.end : null,
+                min: viewWindow.start,
+                max: viewWindow.end,
             },
             yAxis: {
                 type: 'value',
@@ -160,8 +138,6 @@ export function RoomClimateDetails({
                 },
             ],
             legend: { show: false },
-            // Same tooltip as EChartWidget: axis trigger shows the nearest point
-            // on tap anywhere; tooltip is HTML, so CSS variables work here.
             tooltip: {
                 trigger: 'axis' as const,
                 backgroundColor: 'var(--app-surface, #1e1e1e)',
@@ -183,13 +159,7 @@ export function RoomClimateDetails({
                 },
             },
         };
-    }, [chartData, dayWindow, title, decimals]);
-
-    // Same button styling as EChartWidget's range chips / day nav.
-    const navBtnStyle = (active: boolean): React.CSSProperties => ({
-        background: active ? 'var(--accent)' : 'var(--app-border)',
-        color: active ? '#fff' : 'var(--text-secondary)',
-    });
+    }, [chartData, viewWindow, title, decimals]);
 
     return (
         <div className="flex flex-col gap-2 w-full">
@@ -239,106 +209,23 @@ export function RoomClimateDetails({
                 )}
             </div>
 
-            {/* Range chips left, day nav right — one line, identical to EChartWidget:
-                chips scroll horizontally on narrow widgets instead of wrapping. */}
-            <div className="shrink-0 flex items-center justify-between gap-2 min-w-0">
-                <div className="flex gap-1 min-w-0 overflow-x-auto aura-no-scrollbar">
-                    {DEFAULT_RANGES.map((r) => {
-                        const active = dayOffset === null && activeRange === r;
-                        return (
-                            <button
-                                key={r}
-                                className="shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity"
-                                style={navBtnStyle(active)}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDayOffset(null);
-                                    setActiveRange(r);
-                                }}
-                            >
-                                {RANGE_LABELS[r]}
-                            </button>
-                        );
-                    })}
-                </div>
-                {enableDayNav && (
-                    <div className="flex items-center gap-1 shrink-0">
-                        {/* Date label sits LEFT of the buttons (same as EChartWidget) */}
-                        {dayWindow && (
-                            <span
-                                className="text-[10px] font-medium mr-1 whitespace-nowrap"
-                                style={{ color: 'var(--text-secondary)' }}
-                            >
-                                {new Date(dayWindow.start).toLocaleDateString('de-DE', {
-                                    weekday: 'short',
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                })}
-                            </span>
-                        )}
-                        <button
-                            className="px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity"
-                            style={navBtnStyle(false)}
-                            title="Einen Tag zurück"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setDayOffset((prev) => (prev ?? 0) - 1);
-                            }}
-                        >
-                            <ChevronLeft size={12} />
-                        </button>
-                        <button
-                            className="px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity"
-                            style={navBtnStyle(dayOffset === 0)}
-                            title="Zum aktuellen Tag"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setDayOffset(0);
-                            }}
-                        >
-                            Heute
-                        </button>
-                        <button
-                            className="px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity disabled:opacity-40"
-                            style={navBtnStyle(false)}
-                            title="Einen Tag vor"
-                            disabled={dayOffset === null || dayOffset >= 0}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setDayOffset((prev) => (prev !== null && prev < 0 ? prev + 1 : prev));
-                            }}
-                        >
-                            <ChevronRight size={12} />
-                        </button>
-                    </div>
-                )}
-            </div>
+            <ChartPeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />
 
             {/* Chart — loader/empty states like EChartWidget */}
             <div className="relative w-full" style={{ height: chartHeight }}>
                 {isLoading && (
-                    <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{ color: 'var(--text-secondary)' }}
-                    >
+                    <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
                         <Loader size={20} className="animate-spin" />
                     </div>
                 )}
                 {!isLoading && !hasData && (
-                    <div
-                        className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-                        style={{ color: 'var(--text-secondary)' }}
-                    >
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--text-secondary)' }}>
                         <BarChart2 size={28} strokeWidth={1.5} />
                         <span className="text-xs">Keine Daten</span>
                     </div>
                 )}
                 {hasData && (
-                    <ReactECharts
-                        option={echartsOption}
-                        style={{ width: '100%', height: '100%' }}
-                        opts={{ renderer: 'canvas' }}
-                    />
+                    <ReactECharts option={echartsOption} style={{ width: '100%', height: '100%' }} opts={{ renderer: 'canvas' }} />
                 )}
             </div>
         </div>
