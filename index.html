@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -34,12 +34,27 @@
         document.addEventListener('DOMContentLoaded', sync);
       })();
     </script>
+    <script>
+      /* Seitenweites Pinch-Zoom verhindern: iOS Safari verschiebt nach einer
+         Pinch-Geste (auch nur auseinanderziehen und loslassen) manchmal den
+         sichtbaren Viewport dauerhaft gegenueber dem Layout-Viewport, wodurch
+         die randlose Kopfzeile (env(safe-area-inset-*), siehe .aura-header
+         unten) sichtbar verrutscht. Die viewport-Meta (user-scalable=no) allein
+         reicht auf iOS Safari/Homescreen-PWA oft nicht - deshalb zusaetzlich
+         die Safari-Gesture-Events abfangen. Betrifft NUR das Pinch-Zoom der
+         Seite: Leaflets eigenes Pinch-to-Zoom der Karte (MapWidget) laeuft
+         ueber touchstart/touchmove, ein separater Event-Strom, und bleibt
+         unberuehrt. */
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+        document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+      });
+    </script>
     <style>
       /* iOS-Homescreen-App: randlos. Auras Theme-Hintergrund fuellt die ganze
          Flaeche bis an alle Kanten -> kein toter Balken oben/unten. Der Inhalt
          wird nur aus Dynamic Island (oben) und Home-Indicator (unten) gehalten,
          der Hintergrund laeuft darunter durch. */
-      html, body { background: var(--app-bg, #0f172a); }
+      html, body { background: var(--app-bg, #0f172a); touch-action: pan-x pan-y; }
       /* Vollbild bis zur PHYSISCHEN Unterkante. iOS gibt einer Homescreen-Web-App
          ein Fenster, das um env(safe-area-inset-bottom) (Home-Indicator, ~34px)
          kuerzer ist als der Screen (per Messung belegt: innerHeight endet 34px
