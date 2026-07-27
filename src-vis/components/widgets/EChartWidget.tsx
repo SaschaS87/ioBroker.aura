@@ -627,6 +627,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             max: dayWindow ? dayWindow.end : visibleHasData ? null : Date.now(),
         },
         yAxis: [leftAxis, rightAxis],
+        dataZoom: [{ type: 'inside', zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
         series: seriesList,
     };
 
@@ -839,6 +840,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
                 )}
                 {hasSize && effHasData && (
                     <ReactECharts
+                        key={`${activeRange}-${activeCustomVal}-${activeCustomUnit}-${dayOffset}`}
                         ref={chartRef}
                         option={merged}
                         onEvents={onChartEvents}

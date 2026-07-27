@@ -112,6 +112,7 @@ export function RoomClimateDetails({
                 axisLine: { show: true, lineStyle: { color: '#444' } },
                 splitLine: { show: true, lineStyle: { color: '#333' } },
             },
+            dataZoom: [{ type: 'inside', zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
             series: [
                 {
                     name: title,
@@ -225,7 +226,12 @@ export function RoomClimateDetails({
                     </div>
                 )}
                 {hasData && (
-                    <ReactECharts option={echartsOption} style={{ width: '100%', height: '100%' }} opts={{ renderer: 'canvas' }} />
+                    <ReactECharts
+                        key={`${mode}-${offset}`}
+                        option={echartsOption}
+                        style={{ width: '100%', height: '100%' }}
+                        opts={{ renderer: 'canvas' }}
+                    />
                 )}
             </div>
         </div>

@@ -290,6 +290,7 @@ export function HeatingDetails({
                 axisLine: { show: true, lineStyle: { color: C.axisLine } },
                 splitLine: { show: true, lineStyle: { color: C.grid } },
             },
+            dataZoom: [{ type: 'inside' as const, zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
             tooltip: {
                 trigger: 'axis' as const,
                 ...tooltipBase,
@@ -406,6 +407,7 @@ export function HeatingDetails({
                     splitLine: { show: false },
                 },
             ],
+            dataZoom: [{ type: 'inside' as const, xAxisIndex: [0, 1], zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
             tooltip: {
                 trigger: 'axis' as const,
                 ...tooltipBase,
@@ -484,6 +486,7 @@ export function HeatingDetails({
                 axisLine: { show: true, lineStyle: { color: C.axisLine } },
                 splitLine: { show: true, lineStyle: { color: C.grid } },
             },
+            dataZoom: [{ type: 'inside' as const, zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
             tooltip: {
                 trigger: 'axis' as const,
                 ...tooltipBase,
@@ -543,6 +546,7 @@ export function HeatingDetails({
                 )}
                 {hasData && (
                     <ReactECharts
+                        key={`${mode}-${offset}`}
                         option={activeOption}
                         style={{ width: '100%', height: '100%' }}
                         opts={{ renderer: 'canvas' }}
