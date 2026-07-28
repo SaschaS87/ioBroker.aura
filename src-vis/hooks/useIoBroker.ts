@@ -47,6 +47,18 @@ let socket: IoBrokerSocket | null = null;
 const subscribers = new Map<string, Set<(state: ioBrokerState) => void>>();
 const connectionListeners = new Set<(connected: boolean) => void>();
 
+// Guards the resume-from-background bounce (see bounceSocketDebounced below).
+// Several independent "we just resumed" signals (visibilitychange, focus,
+// pageshow, the drift watchdog) can fire within a second or two of each other
+// for a single real resume. Without this, each one tore the socket down and
+// rebuilt it again — fine for a tab with a handful of subscriptions (it
+// finishes re-subscribing before the next trigger lands), but Wetter's ~120
+// datapoints take long enough that a second bounce reliably arrived mid-
+// resubscribe and cancelled it, leaving Wetter perpetually stuck while
+// smaller tabs completed cleanly. Stays true until the new socket actually
+// finishes reconnecting (handleConnected clears it), not just a fixed delay.
+let resumeBounceInFlight = false;
+
 // Perf: time from (re)connect to the first live stateChange — a proxy for how
 // quickly the dashboard receives usable data. Reported once per connection.
 let connectPerfMark = 0;
@@ -218,12 +230,54 @@ function createSocket(url: string): IoBrokerSocket {
                 subscribers.delete(id);
             }
         });
-        subscribers.forEach((callbacks, id) => {
-            s.emit('subscribe', id);
-            s.emit('getState', id, (_err: unknown, state: unknown) => {
-                if (state) callbacks.forEach((fn) => fn(state as ioBrokerState));
+        // Re-subscribing is spread across small batches instead of firing every
+        // "subscribe" + ack-based "getState" in one synchronous burst. A widget
+        // with a handful of datapoints (most of the app) never showed a problem
+        // either way, but Wetter's ~120 datapoints in a single burst reliably
+        // failed to refresh on reconnect — even triggered manually, on a fully
+        // awake, well-connected phone, ruling out background/timing as the
+        // cause. Whatever the exact limit is (server-side ack handling, socket
+        // buffer, or something specific to @iobroker/ws under a large burst of
+        // simultaneous ack-callbacks), spacing the requests out avoids it.
+        const ids = Array.from(subscribers.keys());
+        const BATCH_SIZE = 10;
+        const BATCH_DELAY_MS = 60;
+        let i = 0;
+        const sendNextBatch = (): void => {
+            const batch = ids.slice(i, i + BATCH_SIZE);
+            i += BATCH_SIZE;
+            batch.forEach((id) => {
+                const callbacks = subscribers.get(id);
+                if (!callbacks) return;
+                s.emit('subscribe', id);
+                s.emit('getState', id, (_err: unknown, state: unknown) => {
+                    if (state) {
+                        // ROOT CAUSE: this callback used to update each hook's own
+                        // React state directly but never touched the shared
+                        // stateCache. Reconnecting also flips `connected` on
+                        // useIoBroker(), which is a dependency of every
+                        // useDatapoint effect — that effect re-runs, and its
+                        // first move is `getStateFromCache(id)`. Since the cache
+                        // still held the pre-freeze value, that stale read fired
+                        // straight after this callback's fresh setDatapointState
+                        // and silently overwrote it — a live value that flashed
+                        // correct for an instant and then reverted. Keeping the
+                        // cache in sync here removes the stale value for that
+                        // subsequent re-run to find in the first place.
+                        stateCache.set(id, state as ioBrokerState);
+                        callbacks.forEach((fn) => fn(state as ioBrokerState));
+                    }
+                });
             });
-        });
+            if (i < ids.length) {
+                setTimeout(sendNextBatch, BATCH_DELAY_MS);
+            } else {
+                // Every batch has now been sent — safe to allow another
+                // resume-triggered bounce again.
+                resumeBounceInFlight = false;
+            }
+        };
+        sendNextBatch();
     };
 
     s.on('connect', () => handleConnected(false));
@@ -266,6 +320,72 @@ function createSocket(url: string): IoBrokerSocket {
 export function getSocket(): IoBrokerSocket {
     if (!socket) socket = createSocket(currentUrl);
     return socket;
+}
+
+// iOS (and some Android WebViews) fully suspend JS execution for a backgrounded
+// tab/home-screen PWA — the underlying transport dies silently while frozen,
+// with no chance for the socket library to ever run its own 'disconnect'
+// handler. On resume the socket object can keep self-reporting `connected:
+// true` (its last known state from before the freeze) while actually being a
+// zombie — emits go nowhere, callbacks never fire, and every widget keeps
+// showing values from right before the app was backgrounded.
+//
+// Confirmed on a real device: relying on 'visibilitychange' alone (the first
+// attempt here) is NOT enough — for an iOS "Add to Home Screen" standalone
+// web app, that event frequently does not fire at all when returning from the
+// app switcher (a known WebKit gap, not something we can fix from here). Any
+// fix relying solely on that event will silently fail on exactly the devices
+// that need it most.
+//
+// So: don't depend on any single "we just resumed" event. A timer-drift
+// watchdog sidesteps the whole problem — it doesn't need iOS to tell us
+// anything. A setInterval callback simply does not run while JS is frozen;
+// the moment execution resumes (for ANY reason), the overdue tick fires
+// immediately, and comparing the actual elapsed time to the expected interval
+// reveals the freeze directly. 'visibilitychange', 'focus' and 'pageshow' are
+// kept as fast-path extras (they do work on some devices/iOS versions), and a
+// short cooldown stops several signals firing at once from bouncing the
+// socket repeatedly in a burst.
+function bounceSocketDebounced(): void {
+    // Already mid-bounce (waiting for the new socket to finish reconnecting
+    // and re-subscribing everything) — a second trigger right now would only
+    // cancel that in-progress resubscribe burst, which is exactly the bug this
+    // guard exists to prevent. handleConnected() clears the flag once the
+    // full subscriber list has been re-sent, not after a fixed delay, so this
+    // can never get stuck open on a slow (but successful) reconnect.
+    if (resumeBounceInFlight) return;
+    resumeBounceInFlight = true;
+    bounceSocket();
+    // Safety net: if the new socket never manages to connect at all (genuinely
+    // offline, not just mid-reconnect), handleConnected() never runs and the
+    // flag would otherwise stay stuck true forever, permanently blocking any
+    // future resume bounce even once connectivity comes back. Force it open
+    // again after a generous timeout — harmless no-op if already cleared.
+    setTimeout(() => {
+        resumeBounceInFlight = false;
+    }, 20000);
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const WATCHDOG_INTERVAL_MS = 15000;
+    let lastTick = Date.now();
+    setInterval(() => {
+        const now = Date.now();
+        const drift = now - lastTick;
+        lastTick = now;
+        // Expected drift per tick is ~0; a huge overshoot means the timer (and
+        // everything else) was frozen for that long, not that the event loop
+        // is merely busy — only a real suspend produces multi-x drift like this.
+        if (drift > WATCHDOG_INTERVAL_MS * 3) bounceSocketDebounced();
+    }, WATCHDOG_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') bounceSocketDebounced();
+    });
+    window.addEventListener('focus', () => bounceSocketDebounced());
+    window.addEventListener('pageshow', (e) => {
+        if ((e as PageTransitionEvent).persisted) bounceSocketDebounced();
+    });
 }
 
 function bounceSocket(): void {

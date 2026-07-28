@@ -39,3 +39,5 @@
 - iOS home-screen app - in landscape the header and tab bar now span the full screen width, so their divider lines run edge to edge; the side safe-area margins below the tab bar use the page background color instead of the header color, so the content no longer looks boxed in
 - iOS home-screen app - page pinch-zoom is now blocked, so the header no longer shifts/misaligns after a pinch gesture (the map's own pinch-to-zoom still works)
 - Heating / Room climate / Advanced chart - two-finger pinch now zooms into the currently shown time range for a closer look at the data; the zoom resets when switching Tag/7 Tage/Monat
+- Weather (new) - forecast widget fed by Open-Meteo: current conditions card, 7 collapsible day cards with an hourly temperature/rain chart each, and a 15-minute rain nowcast strip
+- Weather - fixed a bug where reopening the app from the iOS background could show stale values even though the server already had fresh data

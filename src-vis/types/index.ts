@@ -54,6 +54,7 @@ export type WidgetType =
     | 'rainstation'
     | 'raindaily'
     | 'heating'
+    | 'weatherforecast'
     | 'universal'
     | 'enum'
     | 'light'
