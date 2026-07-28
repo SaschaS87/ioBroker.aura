@@ -50,6 +50,12 @@ const C = {
     future: 'rgba(224,146,47,0.16)',
 };
 
+// Left/right inset of the chart's plot area (must match `grid.left`/`grid.right`
+// below) — the rain-probability row reuses this exact value so its labels land
+// under the matching hour on the chart's time axis instead of just being
+// spread evenly across the widget's full width.
+const CHART_PAD_X = 34;
+
 const asNum = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
 function weatherIcon(code: number | null): LucideIcon {
@@ -230,18 +236,25 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
 
     // Rain-probability row (DWD-style): a few plain percentage readouts every
     // 3 hours, not a chart series — that's how the reference app shows it too.
+    // `frac` (0..1) is this sample's position along the SAME hour-0..hour-23
+    // span the chart's x-axis is pinned to (see `option` below), so the label
+    // row can be aligned under the matching point on the chart via CHART_PAD_X.
     const probSamples = useMemo(() => {
-        if (!hourly?.time) return [];
+        if (!hourly?.time || !points.length) return [];
         const dateStr = localDateStr(index);
-        const out: { hour: number; pct: number | null }[] = [];
+        const spanStart = points[0].t;
+        const spanEnd = points[points.length - 1].t;
+        const out: { hour: number; pct: number | null; frac: number }[] = [];
         for (let h = 0; h < 24; h += 3) {
             const key = `${dateStr}T${String(h).padStart(2, '0')}:00`;
             const idx = hourly.time.indexOf(key);
             const pct = idx >= 0 ? hourly.precipitation_probability?.[idx] : undefined;
-            out.push({ hour: h, pct: typeof pct === 'number' ? pct : null });
+            const t = spanStart + h * 3600000;
+            const frac = spanEnd > spanStart ? (t - spanStart) / (spanEnd - spanStart) : 0;
+            out.push({ hour: h, pct: typeof pct === 'number' ? pct : null, frac });
         }
         return out;
-    }, [hourly, index]);
+    }, [hourly, index, points]);
 
     const option = useMemo(() => {
         if (!points.length) return null;
@@ -311,7 +324,7 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
 
         return {
             animation: false,
-            grid: { left: 34, right: 34, top: 24, bottom: 22 },
+            grid: { left: CHART_PAD_X, right: CHART_PAD_X, top: 24, bottom: 22 },
             tooltip: {
                 trigger: 'axis' as const,
                 formatter: (raw: unknown) => {
@@ -332,6 +345,12 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
             },
             xAxis: {
                 type: 'time' as const,
+                // Pin the axis to exactly this day's data span (no ECharts
+                // "nice round number" auto-padding) so the probability row
+                // below — built from the same start/end via CHART_PAD_X —
+                // lines up hour-for-hour with this axis.
+                min: chartStart,
+                max: chartEnd,
                 axisLabel: { color: C.axis, fontSize: 10 },
                 axisLine: { lineStyle: { color: C.axisLine } },
             },
@@ -385,9 +404,25 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
             {probSamples.length > 0 && (
                 <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 9.5, color: 'var(--text-secondary)', opacity: 0.7, marginBottom: 3 }}>Niederschlagswahrscheinlichkeit</div>
-                    <div className="flex" style={{ gap: 2 }}>
+                    {/* position:absolute per label instead of equal-width flex columns —
+                        the samples sit 3h apart on a 24h axis, so equal columns are CLOSE
+                        but not exact, and drift further once combined with the chart's
+                        own CHART_PAD_X inset. Placing each label at its real frac (matching
+                        the chart's pinned xAxis min/max above) keeps them hour-for-hour
+                        under the chart regardless of widget width. */}
+                    <div style={{ position: 'relative', height: 28 }}>
                         {probSamples.map((s) => (
-                            <div key={s.hour} className="flex flex-col items-center" style={{ flex: '1 1 0' }}>
+                            <div
+                                key={s.hour}
+                                className="flex flex-col items-center"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: `calc(${CHART_PAD_X}px + ${s.frac} * (100% - ${CHART_PAD_X * 2}px))`,
+                                    transform: 'translateX(-50%)',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
                                 <span style={{ fontSize: 9, color: 'var(--text-secondary)', opacity: 0.6 }}>{String(s.hour).padStart(2, '0')}</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, color: s.pct && s.pct > 0 ? C.rain : 'var(--text-secondary)' }}>
                                     {s.pct !== null ? `${formatNum(s.pct, 0)}%` : '–'}

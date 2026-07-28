@@ -102,11 +102,19 @@
         padding-left: env(safe-area-inset-left);
         padding-right: env(safe-area-inset-right);
       }
-      /* NUR der Dashboard-Inhalt scrollt (bei Bedarf) und haelt einen KLEINEN
-         Abstand zum Home-Indicator. overscroll-behavior stoppt das Weiterziehen
-         auf die ganze Seite. Nicht die Tab-Leiste/Widget-Zeilen (gleiche Klasse). */
+      /* NUR der Dashboard-Inhalt scrollt (bei Bedarf) und haelt einen Abstand
+         zum Home-Indicator. overscroll-behavior stoppt das Weiterziehen auf
+         die ganze Seite. Nicht die Tab-Leiste/Widget-Zeilen (gleiche Klasse).
+         War frueher 0.25rem: bei hohem Tab-Inhalt (z.B. zwei gestapelten
+         Wetter-Widgets) reichte das auf iOS Safari nicht - die letzte Zeile
+         war nur waehrend des elastischen Ueberzieh-Gummibands sichtbar und
+         verschwand beim Loslassen wieder (normales Scrollen kam nicht ganz
+         bis ans Ende). Grosszuegigerer Puffer behebt das unabhaengig vom
+         genauen iOS-Mechanismus. KEIN env(safe-area-inset-bottom) hier - das
+         wuerde die bewusste "Inhalt fuellt bis zur physischen Kante"-Vollbild-
+         Loesung oben (100dvh + sab) wieder mit einer toten Zone unterlaufen. */
       .aura-page .aura-scroll.inset-0 {
-        padding-bottom: 0.25rem;
+        padding-bottom: 1.5rem;
         overscroll-behavior: contain;
       }
       #aura-boot {
