@@ -596,16 +596,15 @@ export function WeatherForecastWidget({ config, editMode }: WidgetProps) {
 
             {/* Datenherkunft — gilt für den ganzen Tab (aktuell, Nowcast, Tage),
                 deshalb ein einziger Footer statt in der Kopf-Karte. Kein Rahmen,
-                keine Karte — bewusst zurückhaltend. flex-wrap statt starrer
-                Einzeiligkeit, damit es auf schmalen Bildschirmen sauber umbricht. */}
-            <div
-                className="flex flex-wrap items-center justify-center"
-                style={{ gap: '4px 8px', fontSize: 10, color: 'var(--text-secondary)', opacity: 0.7, lineHeight: 1.5, marginTop: 10 }}
-            >
-                <span>Datenstand {localTime(modelRun)} Uhr</span>
-                <span>· verfügbar ab {localTime(modelAvailable)} Uhr</span>
-                <span>· nächste Berechnung {localTime(nextRun)} Uhr</span>
-                <span>· abgerufen um {localTime(lastFetch)} Uhr</span>
+                keine Karte — bewusst zurückhaltend. Zwei feste Zeilen (je 2 Werte)
+                statt Flex-Wrap, damit der Umbruch nicht vom Textinhalt abhängt. */}
+            <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--text-secondary)', opacity: 0.7, lineHeight: 1.5, marginTop: 10 }}>
+                <div>
+                    Datenstand {localTime(modelRun)} Uhr · verfügbar ab {localTime(modelAvailable)} Uhr
+                </div>
+                <div>
+                    nächste Berechnung {localTime(nextRun)} Uhr · abgerufen um {localTime(lastFetch)} Uhr
+                </div>
             </div>
         </div>
     );
