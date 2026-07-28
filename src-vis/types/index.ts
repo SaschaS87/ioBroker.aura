@@ -55,6 +55,7 @@ export type WidgetType =
     | 'raindaily'
     | 'heating'
     | 'weatherforecast'
+    | 'weatherforecaststrip'
     | 'universal'
     | 'enum'
     | 'light'

@@ -119,6 +119,10 @@ const HeatingWidget = lazyWithReload(() =>
 const WeatherForecastWidget = lazyWithReload(() =>
     import('../widgets/WeatherForecastWidget').then((m) => ({ default: m.WeatherForecastWidget })),
 );
+// WeatherForecastStripWidget — DWD-style day-strip alternative, same chart cost.
+const WeatherForecastStripWidget = lazyWithReload(() =>
+    import('../widgets/WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
+);
 const EChartWidget = lazyWithReload(() => import('../widgets/EChartWidget').then((m) => ({ default: m.EChartWidget })));
 const EChartsPresetWidget = lazyWithReload(() =>
     import('../widgets/EChartsPresetWidget').then((m) => ({ default: m.EChartsPresetWidget })),
@@ -396,6 +400,7 @@ function getWidgetMap() {
         raindaily: RainDailyWidget,
         heating: HeatingWidget,
         weatherforecast: WeatherForecastWidget,
+        weatherforecaststrip: WeatherForecastStripWidget,
         universal: UniversalWidget,
         enum: EnumWidget,
         light: LightWidget,
@@ -6070,7 +6075,10 @@ export function WidgetFrame({
         config.type === 'heating' ||
         // weatherforecast: same treatment — header/day-cards/nowcast are each
         // their own full-width card.
-        config.type === 'weatherforecast';
+        config.type === 'weatherforecast' ||
+        // weatherforecaststrip: same idea — the strip+detail shell is its own
+        // full-width card.
+        config.type === 'weatherforecaststrip';
 
     return (
         <div

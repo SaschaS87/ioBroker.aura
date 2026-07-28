@@ -13,6 +13,7 @@
 - Advanced chart - fixed periodic chart flicker when adapters re-write unchanged values
 - Panels - loop now wraps seamlessly onto the first/last slide instead of rewinding across the whole row
 - Advanced chart - stale history responses no longer override a newer range/day selection after rapid day stepping
+- Weather forecast (strip) - new widget type: swipeable 7-day strip with a shared detail panel (chart, rain probability, sun/rain/temperature groups) — alternative layout to the existing 7-card weather forecast widget
 - Daily rain widget (new) - one bar per calendar day computed client-side from raw rain_today history (7/14-day bars, month calendar grid); distinguishes dry days (0) from data gaps (–), today's bar grows live
 - Daily rain widget - day mode with hourly bars derived from the daily counter's increments (see when it rained), day-by-day paging, and tap-a-day drill-down from the bar and month views
 - Daily rain widget - month view toggles between calendar grid and day bars via a compact control in the chart's top-right corner (keeps the range chips from overflowing on phones); crowded bar views drop weekday names and always mark the period's peak

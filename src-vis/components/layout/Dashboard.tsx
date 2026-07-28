@@ -315,6 +315,9 @@ export function Dashboard({
                                                             // weatherforecast grows with its 7 collapsible
                                                             // day-cards, same reason as heating above.
                                                             w.type === 'weatherforecast' ||
+                                                            // weatherforecaststrip: same reason — detail panel
+                                                            // height changes when the chart mounts.
+                                                            w.type === 'weatherforecaststrip' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&
                                                                 wl !== 'minimal' &&
