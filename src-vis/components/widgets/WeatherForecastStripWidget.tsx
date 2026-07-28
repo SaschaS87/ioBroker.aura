@@ -167,17 +167,12 @@ function StripCell({ index, base, active, onSelect }: { index: number; base: str
                 {max !== null ? `${formatNum(max, 0)}°` : '–'}
                 <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}> {min !== null ? `${formatNum(min, 0)}°` : '–'}</span>
             </span>
-            <span className="inline-flex items-center gap-1" style={{ fontSize: 9.5, color: 'var(--accent, #2f7fd6)', minHeight: 12 }}>
-                {rainSum !== null && rainSum > 0 ? (
-                    <>
-                        <Droplet size={9} />
-                        {rainProb !== null ? `${formatNum(rainProb, 0)}%` : ''}
-                    </>
-                ) : rainProb !== null && rainProb > 0 ? (
-                    `${formatNum(rainProb, 0)}%`
-                ) : (
-                    ''
-                )}
+            {/* Stacked (not inline) so probability + amount both fit the narrow
+                64px cell without crowding — a single "40% · 3.2mm" line either
+                overflows or forces a tiny font at this width. */}
+            <span className="flex flex-col items-center" style={{ fontSize: 9, lineHeight: 1.3, color: C.rain, minHeight: 22 }}>
+                {rainProb !== null && rainProb > 0 && <span>{formatNum(rainProb, 0)}%</span>}
+                {rainSum !== null && rainSum > 0 && <span>{formatNum(rainSum, 1)}mm</span>}
             </span>
         </button>
     );
@@ -268,12 +263,21 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
         if (sunriseTs) markLineData.push({ xAxis: sunriseTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
         if (sunsetTs) markLineData.push({ xAxis: sunsetTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
 
+        // Non-overlapping shaded bands: grey "night" (before sunrise / after
+        // sunset, but only up to "now") and, today only, an orange-tinted
+        // "future" band from now to day's end. Night bands are clipped to end
+        // at `nowTs` so they never reach into the future band — stacking both
+        // used to double up their opacity into a single darker, oddly solid
+        // patch right where sunset and "still forecast" overlapped.
+        const nightEnd = isToday ? Math.min(nowTs, chartEnd) : chartEnd;
         const markAreaData: Record<string, unknown>[][] = [];
-        if (sunriseTs && sunriseTs > chartStart) markAreaData.push([{ xAxis: chartStart }, { xAxis: sunriseTs }]);
-        if (sunsetTs && sunsetTs < chartEnd) markAreaData.push([{ xAxis: sunsetTs }, { xAxis: chartEnd }]);
-        // Only today has an actual "already happened" portion — shade the rest
-        // of today's chart to flag it as still forecast, distinct from the
-        // grey night bands above.
+        if (sunriseTs && sunriseTs > chartStart) {
+            const end = Math.min(sunriseTs, nightEnd);
+            if (end > chartStart) markAreaData.push([{ xAxis: chartStart }, { xAxis: end }]);
+        }
+        if (sunsetTs && sunsetTs < nightEnd) {
+            markAreaData.push([{ xAxis: sunsetTs }, { xAxis: nightEnd }]);
+        }
         if (isToday && nowTs > chartStart && nowTs < chartEnd) {
             markAreaData.push([{ xAxis: nowTs, itemStyle: { color: C.future } }, { xAxis: chartEnd }]);
         }
@@ -287,7 +291,8 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
                       yAxisIndex: 0,
                       data: points.filter((p) => p.t <= nowTs).map((p) => [p.t, p.temp]),
                       showSymbol: true,
-                      symbolSize: 5,
+                      symbolSize: 3,
+                      itemStyle: { color: C.temp, borderWidth: 0 },
                       smooth: true,
                       color: C.temp,
                       lineStyle: { color: C.temp, width: 2 },
