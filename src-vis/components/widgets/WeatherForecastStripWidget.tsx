@@ -261,10 +261,8 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
                   showSymbol: true,
                   symbolSize: 3,
                   itemStyle: { color: C.temp, borderWidth: 0 },
-                  // Explicit emphasis (hover/tap) style identical to the normal one —
-                  // ECharts' default emphasis state enlarges the symbol with a light
-                  // fill, which read as an unwanted "filled circle" on hover.
-                  emphasis: { scale: false, itemStyle: { color: C.temp, borderWidth: 0 } },
+                  // Standard ECharts emphasis (hover/tap) behaviour — same as every
+                  // other chart in the app, deliberately not overridden.
                   smooth: true,
                   color: C.temp,
                   lineStyle: { color: C.temp, width: 2 },
@@ -400,9 +398,11 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
     return {
         animation: false,
         axisPointer: { link: [{ xAxisIndex: 'all' as const }] },
+        // Tight gap between the two grids (6px) — the probability strip reads
+        // as "part of the same chart", not a separate panel below it.
         grid: [
-            { left: CHART_PAD_X, right: CHART_PAD_X, top: 18, height: 104 },
-            { left: CHART_PAD_X, right: CHART_PAD_X, top: 146, height: 28 },
+            { left: CHART_PAD_X, right: CHART_PAD_X, top: 16, height: 90 },
+            { left: CHART_PAD_X, right: CHART_PAD_X, top: 112, height: 24 },
         ],
         tooltip: { trigger: 'axis' as const, axisPointer: { type: 'line' as const }, formatter: tooltipFormatter },
         xAxis: [
@@ -425,29 +425,14 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
     };
 }
 
-function RulerRow({ samples }: { samples: { hour: number; frac: number }[] }) {
-    return (
-        <div style={{ position: 'relative', height: 16 }}>
-            <div style={{ position: 'absolute', left: CHART_PAD_X, right: CHART_PAD_X, bottom: 0, borderBottom: '1px solid var(--widget-border)' }} />
-            {samples.map((s) => (
-                <span
-                    key={s.hour}
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: `calc(${CHART_PAD_X}px + ${s.frac} * (100% - ${CHART_PAD_X * 2}px))`,
-                        transform: 'translateX(-50%)',
-                        fontSize: 9,
-                        color: 'var(--text-secondary)',
-                        opacity: 0.75,
-                        whiteSpace: 'nowrap',
-                    }}
-                >
-                    {String(s.hour).padStart(2, '0')}
-                </span>
-            ))}
-        </div>
-    );
+// Interpolated RGB (not alpha-over-background) so low values stay clearly
+// visible against a dark widget background instead of fading toward
+// invisible — alpha alone made the whole band read as "barely there".
+const RIBBON_LOW: [number, number, number] = [56, 75, 98];
+const RIBBON_HIGH: [number, number, number] = [64, 170, 255];
+function mixRgb(t: number): string {
+    const c = RIBBON_LOW.map((lo, i) => Math.round(lo + (RIBBON_HIGH[i] - lo) * t));
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
 function ProbRibbon({ points }: { points: Pt[] }) {
@@ -455,8 +440,8 @@ function ProbRibbon({ points }: { points: Pt[] }) {
     const stops = points
         .map((p, i) => {
             const frac = i / (points.length - 1);
-            const alpha = 0.12 + Math.min(1, p.prob / 100) * 0.7;
-            return `rgba(47,127,214,${alpha.toFixed(2)}) ${(frac * 100).toFixed(1)}%`;
+            const t = Math.min(1, p.prob / 100);
+            return `${mixRgb(t)} ${(frac * 100).toFixed(1)}%`;
         })
         .join(', ');
     return (
@@ -528,34 +513,11 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
         return out;
     }, [hourly, index]);
 
-    // Rain-probability row (DWD-style): a few plain percentage readouts every
-    // 3 hours, not a chart series — that's how the reference app shows it too.
-    // `frac` (0..1) is this sample's position along the SAME hour-0..hour-23
-    // span the chart's x-axis is pinned to (see `option` below), so the label
-    // row can be aligned under the matching point on the chart via CHART_PAD_X.
-    const probSamples = useMemo(() => {
-        if (!hourly?.time || !points.length) return [];
-        const dateStr = localDateStr(index);
-        const spanStart = points[0].t;
-        const spanEnd = points[points.length - 1].t;
-        const out: { hour: number; pct: number | null; frac: number }[] = [];
-        for (let h = 0; h < 24; h += 3) {
-            const key = `${dateStr}T${String(h).padStart(2, '0')}:00`;
-            const idx = hourly.time.indexOf(key);
-            const pct = idx >= 0 ? hourly.precipitation_probability?.[idx] : undefined;
-            const t = spanStart + h * 3600000;
-            const frac = spanEnd > spanStart ? (t - spanStart) / (spanEnd - spanStart) : 0;
-            out.push({ hour: h, pct: typeof pct === 'number' ? pct : null, frac });
-        }
-        return out;
-    }, [hourly, index, points]);
-
-    const { optionA, optionB, optionC } = useMemo(() => {
+    const { optionB, optionC } = useMemo(() => {
         if (!points.length) return { optionA: null, optionB: null, optionC: null };
         const core = buildCoreSeries(points, sunrise, sunset, isToday);
         const formatter = buildTooltipFormatter(hourly);
         return {
-            optionA: buildSingleGridOption(core, false, formatter),
             optionB: buildDualGridOption(core, points, formatter),
             optionC: buildSingleGridOption(core, true, formatter),
         };
@@ -581,51 +543,15 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
                 )}
             </div>
 
-            {/* ── Variante A — gemeinsames Lineal ─────────────────────────── */}
-            <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 2 }}>
-                    Variante A · Gemeinsames Lineal
-                </div>
-                {probSamples.length > 0 && <RulerRow samples={probSamples} />}
-                {optionA ? (
-                    <ReactECharts option={optionA} notMerge style={{ height: 150 }} />
-                ) : (
-                    <div style={{ height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-                        Keine Stundendaten für diesen Tag
-                    </div>
-                )}
-                {probSamples.length > 0 && (
-                    <div style={{ position: 'relative', height: 24 }}>
-                        {probSamples.map((s) => (
-                            <div
-                                key={s.hour}
-                                style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: `calc(${CHART_PAD_X}px + ${s.frac} * (100% - ${CHART_PAD_X * 2}px))`,
-                                    transform: 'translateX(-50%)',
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: s.pct && s.pct > 0 ? C.rain : 'var(--text-secondary)',
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                {s.pct !== null ? `${formatNum(s.pct, 0)}%` : '–'}
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
             {/* ── Variante B — verbundenes Fadenkreuz ─────────────────────── */}
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--widget-border)' }}>
+            <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 4 }}>
                     Variante B · Verbundenes Fadenkreuz
                 </div>
                 {optionB ? (
-                    <ReactECharts option={optionB} notMerge style={{ height: 192 }} />
+                    <ReactECharts option={optionB} notMerge style={{ height: 156 }} />
                 ) : (
-                    <div style={{ height: 192, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    <div style={{ height: 156, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
                         Keine Stundendaten für diesen Tag
                     </div>
                 )}
