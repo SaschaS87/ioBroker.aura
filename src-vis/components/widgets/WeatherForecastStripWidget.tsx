@@ -45,9 +45,10 @@ const C = {
     axisLine: '#444',
     grid: '#333',
     night: 'rgba(136,136,136,0.14)',
-    // Tint for the "not measured yet" part of today's chart — same hue as the
-    // temperature line so it reads as "this temperature, but forecast".
-    future: 'rgba(224,146,47,0.16)',
+    // Neutral grey confidence-ribbon fill (DWD-style band hugging the future
+    // portion of the line) — deliberately NOT tinted with the temperature
+    // color, so it reads as "uncertainty", not as an unexplained colored block.
+    band: 'rgba(148,158,171,0.3)',
 };
 
 // Left/right inset of the chart's plot area (must match `grid.left`/`grid.right`
@@ -178,6 +179,298 @@ function StripCell({ index, base, active, onSelect }: { index: number; base: str
     );
 }
 
+// ── Chart-building shared by all 3 axis-alignment variants below ───────────
+// TEMPORARY: Sascha asked to compare 3 real, working variants side by side
+// (not just static mockups) before picking one — once he decides, this
+// splits back down to a single option-builder + render block.
+type Pt = { t: number; temp: number; rain: number; prob: number };
+
+function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | null, isToday: boolean) {
+    const nowTs = Date.now();
+    const sunriseTs = sunrise ? new Date(sunrise).getTime() : null;
+    const sunsetTs = sunset ? new Date(sunset).getTime() : null;
+    const chartStart = points[0].t;
+    const chartEnd = points[points.length - 1].t;
+
+    const markLineData: Record<string, unknown>[] = [];
+    if (sunriseTs) markLineData.push({ xAxis: sunriseTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
+    if (sunsetTs) markLineData.push({ xAxis: sunsetTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
+
+    // Grey "night" bands (before sunrise / after sunset), clipped to end at
+    // "now" for today so they never reach into the forecast portion.
+    const nightEnd = isToday ? Math.min(nowTs, chartEnd) : chartEnd;
+    const markAreaData: Record<string, unknown>[][] = [];
+    if (sunriseTs && sunriseTs > chartStart) {
+        const end = Math.min(sunriseTs, nightEnd);
+        if (end > chartStart) markAreaData.push([{ xAxis: chartStart }, { xAxis: end }]);
+    }
+    if (sunsetTs && sunsetTs < nightEnd) {
+        markAreaData.push([{ xAxis: sunsetTs }, { xAxis: nightEnd }]);
+    }
+
+    // Confidence ribbon for the forecast portion of today's line — an
+    // ECharts stacked-area pair (invisible lower bound + visible delta on top
+    // of it), so the band's top/bottom follow the temperature curve itself
+    // instead of a flat rectangle. Widens the further out it goes.
+    let bandSeries: Record<string, unknown>[] = [];
+    if (isToday && nowTs > chartStart && nowTs < chartEnd) {
+        const futurePoints = points.filter((p) => p.t >= nowTs);
+        const span = Math.max(1, chartEnd - nowTs);
+        const band = futurePoints.map((p) => {
+            const growth = (p.t - nowTs) / span;
+            const margin = 1 + growth * 1.8;
+            return { t: p.t, lower: p.temp - margin, delta: margin * 2 };
+        });
+        bandSeries = [
+            {
+                id: 'temp-band-lower',
+                type: 'line' as const,
+                stack: 'confidence-band',
+                yAxisIndex: 0,
+                data: band.map((b) => [b.t, b.lower]),
+                showSymbol: false,
+                symbol: 'none',
+                lineStyle: { opacity: 0 },
+                silent: true,
+                tooltip: { show: false },
+            },
+            {
+                id: 'temp-band-upper',
+                type: 'line' as const,
+                stack: 'confidence-band',
+                yAxisIndex: 0,
+                data: band.map((b) => [b.t, b.delta]),
+                showSymbol: false,
+                symbol: 'none',
+                lineStyle: { opacity: 0 },
+                areaStyle: { color: C.band },
+                silent: true,
+                tooltip: { show: false },
+            },
+        ];
+    }
+
+    const tempSeries: Record<string, unknown>[] = isToday
+        ? [
+              {
+                  id: 'temp-past',
+                  type: 'line' as const,
+                  name: 'Temperatur',
+                  yAxisIndex: 0,
+                  data: points.filter((p) => p.t <= nowTs).map((p) => [p.t, p.temp]),
+                  showSymbol: true,
+                  symbolSize: 3,
+                  itemStyle: { color: C.temp, borderWidth: 0 },
+                  // Explicit emphasis (hover/tap) style identical to the normal one —
+                  // ECharts' default emphasis state enlarges the symbol with a light
+                  // fill, which read as an unwanted "filled circle" on hover.
+                  emphasis: { scale: false, itemStyle: { color: C.temp, borderWidth: 0 } },
+                  smooth: true,
+                  color: C.temp,
+                  lineStyle: { color: C.temp, width: 2 },
+              },
+              {
+                  id: 'temp-future',
+                  type: 'line' as const,
+                  name: 'Temperatur (Prognose)',
+                  yAxisIndex: 0,
+                  data: points.filter((p) => p.t >= nowTs).map((p) => [p.t, p.temp]),
+                  showSymbol: false,
+                  smooth: true,
+                  color: C.temp,
+                  lineStyle: { color: C.temp, width: 2, type: 'dashed' as const },
+                  markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
+                  markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
+              },
+          ]
+        : [
+              {
+                  id: 'temp',
+                  type: 'line' as const,
+                  name: 'Temperatur',
+                  yAxisIndex: 0,
+                  data: points.map((p) => [p.t, p.temp]),
+                  showSymbol: false,
+                  smooth: true,
+                  color: C.temp,
+                  lineStyle: { color: C.temp, width: 2 },
+                  markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
+                  markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
+              },
+          ];
+
+    const rainSeries = {
+        id: 'rain',
+        type: 'bar' as const,
+        name: 'Regen',
+        yAxisIndex: 1,
+        data: points.map((p) => [p.t, p.rain]),
+        itemStyle: { color: C.rain },
+        barMaxWidth: 10,
+    };
+
+    return { rainSeries, tempSeries, bandSeries, chartStart, chartEnd };
+}
+
+// Shared axis-trigger tooltip. If the hovered point's series list doesn't
+// already include a probability series (variant B has its own), look the
+// value up from the raw hourly blob so A/C get "tap for the exact number"
+// without a dedicated series.
+function buildTooltipFormatter(hourly: HourlyBlob | null) {
+    return (raw: unknown) => {
+        const list = (Array.isArray(raw) ? raw : [raw]) as {
+            marker: string;
+            seriesName: string;
+            axisValue: number;
+            value: [number, number];
+        }[];
+        if (!list.length) return '';
+        const time = new Date(list[0].axisValue).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        const rows = list.map((p) => {
+            const unit = p.seriesName === 'Regen' ? 'mm' : p.seriesName === 'Regenwahrscheinlichkeit' ? '%' : '°C';
+            const decimals = p.seriesName === 'Regenwahrscheinlichkeit' ? 0 : 1;
+            return `${p.marker}${p.seriesName}: ${formatNum(p.value[1], decimals)} ${unit}`;
+        });
+        const hasProb = list.some((p) => p.seriesName === 'Regenwahrscheinlichkeit');
+        if (!hasProb && hourly?.time) {
+            let bestIdx = -1;
+            let bestDiff = Infinity;
+            for (let i = 0; i < hourly.time.length; i++) {
+                const diff = Math.abs(new Date(hourly.time[i]).getTime() - list[0].axisValue);
+                if (diff < bestDiff) {
+                    bestDiff = diff;
+                    bestIdx = i;
+                }
+            }
+            const pct = bestIdx >= 0 ? hourly.precipitation_probability?.[bestIdx] : undefined;
+            if (typeof pct === 'number') rows.push(`Regenwahrsch.: ${formatNum(pct, 0)} %`);
+        }
+        return [time, ...rows].join('<br/>');
+    };
+}
+
+const AXIS_COMMON = {
+    animation: false,
+    yAxisTemp: { type: 'value' as const, name: '°C', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { lineStyle: { color: C.grid } } },
+    yAxisRain: { type: 'value' as const, name: 'mm', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { show: false } },
+};
+
+// Variante A/C: one grid. `showAxisLabels` is off for A (a separate ruler row
+// above takes over) and on for C (chart keeps its own axis, ribbon replaces
+// the number row below).
+function buildSingleGridOption(core: ReturnType<typeof buildCoreSeries>, showAxisLabels: boolean, tooltipFormatter: (raw: unknown) => string) {
+    return {
+        animation: false,
+        grid: { left: CHART_PAD_X, right: CHART_PAD_X, top: 24, bottom: 22 },
+        tooltip: { trigger: 'axis' as const, formatter: tooltipFormatter },
+        xAxis: {
+            type: 'time' as const,
+            min: core.chartStart,
+            max: core.chartEnd,
+            axisLabel: { show: showAxisLabels, color: C.axis, fontSize: 10 },
+            axisLine: { show: showAxisLabels, lineStyle: { color: C.axisLine } },
+            axisTick: { show: showAxisLabels },
+        },
+        yAxis: [AXIS_COMMON.yAxisTemp, AXIS_COMMON.yAxisRain],
+        series: [core.rainSeries, ...core.bandSeries, ...core.tempSeries],
+    };
+}
+
+// Variante B: two stacked grids (chart + probability bars) sharing one linked
+// axisPointer, so a tap anywhere draws one crosshair through both and the
+// tooltip merges temperature, rain AND probability — alignment is guaranteed
+// because it's the same coordinate system, not matched CSS padding.
+function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: Pt[], tooltipFormatter: (raw: unknown) => string) {
+    const probSeries = {
+        id: 'prob-bars',
+        type: 'bar' as const,
+        name: 'Regenwahrscheinlichkeit',
+        xAxisIndex: 1,
+        yAxisIndex: 2,
+        data: points.map((p) => [p.t, p.prob]),
+        itemStyle: {
+            color: (params: { value: [number, number] }) => {
+                const v = params.value[1];
+                const alpha = 0.22 + Math.min(1, v / 100) * 0.65;
+                return `rgba(47,127,214,${alpha.toFixed(2)})`;
+            },
+        },
+        barMaxWidth: 10,
+    };
+    return {
+        animation: false,
+        axisPointer: { link: [{ xAxisIndex: 'all' as const }] },
+        grid: [
+            { left: CHART_PAD_X, right: CHART_PAD_X, top: 18, height: 104 },
+            { left: CHART_PAD_X, right: CHART_PAD_X, top: 146, height: 28 },
+        ],
+        tooltip: { trigger: 'axis' as const, axisPointer: { type: 'line' as const }, formatter: tooltipFormatter },
+        xAxis: [
+            { gridIndex: 0, type: 'time' as const, min: core.chartStart, max: core.chartEnd, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+            {
+                gridIndex: 1,
+                type: 'time' as const,
+                min: core.chartStart,
+                max: core.chartEnd,
+                axisLabel: { color: C.axis, fontSize: 10 },
+                axisLine: { lineStyle: { color: C.axisLine } },
+            },
+        ],
+        yAxis: [
+            { gridIndex: 0, ...AXIS_COMMON.yAxisTemp },
+            { gridIndex: 0, ...AXIS_COMMON.yAxisRain },
+            { gridIndex: 1, type: 'value' as const, min: 0, max: 100, show: false },
+        ],
+        series: [core.rainSeries, ...core.bandSeries, ...core.tempSeries, probSeries],
+    };
+}
+
+function RulerRow({ samples }: { samples: { hour: number; frac: number }[] }) {
+    return (
+        <div style={{ position: 'relative', height: 16 }}>
+            <div style={{ position: 'absolute', left: CHART_PAD_X, right: CHART_PAD_X, bottom: 0, borderBottom: '1px solid var(--widget-border)' }} />
+            {samples.map((s) => (
+                <span
+                    key={s.hour}
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: `calc(${CHART_PAD_X}px + ${s.frac} * (100% - ${CHART_PAD_X * 2}px))`,
+                        transform: 'translateX(-50%)',
+                        fontSize: 9,
+                        color: 'var(--text-secondary)',
+                        opacity: 0.75,
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {String(s.hour).padStart(2, '0')}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+function ProbRibbon({ points }: { points: Pt[] }) {
+    if (!points.length) return null;
+    const stops = points
+        .map((p, i) => {
+            const frac = i / (points.length - 1);
+            const alpha = 0.12 + Math.min(1, p.prob / 100) * 0.7;
+            return `rgba(47,127,214,${alpha.toFixed(2)}) ${(frac * 100).toFixed(1)}%`;
+        })
+        .join(', ');
+    return (
+        <div style={{ marginTop: 6 }}>
+            <div style={{ margin: `0 ${CHART_PAD_X}px`, height: 14, borderRadius: 4, background: `linear-gradient(to right, ${stops})`, border: '1px solid var(--widget-border)' }} />
+            <div className="flex items-center justify-between" style={{ margin: `3px ${CHART_PAD_X}px 0`, fontSize: 8.5, color: 'var(--text-tertiary, var(--text-secondary))' }}>
+                <span>gering</span>
+                <span>Regenwahrscheinlichkeit — Zahl auf Tipp im Chart</span>
+                <span>hoch</span>
+            </div>
+        </div>
+    );
+}
+
 // ── Shared detail panel for whichever day is selected ───────────────────────
 function DetailPanel({ index, base }: { index: number; base: string }) {
     const prefix = `${base}.Taeglich.Tag${index}`;
@@ -218,13 +511,19 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
     const points = useMemo(() => {
         if (!hourly?.time) return [];
         const dateStr = localDateStr(index);
-        const out: { t: number; temp: number; rain: number }[] = [];
+        const out: { t: number; temp: number; rain: number; prob: number }[] = [];
         for (let i = 0; i < hourly.time.length; i++) {
             if (!hourly.time[i].startsWith(dateStr)) continue;
             const temp = hourly.temperature_2m?.[i];
             const rain = hourly.precipitation?.[i];
+            const prob = hourly.precipitation_probability?.[i];
             if (typeof temp !== 'number') continue;
-            out.push({ t: new Date(hourly.time[i]).getTime(), temp, rain: typeof rain === 'number' ? rain : 0 });
+            out.push({
+                t: new Date(hourly.time[i]).getTime(),
+                temp,
+                rain: typeof rain === 'number' ? rain : 0,
+                prob: typeof prob === 'number' ? prob : 0,
+            });
         }
         return out;
     }, [hourly, index]);
@@ -251,132 +550,16 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
         return out;
     }, [hourly, index, points]);
 
-    const option = useMemo(() => {
-        if (!points.length) return null;
-        const nowTs = Date.now();
-        const sunriseTs = sunrise ? new Date(sunrise).getTime() : null;
-        const sunsetTs = sunset ? new Date(sunset).getTime() : null;
-        const chartStart = points[0].t;
-        const chartEnd = points[points.length - 1].t;
-
-        const markLineData: Record<string, unknown>[] = [];
-        if (sunriseTs) markLineData.push({ xAxis: sunriseTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
-        if (sunsetTs) markLineData.push({ xAxis: sunsetTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
-
-        // Non-overlapping shaded bands: grey "night" (before sunrise / after
-        // sunset, but only up to "now") and, today only, an orange-tinted
-        // "future" band from now to day's end. Night bands are clipped to end
-        // at `nowTs` so they never reach into the future band — stacking both
-        // used to double up their opacity into a single darker, oddly solid
-        // patch right where sunset and "still forecast" overlapped.
-        const nightEnd = isToday ? Math.min(nowTs, chartEnd) : chartEnd;
-        const markAreaData: Record<string, unknown>[][] = [];
-        if (sunriseTs && sunriseTs > chartStart) {
-            const end = Math.min(sunriseTs, nightEnd);
-            if (end > chartStart) markAreaData.push([{ xAxis: chartStart }, { xAxis: end }]);
-        }
-        if (sunsetTs && sunsetTs < nightEnd) {
-            markAreaData.push([{ xAxis: sunsetTs }, { xAxis: nightEnd }]);
-        }
-        if (isToday && nowTs > chartStart && nowTs < chartEnd) {
-            markAreaData.push([{ xAxis: nowTs, itemStyle: { color: C.future } }, { xAxis: chartEnd }]);
-        }
-
-        const tempSeries: Record<string, unknown>[] = isToday
-            ? [
-                  {
-                      id: 'temp-past',
-                      type: 'line' as const,
-                      name: 'Temperatur',
-                      yAxisIndex: 0,
-                      data: points.filter((p) => p.t <= nowTs).map((p) => [p.t, p.temp]),
-                      showSymbol: true,
-                      symbolSize: 3,
-                      itemStyle: { color: C.temp, borderWidth: 0 },
-                      smooth: true,
-                      color: C.temp,
-                      lineStyle: { color: C.temp, width: 2 },
-                  },
-                  {
-                      id: 'temp-future',
-                      type: 'line' as const,
-                      name: 'Temperatur (Prognose)',
-                      yAxisIndex: 0,
-                      data: points.filter((p) => p.t >= nowTs).map((p) => [p.t, p.temp]),
-                      showSymbol: false,
-                      smooth: true,
-                      color: C.temp,
-                      lineStyle: { color: C.temp, width: 2, type: 'dashed' as const },
-                      markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
-                      markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
-                  },
-              ]
-            : [
-                  {
-                      id: 'temp',
-                      type: 'line' as const,
-                      name: 'Temperatur',
-                      yAxisIndex: 0,
-                      data: points.map((p) => [p.t, p.temp]),
-                      showSymbol: false,
-                      smooth: true,
-                      color: C.temp,
-                      lineStyle: { color: C.temp, width: 2 },
-                      markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
-                      markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
-                  },
-              ];
-
+    const { optionA, optionB, optionC } = useMemo(() => {
+        if (!points.length) return { optionA: null, optionB: null, optionC: null };
+        const core = buildCoreSeries(points, sunrise, sunset, isToday);
+        const formatter = buildTooltipFormatter(hourly);
         return {
-            animation: false,
-            grid: { left: CHART_PAD_X, right: CHART_PAD_X, top: 24, bottom: 22 },
-            tooltip: {
-                trigger: 'axis' as const,
-                formatter: (raw: unknown) => {
-                    const list = (Array.isArray(raw) ? raw : [raw]) as {
-                        marker: string;
-                        seriesName: string;
-                        axisValue: number;
-                        value: [number, number];
-                    }[];
-                    if (!list.length) return '';
-                    const time = new Date(list[0].axisValue).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                    const rows = list.map((p) => {
-                        const unit = p.seriesName === 'Regen' ? 'mm' : '°C';
-                        return `${p.marker}${p.seriesName}: ${formatNum(p.value[1], 1)} ${unit}`;
-                    });
-                    return [time, ...rows].join('<br/>');
-                },
-            },
-            xAxis: {
-                type: 'time' as const,
-                // Pin the axis to exactly this day's data span (no ECharts
-                // "nice round number" auto-padding) so the probability row
-                // below — built from the same start/end via CHART_PAD_X —
-                // lines up hour-for-hour with this axis.
-                min: chartStart,
-                max: chartEnd,
-                axisLabel: { color: C.axis, fontSize: 10 },
-                axisLine: { lineStyle: { color: C.axisLine } },
-            },
-            yAxis: [
-                { type: 'value' as const, name: '°C', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { lineStyle: { color: C.grid } } },
-                { type: 'value' as const, name: 'mm', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { show: false } },
-            ],
-            series: [
-                {
-                    id: 'rain',
-                    type: 'bar' as const,
-                    name: 'Regen',
-                    yAxisIndex: 1,
-                    data: points.map((p) => [p.t, p.rain]),
-                    itemStyle: { color: C.rain },
-                    barMaxWidth: 10,
-                },
-                ...tempSeries,
-            ],
+            optionA: buildSingleGridOption(core, false, formatter),
+            optionB: buildDualGridOption(core, points, formatter),
+            optionC: buildSingleGridOption(core, true, formatter),
         };
-    }, [points, sunrise, sunset, isToday]);
+    }, [points, sunrise, sunset, isToday, hourly]);
 
     return (
         <div style={{ padding: '12px 12px 14px' }}>
@@ -391,52 +574,77 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
                             gemessen
                         </span>
                         <span className="inline-flex items-center gap-1">
-                            <span style={{ width: 10, height: 6, borderRadius: 2, background: C.future, border: `1px dashed ${C.axis}`, display: 'inline-block' }} />
+                            <span style={{ width: 10, height: 6, borderRadius: 2, background: C.band, display: 'inline-block' }} />
                             Prognose
                         </span>
                     </span>
                 )}
             </div>
 
-            {option ? (
-                <ReactECharts option={option} notMerge style={{ height: 160 }} />
-            ) : (
-                <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-                    Keine Stundendaten für diesen Tag
+            {/* ── Variante A — gemeinsames Lineal ─────────────────────────── */}
+            <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 2 }}>
+                    Variante A · Gemeinsames Lineal
                 </div>
-            )}
-
-            {probSamples.length > 0 && (
-                <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-secondary)', opacity: 0.7, marginBottom: 3 }}>Niederschlagswahrscheinlichkeit</div>
-                    {/* position:absolute per label instead of equal-width flex columns —
-                        the samples sit 3h apart on a 24h axis, so equal columns are CLOSE
-                        but not exact, and drift further once combined with the chart's
-                        own CHART_PAD_X inset. Placing each label at its real frac (matching
-                        the chart's pinned xAxis min/max above) keeps them hour-for-hour
-                        under the chart regardless of widget width. */}
-                    <div style={{ position: 'relative', height: 28 }}>
+                {probSamples.length > 0 && <RulerRow samples={probSamples} />}
+                {optionA ? (
+                    <ReactECharts option={optionA} notMerge style={{ height: 150 }} />
+                ) : (
+                    <div style={{ height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                        Keine Stundendaten für diesen Tag
+                    </div>
+                )}
+                {probSamples.length > 0 && (
+                    <div style={{ position: 'relative', height: 24 }}>
                         {probSamples.map((s) => (
                             <div
                                 key={s.hour}
-                                className="flex flex-col items-center"
                                 style={{
                                     position: 'absolute',
                                     top: 0,
                                     left: `calc(${CHART_PAD_X}px + ${s.frac} * (100% - ${CHART_PAD_X * 2}px))`,
                                     transform: 'translateX(-50%)',
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: s.pct && s.pct > 0 ? C.rain : 'var(--text-secondary)',
                                     whiteSpace: 'nowrap',
                                 }}
                             >
-                                <span style={{ fontSize: 9, color: 'var(--text-secondary)', opacity: 0.6 }}>{String(s.hour).padStart(2, '0')}</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: s.pct && s.pct > 0 ? C.rain : 'var(--text-secondary)' }}>
-                                    {s.pct !== null ? `${formatNum(s.pct, 0)}%` : '–'}
-                                </span>
+                                {s.pct !== null ? `${formatNum(s.pct, 0)}%` : '–'}
                             </div>
                         ))}
                     </div>
+                )}
+            </div>
+
+            {/* ── Variante B — verbundenes Fadenkreuz ─────────────────────── */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--widget-border)' }}>
+                <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 4 }}>
+                    Variante B · Verbundenes Fadenkreuz
                 </div>
-            )}
+                {optionB ? (
+                    <ReactECharts option={optionB} notMerge style={{ height: 192 }} />
+                ) : (
+                    <div style={{ height: 192, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                        Keine Stundendaten für diesen Tag
+                    </div>
+                )}
+            </div>
+
+            {/* ── Variante C — Farbband ───────────────────────────────────── */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--widget-border)' }}>
+                <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 4 }}>
+                    Variante C · Farbband
+                </div>
+                {optionC ? (
+                    <ReactECharts option={optionC} notMerge style={{ height: 150 }} />
+                ) : (
+                    <div style={{ height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                        Keine Stundendaten für diesen Tag
+                    </div>
+                )}
+                <ProbRibbon points={points} />
+            </div>
 
             <GroupLabel text="Sonne & Licht" />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 6, columnGap: 10, marginTop: 5 }}>
