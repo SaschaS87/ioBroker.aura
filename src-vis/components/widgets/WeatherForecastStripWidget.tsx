@@ -474,8 +474,12 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
                 smooth: true,
                 color: C.temp,
                 lineStyle: { color: C.temp, width: 2, type: 'dashed' as const },
-                markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
-                markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
+                // z pushes the dashed sunrise/sunset lines above the band's area
+                // fill so they don't get visually cut by its (anti-aliased) edge —
+                // that made the line look offset from the grey area's boundary even
+                // though both are computed from the exact same sunriseTs/sunsetTs.
+                markLine: markLineData.length ? { symbol: 'none', silent: true, z: 100, data: markLineData } : undefined,
+                markArea: markAreaData.length ? { silent: true, z: 1, itemStyle: { color: C.night }, data: markAreaData } : undefined,
             },
         ];
     } else {
@@ -490,8 +494,12 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
                 smooth: true,
                 color: C.temp,
                 lineStyle: { color: C.temp, width: 2 },
-                markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
-                markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
+                // z pushes the dashed sunrise/sunset lines above the band's area
+                // fill so they don't get visually cut by its (anti-aliased) edge —
+                // that made the line look offset from the grey area's boundary even
+                // though both are computed from the exact same sunriseTs/sunsetTs.
+                markLine: markLineData.length ? { symbol: 'none', silent: true, z: 100, data: markLineData } : undefined,
+                markArea: markAreaData.length ? { silent: true, z: 1, itemStyle: { color: C.night }, data: markAreaData } : undefined,
             },
         ];
     }
@@ -554,8 +562,13 @@ const AXIS_COMMON = {
     yAxisTemp: {
         type: 'value' as const,
         name: '°C',
-        min: (val: { min: number }) => Math.min(0, val.min),
-        max: (val: { max: number }) => Math.max(35, val.max),
+        // Rounded to whole 10s (not the raw data/band extent) and a fixed
+        // 10-step interval — an unrounded bound (e.g. 38.65, from the
+        // confidence band's exact margin) produced an ugly decimal axis
+        // label AND an extra gridline right next to the last clean one.
+        min: (val: { min: number }) => Math.floor(Math.min(0, val.min) / 10) * 10,
+        max: (val: { max: number }) => Math.ceil(Math.max(40, val.max) / 10) * 10,
+        interval: 10,
         axisLabel: { color: C.axis, fontSize: 10 },
         splitLine: { lineStyle: { color: C.grid } },
     },
