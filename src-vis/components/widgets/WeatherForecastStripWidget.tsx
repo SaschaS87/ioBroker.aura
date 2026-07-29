@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import {
     Sun,
-    Moon,
     CloudSun,
     Cloud,
     CloudFog,
@@ -585,17 +584,50 @@ const AXIS_COMMON = {
 // Two stacked grids (chart + probability bars) sharing one linked
 // axisPointer, so a tap anywhere draws one crosshair through both and the
 // tooltip merges temperature, rain AND probability — alignment is guaranteed
-// because it's the same coordinate system, not matched CSS padding. Grid
-// numbers are named constants (not inlined) because SunMoonOverlay below
-// needs the exact same axis-line y-position to sit the sun/moon markers on it.
+// because it's the same coordinate system, not matched CSS padding.
 const GRID_TOP0 = 16;
 const GRID_H0 = 90;
 const GRID_TOP1 = 112;
 const GRID_H1 = 24;
 const CHART_HEIGHT = 156;
-const AXIS_LINE_Y = GRID_TOP1 + GRID_H1;
+
+// Sun/moon markers as small flat SVGs (filled circle + glyph) rendered
+// through ECharts' own markPoint — NOT a separate HTML/CSS overlay. An
+// overlay computed its own x position via CHART_PAD_X + a fraction, which
+// looked right at first but drifted from the actual dashed line on resize
+// (rotating to landscape, resizing the browser): the overlay recalculated
+// instantly from the new container width, but ECharts only reflows on its
+// own resize cycle, so the two briefly (or not so briefly) disagreed. It
+// also rendered UNDER the canvas by default DOM order, so the axis line cut
+// through the badges. Baking the markers into the chart's own coordinate
+// system removes both problems at once — same data, same resize, same
+// paint order as everything else in the chart.
+const SUN_SVG =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>" +
+    "<circle cx='8' cy='8' r='8' fill='%23eab308'/>" +
+    "<circle cx='8' cy='8' r='3' fill='none' stroke='%23fff' stroke-width='1.4'/>" +
+    "<g stroke='%23fff' stroke-width='1.4' stroke-linecap='round'>" +
+    "<line x1='8' y1='2' x2='8' y2='3.2'/><line x1='8' y1='12.8' x2='8' y2='14'/>" +
+    "<line x1='2' y1='8' x2='3.2' y2='8'/><line x1='12.8' y1='8' x2='14' y2='8'/>" +
+    "<line x1='4' y1='4' x2='4.8' y2='4.8'/><line x1='11.2' y1='11.2' x2='12' y2='12'/>" +
+    "<line x1='4' y1='12' x2='4.8' y2='11.2'/><line x1='11.2' y1='4.8' x2='12' y2='4'/>" +
+    '</g></svg>';
+const MOON_SVG =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>" +
+    "<circle cx='8' cy='8' r='8' fill='%236b7280'/>" +
+    "<path d='M10.5 4.5a5 5 0 1 0 0 7 6 6 0 1 1 0-7z' fill='%23fff'/>" +
+    '</svg>';
+const SUN_IMAGE = `image://data:image/svg+xml;utf8,${SUN_SVG}`;
+const MOON_IMAGE = `image://data:image/svg+xml;utf8,${MOON_SVG}`;
 
 function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: Pt[], tooltipFormatter: (raw: unknown) => string) {
+    const sunMoonMarkPoints: Record<string, unknown>[] = [];
+    if (core.sunriseTs !== null && core.sunriseTs > core.chartStart && core.sunriseTs < core.chartEnd) {
+        sunMoonMarkPoints.push({ coord: [core.sunriseTs, 0], symbol: SUN_IMAGE, symbolSize: 16 });
+    }
+    if (core.sunsetTs !== null && core.sunsetTs > core.chartStart && core.sunsetTs < core.chartEnd) {
+        sunMoonMarkPoints.push({ coord: [core.sunsetTs, 0], symbol: MOON_IMAGE, symbolSize: 16 });
+    }
     const probSeries = {
         id: 'prob-bars',
         type: 'bar' as const,
@@ -611,6 +643,9 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
             },
         },
         barMaxWidth: 10,
+        // Sit exactly on the shared axis (y=0 on the 0-100 probability scale,
+        // which is the grid's bottom edge) at sunrise/sunset — see comment above.
+        markPoint: sunMoonMarkPoints.length ? { silent: true, symbolOffset: [0, 0], label: { show: false }, data: sunMoonMarkPoints } : undefined,
     };
     return {
         animation: false,
@@ -640,43 +675,6 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
         ],
         series: [core.rainSeries, ...core.bandSeries, ...core.tempSeries, probSeries],
     };
-}
-
-// Small sun/moon badges sitting ON the shared x-axis line at sunrise/sunset —
-// horizontal position via the same CHART_PAD_X + frac technique used
-// elsewhere, vertical position pinned to AXIS_LINE_Y so they visibly straddle
-// the axis instead of floating above or below it.
-function SunMoonOverlay({ sunriseTs, sunsetTs, chartStart, chartEnd }: { sunriseTs: number | null; sunsetTs: number | null; chartStart: number; chartEnd: number }) {
-    const frac = (t: number) => (chartEnd > chartStart ? (t - chartStart) / (chartEnd - chartStart) : 0);
-    // Filled colour circle (not just an outline) so the badge pops against the
-    // chart instead of reading as a faint ring with a tiny icon inside.
-    const badge = (t: number, Icon: LucideIcon, bg: string, key: string) => (
-        <div
-            key={key}
-            style={{
-                position: 'absolute',
-                left: `calc(${CHART_PAD_X}px + ${frac(t)} * (100% - ${CHART_PAD_X * 2}px))`,
-                top: AXIS_LINE_Y,
-                transform: 'translate(-50%, -50%)',
-                width: 16,
-                height: 16,
-                borderRadius: '50%',
-                background: bg,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                pointerEvents: 'none',
-            }}
-        >
-            <Icon size={10} style={{ color: '#fff' }} />
-        </div>
-    );
-    return (
-        <>
-            {sunriseTs !== null && sunriseTs > chartStart && sunriseTs < chartEnd && badge(sunriseTs, Sun, '#eab308', 'sunrise')}
-            {sunsetTs !== null && sunsetTs > chartStart && sunsetTs < chartEnd && badge(sunsetTs, Moon, '#6b7280', 'sunset')}
-        </>
-    );
 }
 
 // ── Shared detail panel for whichever day is selected ───────────────────────
@@ -743,9 +741,6 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
         return buildDualGridOption(core, points, formatter);
     }, [points, sunrise, sunset, isToday, index, hourly]);
 
-    const sunriseTs = sunrise ? new Date(sunrise).getTime() : null;
-    const sunsetTs = sunset ? new Date(sunset).getTime() : null;
-
     return (
         <div style={{ padding: '12px 12px 14px' }}>
             <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
@@ -766,10 +761,7 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
                 </span>
             </div>
 
-            <div style={{ marginTop: 8, position: 'relative' }}>
-                {option && points.length > 0 && (
-                    <SunMoonOverlay sunriseTs={sunriseTs} sunsetTs={sunsetTs} chartStart={points[0].t} chartEnd={points[points.length - 1].t} />
-                )}
+            <div style={{ marginTop: 8 }}>
                 {option ? (
                     <ReactECharts option={option} notMerge style={{ height: CHART_HEIGHT }} />
                 ) : (
