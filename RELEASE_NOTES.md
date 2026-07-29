@@ -43,3 +43,6 @@
 - Weather - fixed a bug where reopening the app from the iOS background could show stale values even though the server already had fresh data
 - Weather - data-source footer restored below the day strip (model run time, availability, next update, last fetch)
 - Weather - night shading now uses the same grey as the sunset/sunrise moon marker, at a stronger opacity for better readability
+- General - increased the bottom scroll buffer again (now 4rem) so the last widget on a tall tab is no longer clipped on iOS Safari when scrolling to the end
+- Weather - the data-source footer (model run time, next update, last fetch) now always stays at the very bottom of the tab instead of ending up mid-tab once other widgets are added below the forecast strip
+- Weather - restored the 15-minute rain nowcast strip (next ~6h) that was lost when the widget was consolidated to the day-strip variant

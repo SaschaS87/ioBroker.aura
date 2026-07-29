@@ -159,6 +159,11 @@ interface HourlyBlob {
     uv_index?: number[];
     [key: string]: unknown;
 }
+interface MinutelyBlob {
+    time: string[];
+    precipitation?: number[];
+    [key: string]: unknown;
+}
 function parseJson<T>(raw: unknown): T | null {
     if (typeof raw !== 'string' || !raw) return null;
     try {
@@ -823,11 +828,65 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
     );
 }
 
+// ── Rain nowcast, 15-minute steps (next ~6h) — restored 1:1 from the retired
+// WeatherForecastWidget.tsx (see Wetter/Aura Wetter-Widget - Aufbau.md); was
+// lost when the widget was consolidated down to the linked-chart variant.
+function RainNowcast({ base }: { base: string }) {
+    const { value: minutelyRaw } = useDatapoint(`${base}.Minuten15.json`);
+    const minutely = useMemo(() => parseJson<MinutelyBlob>(minutelyRaw), [minutelyRaw]);
+    const nowcast = useMemo(() => {
+        if (!minutely?.time) return [];
+        const now = Date.now();
+        const out: { t: number; rain: number }[] = [];
+        for (let i = 0; i < minutely.time.length; i++) {
+            const t = new Date(minutely.time[i]).getTime();
+            if (t < now - 15 * 60000) continue;
+            const rain = minutely.precipitation?.[i];
+            out.push({ t, rain: typeof rain === 'number' ? rain : 0 });
+            if (out.length >= 24) break; // 24 x 15 min = 6 Std.
+        }
+        return out;
+    }, [minutely]);
+    const nowcastMax = Math.max(0.5, ...nowcast.map((p) => p.rain));
+
+    return (
+        <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)', padding: '10px 12px' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Regen-Nowcast (15-Minuten-Takt)</div>
+            {nowcast.length ? (
+                <div className="flex items-end" style={{ gap: 6, overflowX: 'auto', height: 56 }}>
+                    {nowcast.map((p, i) => (
+                        <div key={i} className="flex flex-col items-center" style={{ flex: '0 0 auto', width: 28 }}>
+                            <div
+                                style={{
+                                    width: 14,
+                                    height: Math.max(2, (p.rain / nowcastMax) * 34),
+                                    background: C.rain,
+                                    opacity: p.rain > 0 ? 1 : 0.25,
+                                    borderRadius: 2,
+                                }}
+                            />
+                            <span style={{ fontSize: 9, color: 'var(--text-secondary)', marginTop: 3 }}>
+                                {new Date(p.t).toTimeString().slice(0, 5)}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Keine 15-Minuten-Daten verfügbar</div>
+            )}
+        </div>
+    );
+}
+
 // ── Data-provenance footer — applies to the whole tab (current conditions,
 // strip, detail panel all come from the same Open-Meteo pull), so it's a
 // single footer here rather than repeated per section. Kein Rahmen, keine
 // Karte — bewusst zurückhaltend. Restored 1:1 from the retired
 // WeatherForecastWidget.tsx (see Wetter/Aura Wetter-Widget - Aufbau.md).
+// `footerOnly` lets this render as its own tiny widget instance, so it can be
+// pinned to the bottom of the tab independently of where the main strip sits
+// in the grid (Sascha, 29.07.: the timestamp kept ending up mid-tab once
+// other widgets were added below the strip).
 function DataFooter({ base }: { base: string }) {
     const { value: modelRunV } = useDatapoint(`${base}.Status.modelllaufZeit`);
     const { value: modelAvailableV } = useDatapoint(`${base}.Status.modelllaufVerfuegbarAb`);
@@ -855,6 +914,15 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const base = (config.options?.basePath as string) || DEFAULT_BASE;
     const [active, setActive] = useState(0);
 
+    // footerOnly: a second, minimal instance of this same widget type that
+    // renders just the data-provenance footer — used to pin it to the bottom
+    // of the tab regardless of where the main strip instance sits.
+    if (config.options?.footerOnly) {
+        return <DataFooter base={base} />;
+    }
+
+    const showFooter = config.options?.showFooter !== false;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
             <CurrentConditionsCard base={base} />
@@ -872,7 +940,8 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
                     <DetailPanel key={active} index={active} base={base} />
                 </div>
             </div>
-            <DataFooter base={base} />
+            <RainNowcast base={base} />
+            {showFooter && <DataFooter base={base} />}
         </div>
     );
 }
