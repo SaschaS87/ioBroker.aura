@@ -13,7 +13,6 @@
 - Advanced chart - fixed periodic chart flicker when adapters re-write unchanged values
 - Panels - loop now wraps seamlessly onto the first/last slide instead of rewinding across the whole row
 - Advanced chart - stale history responses no longer override a newer range/day selection after rapid day stepping
-- Weather forecast (strip) - new widget type: swipeable 7-day strip with a shared detail panel (chart, rain probability, sun/rain/temperature groups) — alternative layout to the existing 7-card weather forecast widget
 - Daily rain widget (new) - one bar per calendar day computed client-side from raw rain_today history (7/14-day bars, month calendar grid); distinguishes dry days (0) from data gaps (–), today's bar grows live
 - Daily rain widget - day mode with hourly bars derived from the daily counter's increments (see when it rained), day-by-day paging, and tap-a-day drill-down from the bar and month views
 - Daily rain widget - month view toggles between calendar grid and day bars via a compact control in the chart's top-right corner (keeps the range chips from overflowing on phones); crowded bar views drop weekday names and always mark the period's peak
@@ -40,5 +39,5 @@
 - iOS home-screen app - in landscape the header and tab bar now span the full screen width, so their divider lines run edge to edge; the side safe-area margins below the tab bar use the page background color instead of the header color, so the content no longer looks boxed in
 - iOS home-screen app - page pinch-zoom is now blocked, so the header no longer shifts/misaligns after a pinch gesture (the map's own pinch-to-zoom still works)
 - Heating / Room climate / Advanced chart - two-finger pinch now zooms into the currently shown time range for a closer look at the data; the zoom resets when switching Tag/7 Tage/Monat
-- Weather (new) - forecast widget fed by Open-Meteo: current conditions card, 7 collapsible day cards with an hourly temperature/rain chart each, and a 15-minute rain nowcast strip
+- Weather (new) - forecast widget fed by Open-Meteo: swipeable 7-day day-strip with a shared detail view per day — linked temperature/rain/rain-probability chart with a single crosshair and tooltip, sun/moon markers at sunrise and sunset, a widening confidence band over the forecast portion, and sun/rain/temperature detail groups
 - Weather - fixed a bug where reopening the app from the iOS background could show stale values even though the server already had fresh data
