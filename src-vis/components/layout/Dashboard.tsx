@@ -312,11 +312,8 @@ export function Dashboard({
                                                             // heating grows with its tiles / accordion content
                                                             // so it never overflows its grid cell.
                                                             w.type === 'heating' ||
-                                                            // weatherforecast grows with its 7 collapsible
-                                                            // day-cards, same reason as heating above.
-                                                            w.type === 'weatherforecast' ||
-                                                            // weatherforecaststrip: same reason — detail panel
-                                                            // height changes when the chart mounts.
+                                                            // weatherforecaststrip: detail panel height changes
+                                                            // when the chart mounts / a different day is picked.
                                                             w.type === 'weatherforecaststrip' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&

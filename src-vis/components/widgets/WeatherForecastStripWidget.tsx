@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import {
     Sun,
+    Moon,
     CloudSun,
     Cloud,
     CloudFog,
@@ -26,14 +27,12 @@ import { formatNum } from '../../utils/formatValue';
 import type { WidgetProps } from '../../types';
 
 /**
- * Second take on the forecast tiles (DWD-app layout, "Variante A" from the
- * mockup round): one slim horizontally-swipeable day strip + a single shared
- * detail panel below, instead of 7 stacked accordion cards. Deliberately a
- * SEPARATE widget type from WeatherForecastWidget.tsx (not a rewrite of it) so
- * both can sit on the Wetter tab side by side until a choice is made — reads
- * the same `javascript.0.Wetter.*` states, but the small helpers below are
- * duplicated rather than imported from that file, to keep this widget fully
- * independent of it.
+ * DWD-app-style forecast tile: one slim horizontally-swipeable day strip + a
+ * single shared detail panel below (chart with a linked temperature/rain +
+ * rain-probability view, sun/moon markers for day/night), instead of 7
+ * stacked accordion cards. Replaces WeatherForecastWidget.tsx, which is
+ * retired — see `Wetter/Aura Wetter-Widget - Aufbau.md` for its full
+ * documentation before it was removed.
  */
 
 const DEFAULT_BASE = 'javascript.0.Wetter';
@@ -179,13 +178,40 @@ function StripCell({ index, base, active, onSelect }: { index: number; base: str
     );
 }
 
-// ── Chart-building shared by all 3 axis-alignment variants below ───────────
-// TEMPORARY: Sascha asked to compare 3 real, working variants side by side
-// (not just static mockups) before picking one — once he decides, this
-// splits back down to a single option-builder + render block.
 type Pt = { t: number; temp: number; rain: number; prob: number };
 
-function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | null, isToday: boolean) {
+// Temperature at an arbitrary timestamp between two hourly points (linear
+// interpolation) — used to give the "measured" and "Prognose" line segments
+// a shared connecting point at exactly "now", instead of each stopping at
+// its own nearest hour and leaving a gap in between.
+function interpolateAt(points: Pt[], ts: number): { t: number; temp: number } | null {
+    for (let i = 0; i < points.length - 1; i++) {
+        if (points[i].t <= ts && points[i + 1].t >= ts) {
+            const span = points[i + 1].t - points[i].t;
+            const frac = span > 0 ? (ts - points[i].t) / span : 0;
+            return { t: ts, temp: points[i].temp + (points[i + 1].temp - points[i].temp) * frac };
+        }
+    }
+    return null;
+}
+
+// Illustrative (not model-derived — see Aufbau.md) confidence margin for a
+// point at time `t`: a mild lead-time component (further ahead = a bit less
+// certain) PLUS a bulge centred on the day's temperature peak (the daily high
+// is inherently the hardest single feature to pin exactly — surface heating
+// depends on cloud cover/wind mixing that are themselves uncertain), scaled
+// up for days further out in the forecast horizon.
+function confidenceMargin(t: number, bandStart: number, chartEnd: number, peakT: number, dayScale: number): number {
+    const totalSpan = Math.max(1, chartEnd - bandStart);
+    const leadFrac = Math.min(1, Math.max(0, (t - bandStart) / totalSpan));
+    const lead = 0.8 + 1.0 * leadFrac;
+    const sigma = 3.5 * 3600000;
+    const dist = t - peakT;
+    const bulge = 1.2 * Math.exp(-(dist * dist) / (2 * sigma * sigma));
+    return (lead + bulge) * dayScale;
+}
+
+function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | null, isToday: boolean, dayIndex: number) {
     const nowTs = Date.now();
     const sunriseTs = sunrise ? new Date(sunrise).getTime() : null;
     const sunsetTs = sunset ? new Date(sunset).getTime() : null;
@@ -196,29 +222,38 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
     if (sunriseTs) markLineData.push({ xAxis: sunriseTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
     if (sunsetTs) markLineData.push({ xAxis: sunsetTs, lineStyle: { color: C.axis, type: 'dashed' as const, width: 1 }, label: { show: false } });
 
-    // Grey "night" bands (before sunrise / after sunset), clipped to end at
-    // "now" for today so they never reach into the forecast portion.
-    const nightEnd = isToday ? Math.min(nowTs, chartEnd) : chartEnd;
+    // Grey "night" bands over the full astronomical range (before sunrise AND
+    // after sunset), independent of "now" — these used to be clipped at "now"
+    // to avoid double-stacking with the old flat forecast rectangle, but that
+    // rectangle is gone (replaced by the curve-hugging ribbon below, which
+    // can't visually collide with a full-height band), so the clipping was
+    // just silently dropping the evening shading for most of the day.
     const markAreaData: Record<string, unknown>[][] = [];
     if (sunriseTs && sunriseTs > chartStart) {
-        const end = Math.min(sunriseTs, nightEnd);
-        if (end > chartStart) markAreaData.push([{ xAxis: chartStart }, { xAxis: end }]);
+        markAreaData.push([{ xAxis: chartStart }, { xAxis: sunriseTs }]);
     }
-    if (sunsetTs && sunsetTs < nightEnd) {
-        markAreaData.push([{ xAxis: sunsetTs }, { xAxis: nightEnd }]);
+    if (sunsetTs && sunsetTs < chartEnd) {
+        markAreaData.push([{ xAxis: sunsetTs }, { xAxis: chartEnd }]);
     }
 
-    // Confidence ribbon for the forecast portion of today's line — an
-    // ECharts stacked-area pair (invisible lower bound + visible delta on top
-    // of it), so the band's top/bottom follow the temperature curve itself
-    // instead of a flat rectangle. Widens the further out it goes.
+    // Shared "now" point so the measured and forecast line segments touch
+    // instead of leaving a gap — see interpolateAt() above.
+    const nowPoint = isToday ? interpolateAt(points, nowTs) : null;
+
+    // Confidence ribbon: an ECharts stacked-area pair (invisible lower bound +
+    // visible delta on top), so the band's top/bottom follow the temperature
+    // curve itself. Today: only the forecast portion (from "now" onward).
+    // Other days: the entire day, since all of it is forecast.
+    const bandStart = isToday ? nowTs : chartStart;
+    const bandBasePoints: Pt[] = isToday
+        ? [...(nowPoint ? [{ t: nowPoint.t, temp: nowPoint.temp, rain: 0, prob: 0 }] : []), ...points.filter((p) => p.t > nowTs)]
+        : points;
+    const dayScale = Math.min(2.5, 1 + dayIndex * 0.25);
     let bandSeries: Record<string, unknown>[] = [];
-    if (isToday && nowTs > chartStart && nowTs < chartEnd) {
-        const futurePoints = points.filter((p) => p.t >= nowTs);
-        const span = Math.max(1, chartEnd - nowTs);
-        const band = futurePoints.map((p) => {
-            const growth = (p.t - nowTs) / span;
-            const margin = 1 + growth * 1.8;
+    if (bandBasePoints.length > 1) {
+        const peakPoint = points.reduce((best, p) => (p.temp > best.temp ? p : best), points[0]);
+        const band = bandBasePoints.map((p) => {
+            const margin = confidenceMargin(p.t, bandStart, chartEnd, peakPoint.t, dayScale);
             return { t: p.t, lower: p.temp - margin, delta: margin * 2 };
         });
         bandSeries = [
@@ -250,52 +285,62 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
         ];
     }
 
-    const tempSeries: Record<string, unknown>[] = isToday
-        ? [
-              {
-                  id: 'temp-past',
-                  type: 'line' as const,
-                  name: 'Temperatur',
-                  yAxisIndex: 0,
-                  data: points.filter((p) => p.t <= nowTs).map((p) => [p.t, p.temp]),
-                  showSymbol: true,
-                  symbolSize: 3,
-                  itemStyle: { color: C.temp, borderWidth: 0 },
-                  // Standard ECharts emphasis (hover/tap) behaviour — same as every
-                  // other chart in the app, deliberately not overridden.
-                  smooth: true,
-                  color: C.temp,
-                  lineStyle: { color: C.temp, width: 2 },
-              },
-              {
-                  id: 'temp-future',
-                  type: 'line' as const,
-                  name: 'Temperatur (Prognose)',
-                  yAxisIndex: 0,
-                  data: points.filter((p) => p.t >= nowTs).map((p) => [p.t, p.temp]),
-                  showSymbol: false,
-                  smooth: true,
-                  color: C.temp,
-                  lineStyle: { color: C.temp, width: 2, type: 'dashed' as const },
-                  markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
-                  markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
-              },
-          ]
-        : [
-              {
-                  id: 'temp',
-                  type: 'line' as const,
-                  name: 'Temperatur',
-                  yAxisIndex: 0,
-                  data: points.map((p) => [p.t, p.temp]),
-                  showSymbol: false,
-                  smooth: true,
-                  color: C.temp,
-                  lineStyle: { color: C.temp, width: 2 },
-                  markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
-                  markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
-              },
-          ];
+    let tempSeries: Record<string, unknown>[];
+    if (isToday) {
+        const pastData = points.filter((p) => p.t <= nowTs).map((p): [number, number] => [p.t, p.temp]);
+        const futureData = points.filter((p) => p.t > nowTs).map((p): [number, number] => [p.t, p.temp]);
+        if (nowPoint) {
+            if (!pastData.length || pastData[pastData.length - 1][0] !== nowPoint.t) pastData.push([nowPoint.t, nowPoint.temp]);
+            if (!futureData.length || futureData[0][0] !== nowPoint.t) futureData.unshift([nowPoint.t, nowPoint.temp]);
+        }
+        tempSeries = [
+            {
+                id: 'temp-past',
+                type: 'line' as const,
+                name: 'Temperatur',
+                yAxisIndex: 0,
+                data: pastData,
+                showSymbol: true,
+                symbol: 'circle',
+                symbolSize: 3,
+                itemStyle: { color: C.temp, borderWidth: 0 },
+                // Standard ECharts emphasis (hover/tap) behaviour — same as every
+                // other chart in the app, deliberately not overridden.
+                smooth: true,
+                color: C.temp,
+                lineStyle: { color: C.temp, width: 2 },
+            },
+            {
+                id: 'temp-future',
+                type: 'line' as const,
+                name: 'Temperatur (Prognose)',
+                yAxisIndex: 0,
+                data: futureData,
+                showSymbol: false,
+                smooth: true,
+                color: C.temp,
+                lineStyle: { color: C.temp, width: 2, type: 'dashed' as const },
+                markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
+                markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
+            },
+        ];
+    } else {
+        tempSeries = [
+            {
+                id: 'temp',
+                type: 'line' as const,
+                name: 'Temperatur',
+                yAxisIndex: 0,
+                data: points.map((p) => [p.t, p.temp]),
+                showSymbol: false,
+                smooth: true,
+                color: C.temp,
+                lineStyle: { color: C.temp, width: 2 },
+                markLine: markLineData.length ? { symbol: 'none', silent: true, data: markLineData } : undefined,
+                markArea: markAreaData.length ? { silent: true, itemStyle: { color: C.night }, data: markAreaData } : undefined,
+            },
+        ];
+    }
 
     const rainSeries = {
         id: 'rain',
@@ -307,7 +352,7 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
         barMaxWidth: 10,
     };
 
-    return { rainSeries, tempSeries, bandSeries, chartStart, chartEnd };
+    return { rainSeries, tempSeries, bandSeries, chartStart, chartEnd, sunriseTs, sunsetTs };
 }
 
 // Shared axis-trigger tooltip. If the hovered point's series list doesn't
@@ -353,31 +398,19 @@ const AXIS_COMMON = {
     yAxisRain: { type: 'value' as const, name: 'mm', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { show: false } },
 };
 
-// Variante A/C: one grid. `showAxisLabels` is off for A (a separate ruler row
-// above takes over) and on for C (chart keeps its own axis, ribbon replaces
-// the number row below).
-function buildSingleGridOption(core: ReturnType<typeof buildCoreSeries>, showAxisLabels: boolean, tooltipFormatter: (raw: unknown) => string) {
-    return {
-        animation: false,
-        grid: { left: CHART_PAD_X, right: CHART_PAD_X, top: 24, bottom: 22 },
-        tooltip: { trigger: 'axis' as const, formatter: tooltipFormatter },
-        xAxis: {
-            type: 'time' as const,
-            min: core.chartStart,
-            max: core.chartEnd,
-            axisLabel: { show: showAxisLabels, color: C.axis, fontSize: 10 },
-            axisLine: { show: showAxisLabels, lineStyle: { color: C.axisLine } },
-            axisTick: { show: showAxisLabels },
-        },
-        yAxis: [AXIS_COMMON.yAxisTemp, AXIS_COMMON.yAxisRain],
-        series: [core.rainSeries, ...core.bandSeries, ...core.tempSeries],
-    };
-}
-
-// Variante B: two stacked grids (chart + probability bars) sharing one linked
+// Two stacked grids (chart + probability bars) sharing one linked
 // axisPointer, so a tap anywhere draws one crosshair through both and the
 // tooltip merges temperature, rain AND probability — alignment is guaranteed
-// because it's the same coordinate system, not matched CSS padding.
+// because it's the same coordinate system, not matched CSS padding. Grid
+// numbers are named constants (not inlined) because SunMoonOverlay below
+// needs the exact same axis-line y-position to sit the sun/moon markers on it.
+const GRID_TOP0 = 16;
+const GRID_H0 = 90;
+const GRID_TOP1 = 112;
+const GRID_H1 = 24;
+const CHART_HEIGHT = 156;
+const AXIS_LINE_Y = GRID_TOP1 + GRID_H1;
+
 function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: Pt[], tooltipFormatter: (raw: unknown) => string) {
     const probSeries = {
         id: 'prob-bars',
@@ -401,8 +434,8 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
         // Tight gap between the two grids (6px) — the probability strip reads
         // as "part of the same chart", not a separate panel below it.
         grid: [
-            { left: CHART_PAD_X, right: CHART_PAD_X, top: 16, height: 90 },
-            { left: CHART_PAD_X, right: CHART_PAD_X, top: 112, height: 24 },
+            { left: CHART_PAD_X, right: CHART_PAD_X, top: GRID_TOP0, height: GRID_H0 },
+            { left: CHART_PAD_X, right: CHART_PAD_X, top: GRID_TOP1, height: GRID_H1 },
         ],
         tooltip: { trigger: 'axis' as const, axisPointer: { type: 'line' as const }, formatter: tooltipFormatter },
         xAxis: [
@@ -425,34 +458,39 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
     };
 }
 
-// Interpolated RGB (not alpha-over-background) so low values stay clearly
-// visible against a dark widget background instead of fading toward
-// invisible — alpha alone made the whole band read as "barely there".
-const RIBBON_LOW: [number, number, number] = [56, 75, 98];
-const RIBBON_HIGH: [number, number, number] = [64, 170, 255];
-function mixRgb(t: number): string {
-    const c = RIBBON_LOW.map((lo, i) => Math.round(lo + (RIBBON_HIGH[i] - lo) * t));
-    return `rgb(${c[0]},${c[1]},${c[2]})`;
-}
-
-function ProbRibbon({ points }: { points: Pt[] }) {
-    if (!points.length) return null;
-    const stops = points
-        .map((p, i) => {
-            const frac = i / (points.length - 1);
-            const t = Math.min(1, p.prob / 100);
-            return `${mixRgb(t)} ${(frac * 100).toFixed(1)}%`;
-        })
-        .join(', ');
-    return (
-        <div style={{ marginTop: 6 }}>
-            <div style={{ margin: `0 ${CHART_PAD_X}px`, height: 14, borderRadius: 4, background: `linear-gradient(to right, ${stops})`, border: '1px solid var(--widget-border)' }} />
-            <div className="flex items-center justify-between" style={{ margin: `3px ${CHART_PAD_X}px 0`, fontSize: 8.5, color: 'var(--text-tertiary, var(--text-secondary))' }}>
-                <span>gering</span>
-                <span>Regenwahrscheinlichkeit — Zahl auf Tipp im Chart</span>
-                <span>hoch</span>
-            </div>
+// Small sun/moon badges sitting ON the shared x-axis line at sunrise/sunset —
+// horizontal position via the same CHART_PAD_X + frac technique used
+// elsewhere, vertical position pinned to AXIS_LINE_Y so they visibly straddle
+// the axis instead of floating above or below it.
+function SunMoonOverlay({ sunriseTs, sunsetTs, chartStart, chartEnd }: { sunriseTs: number | null; sunsetTs: number | null; chartStart: number; chartEnd: number }) {
+    const frac = (t: number) => (chartEnd > chartStart ? (t - chartStart) / (chartEnd - chartStart) : 0);
+    const badge = (t: number, Icon: LucideIcon, color: string, key: string) => (
+        <div
+            key={key}
+            style={{
+                position: 'absolute',
+                left: `calc(${CHART_PAD_X}px + ${frac(t)} * (100% - ${CHART_PAD_X * 2}px))`,
+                top: AXIS_LINE_Y,
+                transform: 'translate(-50%, -50%)',
+                width: 16,
+                height: 16,
+                borderRadius: '50%',
+                background: 'var(--widget-bg)',
+                border: '1px solid var(--widget-border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+            }}
+        >
+            <Icon size={10} style={{ color }} />
         </div>
+    );
+    return (
+        <>
+            {sunriseTs !== null && sunriseTs > chartStart && sunriseTs < chartEnd && badge(sunriseTs, Sun, '#eab308', 'sunrise')}
+            {sunsetTs !== null && sunsetTs > chartStart && sunsetTs < chartEnd && badge(sunsetTs, Moon, '#8a93a6', 'sunset')}
+        </>
     );
 }
 
@@ -513,15 +551,15 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
         return out;
     }, [hourly, index]);
 
-    const { optionB, optionC } = useMemo(() => {
-        if (!points.length) return { optionA: null, optionB: null, optionC: null };
-        const core = buildCoreSeries(points, sunrise, sunset, isToday);
+    const option = useMemo(() => {
+        if (!points.length) return null;
+        const core = buildCoreSeries(points, sunrise, sunset, isToday, index);
         const formatter = buildTooltipFormatter(hourly);
-        return {
-            optionB: buildDualGridOption(core, points, formatter),
-            optionC: buildSingleGridOption(core, true, formatter),
-        };
-    }, [points, sunrise, sunset, isToday, hourly]);
+        return buildDualGridOption(core, points, formatter);
+    }, [points, sunrise, sunset, isToday, index, hourly]);
+
+    const sunriseTs = sunrise ? new Date(sunrise).getTime() : null;
+    const sunsetTs = sunset ? new Date(sunset).getTime() : null;
 
     return (
         <div style={{ padding: '12px 12px 14px' }}>
@@ -529,47 +567,31 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
                 <span style={{ fontSize: 13.5, fontWeight: 650, color: 'var(--text-primary)' }}>
                     {isToday ? 'Heute' : `${dayLabel(index)} ${dayDateStr(index)}`}
                 </span>
-                {isToday && (
-                    <span className="inline-flex items-center gap-2" style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>
+                <span className="inline-flex items-center gap-2" style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>
+                    {isToday && (
                         <span className="inline-flex items-center gap-1">
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.temp, display: 'inline-block' }} />
                             gemessen
                         </span>
-                        <span className="inline-flex items-center gap-1">
-                            <span style={{ width: 10, height: 6, borderRadius: 2, background: C.band, display: 'inline-block' }} />
-                            Prognose
-                        </span>
+                    )}
+                    <span className="inline-flex items-center gap-1">
+                        <span style={{ width: 10, height: 6, borderRadius: 2, background: C.band, display: 'inline-block' }} />
+                        Prognose
                     </span>
-                )}
+                </span>
             </div>
 
-            {/* ── Variante B — verbundenes Fadenkreuz ─────────────────────── */}
-            <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 4 }}>
-                    Variante B · Verbundenes Fadenkreuz
-                </div>
-                {optionB ? (
-                    <ReactECharts option={optionB} notMerge style={{ height: 156 }} />
+            <div style={{ marginTop: 8, position: 'relative' }}>
+                {option && points.length > 0 && (
+                    <SunMoonOverlay sunriseTs={sunriseTs} sunsetTs={sunsetTs} chartStart={points[0].t} chartEnd={points[points.length - 1].t} />
+                )}
+                {option ? (
+                    <ReactECharts option={option} notMerge style={{ height: CHART_HEIGHT }} />
                 ) : (
-                    <div style={{ height: 156, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    <div style={{ height: CHART_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
                         Keine Stundendaten für diesen Tag
                     </div>
                 )}
-            </div>
-
-            {/* ── Variante C — Farbband ───────────────────────────────────── */}
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--widget-border)' }}>
-                <div style={{ fontSize: 10, fontWeight: 650, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 4 }}>
-                    Variante C · Farbband
-                </div>
-                {optionC ? (
-                    <ReactECharts option={optionC} notMerge style={{ height: 150 }} />
-                ) : (
-                    <div style={{ height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-                        Keine Stundendaten für diesen Tag
-                    </div>
-                )}
-                <ProbRibbon points={points} />
             </div>
 
             <GroupLabel text="Sonne & Licht" />
