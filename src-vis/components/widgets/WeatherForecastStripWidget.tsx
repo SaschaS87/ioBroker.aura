@@ -455,7 +455,7 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
                 data: pastData,
                 showSymbol: true,
                 symbol: 'circle',
-                symbolSize: 3,
+                symbolSize: 4,
                 itemStyle: { color: C.temp, borderWidth: 0 },
                 // Standard ECharts emphasis (hover/tap) behaviour — same as every
                 // other chart in the app, deliberately not overridden.
@@ -602,23 +602,34 @@ const CHART_HEIGHT = 156;
 // through the badges. Baking the markers into the chart's own coordinate
 // system removes both problems at once — same data, same resize, same
 // paint order as everything else in the chart.
+// Coordinates hand-scaled to 70% around the (8,8) centre (rather than an SVG
+// transform= with parentheses/spaces in the attribute value) and the whole
+// string run through encodeURIComponent — both belt-and-suspenders against
+// the data-URI mangling anything, since a malformed image src here silently
+// stalls the chart's own canvas (nothing renders at all, no console error).
 const SUN_SVG =
-    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>" +
-    "<circle cx='8' cy='8' r='8' fill='%23eab308'/>" +
-    "<circle cx='8' cy='8' r='3' fill='none' stroke='%23fff' stroke-width='1.4'/>" +
-    "<g stroke='%23fff' stroke-width='1.4' stroke-linecap='round'>" +
-    "<line x1='8' y1='2' x2='8' y2='3.2'/><line x1='8' y1='12.8' x2='8' y2='14'/>" +
-    "<line x1='2' y1='8' x2='3.2' y2='8'/><line x1='12.8' y1='8' x2='14' y2='8'/>" +
-    "<line x1='4' y1='4' x2='4.8' y2='4.8'/><line x1='11.2' y1='11.2' x2='12' y2='12'/>" +
-    "<line x1='4' y1='12' x2='4.8' y2='11.2'/><line x1='11.2' y1='4.8' x2='12' y2='4'/>" +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">' +
+    '<circle cx="8" cy="8" r="8" fill="#eab308"/>' +
+    '<g stroke="#fff" stroke-width="1" stroke-linecap="round">' +
+    '<circle cx="8" cy="8" r="2.1" fill="none"/>' +
+    '<line x1="8" y1="3.8" x2="8" y2="4.64"/><line x1="8" y1="11.36" x2="8" y2="12.2"/>' +
+    '<line x1="3.8" y1="8" x2="4.64" y2="8"/><line x1="11.36" y1="8" x2="12.2" y2="8"/>' +
+    '<line x1="5.76" y1="5.76" x2="5.2" y2="5.2"/><line x1="10.24" y1="10.24" x2="10.8" y2="10.8"/>' +
+    '<line x1="5.76" y1="10.24" x2="5.2" y2="10.8"/><line x1="10.24" y1="5.76" x2="10.8" y2="5.2"/>' +
     '</g></svg>';
+// Crescent via two overlapping circles (base moon minus an offset "bite" in
+// the badge's own background colour) instead of a single hand-built arc
+// path — the arc version came out lopsided, hugging the left edge instead of
+// reading as a centred crescent. A centred base circle with the bite offset
+// only slightly keeps the whole glyph visually centred in the badge.
 const MOON_SVG =
-    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>" +
-    "<circle cx='8' cy='8' r='8' fill='%236b7280'/>" +
-    "<path d='M10.5 4.5a5 5 0 1 0 0 7 6 6 0 1 1 0-7z' fill='%23fff'/>" +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">' +
+    '<circle cx="8" cy="8" r="8" fill="#6b7280"/>' +
+    '<circle cx="8" cy="8" r="3.3" fill="#fff"/>' +
+    '<circle cx="9.2" cy="6.9" r="3.1" fill="#6b7280"/>' +
     '</svg>';
-const SUN_IMAGE = `image://data:image/svg+xml;utf8,${SUN_SVG}`;
-const MOON_IMAGE = `image://data:image/svg+xml;utf8,${MOON_SVG}`;
+const SUN_IMAGE = `image://data:image/svg+xml;utf8,${encodeURIComponent(SUN_SVG)}`;
+const MOON_IMAGE = `image://data:image/svg+xml;utf8,${encodeURIComponent(MOON_SVG)}`;
 
 function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: Pt[], tooltipFormatter: (raw: unknown) => string) {
     const sunMoonMarkPoints: Record<string, unknown>[] = [];
