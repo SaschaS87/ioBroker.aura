@@ -44,7 +44,10 @@ const C = {
     axis: '#888',
     axisLine: '#444',
     grid: '#333',
-    night: 'rgba(136,136,136,0.14)',
+    // Matches the moon badge's own fill (MOON_SVG below) at 40% opacity —
+    // picked 29.07. after an on-phone A/B round against lighter/darker greys;
+    // the moon-toned wash read best. See Wetter/Aura Wetter-Widget - Aufbau.md.
+    night: 'rgba(107,114,128,0.40)',
     // Neutral grey confidence-ribbon fill (DWD-style band hugging the future
     // portion of the line) — deliberately NOT tinted with the temperature
     // color, so it reads as "uncertainty", not as an unexplained colored block.
@@ -137,6 +140,15 @@ function timeOnly(iso: string | null): string {
     if (!iso) return '–';
     const idx = iso.indexOf('T');
     return idx >= 0 ? iso.slice(idx + 1, idx + 6) : iso;
+}
+// For real UTC timestamps (Status.modelllaufZeit / letzterAbruf, with a "Z"
+// suffix) — unlike timeOnly() above, this must actually convert to local
+// time rather than slice the string, or it'd be off by the UTC offset.
+function localTime(iso: string | null): string {
+    if (!iso) return '–';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '–';
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
 interface HourlyBlob {
@@ -811,6 +823,34 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
     );
 }
 
+// ── Data-provenance footer — applies to the whole tab (current conditions,
+// strip, detail panel all come from the same Open-Meteo pull), so it's a
+// single footer here rather than repeated per section. Kein Rahmen, keine
+// Karte — bewusst zurückhaltend. Restored 1:1 from the retired
+// WeatherForecastWidget.tsx (see Wetter/Aura Wetter-Widget - Aufbau.md).
+function DataFooter({ base }: { base: string }) {
+    const { value: modelRunV } = useDatapoint(`${base}.Status.modelllaufZeit`);
+    const { value: modelAvailableV } = useDatapoint(`${base}.Status.modelllaufVerfuegbarAb`);
+    const { value: nextRunV } = useDatapoint(`${base}.Status.naechsteBerechnung`);
+    const { value: lastFetchV } = useDatapoint(`${base}.Status.letzterAbruf`);
+
+    const modelRun = typeof modelRunV === 'string' ? modelRunV : null;
+    const modelAvailable = typeof modelAvailableV === 'string' ? modelAvailableV : null;
+    const nextRun = typeof nextRunV === 'string' ? nextRunV : null;
+    const lastFetch = typeof lastFetchV === 'string' ? lastFetchV : null;
+
+    return (
+        <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--text-secondary)', opacity: 0.7, lineHeight: 1.5, marginTop: 2 }}>
+            <div>
+                Datenstand {localTime(modelRun)} Uhr · verfügbar ab {localTime(modelAvailable)} Uhr
+            </div>
+            <div>
+                nächste Berechnung {localTime(nextRun)} Uhr · abgerufen um {localTime(lastFetch)} Uhr
+            </div>
+        </div>
+    );
+}
+
 export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const base = (config.options?.basePath as string) || DEFAULT_BASE;
     const [active, setActive] = useState(0);
@@ -832,6 +872,7 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
                     <DetailPanel key={active} index={active} base={base} />
                 </div>
             </div>
+            <DataFooter base={base} />
         </div>
     );
 }

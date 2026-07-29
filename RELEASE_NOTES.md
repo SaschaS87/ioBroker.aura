@@ -41,3 +41,5 @@
 - Heating / Room climate / Advanced chart - two-finger pinch now zooms into the currently shown time range for a closer look at the data; the zoom resets when switching Tag/7 Tage/Monat
 - Weather (new) - forecast widget fed by Open-Meteo: swipeable 7-day day-strip with a shared detail view per day — linked temperature/rain/rain-probability chart with a single crosshair and tooltip, sun/moon markers at sunrise and sunset, a widening confidence band over the forecast portion, and sun/rain/temperature detail groups
 - Weather - fixed a bug where reopening the app from the iOS background could show stale values even though the server already had fresh data
+- Weather - data-source footer restored below the day strip (model run time, availability, next update, last fetch)
+- Weather - night shading now uses the same grey as the sunset/sunrise moon marker, at a stronger opacity for better readability
