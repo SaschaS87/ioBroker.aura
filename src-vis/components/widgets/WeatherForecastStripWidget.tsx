@@ -10,7 +10,9 @@ import {
     CloudRain,
     CloudSnow,
     CloudLightning,
+    ArrowUp,
     Droplet,
+    Wind,
     Sunrise,
     Sunset,
     Clock,
@@ -70,6 +72,49 @@ function weatherIcon(code: number | null): LucideIcon {
     if (code >= 95) return CloudLightning;
     return Cloud;
 }
+function weatherLabel(code: number | null): string {
+    if (code === null) return '–';
+    if (code === 0) return 'Klar';
+    if (code === 1) return 'Meist klar';
+    if (code === 2) return 'Teilweise bewölkt';
+    if (code === 3) return 'Bedeckt';
+    if (code === 45 || code === 48) return 'Nebel';
+    if (code >= 51 && code <= 57) return 'Nieselregen';
+    if (code >= 61 && code <= 67) return 'Regen';
+    if (code >= 80 && code <= 82) return 'Regenschauer';
+    if (code >= 71 && code <= 77) return 'Schnee';
+    if (code === 85 || code === 86) return 'Schneeschauer';
+    if (code >= 95) return 'Gewitter';
+    return 'Unbekannt';
+}
+
+// Status-card colour by weather condition (same idea as HeatingWidget's
+// MODE_STYLE: a tinted card via color-mix, so it works in light and dark).
+const MOOD_COLOR: Record<string, string> = {
+    clear: '#eab308',
+    cloudy: '#8a8f98',
+    fog: '#8a8f98',
+    rain: '#2f7fd6',
+    snow: '#5aa0e0',
+    storm: '#8b5cf6',
+};
+function weatherMood(code: number | null): keyof typeof MOOD_COLOR {
+    if (code === null) return 'cloudy';
+    if (code === 0 || code === 1) return 'clear';
+    if (code === 2 || code === 3) return 'cloudy';
+    if (code === 45 || code === 48) return 'fog';
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return 'rain';
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+    if (code >= 95) return 'storm';
+    return 'cloudy';
+}
+
+const COMPASS = ['N', 'NNO', 'NO', 'ONO', 'O', 'OSO', 'SO', 'SSO', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+function compassLabel(deg: number | null): string {
+    if (deg === null) return '';
+    const idx = Math.round((deg % 360) / 22.5) % 16;
+    return COMPASS[idx];
+}
 
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 function dayLabel(i: number): string {
@@ -100,6 +145,7 @@ interface HourlyBlob {
     temperature_2m?: number[];
     precipitation?: number[];
     precipitation_probability?: number[];
+    uv_index?: number[];
     [key: string]: unknown;
 }
 function parseJson<T>(raw: unknown): T | null {
@@ -109,6 +155,12 @@ function parseJson<T>(raw: unknown): T | null {
     } catch {
         return null;
     }
+}
+function currentHourIndex(hourly: HourlyBlob | null): number {
+    if (!hourly?.time) return -1;
+    const now = new Date();
+    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
+    return hourly.time.indexOf(key);
 }
 
 function GroupLabel({ text }: { text: string }) {
@@ -125,6 +177,108 @@ function DetailRow({ Icon, label, value, dim }: { Icon: LucideIcon; label: strin
             {label}
             <b style={{ color: 'var(--text-primary)', fontWeight: 500, marginLeft: 'auto' }}>{value}</b>
         </span>
+    );
+}
+
+// ── Current-conditions status card — restored 1:1 from the retired
+// WeatherForecastWidget.tsx (only this block, not the rest of that widget:
+// no nowcast/radar/footer). Always shows "right now", independent of
+// whichever day is selected in the strip below. ──────────────────────────
+function CurrentConditionsCard({ base }: { base: string }) {
+    const { value: tempV } = useDatapoint(`${base}.Aktuell.temperatur`);
+    const { value: feelsV } = useDatapoint(`${base}.Aktuell.gefuehlteTemperatur`);
+    const { value: codeV } = useDatapoint(`${base}.Aktuell.wettercode`);
+    const { value: cloudV } = useDatapoint(`${base}.Aktuell.bewoelkung`);
+    const { value: humidityV } = useDatapoint(`${base}.Aktuell.luftfeuchte`);
+    const { value: windSpeedV } = useDatapoint(`${base}.Aktuell.windgeschwindigkeit`);
+    const { value: windDirV } = useDatapoint(`${base}.Aktuell.windrichtung`);
+    const { value: windGustsV } = useDatapoint(`${base}.Aktuell.windboeen`);
+    const { value: precipitationV } = useDatapoint(`${base}.Aktuell.niederschlag`);
+    const { value: isDayV } = useDatapoint(`${base}.Aktuell.istTag`);
+    const { value: sunriseTodayV } = useDatapoint(`${base}.Taeglich.Tag0.sonnenaufgang`);
+    const { value: sunsetTodayV } = useDatapoint(`${base}.Taeglich.Tag0.sonnenuntergang`);
+    const { value: hourlyRaw } = useDatapoint(`${base}.Stuendlich.json`);
+
+    const temp = asNum(tempV);
+    const feels = asNum(feelsV);
+    const code = asNum(codeV);
+    const cloud = asNum(cloudV);
+    const humidity = asNum(humidityV);
+    const windSpeed = asNum(windSpeedV);
+    const windDir = asNum(windDirV);
+    const windGusts = asNum(windGustsV);
+    const precipitation = asNum(precipitationV);
+    const sunriseToday = typeof sunriseTodayV === 'string' ? sunriseTodayV : null;
+    const sunsetToday = typeof sunsetTodayV === 'string' ? sunsetTodayV : null;
+    const Icon = weatherIcon(code);
+    const mood = weatherMood(code);
+    // No mood tint at night — Open-Meteo's own day/night flag (astronomically
+    // computed for this location) is more authoritative than re-deriving it
+    // from the sunrise/sunset timestamps ourselves.
+    // Open-Meteo sends is_day as a number (0/1), not a real JSON boolean — a
+    // strict `=== false` check missed the 0 case. null (not loaded yet) keeps
+    // the default (coloured), only a confirmed falsy value counts as night.
+    const isNight = isDayV !== null && (isDayV === false || isDayV === 0 || isDayV === '0');
+    const moodColor = isNight ? 'var(--text-secondary)' : MOOD_COLOR[mood];
+    const cardBg = isNight ? 'var(--widget-bg)' : `color-mix(in srgb, ${moodColor} 18%, var(--widget-bg))`;
+    const cardBorder = isNight ? 'var(--widget-border)' : `color-mix(in srgb, ${moodColor} 45%, var(--widget-border))`;
+
+    // current UV isn't in the `current` API block — derive it from this hour's
+    // entry in the hourly forecast instead (no extra state/API call needed).
+    const hourly = useMemo(() => parseJson<HourlyBlob>(hourlyRaw), [hourlyRaw]);
+    const currentUv = useMemo(() => {
+        const idx = currentHourIndex(hourly);
+        const v = idx >= 0 ? hourly?.uv_index?.[idx] : undefined;
+        return typeof v === 'number' ? v : null;
+    }, [hourly]);
+
+    return (
+        <div
+            style={{
+                background: cardBg,
+                border: `1px solid ${cardBorder}`,
+                borderRadius: 'var(--widget-radius)',
+                padding: '14px 12px',
+                textAlign: 'center',
+            }}
+        >
+            <div className="inline-flex items-center justify-center gap-2" style={{ fontSize: 18, fontWeight: 500, color: moodColor, lineHeight: 1.2 }}>
+                <Icon size={22} />
+                {weatherLabel(code)} · {temp !== null ? `${formatNum(temp, 1)}°C` : '–'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                gefühlt {feels !== null ? `${formatNum(feels, 0)}°` : '–'}
+            </div>
+            <div className="flex items-center justify-center flex-wrap" style={{ gap: 16, marginTop: 11 }}>
+                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <Cloud size={14} /> {cloud !== null ? `${formatNum(cloud, 0)}%` : '–'}
+                </span>
+                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <Droplet size={14} /> {humidity !== null ? `${formatNum(humidity, 0)}%` : '–'}
+                </span>
+                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <Wind size={14} />
+                    {windSpeed !== null ? formatNum(windSpeed, 0) : '–'}
+                    {windDir !== null && <ArrowUp size={11} style={{ transform: `rotate(${windDir}deg)` }} />}
+                    {compassLabel(windDir)}
+                    {windGusts !== null ? ` · Böen ${formatNum(windGusts, 0)}` : ''}
+                </span>
+                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <Sun size={14} /> UV {currentUv !== null ? formatNum(currentUv, 0) : '–'}
+                </span>
+                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    <CloudRain size={14} /> {precipitation !== null ? `${formatNum(precipitation, 1)}mm` : '–'}
+                </span>
+            </div>
+            <div className="flex items-center justify-center" style={{ gap: 18, marginTop: 11, fontSize: 12, color: 'var(--text-secondary)' }}>
+                <span className="inline-flex items-center gap-1">
+                    <Sunrise size={13} /> {timeOnly(sunriseToday)}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                    <Sunset size={13} /> {timeOnly(sunsetToday)}
+                </span>
+            </div>
+        </div>
     );
 }
 
@@ -392,10 +546,27 @@ function buildTooltipFormatter(hourly: HourlyBlob | null) {
     };
 }
 
+// Fixed default ranges (0–35°C / 0–5mm) so a normal day's chart doesn't jump
+// around scale-wise — but still expand via the min/max callbacks whenever the
+// actual data (incl. the confidence band) doesn't fit, rather than clipping it.
 const AXIS_COMMON = {
     animation: false,
-    yAxisTemp: { type: 'value' as const, name: '°C', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { lineStyle: { color: C.grid } } },
-    yAxisRain: { type: 'value' as const, name: 'mm', axisLabel: { color: C.axis, fontSize: 10 }, splitLine: { show: false } },
+    yAxisTemp: {
+        type: 'value' as const,
+        name: '°C',
+        min: (val: { min: number }) => Math.min(0, val.min),
+        max: (val: { max: number }) => Math.max(35, val.max),
+        axisLabel: { color: C.axis, fontSize: 10 },
+        splitLine: { lineStyle: { color: C.grid } },
+    },
+    yAxisRain: {
+        type: 'value' as const,
+        name: 'mm',
+        min: 0,
+        max: (val: { max: number }) => Math.max(5, val.max),
+        axisLabel: { color: C.axis, fontSize: 10 },
+        splitLine: { show: false },
+    },
 };
 
 // Two stacked grids (chart + probability bars) sharing one linked
@@ -464,7 +635,9 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
 // the axis instead of floating above or below it.
 function SunMoonOverlay({ sunriseTs, sunsetTs, chartStart, chartEnd }: { sunriseTs: number | null; sunsetTs: number | null; chartStart: number; chartEnd: number }) {
     const frac = (t: number) => (chartEnd > chartStart ? (t - chartStart) / (chartEnd - chartStart) : 0);
-    const badge = (t: number, Icon: LucideIcon, color: string, key: string) => (
+    // Filled colour circle (not just an outline) so the badge pops against the
+    // chart instead of reading as a faint ring with a tiny icon inside.
+    const badge = (t: number, Icon: LucideIcon, bg: string, key: string) => (
         <div
             key={key}
             style={{
@@ -475,21 +648,20 @@ function SunMoonOverlay({ sunriseTs, sunsetTs, chartStart, chartEnd }: { sunrise
                 width: 16,
                 height: 16,
                 borderRadius: '50%',
-                background: 'var(--widget-bg)',
-                border: '1px solid var(--widget-border)',
+                background: bg,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 pointerEvents: 'none',
             }}
         >
-            <Icon size={10} style={{ color }} />
+            <Icon size={10} style={{ color: '#fff' }} />
         </div>
     );
     return (
         <>
             {sunriseTs !== null && sunriseTs > chartStart && sunriseTs < chartEnd && badge(sunriseTs, Sun, '#eab308', 'sunrise')}
-            {sunsetTs !== null && sunsetTs > chartStart && sunsetTs < chartEnd && badge(sunsetTs, Moon, '#8a93a6', 'sunset')}
+            {sunsetTs !== null && sunsetTs > chartStart && sunsetTs < chartEnd && badge(sunsetTs, Moon, '#6b7280', 'sunset')}
         </>
     );
 }
@@ -628,21 +800,21 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const [active, setActive] = useState(0);
 
     return (
-        <div
-            style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}
-            data-widget-interactive
-        >
-            <div className="flex" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollSnapType: 'x proximity' }}>
-                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                    <StripCell key={i} index={i} base={base} active={active === i} onSelect={() => setActive(i)} />
-                ))}
-            </div>
-            <div style={{ borderTop: '1px solid var(--widget-border)' }}>
-                {/* key={active}: force a remount per day rather than re-pointing
-                    one instance's useDatapoint refs at a new day's ids — mirrors
-                    how the original widget mounts one DayCard per day, so every
-                    field is fresh from the cache immediately, no stale carry-over. */}
-                <DetailPanel key={active} index={active} base={base} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
+            <CurrentConditionsCard base={base} />
+            <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}>
+                <div className="flex" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollSnapType: 'x proximity' }}>
+                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                        <StripCell key={i} index={i} base={base} active={active === i} onSelect={() => setActive(i)} />
+                    ))}
+                </div>
+                <div style={{ borderTop: '1px solid var(--widget-border)' }}>
+                    {/* key={active}: force a remount per day rather than re-pointing
+                        one instance's useDatapoint refs at a new day's ids — mirrors
+                        how the original widget mounts one DayCard per day, so every
+                        field is fresh from the cache immediately, no stale carry-over. */}
+                    <DetailPanel key={active} index={active} base={base} />
+                </div>
             </div>
         </div>
     );
