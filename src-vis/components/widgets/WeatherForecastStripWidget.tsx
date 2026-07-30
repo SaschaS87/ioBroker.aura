@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import {
     Sun,
@@ -122,6 +122,7 @@ const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 function dayLabel(i: number): string {
     if (i === 0) return 'Heute';
     if (i === 1) return 'Morgen';
+    if (i === -1) return 'Gestern';
     const d = new Date();
     d.setDate(d.getDate() + i);
     return WEEKDAYS[d.getDay()];
@@ -910,9 +911,28 @@ function DataFooter({ base }: { base: string }) {
     );
 }
 
+// Days shown in the strip: 2 past + today + 6 forecast days. Order matters —
+// past days sit to the LEFT of "Heute", so the strip must be scrolled past
+// them on mount (see stripRef effect below), otherwise the widget would open
+// showing yesterday-before-yesterday instead of today.
+const DAY_INDICES = [-2, -1, 0, 1, 2, 3, 4, 5, 6];
+
 export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const base = (config.options?.basePath as string) || DEFAULT_BASE;
     const [active, setActive] = useState(0);
+    const stripRef = useRef<HTMLDivElement>(null);
+
+    // Land on "Heute" when the widget mounts, not on the two past-day cells
+    // prepended to the left of it (Sascha, 30.07.: "wichtig wäre mir nur,
+    // dass man zuerst immer bei dem heutigen Wetter landet"). `active` already
+    // defaults to 0 (today) for the detail panel below the strip; this effect
+    // only handles the horizontal SCROLL POSITION of the day-cell row itself.
+    useEffect(() => {
+        const el = stripRef.current;
+        if (!el) return;
+        const todayCell = el.children[DAY_INDICES.indexOf(0)] as HTMLElement | undefined;
+        todayCell?.scrollIntoView({ block: 'nearest', inline: 'start' });
+    }, []);
 
     // footerOnly: a second, minimal instance of this same widget type that
     // renders just the data-provenance footer — used to pin it to the bottom
@@ -927,8 +947,8 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
             <CurrentConditionsCard base={base} />
             <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}>
-                <div className="flex" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollSnapType: 'x proximity' }}>
-                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                <div ref={stripRef} className="flex" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollSnapType: 'x proximity' }}>
+                    {DAY_INDICES.map((i) => (
                         <StripCell key={i} index={i} base={base} active={active === i} onSelect={() => setActive(i)} />
                     ))}
                 </div>

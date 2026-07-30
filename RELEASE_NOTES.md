@@ -46,3 +46,4 @@
 - General - increased the bottom scroll buffer again (now 4rem) so the last widget on a tall tab is no longer clipped on iOS Safari when scrolling to the end
 - Weather - the data-source footer (model run time, next update, last fetch) now always stays at the very bottom of the tab instead of ending up mid-tab once other widgets are added below the forecast strip
 - Weather - restored the 15-minute rain nowcast strip (next ~6h) that was lost when the widget was consolidated to the day-strip variant
+- Weather - day strip now includes the last 2 days in addition to the 7-day forecast; still opens scrolled to "Heute" by default
