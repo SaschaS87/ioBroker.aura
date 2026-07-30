@@ -411,14 +411,21 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
     // instead of leaving a gap — see interpolateAt() above.
     const nowPoint = isToday ? interpolateAt(points, nowTs) : null;
 
+    // A day already in the past (Tag-1/Tag-2) has no "forecast uncertainty"
+    // left to show — Sascha, 30.07.: drop the confidence band there entirely.
+    const isPast = !isToday && dayIndex < 0;
+
     // Confidence ribbon: an ECharts stacked-area pair (invisible lower bound +
     // visible delta on top), so the band's top/bottom follow the temperature
     // curve itself. Today: only the forecast portion (from "now" onward).
-    // Other days: the entire day, since all of it is forecast.
+    // Future days: the entire day, since all of it is forecast. Past days:
+    // no band at all (see isPast above).
     const bandStart = isToday ? nowTs : chartStart;
-    const bandBasePoints: Pt[] = isToday
-        ? [...(nowPoint ? [{ t: nowPoint.t, temp: nowPoint.temp, rain: 0, prob: 0 }] : []), ...points.filter((p) => p.t > nowTs)]
-        : points;
+    const bandBasePoints: Pt[] = isPast
+        ? []
+        : isToday
+          ? [...(nowPoint ? [{ t: nowPoint.t, temp: nowPoint.temp, rain: 0, prob: 0 }] : []), ...points.filter((p) => p.t > nowTs)]
+          : points;
     const dayScale = Math.min(2.5, 1 + dayIndex * 0.25);
     let bandSeries: Record<string, unknown>[] = [];
     if (bandBasePoints.length > 1) {
@@ -490,7 +497,11 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
                 showSymbol: false,
                 smooth: true,
                 color: C.temp,
-                lineStyle: { color: C.temp, width: 2, type: 'dashed' as const },
+                // Solid, not dashed (30.07.) — matches how every other future
+                // day (Morgen, Übermorgen, …) already renders its line; the
+                // confidence band alone already communicates "this is a
+                // forecast", the line style doesn't need to repeat that.
+                lineStyle: { color: C.temp, width: 2 },
                 // z pushes the dashed sunrise/sunset lines above the band's area
                 // fill so they don't get visually cut by its (anti-aliased) edge —
                 // that made the line look offset from the grey area's boundary even
@@ -507,7 +518,14 @@ function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | 
                 name: 'Temperatur',
                 yAxisIndex: 0,
                 data: points.map((p) => [p.t, p.temp]),
-                showSymbol: false,
+                // Past days (Tag-1/Tag-2) get the same narrow dots as "today,
+                // bis jetzt" — unified style for "this already happened"
+                // (30.07.). Future days stay dot-less so "still a forecast"
+                // remains visually distinct.
+                showSymbol: isPast,
+                symbol: 'circle',
+                symbolSize: 4,
+                itemStyle: { color: C.temp, borderWidth: 0 },
                 smooth: true,
                 color: C.temp,
                 lineStyle: { color: C.temp, width: 2 },
@@ -921,17 +939,64 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const base = (config.options?.basePath as string) || DEFAULT_BASE;
     const [active, setActive] = useState(0);
     const stripRef = useRef<HTMLDivElement>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
 
-    // Land on "Heute" when the widget mounts, not on the two past-day cells
-    // prepended to the left of it (Sascha, 30.07.: "wichtig wäre mir nur,
-    // dass man zuerst immer bei dem heutigen Wetter landet"). `active` already
-    // defaults to 0 (today) for the detail panel below the strip; this effect
-    // only handles the horizontal SCROLL POSITION of the day-cell row itself.
+    // Land on "Heute" whenever this widget becomes visible again — not just on
+    // first mount. Sascha, 30.07.: "unabhängig davon, wann man den Tab Wetter
+    // öffnet" — worked on a fresh app load (mount-only effect) but NOT after
+    // switching tabs and back, or resuming from the iOS background, because
+    // Dashboard.tsx keeps every visited tab's widgets mounted forever and only
+    // toggles `display:none` (see mountedTabIds in Dashboard.tsx) — so this
+    // component never remounts and a mount-only effect only ever fires once.
     useEffect(() => {
-        const el = stripRef.current;
-        if (!el) return;
-        const todayCell = el.children[DAY_INDICES.indexOf(0)] as HTMLElement | undefined;
-        todayCell?.scrollIntoView({ block: 'nearest', inline: 'start' });
+        const jumpToToday = () => {
+            setActive(0);
+            // Wait a frame: right after display:none is lifted the strip has
+            // just regained layout, scrollIntoView needs that to be settled.
+            requestAnimationFrame(() => {
+                const el = stripRef.current;
+                const todayCell = el?.children[DAY_INDICES.indexOf(0)] as HTMLElement | undefined;
+                todayCell?.scrollIntoView({ block: 'nearest', inline: 'start' });
+            });
+        };
+
+        // Case 1 — in-app tab switch: the tab content div goes display:none
+        // then back, which collapses this widget's box to 0x0 and restores it
+        // — a reliable, well-known ResizeObserver signal for "just became
+        // visible" (ordinary scrolling never zeroes the box, so this doesn't
+        // false-fire while the user scrolls the widget in and out of the
+        // viewport within an already-active tab).
+        const el = rootRef.current;
+        let ro: ResizeObserver | null = null;
+        if (el) {
+            let wasHidden = false;
+            ro = new ResizeObserver((entries) => {
+                const { width, height } = entries[0].contentRect;
+                const hidden = width === 0 && height === 0;
+                if (!hidden && wasHidden) jumpToToday();
+                wasHidden = hidden;
+            });
+            ro.observe(el);
+        }
+
+        // Case 2 — resume from the OS/iOS background: the tab's display style
+        // never changes (it was already the active tab before backgrounding),
+        // so the ResizeObserver above stays silent. Same signal combination as
+        // the proven resume-detection in useIoBroker.ts (a single event isn't
+        // reliable on real iOS devices).
+        const onVisibility = () => {
+            if (!document.hidden) jumpToToday();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('pageshow', jumpToToday);
+        // Initial mount: land on today immediately (same call, no special-casing).
+        jumpToToday();
+
+        return () => {
+            ro?.disconnect();
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('pageshow', jumpToToday);
+        };
     }, []);
 
     // footerOnly: a second, minimal instance of this same widget type that
@@ -944,7 +1009,7 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const showFooter = config.options?.showFooter !== false;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
+        <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
             <CurrentConditionsCard base={base} />
             <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}>
                 <div ref={stripRef} className="flex" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollSnapType: 'x proximity' }}>
