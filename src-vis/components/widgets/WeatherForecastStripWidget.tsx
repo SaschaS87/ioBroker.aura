@@ -1012,7 +1012,27 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
         <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
             <CurrentConditionsCard base={base} />
             <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}>
-                <div ref={stripRef} className="flex" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollSnapType: 'x proximity' }}>
+                {/* borderTopLeft/RightRadius matches the card's own radius: the
+                    active cell's grey highlight is a plain square (no radius of
+                    its own), so when it's the left- or right-most cell it pokes
+                    past the card's rounded top corner unless THIS row clips to
+                    the same curve (30.07., Sascha — screenshot showed the "Heute"
+                    highlight overhanging top-left once the strip auto-scrolls
+                    there by default). overflowX:auto already makes this a clip
+                    container (the spec promotes overflowY to auto alongside it),
+                    so adding the radius here is enough — no separate overflow
+                    property needed. */}
+                <div
+                    ref={stripRef}
+                    className="flex"
+                    style={{
+                        overflowX: 'auto',
+                        WebkitOverflowScrolling: 'touch',
+                        scrollSnapType: 'x proximity',
+                        borderTopLeftRadius: 'var(--widget-radius)',
+                        borderTopRightRadius: 'var(--widget-radius)',
+                    }}
+                >
                     {DAY_INDICES.map((i) => (
                         <StripCell key={i} index={i} base={base} active={active === i} onSelect={() => setActive(i)} />
                     ))}

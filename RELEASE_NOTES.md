@@ -49,3 +49,4 @@
 - Weather - day strip now includes the last 2 days in addition to the 7-day forecast; still opens scrolled to "Heute" by default
 - Weather - today's upcoming hours now draw as a solid line instead of dashed, matching every other day; the confidence band no longer appears on past days, which get the same dot markers as "today, so far" instead
 - Weather - the day strip now reliably reopens on "Heute" every time the Wetter tab is revisited (switching tabs and back, or resuming the app from the iOS background) — previously only worked on a fresh app load
+- Weather - fixed the active day cell's square grey highlight poking past the card's rounded top corner when it sits at the left or right edge of the day strip
