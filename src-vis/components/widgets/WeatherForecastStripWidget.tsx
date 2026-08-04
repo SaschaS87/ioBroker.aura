@@ -21,11 +21,16 @@ import {
     ThermometerSnowflake,
     Zap,
     Droplets,
+    ChevronDown,
     type LucideIcon,
 } from 'lucide-react';
+import { useDashboardMobile } from '../../contexts/DashboardMobileContext';
 import { useDatapoint } from '../../hooks/useDatapoint';
+import { useIoBroker, sendToDirect, getStateFromCache } from '../../hooks/useIoBroker';
 import { formatNum } from '../../utils/formatValue';
-import type { WidgetProps } from '../../types';
+import { SEVERITY_COLOR } from '../../utils/statusOverview';
+import { NS } from '../../utils/namespace';
+import type { WidgetProps, ioBrokerState } from '../../types';
 
 /**
  * DWD-app-style forecast tile: one slim horizontally-swipeable day strip + a
@@ -847,9 +852,330 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
     );
 }
 
+// ── Data-source health box (Variante D) — collapsible status card. Header
+// always shows a dot + short status ("alles aktuell" / "N Problem(e)"),
+// even collapsed. Health is computed client-side by comparing each watched
+// datapoint's own `ts` (last write — NOT `lc`/last-change, since a value
+// that happens to stay constant for hours must not read as "stale") against
+// a configured max age, so no backend detection script is required.
+export interface HealthSourceDef {
+    id: string;
+    label: string;
+    watchDp: string; // datapoint whose ts (last write) is checked for freshness
+    maxAgeMin: number; // flagged unhealthy once older than this
+    // Bare "adapter.instance" (e.g. "netatmo-crawler.0") — restarted via the existing
+    // aura.0 'restartAdapter' backend command (main.js onMessage), the same
+    // enable→disable→enable toggle AdapterStatusWidget already uses.
+    restartAdapterId?: string;
+    // Extra read-only info lines shown under this source's row when expanded
+    // (e.g. Open-Meteo's model-run provenance, migrated from the old standalone
+    // footer). Each dp's value is treated as an ISO timestamp and formatted via
+    // localTime(), joined with " · ".
+    detailDps?: { label: string; dp: string }[];
+}
+
+// Union of every datapoint id a set of sources needs to watch — each source's
+// own watchDp plus all of its detailDps, deduplicated (a dp can appear in both,
+// e.g. Open-Meteo's watchDp IS one of its own detailDps).
+function allWatchedDpIds(sources: HealthSourceDef[]): string[] {
+    const set = new Set<string>();
+    for (const s of sources) {
+        set.add(s.watchDp);
+        for (const d of s.detailDps ?? []) set.add(d.dp);
+    }
+    return Array.from(set);
+}
+
+// Short "vor X"/"seit X" fragment (not a full sentence — formatLastChange's
+// i18n strings don't fit this compact row layout).
+function formatAgeShort(ts: number): string {
+    const min = Math.round((Date.now() - ts) / 60000);
+    if (min < 1) return 'gerade eben';
+    if (min < 60) return `${min} Min.`;
+    const h = Math.round(min / 60);
+    if (h < 48) return `${h} Std.`;
+    const d = Math.round(h / 24);
+    return `${d} Tage`;
+}
+
+type RestartPhase = 'restarting' | 'waiting' | 'done';
+
+function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] }) {
+    const isMobile = useDashboardMobile();
+    const { subscribe, getState } = useIoBroker();
+    // Pre-fill from the socket cache (same pattern as useDatapoint.ts) so a source
+    // already known from an earlier subscription renders immediately instead of
+    // flashing "unhealthy" for the split second before getState() resolves.
+    const [states, setStates] = useState<Record<string, ioBrokerState | null>>(() => {
+        const init: Record<string, ioBrokerState | null> = {};
+        for (const id of allWatchedDpIds(sources)) {
+            const cached = getStateFromCache(id);
+            if (cached) init[id] = cached;
+        }
+        return init;
+    });
+    // Tracks whether each source's FIRST real answer (cache hit, getState, or a
+    // live subscribe push) has arrived yet. Until then it must not count toward
+    // problemCount — ts===0 before loading means "not fetched yet", not "stale".
+    const [loaded, setLoaded] = useState<Record<string, boolean>>(() => {
+        const init: Record<string, boolean> = {};
+        for (const id of allWatchedDpIds(sources)) {
+            if (getStateFromCache(id)) init[id] = true;
+        }
+        return init;
+    });
+    const [expanded, setExpanded] = useState(false);
+    const [restartPhase, setRestartPhase] = useState<Record<string, RestartPhase>>({});
+    const [restartError, setRestartError] = useState<Record<string, string>>({});
+
+    // Re-render every 30s so "vor/seit X" keeps advancing even without new events.
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const iv = window.setInterval(() => setTick((x) => x + 1), 30_000);
+        return () => window.clearInterval(iv);
+    }, []);
+
+    const dpIds = allWatchedDpIds(sources);
+    const sourceKey = dpIds.join(',');
+    useEffect(() => {
+        if (!dpIds.length) {
+            setStates({});
+            setLoaded({});
+            return;
+        }
+        dpIds.forEach((id) =>
+            getState(id).then((st) => {
+                setStates((prev) => ({ ...prev, [id]: st }));
+                setLoaded((prev) => ({ ...prev, [id]: true }));
+            }),
+        );
+        const unsubs = dpIds.map((id) =>
+            subscribe(id, (st) => {
+                setStates((prev) => ({ ...prev, [id]: st }));
+                setLoaded((prev) => ({ ...prev, [id]: true }));
+            }),
+        );
+        return () => unsubs.forEach((u) => u());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sourceKey]);
+
+    const rows = useMemo(
+        () =>
+            sources.map((s) => {
+                const ts = states[s.watchDp]?.ts ?? 0;
+                const isLoaded = loaded[s.watchDp] ?? false;
+                const healthy = ts > 0 && Date.now() - ts <= s.maxAgeMin * 60_000;
+                return { ...s, ts, healthy, isLoaded };
+            }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [sources, states, loaded],
+    );
+
+    // Clear a finished restart sequence once the source is healthy again.
+    useEffect(() => {
+        for (const r of rows) {
+            if (restartPhase[r.id] === 'waiting' && r.healthy) {
+                setRestartPhase((prev) => ({ ...prev, [r.id]: 'done' }));
+                window.setTimeout(() => {
+                    setRestartPhase((prev) => {
+                        const next = { ...prev };
+                        delete next[r.id];
+                        return next;
+                    });
+                }, 4000);
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rows]);
+
+    if (sources.length === 0) return null;
+
+    const problemCount = rows.filter((r) => r.isLoaded && !r.healthy).length;
+    const hasProblem = problemCount > 0;
+
+    const triggerRestart = async (r: (typeof rows)[number]) => {
+        if (!r.restartAdapterId) return;
+        setRestartError((prev) => {
+            const next = { ...prev };
+            delete next[r.id];
+            return next;
+        });
+        setRestartPhase((prev) => ({ ...prev, [r.id]: 'restarting' }));
+        const result = await sendToDirect(NS, 'restartAdapter', { id: r.restartAdapterId });
+        const res = result as { ok?: boolean; error?: string } | null;
+        if (!res?.ok) {
+            setRestartError((prev) => ({ ...prev, [r.id]: res?.error || 'Neustart fehlgeschlagen' }));
+            setRestartPhase((prev) => {
+                const next = { ...prev };
+                delete next[r.id];
+                return next;
+            });
+            return;
+        }
+        setRestartPhase((prev) => ({ ...prev, [r.id]: 'waiting' }));
+        // Safety timeout: stop waiting after 2 min even if it never recovers.
+        window.setTimeout(() => {
+            setRestartPhase((prev) => {
+                if (prev[r.id] !== 'waiting') return prev;
+                const next = { ...prev };
+                delete next[r.id];
+                return next;
+            });
+        }, 120_000);
+    };
+
+    return (
+        <div
+            style={{
+                background: 'var(--widget-bg)',
+                border: '1px solid var(--widget-border)',
+                borderRadius: 'var(--widget-radius)',
+                overflow: 'hidden',
+            }}
+        >
+            <button
+                onClick={() => setExpanded((e) => !e)}
+                className="flex items-center"
+                style={{
+                    width: '100%',
+                    gap: 8,
+                    padding: '9px 12px',
+                    background: hasProblem ? `color-mix(in srgb, ${SEVERITY_COLOR.crit} 12%, transparent)` : 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                }}
+            >
+                <span
+                    style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: hasProblem ? SEVERITY_COLOR.crit : SEVERITY_COLOR.ok,
+                        flexShrink: 0,
+                    }}
+                />
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Datenquellen · {hasProblem ? `${problemCount} ${problemCount === 1 ? 'Problem' : 'Probleme'}` : 'alles aktuell'}
+                </span>
+                <ChevronDown
+                    size={14}
+                    style={{
+                        color: 'var(--text-secondary)',
+                        transform: expanded ? 'rotate(180deg)' : undefined,
+                        transition: 'transform 0.2s',
+                    }}
+                />
+            </button>
+            {expanded && (
+                <div style={{ padding: '2px 12px 12px', borderTop: '1px solid var(--widget-border)' }}>
+                    {rows.map((r) => (
+                        <div key={r.id}>
+                            <div className="flex items-center" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
+                                <span
+                                    style={{
+                                        width: 6,
+                                        height: 6,
+                                        borderRadius: '50%',
+                                        background: !r.isLoaded
+                                            ? 'var(--text-secondary)'
+                                            : r.healthy
+                                              ? SEVERITY_COLOR.ok
+                                              : SEVERITY_COLOR.crit,
+                                        flexShrink: 0,
+                                    }}
+                                />
+                                <span style={{ flex: 1, color: 'var(--text-primary)' }}>{r.label}</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                                    {!r.isLoaded
+                                        ? 'wird geprüft…'
+                                        : r.ts > 0
+                                          ? `${r.healthy ? 'vor' : 'seit'} ${formatAgeShort(r.ts)}`
+                                          : 'keine Daten'}
+                                </span>
+                            </div>
+                            {r.detailDps && r.detailDps.length > 0 && (
+                                <div
+                                    style={{
+                                        padding: '0 0 6px 14px',
+                                        marginLeft: 3,
+                                        borderLeft: '2px solid var(--widget-border)',
+                                        fontSize: 10.5,
+                                        color: 'var(--text-secondary)',
+                                        lineHeight: 1.5,
+                                    }}
+                                >
+                                    {(() => {
+                                        const parts = r.detailDps!.map((d) => {
+                                            const v = states[d.dp]?.val;
+                                            return `${d.label} ${localTime(typeof v === 'string' ? v : null)} Uhr`;
+                                        });
+                                        if (!isMobile) return parts.join(' · ');
+                                        return parts
+                                            .reduce<string[]>((lines, text, i) => {
+                                                if (i % 2 === 0) lines.push(text);
+                                                else lines[lines.length - 1] += ` · ${text}`;
+                                                return lines;
+                                            }, [])
+                                            .map((line, i) => <div key={i}>{line}</div>);
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {rows
+                        .filter((r) => r.isLoaded && !r.healthy && r.restartAdapterId)
+                        .map((r) => {
+                            const phase = restartPhase[r.id];
+                            const label =
+                                phase === 'restarting'
+                                    ? 'wird neu gestartet…'
+                                    : phase === 'waiting'
+                                      ? 'warte auf frische Daten…'
+                                      : phase === 'done'
+                                        ? '✓ erledigt'
+                                        : `${r.label} neu starten`;
+                            return (
+                                <div key={r.id}>
+                                    <button
+                                        onClick={() => triggerRestart(r)}
+                                        disabled={!!phase}
+                                        className="inline-flex items-center"
+                                        style={{
+                                            marginTop: 6,
+                                            padding: '6px 12px',
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            color: '#fff',
+                                            background: phase ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
+                                            border: 'none',
+                                            borderRadius: 6,
+                                            cursor: phase ? 'default' : 'pointer',
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                    {restartError[r.id] && (
+                                        <div style={{ marginTop: 4, fontSize: 11, color: SEVERITY_COLOR.crit }}>
+                                            {restartError[r.id]}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Rain nowcast, 15-minute steps (next ~6h) — restored 1:1 from the retired
 // WeatherForecastWidget.tsx (see Wetter/Aura Wetter-Widget - Aufbau.md); was
 // lost when the widget was consolidated down to the linked-chart variant.
+// Variant C from the 3-mockup round (Sascha, 04.08.): sum + per-bar max stay
+// visible at all times in a header row (answers "wird's schlimm?" at a
+// glance); the exact mm value per bar only shows up after a tap, in a line
+// below the bars — keeps the bar row itself uncluttered on a 24-bar strip.
 function RainNowcast({ base }: { base: string }) {
     const { value: minutelyRaw } = useDatapoint(`${base}.Minuten15.json`);
     const minutely = useMemo(() => parseJson<MinutelyBlob>(minutelyRaw), [minutelyRaw]);
@@ -867,29 +1193,72 @@ function RainNowcast({ base }: { base: string }) {
         return out;
     }, [minutely]);
     const nowcastMax = Math.max(0.5, ...nowcast.map((p) => p.rain));
+    const nowcastSum = nowcast.reduce((sum, p) => sum + p.rain, 0);
+    const [selected, setSelected] = useState<number | null>(null);
 
     return (
         <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)', padding: '10px 12px' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Regen-Nowcast (15-Minuten-Takt)</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Regen-Nowcast (15-Minuten-Takt)</span>
+                {nowcast.length > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 10 }}>
+                        <span>
+                            Summe <b style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatNum(nowcastSum, 1)} mm</b>
+                        </span>
+                        <span>
+                            Max/15min <b style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatNum(nowcastMax, 1)} mm</b>
+                        </span>
+                    </span>
+                )}
+            </div>
             {nowcast.length ? (
-                <div className="flex items-end" style={{ gap: 6, overflowX: 'auto', height: 56 }}>
-                    {nowcast.map((p, i) => (
-                        <div key={i} className="flex flex-col items-center" style={{ flex: '0 0 auto', width: 28 }}>
-                            <div
-                                style={{
-                                    width: 14,
-                                    height: Math.max(2, (p.rain / nowcastMax) * 34),
-                                    background: C.rain,
-                                    opacity: p.rain > 0 ? 1 : 0.25,
-                                    borderRadius: 2,
-                                }}
-                            />
-                            <span style={{ fontSize: 9, color: 'var(--text-secondary)', marginTop: 3 }}>
-                                {new Date(p.t).toTimeString().slice(0, 5)}
-                            </span>
-                        </div>
-                    ))}
-                </div>
+                <>
+                    <div className="flex items-end" style={{ gap: 6, overflowX: 'auto', height: 56 }}>
+                        {nowcast.map((p, i) => (
+                            <div key={i} className="flex flex-col items-center" style={{ flex: '0 0 auto', width: 28 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelected(i)}
+                                    style={{
+                                        width: 28,
+                                        padding: '18px 0 0',
+                                        background: 'transparent',
+                                        border: 'none',
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <span
+                                        style={{
+                                            width: 14,
+                                            height: Math.max(2, (p.rain / nowcastMax) * 34),
+                                            background: C.rain,
+                                            opacity: p.rain > 0 ? 1 : 0.25,
+                                            outline: selected === i ? `1px solid ${C.rain}` : 'none',
+                                            outlineOffset: 2,
+                                            borderRadius: 2,
+                                            display: 'block',
+                                        }}
+                                    />
+                                </button>
+                                <span style={{ fontSize: 9, color: 'var(--text-secondary)', marginTop: 3 }}>
+                                    {new Date(p.t).toTimeString().slice(0, 5)}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6, minHeight: 14 }}>
+                        {selected !== null && nowcast[selected] ? (
+                            <>
+                                {new Date(nowcast[selected].t).toTimeString().slice(0, 5)} Uhr —{' '}
+                                <b style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatNum(nowcast[selected].rain, 1)} mm</b>
+                            </>
+                        ) : (
+                            'Balken antippen für Uhrzeit + mm'
+                        )}
+                    </div>
+                </>
             ) : (
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Keine 15-Minuten-Daten verfügbar</div>
             )}
@@ -1007,6 +1376,7 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     }
 
     const showFooter = config.options?.showFooter !== false;
+    const healthSources = (config.options?.healthSources as HealthSourceDef[] | undefined) ?? [];
 
     return (
         <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
@@ -1046,6 +1416,7 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
                 </div>
             </div>
             <RainNowcast base={base} />
+            <DataSourceHealthBox sources={healthSources} />
             {showFooter && <DataFooter base={base} />}
         </div>
     );

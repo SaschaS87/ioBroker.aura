@@ -50,3 +50,6 @@
 - Weather - today's upcoming hours now draw as a solid line instead of dashed, matching every other day; the confidence band no longer appears on past days, which get the same dot markers as "today, so far" instead
 - Weather - the day strip now reliably reopens on "Heute" every time the Wetter tab is revisited (switching tabs and back, or resuming the app from the iOS background) — previously only worked on a fresh app load
 - Weather - fixed the active day cell's square grey highlight poking past the card's rounded top corner when it sits at the left or right edge of the day strip
+- Weather - new collapsible data-source health box: a header dot shows "alles aktuell" or a problem count even collapsed, expands to list each configured source with its last-update age and an optional one-click restart button
+- Weather - the data-source footer (model run time, next update, last fetch) moved into the health box as a detail line under the Open-Meteo source; the standalone footer widget was removed
+- Weather - rain nowcast now shows a sum + max/15min header for the 6h window, and tapping a bar reveals its exact time and mm value
