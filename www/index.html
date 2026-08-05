@@ -3,9 +3,120 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Aura" />
     <title>Aura – ioBroker Dashboard</title>
+    <script>
+      /* Statusleisten-Symbole (Uhr/WLAN/Akku) an Auras Hell/Dunkel-Modus koppeln:
+         dunkler Modus -> weisse Symbole (black-translucent), heller Modus ->
+         dunkle Symbole (default). Aura setzt dazu die Klasse 'dark' auf <html>.
+         iOS liest den Wert beim App-Start; nach einem Live-Wechsel ggf. die App
+         einmal schliessen und neu oeffnen, damit die Symbolfarbe umspringt. */
+      (function () {
+        var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        var KEY = 'aura-status-dark';
+        try {
+          var cached = localStorage.getItem(KEY);
+          if (meta && cached !== null) {
+            meta.setAttribute('content', cached === '1' ? 'black-translucent' : 'default');
+          }
+        } catch (e) {}
+        function sync() {
+          var dark = document.documentElement.classList.contains('dark');
+          if (meta) meta.setAttribute('content', dark ? 'black-translucent' : 'default');
+          try { localStorage.setItem(KEY, dark ? '1' : '0'); } catch (e) {}
+        }
+        new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        document.addEventListener('DOMContentLoaded', sync);
+      })();
+    </script>
+    <script>
+      /* Seitenweites Pinch-Zoom verhindern: iOS Safari verschiebt nach einer
+         Pinch-Geste (auch nur auseinanderziehen und loslassen) manchmal den
+         sichtbaren Viewport dauerhaft gegenueber dem Layout-Viewport, wodurch
+         die randlose Kopfzeile (env(safe-area-inset-*), siehe .aura-header
+         unten) sichtbar verrutscht. Die viewport-Meta (user-scalable=no) allein
+         reicht auf iOS Safari/Homescreen-PWA oft nicht - deshalb zusaetzlich
+         die Safari-Gesture-Events abfangen. Betrifft NUR das Pinch-Zoom der
+         Seite: Leaflets eigenes Pinch-to-Zoom der Karte (MapWidget) laeuft
+         ueber touchstart/touchmove, ein separater Event-Strom, und bleibt
+         unberuehrt. */
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+        document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+      });
+    </script>
     <style>
+      /* iOS-Homescreen-App: randlos. Auras Theme-Hintergrund fuellt die ganze
+         Flaeche bis an alle Kanten -> kein toter Balken oben/unten. Der Inhalt
+         wird nur aus Dynamic Island (oben) und Home-Indicator (unten) gehalten,
+         der Hintergrund laeuft darunter durch. */
+      html, body { background: var(--app-bg, #0f172a); touch-action: pan-x pan-y; }
+      /* Vollbild bis zur PHYSISCHEN Unterkante. iOS gibt einer Homescreen-Web-App
+         ein Fenster, das um env(safe-area-inset-bottom) (Home-Indicator, ~34px)
+         kuerzer ist als der Screen (per Messung belegt: innerHeight endet 34px
+         ueber der Kante). Deshalb Hoehe = 100dvh + safe-area-inset-bottom, damit
+         der Inhalt die Home-Indicator-Zone mitfuellt (kein toter Streifen unten).
+         KEIN position:fixed (reicht auf iOS nicht in die Zone). Gummiband gesperrt
+         per overflow:hidden + overscroll-behavior. Nur Frontend (:has(.aura-page)),
+         Admin bleibt normal scrollbar. */
+      html:has(.aura-page), body:has(.aura-page) {
+        height: calc(100dvh + env(safe-area-inset-bottom));
+        min-height: calc(100dvh + env(safe-area-inset-bottom));
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      /* Body als Flex-Spalte, #root fuellt sie per flex:1 -> die volle Hoehe
+         propagiert bis .aura-page/Scroll durch (die height:100%-Prozentkette
+         propagiert auf iOS NICHT sauber bis #root). */
+      body:has(.aura-page) { display: flex; flex-direction: column; }
+      #root { flex: 1 1 auto; min-height: 0; }
+      /* Seitliche Notch-Raender: .aura-page haelt den Inhalt aus der Safe-Area
+         (links/rechts) heraus. Der Hintergrund dieser Streifen ist das dunkle
+         --app-bg (Inline-Style von .aura-page) -> UNTER der Tab-Leiste "atmen" die
+         Seitenstreifen im gleichen Dunkelblau wie der Inhalt (nicht eingeklemmt). */
+      .aura-page {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+      /* Kopfzeile UND Tab-Leiste randlos (full-bleed): ihre Flaeche (--app-surface)
+         und ihre untere Trennlinie laufen ueber die GANZE Breite - auch durch die
+         Notch-Streifen. Dazu per negativer Margin bis an die Bildschirmkante ziehen
+         und die Safe-Area als Innenabstand wieder aufschlagen, damit Logo/Tabs NICHT
+         unter die Notch rutschen. Die Kopfzeile zieht zusaetzlich bis unter die
+         Statusleiste (env(safe-area-inset-top)). Desktop: env(...) = 0 -> kein Effekt. */
+      .aura-page .aura-header {
+        margin-left: calc(-1 * env(safe-area-inset-left));
+        margin-right: calc(-1 * env(safe-area-inset-right));
+        padding-top: calc(0.5rem + env(safe-area-inset-top));
+        padding-bottom: 0.5rem;
+        padding-left: calc(1rem + env(safe-area-inset-left));
+        padding-right: calc(1rem + env(safe-area-inset-right));
+      }
+      .aura-page .aura-tabs {
+        margin-left: calc(-1 * env(safe-area-inset-left));
+        margin-right: calc(-1 * env(safe-area-inset-right));
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+      /* NUR der Dashboard-Inhalt scrollt (bei Bedarf) und haelt einen Abstand
+         zum Home-Indicator. overscroll-behavior stoppt das Weiterziehen auf
+         die ganze Seite. Nicht die Tab-Leiste/Widget-Zeilen (gleiche Klasse).
+         War frueher 0.25rem: bei hohem Tab-Inhalt (z.B. zwei gestapelten
+         Wetter-Widgets) reichte das auf iOS Safari nicht - die letzte Zeile
+         war nur waehrend des elastischen Ueberzieh-Gummibands sichtbar und
+         verschwand beim Loslassen wieder (normales Scrollen kam nicht ganz
+         bis ans Ende). Grosszuegigerer Puffer behebt das unabhaengig vom
+         genauen iOS-Mechanismus. KEIN env(safe-area-inset-bottom) hier - das
+         wuerde die bewusste "Inhalt fuellt bis zur physischen Kante"-Vollbild-
+         Loesung oben (100dvh + sab) wieder mit einer toten Zone unterlaufen. */
+      .aura-page .aura-scroll.inset-0 {
+        padding-bottom: 4rem;
+        overscroll-behavior: contain;
+      }
       #aura-boot {
         position: fixed; inset: 0;
         display: flex; flex-direction: column;
@@ -38,15 +149,16 @@
         to { transform: rotate(360deg); }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-4NGA6tC5.js"></script>
+    <script type="module" crossorigin src="/assets/index-Bbu7RCfz.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-Bk2tEoOi.js">
     <link rel="modulepreload" crossorigin href="/assets/react-dom-Bt2Mxcwn.js">
-    <link rel="modulepreload" crossorigin href="/assets/router-BaEH_Cut.js">
+    <link rel="modulepreload" crossorigin href="/assets/router-DRgFpRnU.js">
     <link rel="modulepreload" crossorigin href="/assets/grid--CJP6aj_.js">
-    <link rel="modulepreload" crossorigin href="/assets/lucide-CJK2ix9u.js">
+    <link rel="modulepreload" crossorigin href="/assets/lucide-Bg-WCY0A.js">
     <link rel="modulepreload" crossorigin href="/assets/dompurify-D6gMnemd.js">
+    <link rel="modulepreload" crossorigin href="/assets/echarts-Cv-_nZ52.js">
     <link rel="stylesheet" crossorigin href="/assets/grid-DULRuONn.css">
-    <link rel="stylesheet" crossorigin href="/assets/index-DC0F1kFP.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-8-NU7vgW.css">
   </head>
   <body>
     <div id="aura-boot">
