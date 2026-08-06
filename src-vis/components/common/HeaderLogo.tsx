@@ -9,12 +9,7 @@ export function HeaderLogo() {
                 border: '1px solid var(--app-border)',
             }}
         >
-            <img
-                src={auraLogo}
-                alt="Aura"
-                className="w-8 h-8 object-contain"
-                draggable={false}
-            />
+            <img src={auraLogo} alt="Aura" className="w-8 h-8 object-contain" draggable={false} />
         </div>
     );
 }
