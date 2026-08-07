@@ -8,4 +8,4 @@
  *         --app-border), Motiv 32x32 px
  * false = Logo steht frei in der Kopfzeile, Motiv 40x40 px
  */
-export const HEADER_LOGO_MIT_KREIS = false;
+export const HEADER_LOGO_MIT_KREIS = true;
