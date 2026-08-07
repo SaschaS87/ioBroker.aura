@@ -8,11 +8,20 @@
  * bleiben soll.
  *
  * Aufruf:
- *   npm run logo:build              alles Neue erzeugen
- *   npm run logo:build -- --dry-run nur pruefen, nichts schreiben
- *   npm run logo:build -- --force   auch unveraenderte Quellen neu erzeugen
- *   npm run logo:restore            letztes Backup zurueckholen
- *   npm run logo:restore -- --liste vorhandene Backups auflisten
+ *   npm run logo:build                          alles Neue erzeugen
+ *   npm run logo:build -- --dry-run             nur pruefen, nichts schreiben
+ *   npm run logo:build -- --force               auch unveraenderte Quellen neu erzeugen
+ *   npm run logo:build -- --ziele app,tab       nur diese Gruppen tauschen
+ *                                               (kopfzeile, tab, app – Standard: alle)
+ *   npm run logo:build -- --kreis ja|nein       Aussehen der Kopfzeile mitaendern
+ *                                               (wirkt nur, wenn "kopfzeile" gewaehlt ist)
+ *   npm run logo:stil -- --kreis ja|nein        NUR das Aussehen, ohne Bilder anzufassen
+ *   npm run logo:restore                        letztes Backup zurueckholen
+ *   npm run logo:restore -- --liste             vorhandene Backups auflisten
+ *   npm run logo:restore -- --backup <name>     ein bestimmtes Backup zurueckholen
+ *
+ * Nach jeder Aenderung muss gebaut und ausgerollt werden (npm run build + Deploy),
+ * auch beim reinen Stilwechsel – headerLogoStil.ts ist Quelltext.
  */
 
 import fs from 'node:fs';
@@ -49,17 +58,24 @@ const ICON_RAND = 0.15;
  *  Kante klebt, aber deutlich weniger als beim Homescreen-Symbol. */
 const LOGO_RAND = 0.06;
 
+/** Zielgruppen für die Auswahl. */
+const GRUPPEN = {
+    kopfzeile: 'Logo in der Kopfzeile',
+    tab: 'Browser-Tab-Symbol',
+    app: 'App-Symbol auf dem Homescreen',
+};
+
 /** Welches Zielbild entsteht aus welcher Quelle. */
 const ZIELE = [
-    { quelle: 'schwarz', datei: 'src-vis/assets/aura-header-logo-schwarz.png', groesse: 160, art: 'transparent', zweck: 'Header-Logo bei hellem Theme' },
-    { quelle: 'weiss', datei: 'src-vis/assets/aura-header-logo-weiss.png', groesse: 160, art: 'transparent', zweck: 'Header-Logo bei dunklem Theme' },
-    { quelle: 'schwarz', datei: 'public/favicon-32.png', groesse: 32, art: 'transparent', zweck: 'Browser-Tab (Rueckfall)' },
-    { quelle: 'schwarz', datei: 'public/favicon-64.png', groesse: 64, art: 'transparent', zweck: 'Lesezeichen (Rueckfall)' },
-    { quelle: 'icon', datei: 'public/icons/icon-192.png', groesse: 192, art: 'deckend', zweck: 'iPhone-Homescreen' },
-    { quelle: 'icon', datei: 'public/icons/icon-512.png', groesse: 512, art: 'deckend', zweck: 'iPad, Android, Startbildschirm' },
+    { quelle: 'schwarz', datei: 'src-vis/assets/aura-header-logo-schwarz.png', groesse: 160, art: 'transparent', zweck: 'Header-Logo bei hellem Theme', gruppe: 'kopfzeile' },
+    { quelle: 'weiss', datei: 'src-vis/assets/aura-header-logo-weiss.png', groesse: 160, art: 'transparent', zweck: 'Header-Logo bei dunklem Theme', gruppe: 'kopfzeile' },
+    { quelle: 'schwarz', datei: 'public/favicon-32.png', groesse: 32, art: 'transparent', zweck: 'Browser-Tab (Rueckfall)', gruppe: 'tab' },
+    { quelle: 'schwarz', datei: 'public/favicon-64.png', groesse: 64, art: 'transparent', zweck: 'Lesezeichen (Rueckfall)', gruppe: 'tab' },
+    { quelle: 'icon', datei: 'public/icons/icon-192.png', groesse: 192, art: 'deckend', zweck: 'iPhone-Homescreen', gruppe: 'app' },
+    { quelle: 'icon', datei: 'public/icons/icon-512.png', groesse: 512, art: 'deckend', zweck: 'iPad, Android, Startbildschirm', gruppe: 'app' },
 ];
 /** Das SVG-Tab-Symbol entsteht aus beiden Motiven zusammen und steht deshalb nicht in ZIELE. */
-const SVG_ZIEL = { datei: 'public/favicon-theme.svg', groesse: 64, zweck: 'Browser-Tab, folgt dem Hell/Dunkel-Modus' };
+const SVG_ZIEL = { datei: 'public/favicon-theme.svg', groesse: 64, zweck: 'Browser-Tab, folgt dem Hell/Dunkel-Modus', gruppe: 'tab' };
 
 const ENDUNGEN = ['.png', '.webp', '.jpg', '.jpeg'];
 const MIME = { '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
@@ -80,6 +96,9 @@ const OPT = {
     liste: hatFlag('--liste'),
     quelle: flagWert('--quelle') || process.env.AURA_LOGO_EINGANG || EINGANG_STANDARD,
     backup: flagWert('--backup'),
+    ziele: flagWert('--ziele'),
+    kreis: flagWert('--kreis'),
+    nurStil: hatFlag('--nur-stil'),
 };
 
 const rot = (t) => `\x1b[31m${t}\x1b[0m`;
@@ -134,6 +153,28 @@ function quelleFinden(ordner, basisName) {
     return null;
 }
 
+/**
+ * Welche Quellmotive eine Zielgruppe braucht.
+ *
+ * 'icon' in ZIELE ist keine Datei, sondern loest sich auf: das eigene
+ * Hintergrundbild, wenn eines vorliegt – sonst das weisse Motiv auf Farbe.
+ * Das Tab-SVG steht nicht in ZIELE und enthaelt BEIDE Motive in einer Datei,
+ * deshalb braucht 'tab' auch das weisse.
+ */
+function artenFuerGruppe(gruppe, quellen) {
+    const arten = new Set();
+    for (const z of ZIELE) {
+        if (z.gruppe !== gruppe) continue;
+        if (z.quelle === 'icon') arten.add(quellen.hintergrund ? 'hintergrund' : 'weiss');
+        else arten.add(z.quelle);
+    }
+    if (gruppe === 'tab') {
+        arten.add('schwarz');
+        arten.add('weiss');
+    }
+    return [...arten];
+}
+
 function dataUrl(datei) {
     const ext = path.extname(datei).toLowerCase();
     return `data:${MIME[ext]};base64,${fs.readFileSync(datei).toString('base64')}`;
@@ -184,8 +225,19 @@ function backupAnlegen(quellen) {
                 }
             }
 
+            // Auch headerLogoStil.ts pruefen
+            const pfadStil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
+            const kopieStil = path.join(backupOrdner, 'src-vis__components__common__headerLogoStil.ts');
+            if (fs.existsSync(pfadStil) && fs.existsSync(kopieStil)) {
+                const hashStil = sha256(pfadStil);
+                const hashStilBackup = sha256(kopieStil);
+                if (hashStil !== hashStilBackup) alleQuellen = false;
+            } else if (fs.existsSync(pfadStil) !== fs.existsSync(kopieStil)) {
+                alleQuellen = false;
+            }
+
             if (alleQuellen) {
-                // Quellbilder sind seit letztem Backup unveraendert
+                // Quellbilder und Stil sind seit letztem Backup unveraendert
                 const anzahl = ZIELE.filter((z) => fs.existsSync(path.join(REPO, z.datei))).length;
                 return { ordner: backupOrdner, anzahl, isNew: false };
             }
@@ -208,6 +260,13 @@ function backupAnlegen(quellen) {
     if (fs.existsSync(altSvg)) {
         const kopieSvg = path.join(ordner, SVG_ZIEL.datei.replace(/\//g, '__'));
         fs.copyFileSync(altSvg, kopieSvg);
+        anzahl++;
+    }
+    // headerLogoStil.ts auch sichern
+    const altStil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
+    if (fs.existsSync(altStil)) {
+        const kopieStil = path.join(ordner, 'src-vis__components__common__headerLogoStil.ts');
+        fs.copyFileSync(altStil, kopieStil);
         anzahl++;
     }
     for (const [art, datei] of Object.entries(quellen)) {
@@ -249,10 +308,69 @@ function backupZurueckholen() {
         console.log(`  wiederhergestellt: ${SVG_ZIEL.datei}`);
         anzahl++;
     }
+    // headerLogoStil.ts auch wiederherstellen
+    const kopieStil = path.join(ordner, 'src-vis__components__common__headerLogoStil.ts');
+    if (fs.existsSync(kopieStil)) {
+        const pfadStil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
+        fs.mkdirSync(path.dirname(pfadStil), { recursive: true });
+        fs.copyFileSync(kopieStil, pfadStil);
+        console.log(`  wiederhergestellt: src-vis/components/common/headerLogoStil.ts`);
+        anzahl++;
+    }
     // Zustandsdatei entwerten, damit der naechste Lauf wieder alles erzeugt.
     if (fs.existsSync(STATE)) fs.rmSync(STATE);
     console.log(gruen(`\nFertig: ${anzahl} Datei(en) wiederhergestellt.`));
     console.log('Danach noch bauen und ausrollen (npm run build + Deploy).\n');
+}
+
+// --------------------------------------------------------- Zielgruppen-Verwaltung
+
+function auswahlVerarbeiten() {
+    let ausgewaehlt = Object.keys(GRUPPEN);
+    if (OPT.ziele) {
+        ausgewaehlt = OPT.ziele.split(',').map(g => g.trim());
+        for (const g of ausgewaehlt) {
+            if (!GRUPPEN[g]) abbruch(`Unbekannte Zielgruppe: "${g}"\nGueltig sind: ${Object.keys(GRUPPEN).join(', ')}`);
+        }
+    }
+    return ausgewaehlt;
+}
+
+const KREIS_JA = ['ja', 'true', '1'];
+const KREIS_NEIN = ['nein', 'false', '0'];
+
+function kreisSchreiben(wert) {
+    if (wert === null) return;
+    // Unsinnige Werte NICHT stillschweigend als "nein" durchgehen lassen –
+    // ein Tippfehler wuerde sonst unbemerkt das Aussehen der App aendern.
+    if (!KREIS_JA.includes(wert) && !KREIS_NEIN.includes(wert)) {
+        abbruch(
+            `Unbekannter Wert fuer --kreis: "${wert}"\n` +
+                `Gueltig sind: ja (Logo im runden Chip, 32x32) oder nein (Logo frei stehend, 40x40)`,
+        );
+    }
+    const istWahr = KREIS_JA.includes(wert);
+    const inhalt = `/**\n * Aussehen des Logos in der Kopfzeile.\n *\n * ERZEUGT von tools/branding/build-logos.mjs – nicht von Hand bearbeiten.\n * Umschalten mit:  /logo-tausch stil   (oder npm run logo:build -- --kreis ja|nein)\n *\n * true  = Logo sitzt in einem runden Chip (Flaeche --app-surface, Rand\n *         --app-border), Motiv 32x32 px\n * false = Logo steht frei in der Kopfzeile, Motiv 40x40 px\n */\nexport const HEADER_LOGO_MIT_KREIS = ${istWahr};\n`;
+    const pfad = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
+    fs.mkdirSync(path.dirname(pfad), { recursive: true });
+    fs.writeFileSync(pfad, inhalt);
+}
+
+// ----------------------------------------- Nur Stil aendern (--nur-stil --kreis ja|nein)
+
+function nurStilAendernMain() {
+    if (!OPT.kreis) abbruch('Mit --nur-stil muss --kreis ja|nein angegeben werden.');
+    console.log('\n=== Aura Logo-Werkstatt (nur Stil) ===\n');
+    const bk = backupAnlegen({ schwarz: quelleFinden(OPT.quelle, 'logo-schwarz'), weiss: quelleFinden(OPT.quelle, 'logo-weiss'), hintergrund: quelleFinden(OPT.quelle, 'logo-hintergrund'), });
+    if (bk.isNew) console.log(`  Backup angelegt: branding/backup/${path.basename(bk.ordner)}`);
+    else console.log(`  Der aktuelle Stand ist bereits gesichert.`);
+    kreisSchreiben(OPT.kreis);
+    console.log(`  Kreis-Einstellung geaendert: ${OPT.kreis === 'ja' || OPT.kreis === 'true' ? 'true' : 'false'}`);
+    const state = stateLesen();
+    state.kreis = OPT.kreis === 'ja' || OPT.kreis === 'true';
+    fs.mkdirSync(BRANDING, { recursive: true });
+    fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+    console.log(gruen('\nFertig. Danach noch bauen und ausrollen (npm run build + Deploy).\n'));
 }
 
 // ---------------------------------------------------------------- Bildarbeit
@@ -423,6 +541,9 @@ async function hauptlauf() {
     console.log('Eingangsordner: ' + OPT.quelle);
     if (OPT.dryRun) console.log(gelb('Trockenlauf – es wird nichts geschrieben.'));
 
+    const ausgewaehltGruppen = auswahlVerarbeiten();
+    console.log(`Zielgruppen: ${ausgewaehltGruppen.map(g => GRUPPEN[g]).join(', ')}\n`);
+
     if (!fs.existsSync(OPT.quelle)) {
         abbruch(
             `Den Eingangsordner gibt es nicht:\n  ${OPT.quelle}\n\n` +
@@ -454,42 +575,81 @@ async function hauptlauf() {
         );
     }
 
-    // Beide Motive sind Pflicht für das Umschalten zwischen Themes
-    if (!quellen.schwarz || !quellen.weiss) {
-        const fehlend = !quellen.schwarz ? 'logo-schwarz.png' : 'logo-weiss.png';
-        abbruch(
-            `Fuer das Umschalten zwischen hellem und dunklem Theme werden BEIDE Motive gebraucht.\n` +
-            `Es fehlt: ${fehlend}`
-        );
+    // Bestimme, welche Bilder gebraucht werden
+    const brauchtSchwarz = ausgewaehltGruppen.includes('kopfzeile') || ausgewaehltGruppen.includes('tab');
+    const brauchtWeiss = ausgewaehltGruppen.includes('kopfzeile') || ausgewaehltGruppen.includes('tab') || (ausgewaehltGruppen.includes('app') && !quellen.hintergrund);
+    if (brauchtSchwarz && !quellen.schwarz) {
+        const woFuer = [];
+        if (ausgewaehltGruppen.includes('kopfzeile')) woFuer.push(GRUPPEN.kopfzeile);
+        if (ausgewaehltGruppen.includes('tab')) woFuer.push(GRUPPEN.tab);
+        abbruch(`Es fehlt: logo-schwarz.png – wird gebraucht fuer: ${woFuer.join(', ')}`);
+    }
+    if (brauchtWeiss && !quellen.weiss) {
+        const woFuer = [];
+        if (ausgewaehltGruppen.includes('kopfzeile')) woFuer.push(GRUPPEN.kopfzeile);
+        if (ausgewaehltGruppen.includes('tab')) woFuer.push(GRUPPEN.tab);
+        if (ausgewaehltGruppen.includes('app') && !quellen.hintergrund) woFuer.push(GRUPPEN.app);
+        abbruch(`Es fehlt: logo-weiss.png – wird gebraucht fuer: ${woFuer.join(', ')}`);
     }
 
     // Was hat sich seit dem letzten Lauf geaendert?
     const state = stateLesen();
     const zuTun = {};
 
-    // Prüfe Quelldateien: Schwarz, Weiß und optional Hintergrund
-    const zuAenderndeArten = [];
-    for (const art of ['schwarz', 'weiss', 'hintergrund']) {
-        if (!quellen[art]) {
-            if (art !== 'hintergrund') {
-                // Das sollte nicht vorkommen, da wir oben schon abgebrochen haben
-                // aber sicherheitshalber nochmal behandeln
-                console.log(`  ${art}: kein Bild vorhanden`);
-            }
+    // Der Zustand wird PRO GRUPPE gefuehrt, nicht pro Motiv.
+    //
+    // Der Grund: Mehrere Gruppen teilen sich dieselben Quellbilder (Kopfzeile
+    // und Tab-Symbol nutzen beide das schwarze und weisse Motiv; das App-Symbol
+    // ohne eigenes Hintergrundbild nutzt ebenfalls das weisse). Ein Zustand pro
+    // Motiv beantwortet nur "hat sich dieses Bild geaendert?" – gebraucht wird
+    // aber "ist DIESE Gruppe mit diesem Bild schon gebaut worden?". Sonst gilt:
+    // Wer erst das Tab-Symbol tauscht und danach die Kopfzeile nachziehen will,
+    // bekommt "Nichts zu tun" und behaelt das alte Header-Logo.
+    const gruppenState = state.gruppen || {};
+    const hashCache = {};
+    const hashVon = (art) => {
+        if (!quellen[art]) return null;
+        if (!hashCache[art]) hashCache[art] = sha256(quellen[art]);
+        return hashCache[art];
+    };
+
+    const zuTuendeGruppen = [];
+    for (const g of ausgewaehltGruppen) {
+        const arten = artenFuerGruppe(g, quellen).filter((a) => quellen[a]);
+        if (!arten.length) continue;
+        const schonGebaut = arten.every((a) => gruppenState[g]?.[a] === hashVon(a));
+        if (!OPT.force && schonGebaut) {
+            console.log(`  ${GRUPPEN[g]}: unveraendert seit letztem Lauf`);
             continue;
         }
-        const hash = sha256(quellen[art]);
-        if (!OPT.force && state[art]?.sha256 === hash) {
-            console.log(`  ${art}: unveraendert seit letztem Lauf`);
-            continue;
-        }
-        zuAenderndeArten.push(art);
+        zuTuendeGruppen.push(g);
     }
 
-    // Wenn eines der beiden Motive (schwarz/weiss) neu ist, müssen BEIDE als zu verarbeiten markiert werden
-    if (zuAenderndeArten.includes('schwarz') || zuAenderndeArten.includes('weiss')) {
-        if (!zuAenderndeArten.includes('schwarz')) zuAenderndeArten.push('schwarz');
-        if (!zuAenderndeArten.includes('weiss')) zuAenderndeArten.push('weiss');
+    // Fehlende Motive melden, damit der Bericht nachvollziehbar bleibt
+    for (const art of ['schwarz', 'weiss']) {
+        if (!quellen[art]) {
+            console.log(`  ${art}: kein Bild vorhanden – wird fuer die gewaehlten Gruppen nicht gebraucht`);
+        }
+    }
+
+    const zuAenderndeArten = [];
+    for (const g of zuTuendeGruppen) {
+        for (const art of artenFuerGruppe(g, quellen)) {
+            if (quellen[art] && !zuAenderndeArten.includes(art)) zuAenderndeArten.push(art);
+        }
+    }
+
+    // Beide Motive gehoeren zusammen: Die Kopfzeile zeigt sie im Wechsel, das
+    // Tab-SVG enthaelt beide in EINER Datei. Aendert sich eines, muss das andere
+    // mitgezogen werden – sonst stuende im SVG ein alter neben einem neuen Stand.
+    // Nur wenn eine Gruppe gewaehlt ist, die beide braucht, und nur fuer Motive,
+    // die auch wirklich im Eingangsordner liegen (wer nur das App-Symbol tauscht,
+    // hat womoeglich gar kein schwarzes Motiv dabei).
+    const brauchtBeideMotive = zuTuendeGruppen.includes('kopfzeile') || zuTuendeGruppen.includes('tab');
+    if (brauchtBeideMotive && (zuAenderndeArten.includes('schwarz') || zuAenderndeArten.includes('weiss'))) {
+        for (const art of ['schwarz', 'weiss']) {
+            if (quellen[art] && !zuAenderndeArten.includes(art)) zuAenderndeArten.push(art);
+        }
     }
 
     for (const art of zuAenderndeArten) {
@@ -514,13 +674,20 @@ async function hauptlauf() {
     const warnungen = [];
 
     try {
-        // Mindestgroessen pro Quelle: schwarzer und weisser Motiv haben die groeßten Ziele,
-        // auch wenn sie nicht direkt in ZIELE stehen (Icon-Ziele sind separate quelle: 'icon')
-        const mindestgroesse = {
-            schwarz: 160,  // wird zu 160er Header, 32er Favicon, 64er Favicon
-            weiss: 512,    // wird zu 160er Header UND 512er Icon ohne Hintergrundbild
-            hintergrund: 512, // wird zu 192er und 512er Icon
-        };
+        // Mindestgroessen pro Quelle: berechnet aus den tatsaechlich gewahlten Zielen
+        const mindestgroesse = { schwarz: 0, weiss: 0, hintergrund: 512 };
+        for (const z of ZIELE) {
+            if (z.quelle === 'schwarz' && ausgewaehltGruppen.includes(z.gruppe)) mindestgroesse.schwarz = Math.max(mindestgroesse.schwarz, z.groesse);
+        }
+        for (const z of ZIELE) {
+            if (z.quelle === 'weiss' && ausgewaehltGruppen.includes(z.gruppe)) mindestgroesse.weiss = Math.max(mindestgroesse.weiss, z.groesse);
+        }
+        if (ausgewaehltGruppen.includes('app') && !quellen.hintergrund) mindestgroesse.weiss = Math.max(mindestgroesse.weiss, 512);
+        // Das Tab-SVG steht nicht in ZIELE, braucht aber beide Motive in SVG_ZIEL.groesse
+        if (ausgewaehltGruppen.includes('tab')) {
+            mindestgroesse.schwarz = Math.max(mindestgroesse.schwarz, SVG_ZIEL.groesse);
+            mindestgroesse.weiss = Math.max(mindestgroesse.weiss, SVG_ZIEL.groesse);
+        }
 
         // Quellbilder pruefen
         for (const [art, info] of Object.entries(zuTun)) {
@@ -530,7 +697,10 @@ async function hauptlauf() {
             info.analyse = a;
 
             const kante = Math.min(a.breite, a.hoehe);
-            const groessteZielgroesse = mindestgroesse[art] || 512;
+            // Kein Rueckfall auf 512: Eine abgewaehlte Gruppe darf die Pruefung
+            // nicht verschaerfen. mindestgroesse ist fuer jede gebrauchte Art
+            // gesetzt – wird eine Art nicht gebraucht, steht sie gar nicht in zuTun.
+            const groessteZielgroesse = mindestgroesse[art] ?? 0;
 
             console.log(`\n  ${path.basename(info.datei)}: ${a.breite}x${a.hoehe} Pixel`);
 
@@ -591,6 +761,19 @@ async function hauptlauf() {
         }
 
         for (const ziel of ZIELE) {
+            // Gruppe nicht gewählt -> überspringen
+            if (!ausgewaehltGruppen.includes(ziel.gruppe)) {
+                bericht.push({ ...ziel, status: 'nicht gewaehlt' });
+                continue;
+            }
+            // Gewaehlt, aber mit diesen Quellbildern schon gebaut. Ohne diese
+            // Weiche wuerde die Gruppe neu geschrieben, sobald eine ANDERE
+            // gewaehlte Gruppe dasselbe Motiv anfasst.
+            if (!zuTuendeGruppen.includes(ziel.gruppe)) {
+                bericht.push({ ...ziel, status: 'unveraendert' });
+                continue;
+            }
+
             let info = zuTun[ziel.quelle];
             let isIcon = ziel.quelle === 'icon';
             let ikonArt = null;
@@ -647,38 +830,33 @@ async function hauptlauf() {
             }
         }
 
-        // SVG-Favicon mit beiden Motiven erzeugen
-        if (zuTun.schwarz && zuTun.weiss && !OPT.dryRun) {
-            const pngSchwarz = await bildSkalieren(page, zuTun.schwarz.url, SVG_ZIEL.groesse, LOGO_RAND);
-            const pngWeiss = await bildSkalieren(page, zuTun.weiss.url, SVG_ZIEL.groesse, LOGO_RAND);
-            const svg = svgFaviconBauen(pngSchwarz, pngWeiss, SVG_ZIEL.groesse);
-            const pfadSvg = path.join(REPO, SVG_ZIEL.datei);
-            fs.mkdirSync(path.dirname(pfadSvg), { recursive: true });
-            fs.writeFileSync(pfadSvg, svg);
-
-            // Verifikation
-            const inhalt = fs.readFileSync(pfadSvg, 'utf8');
-            const hatSchwarzPng = inhalt.includes('data:image/png;base64,');
-            const hatWeissPng = (inhalt.match(/data:image\/png;base64,/g) || []).length >= 2;
-            const hatMediaQuery = inhalt.includes('prefers-color-scheme: dark');
-            const groesse = fs.statSync(pfadSvg).size;
-
-            if (!hatSchwarzPng || !hatWeissPng) {
-                abbruch(`SVG-Favicon konnte nicht korrekt erzeugt werden (fehlende Base64-Daten).`);
-            }
-            if (!hatMediaQuery) {
-                abbruch(`SVG-Favicon fehlt prefers-color-scheme: dark.`);
-            }
-            if (groesse < 1024) {
-                abbruch(`SVG-Favicon ist zu klein (${groesse} Bytes, erwartet > 1 KB).`);
-            }
-
-            bericht.push({ ...SVG_ZIEL, status: 'neu', ist: `SVG (${groesse} Bytes)` });
-        } else if (!OPT.dryRun) {
-            // SVG existiert bereits, aber nichts zu tun
-            if (fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) {
+        // SVG-Favicon – nur wenn die Gruppe "tab" gewaehlt UND zu bauen ist
+        if (zuTuendeGruppen.includes('tab')) {
+            if (zuTun.schwarz && zuTun.weiss && !OPT.dryRun) {
+                const pngSchwarz = await bildSkalieren(page, zuTun.schwarz.url, SVG_ZIEL.groesse, LOGO_RAND);
+                const pngWeiss = await bildSkalieren(page, zuTun.weiss.url, SVG_ZIEL.groesse, LOGO_RAND);
+                const svg = svgFaviconBauen(pngSchwarz, pngWeiss, SVG_ZIEL.groesse);
+                const pfadSvg = path.join(REPO, SVG_ZIEL.datei);
+                fs.mkdirSync(path.dirname(pfadSvg), { recursive: true });
+                fs.writeFileSync(pfadSvg, svg);
+                const inhalt = fs.readFileSync(pfadSvg, 'utf8');
+                const hatSchwarzPng = inhalt.includes('data:image/png;base64,');
+                const hatWeissPng = (inhalt.match(/data:image\/png;base64,/g) || []).length >= 2;
+                const hatMediaQuery = inhalt.includes('prefers-color-scheme: dark');
+                const groesse = fs.statSync(pfadSvg).size;
+                if (!hatSchwarzPng || !hatWeissPng) abbruch(`SVG-Favicon konnte nicht korrekt erzeugt werden (fehlende Base64-Daten).`);
+                if (!hatMediaQuery) abbruch(`SVG-Favicon fehlt prefers-color-scheme: dark.`);
+                if (groesse < 1024) abbruch(`SVG-Favicon ist zu klein (${groesse} Bytes, erwartet > 1 KB).`);
+                bericht.push({ ...SVG_ZIEL, status: 'neu', ist: `SVG (${groesse} Bytes)` });
+            } else if (zuTun.schwarz && zuTun.weiss) {
+                if (fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) bericht.push({ ...SVG_ZIEL, status: 'unveraendert' });
+                else bericht.push({ ...SVG_ZIEL, status: 'neu', ist: 'SVG' });
+            } else if (!OPT.dryRun && fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) {
                 bericht.push({ ...SVG_ZIEL, status: 'unveraendert' });
             }
+        } else {
+            // Tab nicht gewählt
+            if (fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) bericht.push({ ...SVG_ZIEL, status: 'nicht gewaehlt' });
         }
     } finally {
         await browser.close();
@@ -687,8 +865,34 @@ async function hauptlauf() {
     // Zustand fortschreiben
     if (!OPT.dryRun) {
         const neu = stateLesen();
-        for (const [art, info] of Object.entries(zuTun)) {
-            neu[art] = { datei: path.basename(info.datei), sha256: info.sha256, stand: new Date().toISOString() };
+        // Pro Gruppe merken, mit WELCHEN Quellbildern sie gebaut wurde. Nur die
+        // tatsaechlich gebauten Gruppen fortschreiben – eine uebersprungene
+        // Gruppe behaelt ihren alten Eintrag und wird beim naechsten Mal
+        // korrekt als "zu tun" erkannt.
+        neu.gruppen = neu.gruppen || {};
+        for (const g of zuTuendeGruppen) {
+            const eintrag = {};
+            for (const art of artenFuerGruppe(g, quellen)) {
+                if (quellen[art]) eintrag[art] = zuTun[art]?.sha256 ?? sha256(quellen[art]);
+            }
+            neu.gruppen[g] = eintrag;
+        }
+        neu.stand = new Date().toISOString();
+        neu.letzteZiele = ausgewaehltGruppen;
+        if (OPT.kreis) {
+            // Der Kreis gehoert zur Kopfzeile. Steht die nicht in der Auswahl,
+            // wird das Aussehen NICHT heimlich mitgeaendert – sonst wundert sich
+            // Sascha, warum ein Tausch des App-Symbols die Kopfzeile umbaut.
+            // Hinweis statt Abbruch, damit ein zu viel gesetztes Flag den Lauf
+            // nicht wegwirft.
+            if (!ausgewaehltGruppen.includes('kopfzeile')) {
+                warnungen.push(
+                    '--kreis wurde angegeben, aber "Logo in der Kopfzeile" ist nicht ausgewaehlt – die Kreis-Einstellung bleibt unveraendert.',
+                );
+            } else {
+                kreisSchreiben(OPT.kreis);
+                neu.kreis = KREIS_JA.includes(OPT.kreis);
+            }
         }
         fs.mkdirSync(BRANDING, { recursive: true });
         fs.writeFileSync(STATE, JSON.stringify(neu, null, 2));
@@ -712,6 +916,8 @@ async function hauptlauf() {
 try {
     if (OPT.restore || OPT.liste) {
         backupZurueckholen();
+    } else if (OPT.nurStil) {
+        nurStilAendernMain();
     } else {
         await hauptlauf();
     }
