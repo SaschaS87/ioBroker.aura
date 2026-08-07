@@ -1,6 +1,6 @@
 import logoSchwarz from '../../assets/aura-header-logo-schwarz.png';
 import logoWeiss from '../../assets/aura-header-logo-weiss.png';
-import { HEADER_LOGO_MIT_KREIS } from './headerLogoStil';
+import { HEADER_LOGO_MIT_KREIS, HEADER_LOGO_ANZEIGEN } from './headerLogoStil';
 
 /**
  * Logo im Kopf der App. Zeigt je nach Theme das passende Motiv:
@@ -20,17 +20,22 @@ import { HEADER_LOGO_MIT_KREIS } from './headerLogoStil';
  * die weggelassene Variante fehlte dann im gebauten CSS.
  */
 export function HeaderLogo() {
+    // Ganz abgeschaltet: nichts rendern, damit auch der Abstand zum Titel
+    // (gap-3 der Kopfzeile) verschwindet und kein leerer Platzhalter bleibt.
+    if (!HEADER_LOGO_ANZEIGEN) return null;
+
     // Mit Kreis: exakt so gross wie die runden Knoepfe rechts in der Kopfzeile
-    // (Theme-Umschalter und Admin-Link, beide w-8 h-8 mit 1px --app-border in
-    // App.tsx) – sonst wirkt die Kopfzeile links und rechts unterschiedlich
-    // schwer. Ohne Kreis darf das Motiv die vollen 40 px nutzen, weil dort
-    // keine Kreisflaeche Platz kostet.
+    // (Theme-Umschalter und Admin-Link, beide w-8 h-8, Flaeche --app-bg, 1px
+    // --app-border in App.tsx) – sonst wirkt die Kopfzeile links und rechts
+    // unterschiedlich schwer. Ohne Kreis nimmt das Logo die Farbe der Kopfzeile
+    // selbst (--app-surface) und die vollen 40 px, weil keine Kreisflaeche
+    // Platz kostet.
     const rahmenKlassen = HEADER_LOGO_MIT_KREIS
         ? 'w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden'
         : 'w-10 h-10 flex items-center justify-center shrink-0';
     const rahmenStil = HEADER_LOGO_MIT_KREIS
-        ? { background: 'var(--app-surface)', border: '1px solid var(--app-border)' }
-        : undefined;
+        ? { background: 'var(--app-bg)', border: '1px solid var(--app-border)' }
+        : { background: 'var(--app-surface)' };
     const bildKlassen = HEADER_LOGO_MIT_KREIS ? 'w-7 h-7 object-contain' : 'w-10 h-10 object-contain';
 
     return (

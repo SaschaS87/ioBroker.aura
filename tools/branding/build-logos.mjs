@@ -77,6 +77,14 @@ const ZIELE = [
 /** Das SVG-Tab-Symbol entsteht aus beiden Motiven zusammen und steht deshalb nicht in ZIELE. */
 const SVG_ZIEL = { datei: 'public/favicon-theme.svg', groesse: 64, zweck: 'Browser-Tab, folgt dem Hell/Dunkel-Modus', gruppe: 'tab' };
 
+/**
+ * Dateien, die kein Bild sind, aber zum Erscheinungsbild gehoeren und deshalb
+ * in jedes Backup muessen: die Kreis-/Anzeigen-Einstellung, die Symbol-Bloecke
+ * in index.html und das icons-Array im Manifest. Ohne sie koennte
+ * /logo-tausch zurueck ein ausgeblendetes Symbol nicht zurueckholen.
+ */
+const ZUSATZ_DATEIEN = ['src-vis/components/common/headerLogoStil.ts', 'index.html', 'public/manifest.json'];
+
 const ENDUNGEN = ['.png', '.webp', '.jpg', '.jpeg'];
 const MIME = { '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
 
@@ -98,6 +106,7 @@ const OPT = {
     backup: flagWert('--backup'),
     ziele: flagWert('--ziele'),
     kreis: flagWert('--kreis'),
+    anzeigen: flagWert('--anzeigen'),
     nurStil: hatFlag('--nur-stil'),
 };
 
@@ -225,15 +234,18 @@ function backupAnlegen(quellen) {
                 }
             }
 
-            // Auch headerLogoStil.ts pruefen
-            const pfadStil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
-            const kopieStil = path.join(backupOrdner, 'src-vis__components__common__headerLogoStil.ts');
-            if (fs.existsSync(pfadStil) && fs.existsSync(kopieStil)) {
-                const hashStil = sha256(pfadStil);
-                const hashStilBackup = sha256(kopieStil);
-                if (hashStil !== hashStilBackup) alleQuellen = false;
-            } else if (fs.existsSync(pfadStil) !== fs.existsSync(kopieStil)) {
-                alleQuellen = false;
+            // Auch die Einstellungsdateien pruefen (Kreis, Sichtbarkeit der
+            // Symbole) – aendert sich nur eine davon, ist der alte Stand NICHT
+            // mehr gesichert und es braucht ein neues Backup.
+            for (const rel of ZUSATZ_DATEIEN) {
+                const pfadZ = path.join(REPO, rel);
+                const kopieZ = path.join(backupOrdner, rel.replace(/\//g, '__'));
+                if (fs.existsSync(pfadZ) && fs.existsSync(kopieZ)) {
+                    if (sha256(pfadZ) !== sha256(kopieZ)) alleQuellen = false;
+                } else if (fs.existsSync(pfadZ) !== fs.existsSync(kopieZ)) {
+                    alleQuellen = false;
+                }
+                if (!alleQuellen) break;
             }
 
             if (alleQuellen) {
@@ -262,11 +274,12 @@ function backupAnlegen(quellen) {
         fs.copyFileSync(altSvg, kopieSvg);
         anzahl++;
     }
-    // headerLogoStil.ts auch sichern
-    const altStil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
-    if (fs.existsSync(altStil)) {
-        const kopieStil = path.join(ordner, 'src-vis__components__common__headerLogoStil.ts');
-        fs.copyFileSync(altStil, kopieStil);
+    // Einstellungsdateien mitsichern: ohne sie koennte /logo-tausch zurueck
+    // weder den Kreis noch ein ausgeblendetes Symbol wiederherstellen.
+    for (const rel of ZUSATZ_DATEIEN) {
+        const altZ = path.join(REPO, rel);
+        if (!fs.existsSync(altZ)) continue;
+        fs.copyFileSync(altZ, path.join(ordner, rel.replace(/\//g, '__')));
         anzahl++;
     }
     for (const [art, datei] of Object.entries(quellen)) {
@@ -308,13 +321,14 @@ function backupZurueckholen() {
         console.log(`  wiederhergestellt: ${SVG_ZIEL.datei}`);
         anzahl++;
     }
-    // headerLogoStil.ts auch wiederherstellen
-    const kopieStil = path.join(ordner, 'src-vis__components__common__headerLogoStil.ts');
-    if (fs.existsSync(kopieStil)) {
-        const pfadStil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
-        fs.mkdirSync(path.dirname(pfadStil), { recursive: true });
-        fs.copyFileSync(kopieStil, pfadStil);
-        console.log(`  wiederhergestellt: src-vis/components/common/headerLogoStil.ts`);
+    // Einstellungsdateien wiederherstellen (Kreis, Sichtbarkeit der Symbole)
+    for (const rel of ZUSATZ_DATEIEN) {
+        const kopieZ = path.join(ordner, rel.replace(/\//g, '__'));
+        if (!fs.existsSync(kopieZ)) continue;
+        const pfadZ = path.join(REPO, rel);
+        fs.mkdirSync(path.dirname(pfadZ), { recursive: true });
+        fs.copyFileSync(kopieZ, pfadZ);
+        console.log(`  wiederhergestellt: ${rel}`);
         anzahl++;
     }
     // Zustandsdatei entwerten, damit der naechste Lauf wieder alles erzeugt.
@@ -339,6 +353,170 @@ function auswahlVerarbeiten() {
 const KREIS_JA = ['ja', 'true', '1'];
 const KREIS_NEIN = ['nein', 'false', '0'];
 
+const STIL_DATEI = 'src-vis/components/common/headerLogoStil.ts';
+
+/**
+ * Wendet `--anzeigen` an: Genannte Gruppen werden eingeblendet, nicht genannte
+ * ausgeblendet. Gibt zurueck, was sich geaendert hat (fuer den Bericht).
+ */
+function anzeigenAnwenden(wert) {
+    if (wert === null) return null;
+    // "keine" blendet alles aus. Ein leerer Wert liesse sich auf der
+    // Kommandozeile nicht zuverlaessig uebergeben, deshalb ein Schluesselwort.
+    const sichtbar =
+        wert === 'keine'
+            ? []
+            : wert
+                  .split(',')
+                  .map((g) => g.trim())
+                  .filter(Boolean);
+    for (const g of sichtbar) {
+        if (!GRUPPEN[g]) {
+            abbruch(
+                `Unbekannte Gruppe bei --anzeigen: "${g}"\n` +
+                    `Gueltig sind: ${Object.keys(GRUPPEN).join(', ')} – oder "keine", um alle auszublenden.`,
+            );
+        }
+    }
+    const aenderungen = [];
+    for (const g of Object.keys(GRUPPEN)) {
+        const an = sichtbar.includes(g);
+        let geaendert = false;
+        if (g === 'kopfzeile') {
+            const vorher = stilLesen().anzeigen;
+            if (vorher !== an) {
+                stilDateiSchreiben({ anzeigen: an });
+                geaendert = true;
+            }
+        } else if (g === 'tab') {
+            geaendert = htmlBlockSchalten('TAB-SYMBOL', an);
+        } else if (g === 'app') {
+            const a = htmlBlockSchalten('APP-SYMBOL', an);
+            const b = manifestSymbolSchalten(an);
+            geaendert = a || b;
+        }
+        if (geaendert) aenderungen.push(`${GRUPPEN[g]}: ${an ? 'wird wieder angezeigt' : 'ausgeblendet'}`);
+    }
+    return aenderungen;
+}
+
+/** Liest den aktuellen Stand aus der erzeugten Stil-Datei. */
+function stilLesen() {
+    try {
+        const t = fs.readFileSync(path.join(REPO, STIL_DATEI), 'utf8');
+        return {
+            mitKreis: /HEADER_LOGO_MIT_KREIS\s*=\s*true/.test(t),
+            anzeigen: !/HEADER_LOGO_ANZEIGEN\s*=\s*false/.test(t),
+        };
+    } catch {
+        return { mitKreis: false, anzeigen: true };
+    }
+}
+
+/** Schreibt die Stil-Datei. Nicht angegebene Werte bleiben, wie sie sind. */
+function stilDateiSchreiben(aenderung) {
+    const alt = stilLesen();
+    const mitKreis = aenderung.mitKreis ?? alt.mitKreis;
+    const anzeigen = aenderung.anzeigen ?? alt.anzeigen;
+    const inhalt = `/**
+ * Aussehen des Logos in der Kopfzeile.
+ *
+ * ERZEUGT von tools/branding/build-logos.mjs – nicht von Hand bearbeiten.
+ * Umschalten mit:  /logo-tausch stil
+ * (oder npm run logo:stil -- --kreis ja|nein --anzeigen kopfzeile,tab,app)
+ *
+ * HEADER_LOGO_MIT_KREIS
+ *   true  = Logo sitzt in einem runden Chip, genau so gross wie die runden
+ *           Knoepfe rechts in der Kopfzeile (32x32 px, Flaeche --app-bg,
+ *           Rand --app-border), Motiv 28x28 px
+ *   false = Logo steht frei in der Kopfzeile (Flaeche --app-surface, also die
+ *           Farbe der Kopfzeile selbst), Motiv 40x40 px
+ *
+ * HEADER_LOGO_ANZEIGEN
+ *   false = gar kein Logo in der Kopfzeile, nur der Titel
+ */
+export const HEADER_LOGO_MIT_KREIS = ${mitKreis};
+export const HEADER_LOGO_ANZEIGEN = ${anzeigen};
+`;
+    const pfad = path.join(REPO, STIL_DATEI);
+    fs.mkdirSync(path.dirname(pfad), { recursive: true });
+    fs.writeFileSync(pfad, inhalt);
+}
+
+/**
+ * Was zwischen den Markern in index.html steht, wenn das Symbol an ist.
+ * Die Zeilen stehen hier, damit sie beim Wiedereinschalten exakt so
+ * zurueckkommen – ausgeschaltet werden sie naemlich entfernt, nicht
+ * auskommentiert: HTML-Kommentare lassen sich nicht verschachteln, und die
+ * Marker sind selbst Kommentare.
+ */
+const HTML_BLOECKE = {
+    'TAB-SYMBOL': [
+        '    <link rel="icon" type="image/svg+xml" href="/favicon-theme.svg" />',
+        '    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />',
+        '    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />',
+    ],
+    'APP-SYMBOL': ['    <link rel="apple-touch-icon" href="/icons/icon-192.png" />'],
+};
+const HTML_AUS = '    <!-- ausgeschaltet ueber /logo-tausch: der Browser zeigt sein Standardsymbol -->';
+
+/** Blendet das Tab- bzw. App-Symbol in index.html ein oder aus. */
+function htmlBlockSchalten(bereich, anzeigen) {
+    const pfad = path.join(REPO, 'index.html');
+    const html = fs.readFileSync(pfad, 'utf8');
+    // Zeilenende der Datei uebernehmen – unter Windows ist es CRLF, ein fest
+    // verdrahtetes \n wuerde die Datei uneinheitlich machen und den Vergleich
+    // "schon im gewuenschten Zustand" immer fehlschlagen lassen.
+    const eol = html.includes('\r\n') ? '\r\n' : '\n';
+    const re = new RegExp(`(<!-- AURA-${bereich}-START[^]*?-->\\r?\\n)([^]*?)([ \\t]*<!-- AURA-${bereich}-ENDE -->)`, 'm');
+    const treffer = html.match(re);
+    if (!treffer) {
+        abbruch(
+            `In index.html fehlt der Marker AURA-${bereich}-START oder -ENDE.\n` +
+                'Die Marker steuern, ob das Symbol eingebunden wird – bitte nicht von Hand entfernen.',
+        );
+    }
+    const neuerInhalt = (anzeigen ? HTML_BLOECKE[bereich].join(eol) : HTML_AUS) + eol;
+    if (treffer[2] === neuerInhalt) return false; // schon im gewuenschten Zustand
+    fs.writeFileSync(pfad, html.replace(re, `$1${neuerInhalt}$3`));
+    return true;
+}
+
+/**
+ * Leert bzw. fuellt das icons-Array in public/manifest.json.
+ *
+ * Bewusst per Textersetzung statt ueber JSON.parse/stringify: Letzteres wuerde
+ * die kompakt geschriebenen Eintraege auf je fuenf Zeilen aufblaehen und bei
+ * jedem Umschalten einen unnoetig grossen Unterschied erzeugen.
+ */
+const MANIFEST_ICONS_AN = [
+    '  "icons": [',
+    '    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },',
+    '    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },',
+    '    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }',
+    '  ]',
+];
+const MANIFEST_ICONS_AUS = ['  "icons": []'];
+
+function manifestSymbolSchalten(anzeigen) {
+    const pfad = path.join(REPO, 'public/manifest.json');
+    const text = fs.readFileSync(pfad, 'utf8');
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const re = /[ \t]*"icons":\s*\[[^\]]*\]/;
+    if (!re.test(text)) abbruch('In public/manifest.json fehlt das icons-Feld.');
+    const neu = (anzeigen ? MANIFEST_ICONS_AN : MANIFEST_ICONS_AUS).join(eol);
+    const ersetzt = text.replace(re, neu);
+    if (ersetzt === text) return false;
+    fs.writeFileSync(pfad, ersetzt);
+    // Gegenpruefen, dass die Datei gueltiges JSON geblieben ist
+    try {
+        JSON.parse(ersetzt);
+    } catch (e) {
+        abbruch(`public/manifest.json ist nach der Aenderung kein gueltiges JSON mehr: ${e.message}`);
+    }
+    return true;
+}
+
 function kreisSchreiben(wert) {
     if (wert === null) return;
     // Unsinnige Werte NICHT stillschweigend als "nein" durchgehen lassen –
@@ -350,24 +528,33 @@ function kreisSchreiben(wert) {
         );
     }
     const istWahr = KREIS_JA.includes(wert);
-    const inhalt = `/**\n * Aussehen des Logos in der Kopfzeile.\n *\n * ERZEUGT von tools/branding/build-logos.mjs – nicht von Hand bearbeiten.\n * Umschalten mit:  /logo-tausch stil   (oder npm run logo:build -- --kreis ja|nein)\n *\n * true  = Logo sitzt in einem runden Chip (Flaeche --app-surface, Rand\n *         --app-border), Motiv 32x32 px\n * false = Logo steht frei in der Kopfzeile, Motiv 40x40 px\n */\nexport const HEADER_LOGO_MIT_KREIS = ${istWahr};\n`;
-    const pfad = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
-    fs.mkdirSync(path.dirname(pfad), { recursive: true });
-    fs.writeFileSync(pfad, inhalt);
+    stilDateiSchreiben({ mitKreis: istWahr });
 }
 
 // ----------------------------------------- Nur Stil aendern (--nur-stil --kreis ja|nein)
 
 function nurStilAendernMain() {
-    if (!OPT.kreis) abbruch('Mit --nur-stil muss --kreis ja|nein angegeben werden.');
+    if (!OPT.kreis && !OPT.anzeigen) {
+        abbruch('Mit --nur-stil muss --kreis ja|nein und/oder --anzeigen <gruppen> angegeben werden.');
+    }
     console.log('\n=== Aura Logo-Werkstatt (nur Stil) ===\n');
     const bk = backupAnlegen({ schwarz: quelleFinden(OPT.quelle, 'logo-schwarz'), weiss: quelleFinden(OPT.quelle, 'logo-weiss'), hintergrund: quelleFinden(OPT.quelle, 'logo-hintergrund'), });
     if (bk.isNew) console.log(`  Backup angelegt: branding/backup/${path.basename(bk.ordner)}`);
     else console.log(`  Der aktuelle Stand ist bereits gesichert.`);
-    kreisSchreiben(OPT.kreis);
-    console.log(`  Kreis-Einstellung geaendert: ${OPT.kreis === 'ja' || OPT.kreis === 'true' ? 'true' : 'false'}`);
+
+    const sichtbarkeit = anzeigenAnwenden(OPT.anzeigen);
+    if (sichtbarkeit) {
+        if (sichtbarkeit.length) sichtbarkeit.forEach((z) => console.log(`  ${z}`));
+        else console.log('  Sichtbarkeit: unveraendert');
+    }
+
+    if (OPT.kreis) {
+        kreisSchreiben(OPT.kreis);
+        console.log(`  Kreis-Einstellung geaendert: ${KREIS_JA.includes(OPT.kreis)}`);
+    }
     const state = stateLesen();
-    state.kreis = OPT.kreis === 'ja' || OPT.kreis === 'true';
+    if (OPT.kreis) state.kreis = KREIS_JA.includes(OPT.kreis);
+    if (OPT.anzeigen) state.sichtbar = OPT.anzeigen.split(',').map((g) => g.trim()).filter(Boolean);
     fs.mkdirSync(BRANDING, { recursive: true });
     fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
     console.log(gruen('\nFertig. Danach noch bauen und ausrollen (npm run build + Deploy).\n'));
