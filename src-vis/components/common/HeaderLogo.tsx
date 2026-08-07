@@ -20,13 +20,18 @@ import { HEADER_LOGO_MIT_KREIS } from './headerLogoStil';
  * die weggelassene Variante fehlte dann im gebauten CSS.
  */
 export function HeaderLogo() {
+    // Mit Kreis: exakt so gross wie die runden Knoepfe rechts in der Kopfzeile
+    // (Theme-Umschalter und Admin-Link, beide w-8 h-8 mit 1px --app-border in
+    // App.tsx) – sonst wirkt die Kopfzeile links und rechts unterschiedlich
+    // schwer. Ohne Kreis darf das Motiv die vollen 40 px nutzen, weil dort
+    // keine Kreisflaeche Platz kostet.
     const rahmenKlassen = HEADER_LOGO_MIT_KREIS
-        ? 'w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden'
+        ? 'w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden'
         : 'w-10 h-10 flex items-center justify-center shrink-0';
     const rahmenStil = HEADER_LOGO_MIT_KREIS
         ? { background: 'var(--app-surface)', border: '1px solid var(--app-border)' }
         : undefined;
-    const bildKlassen = HEADER_LOGO_MIT_KREIS ? 'w-8 h-8 object-contain' : 'w-10 h-10 object-contain';
+    const bildKlassen = HEADER_LOGO_MIT_KREIS ? 'w-7 h-7 object-contain' : 'w-10 h-10 object-contain';
 
     return (
         <div className={rahmenKlassen} style={rahmenStil}>
