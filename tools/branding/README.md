@@ -37,6 +37,35 @@ Ohne Kreis gibt es nichts einzustellen: das Motiv nutzt dort immer die volle
 Flaeche (40x40). Wer es trotzdem versucht, bekommt eine Fehlermeldung statt
 einer wirkungslosen Einstellung.
 
+## Homescreen-Symbol ausrichten
+
+Auch das App-Symbol laesst sich ausrichten – aber anders: Es ist ein fertiges
+PNG, die Ausrichtung wird also **ins Bild gerendert**. Nach jeder Aenderung
+muessen die Symbole neu entstehen; das erkennt das Werkzeug von selbst und
+baut die Gruppe neu, auch ohne neue Quellbilder.
+
+    npm run logo:build -- --ziele app --app-groesse 80 --app-x 0 --app-y -3
+    npm run logo:vorschau -- --was app --app-groesse 80
+
+| Angabe | Bedeutung | Bereich | Standard |
+|---|---|---|---|
+| `--app-groesse` | Prozent der Kachelflaeche. 70 entspricht dem frueher festen Rand von 15 % je Seite. | 40–130 | 70 (bzw. 100 mit eigenem Hintergrundbild) |
+| `--app-x` | Verschiebung in **Prozent der Kantenlaenge**, minus = links | −25 … 25 | 0 |
+| `--app-y` | dasselbe senkrecht, minus = oben | −25 … 25 | 0 |
+
+**Warum Prozent statt Pixel?** Das Symbol entsteht in 192 *und* 512 px. Ein
+fester Pixelwert saehe in den beiden Groessen unterschiedlich weit verschoben
+aus.
+
+Die Werte stehen in `tools/branding/app-symbol.json` – bewusst im
+versionierten Teil des Repos, damit sich das Symbol nach einem Klon identisch
+neu erzeugen laesst. (`branding/` waere der falsche Ort, der ist lokal.)
+
+`npm run logo:vorschau -- --was app` schreibt
+`branding/vorschau-appsymbol.png` mit drei Ansichten: die ganze Kachel, das
+abgerundete iPhone-Quadrat und der Android-Kreis. Android schneidet am
+staerksten zu – genau dafuer gab es urspruenglich den festen Rand von 15 %.
+
 ## Wo die Quellbilder liegen
 
 Der Pfad steht **nicht** im Quelltext – er enthält Benutzer- und Firmennamen.

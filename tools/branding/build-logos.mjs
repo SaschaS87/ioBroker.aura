@@ -72,9 +72,63 @@ function eingangGemerkt() {
 /** Hintergrundfarbe fuer das Homescreen-Symbol, wenn Sascha kein eigenes Bild liefert.
  *  #111827 ist die Farbe, die auch in public/manifest.json als background_color steht. */
 const HINTERGRUND_FARBE = '#111827';
-/** Anteil freier Rand um das Logo im Homescreen-Symbol (0.15 = 15% je Seite).
- *  Android schneidet "maskable"-Symbole rund zu – ohne Rand wuerde das Motiv beschnitten. */
-const ICON_RAND = 0.15;
+/**
+ * Ausrichtung des Motivs im Homescreen-Symbol.
+ *
+ * Anders als beim Kopfzeilen-Logo wird hier nichts zur Laufzeit gerechnet: Das
+ * Symbol ist ein fertiges PNG, die Ausrichtung wandert also ins Bild selbst.
+ * Deshalb muessen die Symbole nach jeder Aenderung neu erzeugt werden – das
+ * erledigt das Werkzeug von allein (siehe justageSchluessel weiter unten).
+ *
+ *   groesse  Prozent der Kachelflaeche. 70 entspricht dem frueher festen Rand
+ *            von 15 % je Seite. Ueber 100 ragt das Motiv ueber die Kachel
+ *            hinaus und wird beschnitten.
+ *   x / y    Verschiebung in Prozent der Kantenlaenge (nicht in Pixeln!) –
+ *            das Symbol entsteht in 192 UND 512 px, ein fester Pixelwert saehe
+ *            in den beiden Groessen unterschiedlich aus.
+ *
+ * Gespeichert in tools/branding/app-symbol.json – bewusst im versionierten
+ * Teil des Repos, damit sich das Symbol nach einem Klon identisch neu erzeugen
+ * laesst. (branding/ waere dafuer der falsche Ort, der ist lokal.)
+ */
+const APP_DATEI = path.join(HIER, 'app-symbol.json');
+const APP_GRENZEN = { groesse: [40, 130], x: [-25, 25], y: [-25, 25] };
+/** Standard je nach Quelle: Ein fertiges Hintergrundbild fuellt die Kachel
+ *  vollstaendig (100), das weisse Logo auf Farbe laesst Rand (70 entspricht den
+ *  frueher fest verdrahteten 15 % Rand je Seite, gegen Androids runden
+ *  Zuschnitt). Beides ist das Verhalten von vor der Justage. */
+const appStandard = (mitEigenemHintergrund) => ({ groesse: mitEigenemHintergrund ? 100 : 70, x: 0, y: 0 });
+
+function appJustageLesen(mitEigenemHintergrund = false) {
+    const standard = appStandard(mitEigenemHintergrund);
+    try {
+        const d = JSON.parse(fs.readFileSync(APP_DATEI, 'utf8'));
+        return {
+            groesse: Number.isInteger(d.groesse) ? d.groesse : standard.groesse,
+            x: Number.isInteger(d.x) ? d.x : standard.x,
+            y: Number.isInteger(d.y) ? d.y : standard.y,
+        };
+    } catch {
+        return standard;
+    }
+}
+
+function appJustageSchreiben(werte) {
+    fs.writeFileSync(
+        APP_DATEI,
+        JSON.stringify(
+            {
+                _hinweis:
+                    'Ausrichtung des Motivs im Homescreen-Symbol. groesse = Prozent der Kachelflaeche, ' +
+                    'x/y = Verschiebung in Prozent der Kantenlaenge. Aendern ueber "npm run logo" ' +
+                    'oder npm run logo:build -- --ziele app --force --app-groesse 80 --app-x 0 --app-y -3',
+                ...werte,
+            },
+            null,
+            2,
+        ) + '\n',
+    );
+}
 /** Anteil freier Rand um das Logo im Header-Chip und in den Favicons.
  *  0.06 = 6 % je Seite – genug, damit das Motiv im runden Chip nicht an der
  *  Kante klebt, aber deutlich weniger als beim Homescreen-Symbol. */
@@ -133,11 +187,17 @@ const OPT = {
     logoGroesse: flagWert('--logo-groesse'),
     logoX: flagWert('--logo-x'),
     logoY: flagWert('--logo-y'),
+    appGroesse: flagWert('--app-groesse'),
+    appX: flagWert('--app-x'),
+    appY: flagWert('--app-y'),
     vorschau: hatFlag('--vorschau'),
+    was: flagWert('--was') || 'kopfzeile',
 };
 
 /** Ist eine Feinstellung fuer das Motiv im Kreis angegeben worden? */
 const hatFeinstellung = () => OPT.logoGroesse !== null || OPT.logoX !== null || OPT.logoY !== null;
+/** Ist eine Ausrichtung fuer das Homescreen-Symbol angegeben worden? */
+const hatAppJustage = () => OPT.appGroesse !== null || OPT.appX !== null || OPT.appY !== null;
 
 const rot = (t) => `\x1b[31m${t}\x1b[0m`;
 const gruen = (t) => `\x1b[32m${t}\x1b[0m`;
@@ -602,7 +662,7 @@ function kreisSchreiben(wert) {
  * lieber abbrechen als einen Tippfehler stillschweigend als 0 durchgehen
  * lassen – sonst springt das Logo unerklaerlich in die Mitte zurueck.
  */
-function feinWertPruefen(name, wert, [min, max], einheit) {
+function feinWertPruefen(name, wert, [min, max], einheit, erklaerung = '') {
     if (wert === null) return null;
     const zahl = Number(wert);
     if (!Number.isInteger(zahl)) {
@@ -611,14 +671,56 @@ function feinWertPruefen(name, wert, [min, max], einheit) {
     if (zahl < min || zahl > max) {
         abbruch(
             `--${name} liegt ausserhalb des Bereichs: ${zahl}\n` +
-                `Gueltig sind ${min} bis ${max} (${einheit}).\n` +
-                (name === 'logo-groesse'
-                    ? 'Unter 50 % ist vom Motiv im Kreis nichts mehr zu erkennen, ueber 150 % nur noch ein Ausschnitt.'
-                    : 'Bei mehr als 8 px Versatz haengt das Motiv halb aus dem Kreis heraus.'),
+                `Gueltig sind ${min} bis ${max} (${einheit}).` +
+                (erklaerung ? `\n${erklaerung}` : ''),
         );
     }
     return zahl;
 }
+
+/**
+ * Liest die Ausrichtung des Homescreen-Symbols: Kommandozeile schlaegt Datei,
+ * Datei schlaegt Standard. Prueft dabei die Werte.
+ */
+function appJustageErmitteln(mitEigenemHintergrund = false) {
+    const alt = appJustageLesen(mitEigenemHintergrund);
+    return {
+        groesse:
+            feinWertPruefen(
+                'app-groesse',
+                OPT.appGroesse,
+                APP_GRENZEN.groesse,
+                'Prozent der Kachelflaeche',
+                'Unter 40 % verliert sich das Motiv auf der Kachel, ueber 130 % ist nur noch ein Ausschnitt zu sehen.',
+            ) ?? alt.groesse,
+        x:
+            feinWertPruefen(
+                'app-x',
+                OPT.appX,
+                APP_GRENZEN.x,
+                'Prozent der Kantenlaenge',
+                'Bei mehr als 25 % haengt das Motiv zur Haelfte aus der Kachel heraus.',
+            ) ?? alt.x,
+        y:
+            feinWertPruefen(
+                'app-y',
+                OPT.appY,
+                APP_GRENZEN.y,
+                'Prozent der Kantenlaenge',
+                'Bei mehr als 25 % haengt das Motiv zur Haelfte aus der Kachel heraus.',
+            ) ?? alt.y,
+    };
+}
+
+/** Aus der Justage wird der Rand-Anteil, mit dem bildSkalieren arbeitet.
+ *  70 % Motiv = 15 % Rand je Seite; ueber 100 % wird der Rand negativ und das
+ *  Motiv ragt bewusst ueber die Kachel hinaus. */
+const appRandVon = (groesse) => (100 - groesse) / 200;
+
+/** Kurzform der Justage fuer den Zustand. Aendert sie sich, muessen die
+ *  Symbole neu erzeugt werden – anders als beim Kopfzeilen-Logo steckt die
+ *  Ausrichtung hier im Bild und nicht im Quelltext. */
+const justageSchluessel = (j) => `${j.groesse}/${j.x}/${j.y}`;
 
 /** Liest die drei Feinstellungs-Angaben und ergaenzt fehlende aus dem Ist-Stand. */
 function feinstellungLesen() {
@@ -722,9 +824,9 @@ async function bildAnalysieren(page, url) {
  * ohne durchsichtige Stellen (fertiges Hintergrundbild) gibt es nichts zu
  * beschneiden – dann bleibt es beim mittigen quadratischen Zuschnitt.
  */
-async function bildSkalieren(page, url, groesse, rand = 0) {
+async function bildSkalieren(page, url, groesse, rand = 0, versatz = { x: 0, y: 0 }) {
     const b64 = await page.evaluate(
-        async ({ u, g, r }) => {
+        async ({ u, g, r, vx, vy }) => {
             const img = new Image();
             img.src = u;
             await img.decode();
@@ -792,11 +894,14 @@ async function bildSkalieren(page, url, groesse, rand = 0) {
             const octx = out.getContext('2d');
             octx.imageSmoothingEnabled = true;
             octx.imageSmoothingQuality = 'high';
-            const versatz = (g - innen) / 2;
-            octx.drawImage(cur, versatz, versatz, innen, innen);
+            // Mittig, plus die gewuenschte Verschiebung. Ragt das Motiv dabei
+            // ueber den Rand hinaus (grosse Werte oder Groesse ueber 100 %),
+            // beschneidet die Leinwand von selbst – genau wie gewollt.
+            const mitte = (g - innen) / 2;
+            octx.drawImage(cur, mitte + (g * vx) / 100, mitte + (g * vy) / 100, innen, innen);
             return out.toDataURL('image/png').split(',')[1];
         },
-        { u: url, g: groesse, r: rand },
+        { u: url, g: groesse, r: rand, vx: versatz.x || 0, vy: versatz.y || 0 },
     );
     return Buffer.from(b64, 'base64');
 }
@@ -925,6 +1030,27 @@ async function hauptlauf() {
         abbruch(`Es fehlt: logo-weiss.png – wird gebraucht fuer: ${woFuer.join(', ')}`);
     }
 
+    // Ausrichtung des Homescreen-Symbols. Wird hier einmal ermittelt und gilt
+    // fuer beide Symbolgroessen (192 und 512) – deshalb sind x/y in Prozent.
+    const appJustage = appJustageErmitteln(Boolean(quellen.hintergrund));
+    const appRand = appRandVon(appJustage.groesse);
+    const appVersatz = { x: appJustage.x, y: appJustage.y };
+    if (ausgewaehltGruppen.includes('app')) {
+        console.log(`  Symbol-Ausrichtung: ${appJustage.groesse} % der Kachel, x ${appJustage.x} %, y ${appJustage.y} %`);
+    } else if (hatAppJustage()) {
+        // Frueh melden, nicht erst am Ende: Steht die Gruppe nicht in der
+        // Auswahl, endet der Lauf womoeglich vorher mit "nichts zu tun" – die
+        // Angabe waere dann wirkungslos verpufft, ohne dass es jemand merkt.
+        console.log(
+            gelb(
+                '  Hinweis: --app-groesse/--app-x/--app-y wirken nur, wenn "app" in --ziele steht.\n' +
+                    '           Die Ausrichtung bleibt unveraendert. Gemeint war vermutlich:\n' +
+                    `           npm run logo:build -- --ziele app${OPT.appGroesse ? ` --app-groesse ${OPT.appGroesse}` : ''}` +
+                    `${OPT.appX ? ` --app-x ${OPT.appX}` : ''}${OPT.appY ? ` --app-y ${OPT.appY}` : ''}`,
+            ),
+        );
+    }
+
     // Was hat sich seit dem letzten Lauf geaendert?
     const state = stateLesen();
     const zuTun = {};
@@ -950,10 +1076,17 @@ async function hauptlauf() {
     for (const g of ausgewaehltGruppen) {
         const arten = artenFuerGruppe(g, quellen).filter((a) => quellen[a]);
         if (!arten.length) continue;
-        const schonGebaut = arten.every((a) => gruppenState[g]?.[a] === hashVon(a));
+        // Beim App-Symbol zaehlt nicht nur das Quellbild: Aendert sich die
+        // Ausrichtung, muss neu gerendert werden, obwohl das Bild dasselbe ist.
+        // Beim Kopfzeilen-Logo entfaellt das – dort rechnet die App zur Laufzeit.
+        const justageGleich = g !== 'app' || gruppenState.app?.justage === justageSchluessel(appJustage);
+        const schonGebaut = arten.every((a) => gruppenState[g]?.[a] === hashVon(a)) && justageGleich;
         if (!OPT.force && schonGebaut) {
             console.log(`  ${GRUPPEN[g]}: unveraendert seit letztem Lauf`);
             continue;
+        }
+        if (!justageGleich && g === 'app') {
+            console.log(`  ${GRUPPEN[g]}: Ausrichtung geaendert – Symbole werden neu erzeugt`);
         }
         zuTuendeGruppen.push(g);
     }
@@ -1126,12 +1259,14 @@ async function hauptlauf() {
 
             let buf;
             if (isIcon && ikonArt === 'hintergrund') {
-                // Logo-Hintergrundbild verwenden (wie bisher)
-                buf = await bildSkalieren(page, info.url, ziel.groesse);
+                // Fertiges Hintergrundbild: nur zuschneiden – Groesse und
+                // Versatz wirken hier wie ein Bildausschnitt (Zoom/Schieben).
+                buf = await bildSkalieren(page, info.url, ziel.groesse, appRand, appVersatz);
                 bericht.push({ ...ziel, status: 'neu (aus logo-hintergrund)', ist: `${ziel.groesse}x${ziel.groesse}` });
             } else if (isIcon && ikonArt === 'weiss') {
-                // Weißes Logo freistellen, mit Rand einpassen, dann auf die Hintergrundfarbe legen
-                const logoSkaliert = await bildSkalieren(page, info.url, ziel.groesse, ICON_RAND);
+                // Weisses Logo freistellen, nach Justage einpassen, dann auf die
+                // Hintergrundfarbe legen.
+                const logoSkaliert = await bildSkalieren(page, info.url, ziel.groesse, appRand, appVersatz);
                 const logoUrl = `data:image/png;base64,${logoSkaliert.toString('base64')}`;
                 buf = await bildAufHintergrund(page, logoUrl, ziel.groesse, HINTERGRUND_FARBE, 0);
                 bericht.push({ ...ziel, status: 'neu (aus logo-weiss + Hintergrund)', ist: `${ziel.groesse}x${ziel.groesse}` });
@@ -1208,8 +1343,15 @@ async function hauptlauf() {
             for (const art of artenFuerGruppe(g, quellen)) {
                 if (quellen[art]) eintrag[art] = zuTun[art]?.sha256 ?? sha256(quellen[art]);
             }
+            // Beim App-Symbol gehoert die Ausrichtung zum Zustand: Sie steckt im
+            // erzeugten Bild, nicht im Quelltext.
+            if (g === 'app') eintrag.justage = justageSchluessel(appJustage);
             neu.gruppen[g] = eintrag;
         }
+        // Die Ausrichtung selbst wird nur festgeschrieben, wenn das App-Symbol
+        // auch wirklich gebaut wurde – sonst stuende in der Datei ein Wert, den
+        // kein Bild abbildet.
+        if (zuTuendeGruppen.includes('app')) appJustageSchreiben(appJustage);
         neu.stand = new Date().toISOString();
         neu.letzteZiele = ausgewaehltGruppen;
         if (OPT.kreis) {
@@ -1259,9 +1401,10 @@ async function hauptlauf() {
 
 // ------------------------------------------------- Vorschau (--vorschau)
 
-/** Pfad des Vorschaubilds. Immer derselbe, damit ein offenes Bildfenster beim
- *  naechsten Durchgang den neuen Stand zeigt, statt Dateien anzuhaeufen. */
+/** Pfade der Vorschaubilder. Immer dieselben, damit ein offenes Bildfenster
+ *  beim naechsten Durchgang den neuen Stand zeigt, statt Dateien anzuhaeufen. */
 const VORSCHAU_BILD = path.join(BRANDING, 'vorschau-kopfzeile.png');
+const VORSCHAU_APP_BILD = path.join(BRANDING, 'vorschau-appsymbol.png');
 
 /** Vergroesserung der Lupen-Ansicht. 6-fach ist gross genug, um einen Pixel
  *  Versatz zu sehen, und laesst das Bild noch auf einen Bildschirm passen. */
@@ -1361,15 +1504,105 @@ async function vorschauMain() {
     console.log(gelb('  (nur ein Bild – es wurde nichts an der App geaendert)\n'));
 }
 
+/**
+ * Zeigt, wie das Homescreen-Symbol mit der gewaehlten Ausrichtung aussieht –
+ * und vor allem, was die Geraete davon abschneiden: iOS rundet zu einem
+ * Squircle, Android schneidet "maskable"-Symbole zum Kreis. Genau dafuer gab
+ * es frueher den festen Rand von 15 %.
+ *
+ * Das Symbol wird nur im Speicher erzeugt, nichts wird ueberschrieben.
+ */
+async function vorschauAppMain() {
+    const quellen = {
+        weiss: quelleFinden(OPT.quelle, 'logo-weiss'),
+        hintergrund: quelleFinden(OPT.quelle, 'logo-hintergrund'),
+    };
+    if (!quellen.weiss && !quellen.hintergrund) {
+        abbruch(
+            'Fuer die Vorschau des App-Symbols fehlt das Quellbild.\n' +
+                `Erwartet wird logo-weiss.png (oder logo-hintergrund.png) in:\n  ${OPT.quelle || '(Eingangsordner nicht festgelegt)'}`,
+        );
+    }
+    const mitHintergrund = Boolean(quellen.hintergrund);
+    const j = appJustageErmitteln(mitHintergrund);
+
+    const browser = await chromium.launch().catch((e) => {
+        abbruch(
+            'Chromium konnte nicht gestartet werden. Einmalig ausfuehren:\n' +
+                '  npx playwright install chromium\n\nUrspruengliche Meldung: ' + e.message,
+        );
+    });
+    let symbolUri;
+    try {
+        const page = await browser.newPage({ deviceScaleFactor: 2 });
+        // In 512 rendern und klein anzeigen: die Lupe bleibt so scharf.
+        const quellUrl = `data:image/png;base64,${fs.readFileSync(mitHintergrund ? quellen.hintergrund : quellen.weiss).toString('base64')}`;
+        const skaliert = await bildSkalieren(page, quellUrl, 512, appRandVon(j.groesse), { x: j.x, y: j.y });
+        const buf = mitHintergrund
+            ? skaliert
+            : await bildAufHintergrund(
+                  page,
+                  `data:image/png;base64,${skaliert.toString('base64')}`,
+                  512,
+                  HINTERGRUND_FARBE,
+                  0,
+              );
+        symbolUri = `data:image/png;base64,${buf.toString('base64')}`;
+
+        // iOS rundet mit rund 22,4 % der Kante ab (Squircle-Naeherung),
+        // Android maskiert kreisrund.
+        const kachel = (titel, hinweis, radius) => `
+          <div style="text-align:center">
+            <div style="width:170px;height:170px;border-radius:${radius};overflow:hidden;
+                        background:#e5e7eb;box-shadow:0 1px 4px rgba(0,0,0,.18)">
+              <img src="${symbolUri}" style="width:170px;height:170px;display:block">
+            </div>
+            <div style="font:600 13px system-ui;color:#111827;margin-top:10px">${titel}</div>
+            <div style="font:400 12px system-ui;color:#6b7280;margin-top:2px">${hinweis}</div>
+          </div>`;
+
+        const versatzText = (wert, minus, plus) => (wert === 0 ? 'mittig' : `${Math.abs(wert)} % nach ${wert < 0 ? minus : plus}`);
+        const html = `<body style="margin:0;background:#ffffff">
+          <div id="blatt" style="display:inline-block;padding:26px 30px">
+            <div style="font:700 17px system-ui;color:#111827">So sieht das App-Symbol aus</div>
+            <div style="font:400 13px system-ui;color:#6b7280;margin:6px 0 22px">
+              Motiv: ${j.groesse}&#8202;% der Kachel &nbsp;·&nbsp; waagerecht ${versatzText(j.x, 'links', 'rechts')}
+              &nbsp;·&nbsp; senkrecht ${versatzText(j.y, 'oben', 'unten')}
+              ${mitHintergrund ? '&nbsp;·&nbsp; aus deinem eigenen Hintergrundbild' : '&nbsp;·&nbsp; weisses Motiv auf ' + HINTERGRUND_FARBE}
+              <br>Was ueber den Rand ragt, ist weg – die Geraete schneiden unterschiedlich stark zu.
+            </div>
+            <div style="display:flex;gap:34px;align-items:flex-start">
+              ${kachel('So wird es erzeugt', 'die ganze Kachel', '0')}
+              ${kachel('iPhone / iPad', 'abgerundetes Quadrat', '22.4%')}
+              ${kachel('Android', 'kreisrund beschnitten', '50%')}
+            </div>
+          </div>
+        </body>`;
+        await page.setContent(html);
+        fs.mkdirSync(BRANDING, { recursive: true });
+        await page.locator('#blatt').screenshot({ path: VORSCHAU_APP_BILD });
+    } finally {
+        await browser.close();
+    }
+    console.log(`\nVorschau App-Symbol: ${j.groesse} % der Kachel, x ${j.x} %, y ${j.y} %`);
+    console.log(`  ${VORSCHAU_APP_BILD}`);
+    console.log(gelb('  (nur ein Bild – es wurde nichts an der App geaendert)\n'));
+}
+
 try {
     // Zahlenwerte gleich zu Beginn pruefen, noch vor Backup und Bildarbeit:
     // Ein Tippfehler soll nicht erst nach einer Minute Rechnerei auffallen.
-    if (!OPT.restore && !OPT.liste) feinstellungLesen();
+    if (!OPT.restore && !OPT.liste) {
+        feinstellungLesen();
+        appJustageErmitteln();
+    }
 
     if (OPT.restore || OPT.liste) {
         backupZurueckholen();
     } else if (OPT.vorschau) {
-        await vorschauMain();
+        if (OPT.was === 'app') await vorschauAppMain();
+        else if (OPT.was === 'kopfzeile') await vorschauMain();
+        else abbruch(`Unbekannter Wert fuer --was: "${OPT.was}"\nGueltig sind: kopfzeile, app`);
     } else if (OPT.nurStil) {
         nurStilAendernMain();
     } else {

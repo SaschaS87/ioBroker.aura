@@ -13,7 +13,11 @@
  *   npm run logo -- --ziele kopfzeile --anzeigen kopfzeile,tab,app --kreis ja
  *   npm run logo -- --nur-stil --anzeigen keine --kreis nein
  *   npm run logo -- --nur-stil --kreis ja --logo-groesse 96 --logo-x -1 --logo-y 0
+ *   npm run logo -- --ziele app --app-groesse 80 --app-y -4
  *   npm run logo -- ... --kein-deploy      baut, rollt aber nicht aus
+ *
+ * --logo-* richtet das Motiv im Kopfzeilen-Kreis aus (rechnet die App zur
+ * Laufzeit), --app-* das Motiv im Homescreen-Symbol (wird ins Bild gerendert).
  */
 
 import fs from 'node:fs';
@@ -85,12 +89,17 @@ const VORGABE = {
     logoGroesse: flagWert('--logo-groesse'),
     logoX: flagWert('--logo-x'),
     logoY: flagWert('--logo-y'),
+    appGroesse: flagWert('--app-groesse'),
+    appX: flagWert('--app-x'),
+    appY: flagWert('--app-y'),
 };
 const NICHT_INTERAKTIV = Boolean(VORGABE.ziele || VORGABE.anzeigen || VORGABE.kreis || VORGABE.nurStil);
 
 /** Grenzen der Feinstellung – muessen zu build-logos.mjs passen. */
 const FEIN_GRENZEN = { groesse: [50, 150], x: [-8, 8], y: [-8, 8] };
+const APP_GRENZEN = { groesse: [40, 130], x: [-25, 25], y: [-25, 25] };
 const VORSCHAU_BILD = path.join(REPO, 'branding', 'vorschau-kopfzeile.png');
+const VORSCHAU_APP_BILD = path.join(REPO, 'branding', 'vorschau-appsymbol.png');
 
 function ende(text, code = 1) {
     console.error('');
@@ -166,9 +175,25 @@ function standLesen() {
     } catch {
         /* noch nie gelaufen */
     }
+    // Ausrichtung des Homescreen-Symbols. Anders als beim Kopfzeilen-Logo steht
+    // sie im Repo (tools/branding/app-symbol.json): Sie steckt im erzeugten
+    // Bild, und ohne sie liesse sich das Symbol nach einem Klon nicht
+    // identisch nachbauen. 70 % ist der Stand von vor der Justage.
+    let app = { groesse: 70, x: 0, y: 0 };
+    try {
+        const d = JSON.parse(fs.readFileSync(path.join(REPO, 'tools/branding/app-symbol.json'), 'utf8'));
+        app = {
+            groesse: Number.isInteger(d.groesse) ? d.groesse : app.groesse,
+            x: Number.isInteger(d.x) ? d.x : app.x,
+            y: Number.isInteger(d.y) ? d.y : app.y,
+        };
+    } catch {
+        /* noch nie eingestellt */
+    }
     return {
         mitKreis,
         fein,
+        app,
         sichtbar: { kopfzeile: kopfzeileAn, tab: blockAn('TAB-SYMBOL'), app: blockAn('APP-SYMBOL') },
         letzteZiele,
     };
@@ -324,6 +349,50 @@ async function feinjustage(start) {
     }
 }
 
+/**
+ * Ausrichtung des Motivs im Homescreen-Symbol. Laeuft VOR dem Erzeugen der
+ * Bilder – anders als beim Kopfzeilen-Logo wandert die Ausrichtung ins Bild
+ * selbst, sie muss also feststehen, bevor gerendert wird.
+ */
+async function appJustage(start) {
+    let f = { ...start };
+    for (;;) {
+        f.groesse = await zahlFrage(
+            'Wie gross soll das Logo auf der Kachel sein?',
+            '70 = Normalgroesse mit Rand, 100 = randfuellend. Android schneidet rund zu –\n  je groesser, desto mehr faellt dabei weg.',
+            f.groesse,
+            APP_GRENZEN.groesse,
+        );
+        f.x = await zahlFrage(
+            'Nach links oder rechts verschieben?',
+            'In Prozent der Kantenlaenge. Minus schiebt nach links, Plus nach rechts. 0 = mittig.',
+            f.x,
+            APP_GRENZEN.x,
+        );
+        f.y = await zahlFrage(
+            'Nach oben oder unten verschieben?',
+            'In Prozent der Kantenlaenge. Minus schiebt nach oben, Plus nach unten. 0 = mittig.',
+            f.y,
+            APP_GRENZEN.y,
+        );
+
+        console.log(gelb('\n> Vorschaubild erzeugen'));
+        const r = still(`npm run logo:vorschau -- --was app --app-groesse ${f.groesse} --app-x ${f.x} --app-y ${f.y}`);
+        if (r.code !== 0) {
+            console.log(rot('  Das Vorschaubild hat nicht geklappt:'));
+            console.log('  ' + r.aus.trim().split('\n').slice(-6).join('\n  '));
+            console.log(gelb('  Weiter geht es trotzdem – nur eben ohne Bild zum Anschauen.'));
+            if (await jaNein(`Mit ${f.groesse} %, x ${f.x}, y ${f.y} weitermachen?`, true)) return f;
+            continue;
+        }
+        console.log(`  ${VORSCHAU_APP_BILD}`);
+        bildOeffnen(VORSCHAU_APP_BILD);
+        console.log('  Drei Ansichten: ganze Kachel, iPhone (abgerundet), Android (kreisrund).');
+        if (await jaNein('Passt das so?', true)) return f;
+        console.log(gelb('\nDann noch einmal – die letzten Werte stehen als Vorgabe drin.'));
+    }
+}
+
 // ----------------------------------------------------------------- Hauptlauf
 
 console.log(fett('\n=== Aura Logo-Assistent ===\n'));
@@ -353,6 +422,10 @@ if (stand.mitKreis) {
 let ziele, sichtbar, kreis;
 /** Groesse/Position des Motivs im Kreis – null heisst "nicht anfassen". */
 let fein = null;
+/** Dasselbe fuer das Homescreen-Symbol. */
+let appFein = null;
+/** Ob im weiteren Verlauf noch nach der Symbol-Ausrichtung gefragt wird. */
+let appAusrichten = false;
 
 if (NICHT_INTERAKTIV) {
     ziele = VORGABE.nurStil ? [] : (VORGABE.ziele || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -363,6 +436,13 @@ if (NICHT_INTERAKTIV) {
             groesse: VORGABE.logoGroesse === null ? stand.fein.groesse : Number(VORGABE.logoGroesse),
             x: VORGABE.logoX === null ? stand.fein.x : Number(VORGABE.logoX),
             y: VORGABE.logoY === null ? stand.fein.y : Number(VORGABE.logoY),
+        };
+    }
+    if (VORGABE.appGroesse !== null || VORGABE.appX !== null || VORGABE.appY !== null) {
+        appFein = {
+            groesse: VORGABE.appGroesse === null ? stand.app.groesse : Number(VORGABE.appGroesse),
+            x: VORGABE.appX === null ? stand.app.x : Number(VORGABE.appX),
+            y: VORGABE.appY === null ? stand.app.y : Number(VORGABE.appY),
         };
     }
     rl.close();
@@ -385,44 +465,76 @@ if (NICHT_INTERAKTIV) {
     kreis = sichtbar.includes('kopfzeile')
         ? await jaNein('Soll das Logo in der Kopfzeile in einem runden Kreis sitzen?', stand.mitKreis)
         : null;
-    // Die Eingabe bleibt offen, wenn der Kreis an ist: Groesse und Position
-    // werden erst nach dem Erzeugen der Bilder gefragt (Schritt 2), damit die
-    // Vorschau schon das neue Motiv zeigt.
-    if (kreis !== true) rl.close();
+
+    // Das Homescreen-Symbol laesst sich ebenfalls ausrichten. Bewusst als
+    // Ja/Nein-Vorfrage: Wer nur Bilder tauschen will, soll nicht jedes Mal
+    // durch drei Zahlen und eine Vorschau muessen.
+    if (sichtbar.includes('app')) {
+        console.log(
+            `\n  (Symbol steht jetzt auf ${stand.app.groesse} % der Kachel, x ${stand.app.x} %, y ${stand.app.y} %)`,
+        );
+        appAusrichten = await jaNein('Das App-Symbol auf dem Homescreen ausrichten?', false);
+    }
+
+    // Die Eingabe bleibt offen, solange noch etwas zu fragen ist: die
+    // Symbol-Ausrichtung kommt vor dem Erzeugen der Bilder, die Ausrichtung im
+    // Kreis danach – erst dann zeigt die Vorschau das neue Motiv.
+    if (kreis !== true && !appAusrichten) rl.close();
 }
 
-if (!ziele.length && sichtbar === null && kreis === null && fein === null) {
+if (!ziele.length && sichtbar === null && kreis === null && fein === null && appFein === null && !appAusrichten) {
     ende('Nichts ausgewaehlt – es gibt nichts zu tun.', 0);
 }
 
-// 1. Bilder erzeugen
+// 1. App-Symbol ausrichten – VOR dem Erzeugen. Die Ausrichtung wandert ins
+// Bild, sie muss also feststehen, bevor gerendert wird. Die Vorschau braucht
+// nur das Quellbild, das liegt schon im Eingangsordner.
+if (appAusrichten) {
+    console.log(fett('\n--- App-Symbol ausrichten ---'));
+    console.log('Das Symbol ist ein fertiges Bild – die Ausrichtung wird hineingerechnet.');
+    console.log('Nach jedem Durchgang gibt es ein Bild mit drei Ansichten zum Anschauen.');
+    appFein = await appJustage(stand.app);
+}
+
+// 2. Bilder erzeugen. Wurde nur die Ausrichtung geaendert, muss das App-Symbol
+// trotzdem neu entstehen – das Werkzeug erkennt das an der Ausrichtung selbst
+// und baut die Gruppe neu, auch ohne neue Quellbilder.
 const anzeigenWert = sichtbar === null ? null : sichtbar.length ? sichtbar.join(',') : 'keine';
-if (ziele.length) {
-    const r = spawnSync(`npm run logo:build -- --ziele ${ziele.join(',')}`, { cwd: REPO, shell: true, stdio: 'inherit' });
+const appGeaendert =
+    appFein && (appFein.groesse !== stand.app.groesse || appFein.x !== stand.app.x || appFein.y !== stand.app.y);
+const zielListe = [...ziele];
+if (appGeaendert && !zielListe.includes('app')) zielListe.push('app');
+
+if (zielListe.length) {
+    let b = `npm run logo:build -- --ziele ${zielListe.join(',')}`;
+    if (appFein) b += ` --app-groesse ${appFein.groesse} --app-x ${appFein.x} --app-y ${appFein.y}`;
+    const r = spawnSync(b, { cwd: REPO, shell: true, stdio: 'inherit' });
     if (r.status === 2) console.log(gelb('\nDie Bilder waren unveraendert – es wurden keine neuen Symbole erzeugt.'));
     else if (r.status !== 0) ende('Abgebrochen beim Erzeugen der Symbole. Die Meldung steht oben.\nEs wurde nichts ausgerollt.');
 }
 
-// 2. Groesse und Position des Motivs im Kreis – nur mit Kreis. Ohne Kreis nutzt
+// 3. Groesse und Position des Motivs im Kreis – nur mit Kreis. Ohne Kreis nutzt
 // das Motiv immer die volle Flaeche, da gibt es nichts einzustellen.
 if (kreis === true && !NICHT_INTERAKTIV) {
     console.log(fett('\n--- Logo im Kreis ausrichten ---'));
     console.log('Der Kreis selbst bleibt unveraendert – er muss zu den Knoepfen rechts passen.');
     console.log('Eingestellt wird nur das Motiv darin. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
     fein = await feinjustage(stand.fein);
-    rl.close();
 }
+// Ab hier wird nichts mehr gefragt – die Eingabe darf zu, sonst haengt der
+// Assistent am Ende und beendet sich nicht.
+if (!NICHT_INTERAKTIV && (kreis === true || appAusrichten)) rl.close();
 
-// 3. Sichtbarkeit und Aussehen setzen – gebuendelt in einem Aufruf. Kreis und
+// 4. Sichtbarkeit und Aussehen setzen – gebuendelt in einem Aufruf. Kreis und
 // Feinstellung laufen bewusst hierueber und nicht ueber logo:build: so steht
-// die Reihenfolge fest und die Werte aus Schritt 2 kommen sicher an.
+// die Reihenfolge fest und die Werte aus Schritt 3 kommen sicher an.
 const stilTeile = [];
 if (anzeigenWert !== null) stilTeile.push(`--anzeigen ${anzeigenWert}`);
 if (kreis !== null) stilTeile.push(`--kreis ${kreis ? 'ja' : 'nein'}`);
 if (fein) stilTeile.push(`--logo-groesse ${fein.groesse}`, `--logo-x ${fein.x}`, `--logo-y ${fein.y}`);
 if (stilTeile.length) lauf(`npm run logo:stil -- ${stilTeile.join(' ')}`, 'Sichtbarkeit und Aussehen setzen');
 
-// 4. Bauen
+// 5. Bauen
 lauf('npm run build', 'App bauen (dauert etwa 15 Sekunden)');
 
 if (VORGABE.keinDeploy) {
@@ -430,7 +542,7 @@ if (VORGABE.keinDeploy) {
     process.exit(0);
 }
 
-// 5. Ausrollen
+// 6. Ausrollen
 fs.rmSync(path.join(REPO, 'aura-www.tar.gz'), { force: true });
 lauf('tar -czf aura-www.tar.gz www', 'Paket schnueren');
 lauf(`scp -q aura-www.tar.gz ${PI}:/tmp/`, 'Auf den Pi kopieren');
@@ -441,7 +553,7 @@ lauf(
 );
 schonAusgerollt = true;
 
-// 6. Nachpruefen
+// 7. Nachpruefen
 console.log(gelb('\n> Nachpruefen, ob es angekommen ist'));
 let erreichbar = false;
 for (let i = 0; i < 10; i++) {
@@ -465,7 +577,7 @@ console.log(`  App erreichbar: ja`);
 console.log(`  Tab-Symbol eingebunden: ${zeigtTab ? 'ja' : 'nein (ausgeblendet)'}`);
 console.log(`  App-Symbol eingebunden: ${zeigtApp ? 'ja' : 'nein (ausgeblendet)'}`);
 
-// 7. Lokal sichern
+// 8. Lokal sichern
 // Erst vormerken, dann pruefen, ob wirklich etwas dabei ist: "git commit" ohne
 // Aenderungen endet mit Fehlercode 1 und wuerde den Assistenten sonst am
 // letzten Schritt abbrechen lassen, obwohl alles gut gegangen ist.
