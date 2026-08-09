@@ -16,6 +16,9 @@
  *   npm run logo:build -- --kreis ja|nein       Aussehen der Kopfzeile mitaendern
  *                                               (wirkt nur, wenn "kopfzeile" gewaehlt ist)
  *   npm run logo:stil -- --kreis ja|nein        NUR das Aussehen, ohne Bilder anzufassen
+ *   npm run logo:stil -- --logo-groesse 96      Motiv im Kreis groesser/kleiner (50-150 %)
+ *                        --logo-x -1 --logo-y 1 Motiv im Kreis verschieben (-8 bis 8 px)
+ *   npm run logo:vorschau -- --logo-groesse 96  Vorschaubild erzeugen, ohne etwas zu aendern
  *   npm run logo:restore                        letztes Backup zurueckholen
  *   npm run logo:restore -- --liste             vorhandene Backups auflisten
  *   npm run logo:restore -- --backup <name>     ein bestimmtes Backup zurueckholen
@@ -108,7 +111,14 @@ const OPT = {
     kreis: flagWert('--kreis'),
     anzeigen: flagWert('--anzeigen'),
     nurStil: hatFlag('--nur-stil'),
+    logoGroesse: flagWert('--logo-groesse'),
+    logoX: flagWert('--logo-x'),
+    logoY: flagWert('--logo-y'),
+    vorschau: hatFlag('--vorschau'),
 };
+
+/** Ist eine Feinstellung fuer das Motiv im Kreis angegeben worden? */
+const hatFeinstellung = () => OPT.logoGroesse !== null || OPT.logoX !== null || OPT.logoY !== null;
 
 const rot = (t) => `\x1b[31m${t}\x1b[0m`;
 const gruen = (t) => `\x1b[32m${t}\x1b[0m`;
@@ -400,16 +410,32 @@ function anzeigenAnwenden(wert) {
     return aenderungen;
 }
 
+/** Standardwerte der Feinstellung: 88 % entspricht den frueheren festen 28 von
+ *  32 px, mittig – so sieht ein frisch erzeugtes Logo aus wie bisher. */
+const FEIN_STANDARD = { groesse: 88, x: 0, y: 0 };
+/** Grenzen der Feinstellung. Ueber 150 % bliebe vom Motiv im Kreis nichts
+ *  Erkennbares uebrig, ab 8 px Versatz haengt es halb heraus. */
+const FEIN_GRENZEN = { groesse: [50, 150], x: [-8, 8], y: [-8, 8] };
+
 /** Liest den aktuellen Stand aus der erzeugten Stil-Datei. */
 function stilLesen() {
     try {
         const t = fs.readFileSync(path.join(REPO, STIL_DATEI), 'utf8');
+        // Fehlt eine der Feinstellungs-Zeilen (Datei aus der Zeit davor),
+        // gilt der Standard – dann sieht das Logo aus wie vorher.
+        const zahl = (name, standard) => {
+            const m = t.match(new RegExp(`${name}\\s*=\\s*(-?\\d+)`));
+            return m ? parseInt(m[1], 10) : standard;
+        };
         return {
             mitKreis: /HEADER_LOGO_MIT_KREIS\s*=\s*true/.test(t),
             anzeigen: !/HEADER_LOGO_ANZEIGEN\s*=\s*false/.test(t),
+            groesse: zahl('HEADER_LOGO_GROESSE', FEIN_STANDARD.groesse),
+            x: zahl('HEADER_LOGO_X', FEIN_STANDARD.x),
+            y: zahl('HEADER_LOGO_Y', FEIN_STANDARD.y),
         };
     } catch {
-        return { mitKreis: false, anzeigen: true };
+        return { mitKreis: false, anzeigen: true, ...FEIN_STANDARD };
     }
 }
 
@@ -418,6 +444,9 @@ function stilDateiSchreiben(aenderung) {
     const alt = stilLesen();
     const mitKreis = aenderung.mitKreis ?? alt.mitKreis;
     const anzeigen = aenderung.anzeigen ?? alt.anzeigen;
+    const groesse = aenderung.groesse ?? alt.groesse;
+    const x = aenderung.x ?? alt.x;
+    const y = aenderung.y ?? alt.y;
     const inhalt = `/**
  * Aussehen des Logos in der Kopfzeile.
  *
@@ -434,9 +463,23 @@ function stilDateiSchreiben(aenderung) {
  *
  * HEADER_LOGO_ANZEIGEN
  *   false = gar kein Logo in der Kopfzeile, nur der Titel
+ *
+ * HEADER_LOGO_GROESSE / HEADER_LOGO_X / HEADER_LOGO_Y
+ *   Feinstellung des Motivs INNERHALB des Kreises – wirkt nur mit Kreis.
+ *   Der Kreis selbst bleibt immer 32x32, damit er zu den runden Knoepfen
+ *   rechts in der Kopfzeile passt.
+ *     GROESSE  Prozent der Kreisflaeche (${FEIN_GRENZEN.groesse[0]}-${FEIN_GRENZEN.groesse[1]}, Standard ${FEIN_STANDARD.groesse}).
+ *              Ueber 100 ragt das Motiv ueber den Kreis hinaus und wird an
+ *              der Rundung beschnitten – das ist der randfuellende Look.
+ *     X        Verschiebung in Pixeln, negativ = nach links  (${FEIN_GRENZEN.x[0]} bis ${FEIN_GRENZEN.x[1]})
+ *     Y        Verschiebung in Pixeln, negativ = nach oben   (${FEIN_GRENZEN.y[0]} bis ${FEIN_GRENZEN.y[1]})
+ *   Aendern mit: npm run logo:stil -- --logo-groesse 96 --logo-x -1 --logo-y 0
  */
 export const HEADER_LOGO_MIT_KREIS = ${mitKreis};
 export const HEADER_LOGO_ANZEIGEN = ${anzeigen};
+export const HEADER_LOGO_GROESSE = ${groesse};
+export const HEADER_LOGO_X = ${x};
+export const HEADER_LOGO_Y = ${y};
 `;
     const pfad = path.join(REPO, STIL_DATEI);
     fs.mkdirSync(path.dirname(pfad), { recursive: true });
@@ -531,11 +574,68 @@ function kreisSchreiben(wert) {
     stilDateiSchreiben({ mitKreis: istWahr });
 }
 
+/**
+ * Prueft eine Feinstellungs-Angabe von der Kommandozeile. Auch hier gilt:
+ * lieber abbrechen als einen Tippfehler stillschweigend als 0 durchgehen
+ * lassen – sonst springt das Logo unerklaerlich in die Mitte zurueck.
+ */
+function feinWertPruefen(name, wert, [min, max], einheit) {
+    if (wert === null) return null;
+    const zahl = Number(wert);
+    if (!Number.isInteger(zahl)) {
+        abbruch(`Unbekannter Wert fuer --${name}: "${wert}"\nErwartet wird eine ganze Zahl von ${min} bis ${max} (${einheit}).`);
+    }
+    if (zahl < min || zahl > max) {
+        abbruch(
+            `--${name} liegt ausserhalb des Bereichs: ${zahl}\n` +
+                `Gueltig sind ${min} bis ${max} (${einheit}).\n` +
+                (name === 'logo-groesse'
+                    ? 'Unter 50 % ist vom Motiv im Kreis nichts mehr zu erkennen, ueber 150 % nur noch ein Ausschnitt.'
+                    : 'Bei mehr als 8 px Versatz haengt das Motiv halb aus dem Kreis heraus.'),
+        );
+    }
+    return zahl;
+}
+
+/** Liest die drei Feinstellungs-Angaben und ergaenzt fehlende aus dem Ist-Stand. */
+function feinstellungLesen() {
+    const alt = stilLesen();
+    return {
+        groesse: feinWertPruefen('logo-groesse', OPT.logoGroesse, FEIN_GRENZEN.groesse, 'Prozent') ?? alt.groesse,
+        x: feinWertPruefen('logo-x', OPT.logoX, FEIN_GRENZEN.x, 'Pixel') ?? alt.x,
+        y: feinWertPruefen('logo-y', OPT.logoY, FEIN_GRENZEN.y, 'Pixel') ?? alt.y,
+    };
+}
+
+/** Schreibt die Feinstellung in die Stil-Datei und meldet, was gesetzt wurde. */
+function feinstellungSchreiben() {
+    if (!hatFeinstellung()) return null;
+    const fein = feinstellungLesen();
+    stilDateiSchreiben(fein);
+    return fein;
+}
+
 // ----------------------------------------- Nur Stil aendern (--nur-stil --kreis ja|nein)
 
 function nurStilAendernMain() {
-    if (!OPT.kreis && !OPT.anzeigen) {
-        abbruch('Mit --nur-stil muss --kreis ja|nein und/oder --anzeigen <gruppen> angegeben werden.');
+    if (!OPT.kreis && !OPT.anzeigen && !hatFeinstellung()) {
+        abbruch(
+            'Mit --nur-stil muss --kreis ja|nein, --anzeigen <gruppen> und/oder\n' +
+                '--logo-groesse/--logo-x/--logo-y angegeben werden.',
+        );
+    }
+    // Die Feinstellung wirkt nur im Kreis. Wer sie ohne Kreis setzt, wuerde
+    // sonst bauen, ausrollen und sich wundern, dass sich nichts tut.
+    if (hatFeinstellung()) {
+        const kreisNachher = OPT.kreis ? KREIS_JA.includes(OPT.kreis) : stilLesen().mitKreis;
+        if (!kreisNachher) {
+            abbruch(
+                'Groesse und Position des Logos lassen sich nur einstellen, wenn das Logo\n' +
+                    'in einem Kreis sitzt. Ohne Kreis nutzt das Motiv immer die volle Flaeche.\n\n' +
+                    'Entweder den Kreis mit einschalten (--kreis ja) oder die Angaben\n' +
+                    '--logo-groesse/--logo-x/--logo-y weglassen.',
+            );
+        }
     }
     console.log('\n=== Aura Logo-Werkstatt (nur Stil) ===\n');
     const bk = backupAnlegen({ schwarz: quelleFinden(OPT.quelle, 'logo-schwarz'), weiss: quelleFinden(OPT.quelle, 'logo-weiss'), hintergrund: quelleFinden(OPT.quelle, 'logo-hintergrund'), });
@@ -552,8 +652,12 @@ function nurStilAendernMain() {
         kreisSchreiben(OPT.kreis);
         console.log(`  Kreis-Einstellung geaendert: ${KREIS_JA.includes(OPT.kreis)}`);
     }
+    const fein = feinstellungSchreiben();
+    if (fein) console.log(`  Logo im Kreis: ${fein.groesse} %, versetzt um x ${fein.x} px, y ${fein.y} px`);
+
     const state = stateLesen();
     if (OPT.kreis) state.kreis = KREIS_JA.includes(OPT.kreis);
+    if (fein) state.fein = fein;
     if (OPT.anzeigen) state.sichtbar = OPT.anzeigen.split(',').map((g) => g.trim()).filter(Boolean);
     fs.mkdirSync(BRANDING, { recursive: true });
     fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
@@ -1081,6 +1185,17 @@ async function hauptlauf() {
                 neu.kreis = KREIS_JA.includes(OPT.kreis);
             }
         }
+        if (hatFeinstellung()) {
+            // Gleiche Ueberlegung wie beim Kreis: die Feinstellung gehoert zur
+            // Kopfzeile und wird nur mitgeaendert, wenn die auch gewaehlt ist.
+            if (!ausgewaehltGruppen.includes('kopfzeile')) {
+                warnungen.push(
+                    '--logo-groesse/--logo-x/--logo-y wurden angegeben, aber "Logo in der Kopfzeile" ist nicht ausgewaehlt – Groesse und Position bleiben unveraendert.',
+                );
+            } else {
+                neu.fein = feinstellungSchreiben();
+            }
+        }
         fs.mkdirSync(BRANDING, { recursive: true });
         fs.writeFileSync(STATE, JSON.stringify(neu, null, 2));
     }
@@ -1100,9 +1215,119 @@ async function hauptlauf() {
     console.log(gruen(`\nFertig.${OPT.dryRun ? ' (Trockenlauf – nichts geschrieben)' : ''}\n`));
 }
 
+// ------------------------------------------------- Vorschau (--vorschau)
+
+/** Pfad des Vorschaubilds. Immer derselbe, damit ein offenes Bildfenster beim
+ *  naechsten Durchgang den neuen Stand zeigt, statt Dateien anzuhaeufen. */
+const VORSCHAU_BILD = path.join(BRANDING, 'vorschau-kopfzeile.png');
+
+/** Vergroesserung der Lupen-Ansicht. 6-fach ist gross genug, um einen Pixel
+ *  Versatz zu sehen, und laesst das Bild noch auf einen Bildschirm passen. */
+const VORSCHAU_LUPE = 6;
+
+/** Farben der Kopfzeile aus src-vis/themes/index.ts – das erste helle und das
+ *  erste dunkle Preset, stellvertretend fuer alle. */
+const VORSCHAU_THEMES = [
+    { name: 'Helles Theme', bg: '#f9fafb', surface: '#ffffff', border: '#e5e7eb', text: '#111827', logo: 'schwarz' },
+    { name: 'Dunkles Theme', bg: '#111827', surface: '#1f2937', border: '#374151', text: '#f9fafb', logo: 'weiss' },
+];
+
+/**
+ * Zeichnet die Kopfzeile so, wie sie mit der gewaehlten Feinstellung aussehen
+ * wird – einmal in echter Groesse (mit den runden Knoepfen rechts als Massstab)
+ * und einmal achtfach vergroessert. Schreibt NUR das Vorschaubild, keine
+ * Einstellung: Sascha soll erst schauen und dann entscheiden.
+ */
+async function vorschauMain() {
+    const fein = feinstellungLesen();
+    const logos = {
+        schwarz: path.join(REPO, 'src-vis/assets/aura-header-logo-schwarz.png'),
+        weiss: path.join(REPO, 'src-vis/assets/aura-header-logo-weiss.png'),
+    };
+    for (const [art, p] of Object.entries(logos)) {
+        if (!fs.existsSync(p)) {
+            abbruch(
+                `Fuer die Vorschau fehlt das Kopfzeilen-Logo:\n  ${path.relative(REPO, p)}\n\n` +
+                    `Erst die Bilder erzeugen (npm run logo:build -- --ziele kopfzeile), dann die Vorschau.`,
+            );
+        }
+    }
+    const alsUri = (p) => `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`;
+
+    // Genauso runden wie HeaderLogo.tsx, sonst zeigt die Lupe einen halben
+    // Pixel mehr als die App spaeter wirklich rendert.
+    const motivKante = Math.round((32 * fein.groesse) / 100);
+    // Ein Chip in beliebigem Massstab. f=1 ist die echte Groesse in der App.
+    const chip = (t, f) => `
+      <div style="width:${32 * f}px;height:${32 * f}px;border-radius:9999px;display:flex;align-items:center;
+                  justify-content:center;flex-shrink:0;overflow:hidden;
+                  background:${t.bg};border:${f}px solid ${t.border}">
+        <img src="${alsUri(logos[t.logo])}" style="width:${motivKante * f}px;height:${motivKante * f}px;
+             object-fit:contain;flex-shrink:0;max-width:none;
+             transform:translate(${fein.x * f}px, ${fein.y * f}px)">
+      </div>`;
+    // Die runden Knoepfe rechts in der Kopfzeile – nur als Groessenvergleich.
+    const knopf = (t) => `
+      <div style="width:32px;height:32px;border-radius:9999px;background:${t.bg};
+                  border:1px solid ${t.border};flex-shrink:0"></div>`;
+    const zeile = (t) => `
+      <div style="display:flex;align-items:center;gap:28px">
+        <div style="width:118px;font:600 13px system-ui;color:#6b7280">${t.name}</div>
+        <div style="width:360px;background:${t.surface};border:1px solid ${t.border};border-radius:10px;
+                    padding:8px 12px;display:flex;align-items:center;gap:12px">
+          ${chip(t, 1)}
+          <div style="font:600 15px system-ui;color:${t.text};flex:1">Aura</div>
+          ${knopf(t)}${knopf(t)}
+        </div>
+        <div style="background:${t.surface};border:1px solid ${t.border};border-radius:10px;padding:12px">
+          ${chip(t, VORSCHAU_LUPE)}
+        </div>
+      </div>`;
+
+    const versatzText = (wert, minus, plus) => (wert === 0 ? 'mittig' : `${Math.abs(wert)} px nach ${wert < 0 ? minus : plus}`);
+    const html = `<body style="margin:0;background:#ffffff">
+      <div id="blatt" style="display:inline-block;padding:26px 30px">
+        <div style="font:700 17px system-ui;color:#111827">So sieht die Kopfzeile aus</div>
+        <div style="font:400 13px system-ui;color:#6b7280;margin:6px 0 20px">
+          Logo im Kreis: ${fein.groesse}&#8202;% &nbsp;·&nbsp; waagerecht ${versatzText(fein.x, 'links', 'rechts')}
+          &nbsp;·&nbsp; senkrecht ${versatzText(fein.y, 'oben', 'unten')}
+          <br>Links die echte Groesse – die beiden Kreise rechts daneben sind die Knoepfe der App als Massstab.
+          Rechts dasselbe ${VORSCHAU_LUPE}-fach vergroessert.
+        </div>
+        <div style="display:flex;flex-direction:column;gap:18px">
+          ${VORSCHAU_THEMES.map(zeile).join('')}
+        </div>
+      </div>
+    </body>`;
+
+    const browser = await chromium.launch().catch((e) => {
+        abbruch(
+            'Chromium konnte nicht gestartet werden. Einmalig ausfuehren:\n' +
+                '  npx playwright install chromium\n\nUrspruengliche Meldung: ' + e.message,
+        );
+    });
+    try {
+        const page = await browser.newPage({ deviceScaleFactor: 2 });
+        await page.setContent(html);
+        fs.mkdirSync(BRANDING, { recursive: true });
+        await page.locator('#blatt').screenshot({ path: VORSCHAU_BILD });
+    } finally {
+        await browser.close();
+    }
+    console.log(`\nVorschau: ${fein.groesse} %, x ${fein.x} px, y ${fein.y} px`);
+    console.log(`  ${VORSCHAU_BILD}`);
+    console.log(gelb('  (nur ein Bild – es wurde nichts an der App geaendert)\n'));
+}
+
 try {
+    // Zahlenwerte gleich zu Beginn pruefen, noch vor Backup und Bildarbeit:
+    // Ein Tippfehler soll nicht erst nach einer Minute Rechnerei auffallen.
+    if (!OPT.restore && !OPT.liste) feinstellungLesen();
+
     if (OPT.restore || OPT.liste) {
         backupZurueckholen();
+    } else if (OPT.vorschau) {
+        await vorschauMain();
     } else if (OPT.nurStil) {
         nurStilAendernMain();
     } else {

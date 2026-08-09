@@ -52,6 +52,7 @@
     "logo:build": "node tools/branding/build-logos.mjs",
     "logo": "node tools/branding/logo-assistent.mjs",
     "logo:stil": "node tools/branding/build-logos.mjs --nur-stil",
+    "logo:vorschau": "node tools/branding/build-logos.mjs --vorschau",
     "logo:restore": "node tools/branding/build-logos.mjs --restore",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

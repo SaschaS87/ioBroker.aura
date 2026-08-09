@@ -10,6 +10,33 @@ Die Icons folgen automatisch dem Hell/Dunkel-Modus der App und des Browsers.
     npm run logo:restore -- --liste    # Backups auflisten
     npm run logo:restore -- --backup <name>  # bestimmtes Backup zurueckholen
 
+    npm run logo:stil -- --kreis ja --logo-groesse 96 --logo-x -1 --logo-y 1
+    npm run logo:vorschau -- --logo-groesse 96 --logo-x -1 --logo-y 1
+
+## Logo im Kreis ausrichten
+
+Sitzt das Kopfzeilen-Logo in einem Kreis (`--kreis ja`), laesst sich das Motiv
+**darin** vergroessern und verschieben. Der Kreis selbst bleibt immer 32x32 px –
+er muss zu den runden Knoepfen rechts in der Kopfzeile passen.
+
+| Angabe | Bedeutung | Bereich | Standard |
+|---|---|---|---|
+| `--logo-groesse` | Prozent der Kreisflaeche. Ueber 100 ragt das Motiv hinaus und wird an der Rundung beschnitten (randfuellend). | 50–150 | 88 |
+| `--logo-x` | Verschiebung in px, minus = links | −8 … 8 | 0 |
+| `--logo-y` | Verschiebung in px, minus = oben | −8 … 8 | 0 |
+
+Der Standard 88 % ergibt genau die 28 px, die frueher fest verdrahtet waren –
+ein frisch erzeugtes Logo sieht also aus wie vorher.
+
+`npm run logo:vorschau` schreibt `branding/vorschau-kopfzeile.png`: die Kopfzeile
+in echter Groesse (mit den Knoepfen als Massstab) und 6-fach vergroessert, hell
+und dunkel. Es aendert **nichts** an der App – nur ein Bild zum Anschauen. Der
+Assistent (`npm run logo`) zeigt es nach jedem Einstellversuch automatisch an.
+
+Ohne Kreis gibt es nichts einzustellen: das Motiv nutzt dort immer die volle
+Flaeche (40x40). Wer es trotzdem versucht, bekommt eine Fehlermeldung statt
+einer wirkungslosen Einstellung.
+
 Quellordner (Standard): `<Benutzer>/OneDrive - viadico GmbH/Dokumente/DENKFABRIK/02 Arbeitsbereich/ioBroker/Logo-Eingang`
 Anders per `--quelle <pfad>` oder Umgebungsvariable `AURA_LOGO_EINGANG`.
 

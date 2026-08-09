@@ -12,6 +12,7 @@
  * ist vor allem zum Testen gedacht:
  *   npm run logo -- --ziele kopfzeile --anzeigen kopfzeile,tab,app --kreis ja
  *   npm run logo -- --nur-stil --anzeigen keine --kreis nein
+ *   npm run logo -- --nur-stil --kreis ja --logo-groesse 96 --logo-x -1 --logo-y 0
  *   npm run logo -- ... --kein-deploy      baut, rollt aber nicht aus
  */
 
@@ -54,8 +55,15 @@ const VORGABE = {
     kreis: flagWert('--kreis'),
     nurStil: hatFlag('--nur-stil'),
     keinDeploy: hatFlag('--kein-deploy'),
+    logoGroesse: flagWert('--logo-groesse'),
+    logoX: flagWert('--logo-x'),
+    logoY: flagWert('--logo-y'),
 };
 const NICHT_INTERAKTIV = Boolean(VORGABE.ziele || VORGABE.anzeigen || VORGABE.kreis || VORGABE.nurStil);
+
+/** Grenzen der Feinstellung – muessen zu build-logos.mjs passen. */
+const FEIN_GRENZEN = { groesse: [50, 150], x: [-8, 8], y: [-8, 8] };
+const VORSCHAU_BILD = path.join(REPO, 'branding', 'vorschau-kopfzeile.png');
 
 function ende(text, code = 1) {
     console.error('');
@@ -97,10 +105,21 @@ function standLesen() {
     const stil = path.join(REPO, 'src-vis/components/common/headerLogoStil.ts');
     let mitKreis = false;
     let kopfzeileAn = true;
+    // 88 % mittig entspricht dem frueheren festen Motiv von 28 auf 32 px.
+    let fein = { groesse: 88, x: 0, y: 0 };
     try {
         const t = fs.readFileSync(stil, 'utf8');
         mitKreis = /HEADER_LOGO_MIT_KREIS\s*=\s*true/.test(t);
         kopfzeileAn = !/HEADER_LOGO_ANZEIGEN\s*=\s*false/.test(t);
+        const zahl = (name, standard) => {
+            const m = t.match(new RegExp(`${name}\\s*=\\s*(-?\\d+)`));
+            return m ? parseInt(m[1], 10) : standard;
+        };
+        fein = {
+            groesse: zahl('HEADER_LOGO_GROESSE', fein.groesse),
+            x: zahl('HEADER_LOGO_X', fein.x),
+            y: zahl('HEADER_LOGO_Y', fein.y),
+        };
     } catch {
         /* Datei fehlt: Standardwerte */
     }
@@ -122,6 +141,7 @@ function standLesen() {
     }
     return {
         mitKreis,
+        fein,
         sichtbar: { kopfzeile: kopfzeileAn, tab: blockAn('TAB-SYMBOL'), app: blockAn('APP-SYMBOL') },
         letzteZiele,
     };
@@ -179,6 +199,77 @@ async function jaNein(titel, vorgabeJa) {
     return a.startsWith('j');
 }
 
+/** Fragt eine ganze Zahl ab und laesst nicht locker, bis sie im Bereich liegt. */
+async function zahlFrage(titel, hinweis, vorgabe, [min, max]) {
+    for (;;) {
+        console.log('\n' + fett(titel));
+        console.log('  ' + hinweis);
+        const a = (await frage(`  Zahl von ${min} bis ${max} [Enter = ${vorgabe}]: `)).trim().replace('%', '');
+        if (!a) return vorgabe;
+        const n = Number(a);
+        if (!Number.isInteger(n) || n < min || n > max) {
+            console.log(rot(`  "${a}" passt nicht – bitte eine ganze Zahl von ${min} bis ${max}.`));
+            continue;
+        }
+        return n;
+    }
+}
+
+/** Oeffnet eine Datei mit dem Standardprogramm des Systems. */
+function bildOeffnen(pfad) {
+    const befehl =
+        process.platform === 'win32' ? `start "" "${pfad}"` : process.platform === 'darwin' ? `open "${pfad}"` : `xdg-open "${pfad}"`;
+    spawnSync(befehl, { cwd: REPO, shell: true, stdio: 'ignore' });
+}
+
+/**
+ * Groesse und Position des Motivs im Kreis einstellen – mit Vorschaubild nach
+ * jedem Durchgang, damit Sascha sieht, was er einstellt, ohne dafuer jedes Mal
+ * bauen und ausrollen zu muessen.
+ *
+ * Laeuft erst NACH dem Erzeugen der Bilder: die Vorschau zeigt sonst noch das
+ * alte Motiv.
+ */
+async function feinjustage(start) {
+    let f = { ...start };
+    for (;;) {
+        f.groesse = await zahlFrage(
+            'Wie gross soll das Logo im Kreis sein?',
+            '100 = randfuellend (wird an der Rundung beschnitten), 88 = Normalgroesse, kleiner = mehr Luft.',
+            f.groesse,
+            FEIN_GRENZEN.groesse,
+        );
+        f.x = await zahlFrage(
+            'Nach links oder rechts verschieben?',
+            'Minus schiebt nach links, Plus nach rechts. 0 = mittig.',
+            f.x,
+            FEIN_GRENZEN.x,
+        );
+        f.y = await zahlFrage(
+            'Nach oben oder unten verschieben?',
+            'Minus schiebt nach oben, Plus nach unten. 0 = mittig.',
+            f.y,
+            FEIN_GRENZEN.y,
+        );
+
+        console.log(gelb('\n> Vorschaubild erzeugen'));
+        const r = still(`npm run logo:vorschau -- --logo-groesse ${f.groesse} --logo-x ${f.x} --logo-y ${f.y}`);
+        if (r.code !== 0) {
+            // Die Vorschau ist Komfort, kein Muss – der Rest laeuft trotzdem weiter.
+            console.log(rot('  Das Vorschaubild hat nicht geklappt:'));
+            console.log('  ' + r.aus.trim().split('\n').slice(-6).join('\n  '));
+            console.log(gelb('  Weiter geht es trotzdem – nur eben ohne Bild zum Anschauen.'));
+            if (await jaNein(`Mit ${f.groesse} %, x ${f.x}, y ${f.y} weitermachen?`, true)) return f;
+            continue;
+        }
+        console.log(`  ${VORSCHAU_BILD}`);
+        bildOeffnen(VORSCHAU_BILD);
+        console.log('  Das Bild sollte sich gerade geoeffnet haben.');
+        if (await jaNein('Passt das so?', true)) return f;
+        console.log(gelb('\nDann noch einmal – die letzten Werte stehen als Vorgabe drin.'));
+    }
+}
+
 // ----------------------------------------------------------------- Hauptlauf
 
 console.log(fett('\n=== Aura Logo-Assistent ===\n'));
@@ -197,13 +288,25 @@ if (Object.keys(bilder).length === 0) {
 console.log('\nAktuell sichtbar:');
 for (const g of GRUPPEN) console.log(`  ${stand.sichtbar[g.schluessel] ? 'ja  ' : 'nein'}  ${g.name}`);
 console.log(`  Kopfzeilen-Logo ${stand.mitKreis ? 'mit' : 'ohne'} Kreis`);
+if (stand.mitKreis) {
+    console.log(`  Logo im Kreis: ${stand.fein.groesse} %, versetzt um x ${stand.fein.x} px, y ${stand.fein.y} px`);
+}
 
 let ziele, sichtbar, kreis;
+/** Groesse/Position des Motivs im Kreis – null heisst "nicht anfassen". */
+let fein = null;
 
 if (NICHT_INTERAKTIV) {
     ziele = VORGABE.nurStil ? [] : (VORGABE.ziele || '').split(',').map((s) => s.trim()).filter(Boolean);
     sichtbar = VORGABE.anzeigen === null ? null : VORGABE.anzeigen === 'keine' ? [] : VORGABE.anzeigen.split(',').map((s) => s.trim()).filter(Boolean);
     kreis = VORGABE.kreis === null ? null : ['ja', 'true', '1'].includes(VORGABE.kreis);
+    if (VORGABE.logoGroesse !== null || VORGABE.logoX !== null || VORGABE.logoY !== null) {
+        fein = {
+            groesse: VORGABE.logoGroesse === null ? stand.fein.groesse : Number(VORGABE.logoGroesse),
+            x: VORGABE.logoX === null ? stand.fein.x : Number(VORGABE.logoX),
+            y: VORGABE.logoY === null ? stand.fein.y : Number(VORGABE.logoY),
+        };
+    }
     rl.close();
 } else {
     const hatBilder = Object.keys(bilder).length > 0;
@@ -224,36 +327,44 @@ if (NICHT_INTERAKTIV) {
     kreis = sichtbar.includes('kopfzeile')
         ? await jaNein('Soll das Logo in der Kopfzeile in einem runden Kreis sitzen?', stand.mitKreis)
         : null;
-    rl.close();
+    // Die Eingabe bleibt offen, wenn der Kreis an ist: Groesse und Position
+    // werden erst nach dem Erzeugen der Bilder gefragt (Schritt 2), damit die
+    // Vorschau schon das neue Motiv zeigt.
+    if (kreis !== true) rl.close();
 }
 
-if (!ziele.length && sichtbar === null && kreis === null) {
+if (!ziele.length && sichtbar === null && kreis === null && fein === null) {
     ende('Nichts ausgewaehlt – es gibt nichts zu tun.', 0);
 }
 
-// 1. Bilder bzw. Einstellungen
+// 1. Bilder erzeugen
 const anzeigenWert = sichtbar === null ? null : sichtbar.length ? sichtbar.join(',') : 'keine';
 if (ziele.length) {
-    let b = `npm run logo:build -- --ziele ${ziele.join(',')}`;
-    if (kreis !== null && ziele.includes('kopfzeile')) b += ` --kreis ${kreis ? 'ja' : 'nein'}`;
-    const r = spawnSync(b, { cwd: REPO, shell: true, stdio: 'inherit' });
+    const r = spawnSync(`npm run logo:build -- --ziele ${ziele.join(',')}`, { cwd: REPO, shell: true, stdio: 'inherit' });
     if (r.status === 2) console.log(gelb('\nDie Bilder waren unveraendert – es wurden keine neuen Symbole erzeugt.'));
     else if (r.status !== 0) ende('Abgebrochen beim Erzeugen der Symbole. Die Meldung steht oben.\nEs wurde nichts ausgerollt.');
-    // Sichtbarkeit/Kreis separat setzen, falls die Kopfzeile nicht getauscht wurde
-    if (anzeigenWert !== null || (kreis !== null && !ziele.includes('kopfzeile'))) {
-        let s = 'npm run logo:stil --';
-        if (anzeigenWert !== null) s += ` --anzeigen ${anzeigenWert}`;
-        if (kreis !== null) s += ` --kreis ${kreis ? 'ja' : 'nein'}`;
-        lauf(s, 'Sichtbarkeit und Aussehen setzen');
-    }
-} else {
-    let s = 'npm run logo:stil --';
-    if (anzeigenWert !== null) s += ` --anzeigen ${anzeigenWert}`;
-    if (kreis !== null) s += ` --kreis ${kreis ? 'ja' : 'nein'}`;
-    lauf(s, 'Sichtbarkeit und Aussehen setzen');
 }
 
-// 2. Bauen
+// 2. Groesse und Position des Motivs im Kreis – nur mit Kreis. Ohne Kreis nutzt
+// das Motiv immer die volle Flaeche, da gibt es nichts einzustellen.
+if (kreis === true && !NICHT_INTERAKTIV) {
+    console.log(fett('\n--- Logo im Kreis ausrichten ---'));
+    console.log('Der Kreis selbst bleibt unveraendert – er muss zu den Knoepfen rechts passen.');
+    console.log('Eingestellt wird nur das Motiv darin. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
+    fein = await feinjustage(stand.fein);
+    rl.close();
+}
+
+// 3. Sichtbarkeit und Aussehen setzen – gebuendelt in einem Aufruf. Kreis und
+// Feinstellung laufen bewusst hierueber und nicht ueber logo:build: so steht
+// die Reihenfolge fest und die Werte aus Schritt 2 kommen sicher an.
+const stilTeile = [];
+if (anzeigenWert !== null) stilTeile.push(`--anzeigen ${anzeigenWert}`);
+if (kreis !== null) stilTeile.push(`--kreis ${kreis ? 'ja' : 'nein'}`);
+if (fein) stilTeile.push(`--logo-groesse ${fein.groesse}`, `--logo-x ${fein.x}`, `--logo-y ${fein.y}`);
+if (stilTeile.length) lauf(`npm run logo:stil -- ${stilTeile.join(' ')}`, 'Sichtbarkeit und Aussehen setzen');
+
+// 4. Bauen
 lauf('npm run build', 'App bauen (dauert etwa 15 Sekunden)');
 
 if (VORGABE.keinDeploy) {
@@ -261,8 +372,9 @@ if (VORGABE.keinDeploy) {
     process.exit(0);
 }
 
-// 3. Ausrollen
-lauf('rm -f aura-www.tar.gz && tar -czf aura-www.tar.gz www', 'Paket schnueren');
+// 5. Ausrollen
+fs.rmSync(path.join(REPO, 'aura-www.tar.gz'), { force: true });
+lauf('tar -czf aura-www.tar.gz www', 'Paket schnueren');
 lauf(`scp -q aura-www.tar.gz ${PI}:/tmp/`, 'Auf den Pi kopieren');
 lauf(
     `ssh ${PI} "rm -rf /tmp/aura-deploy && mkdir -p /tmp/aura-deploy && tar -xzf /tmp/aura-www.tar.gz -C /tmp/aura-deploy && ` +
@@ -271,7 +383,7 @@ lauf(
 );
 schonAusgerollt = true;
 
-// 4. Nachpruefen
+// 6. Nachpruefen
 console.log(gelb('\n> Nachpruefen, ob es angekommen ist'));
 let erreichbar = false;
 for (let i = 0; i < 10; i++) {
@@ -295,7 +407,7 @@ console.log(`  App erreichbar: ja`);
 console.log(`  Tab-Symbol eingebunden: ${zeigtTab ? 'ja' : 'nein (ausgeblendet)'}`);
 console.log(`  App-Symbol eingebunden: ${zeigtApp ? 'ja' : 'nein (ausgeblendet)'}`);
 
-// 5. Lokal sichern
+// 7. Lokal sichern
 // Erst vormerken, dann pruefen, ob wirklich etwas dabei ist: "git commit" ohne
 // Aenderungen endet mit Fehlercode 1 und wuerde den Assistenten sonst am
 // letzten Schritt abbrechen lassen, obwohl alles gut gegangen ist.
@@ -314,7 +426,7 @@ if (still('git diff --cached --quiet').code === 0) {
         console.log('  gesichert');
     }
 }
-still('rm -f aura-www.tar.gz');
+fs.rmSync(path.join(REPO, 'aura-www.tar.gz'), { force: true });
 
 console.log(gruen('\n=== Fertig ==='));
 console.log(`
