@@ -178,11 +178,56 @@ function parseJson<T>(raw: unknown): T | null {
         return null;
     }
 }
-function currentHourIndex(hourly: HourlyBlob | null): number {
+function currentHourIndex(hourly: HourlyBlob | null, nowMs: number): number {
     if (!hourly?.time) return -1;
-    const now = new Date();
+    const now = new Date(nowMs);
     const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
     return hourly.time.indexOf(key);
+}
+
+// ── Shared "now" tick.
+//
+// Every "what is current?" decision in this widget (nowcast start, the
+// measured/forecast split in the day chart, this hour's UV) used to read
+// Date.now() INSIDE a useMemo keyed only on the DATA. So "now" only ever moved
+// forward when Open-Meteo happened to deliver a changed JSON — never on its
+// own. Sascha, 09.08.: after resuming the app from the iOS background in the
+// afternoon, the rain nowcast still started at 09:30, the last time that memo
+// had run. A full app restart looked fine because everything remounts.
+// Dashboard.tsx keeps every visited tab mounted forever (display:none only,
+// see mountedTabIds there), so these components never remount on their own.
+//
+// The interval is the load-bearing part, not the events: a setInterval
+// callback simply does not run while iOS has the app frozen, and the overdue
+// tick fires the moment execution resumes — the same trick the connection
+// watchdog in useIoBroker.ts uses, and the reason we do NOT rely on
+// 'visibilitychange' (known not to fire at all for iOS home-screen web apps).
+// Those events stay as a fast-path extra for devices where they do work.
+//
+// The state only changes when the current quarter hour actually changes, so
+// this costs one re-render per 15 minutes, not one per tick. A quarter hour is
+// the finest grid any consumer here needs (the nowcast bars ARE 15-minute
+// steps; the UV value only changes hourly).
+const QUARTER_HOUR_MS = 15 * 60000;
+function useNowTick(): number {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const tick = () =>
+            setNow((prev) =>
+                Math.floor(Date.now() / QUARTER_HOUR_MS) === Math.floor(prev / QUARTER_HOUR_MS) ? prev : Date.now(),
+            );
+        const iv = setInterval(tick, 30000);
+        document.addEventListener('visibilitychange', tick);
+        window.addEventListener('pageshow', tick);
+        window.addEventListener('focus', tick);
+        return () => {
+            clearInterval(iv);
+            document.removeEventListener('visibilitychange', tick);
+            window.removeEventListener('pageshow', tick);
+            window.removeEventListener('focus', tick);
+        };
+    }, []);
+    return now;
 }
 
 function GroupLabel({ text }: { text: string }) {
@@ -248,11 +293,12 @@ function CurrentConditionsCard({ base }: { base: string }) {
     // current UV isn't in the `current` API block — derive it from this hour's
     // entry in the hourly forecast instead (no extra state/API call needed).
     const hourly = useMemo(() => parseJson<HourlyBlob>(hourlyRaw), [hourlyRaw]);
+    const nowTs = useNowTick();
     const currentUv = useMemo(() => {
-        const idx = currentHourIndex(hourly);
+        const idx = currentHourIndex(hourly, nowTs);
         const v = idx >= 0 ? hourly?.uv_index?.[idx] : undefined;
         return typeof v === 'number' ? v : null;
-    }, [hourly]);
+    }, [hourly, nowTs]);
 
     return (
         <div
@@ -387,8 +433,16 @@ function confidenceMargin(t: number, bandStart: number, chartEnd: number, peakT:
     return (lead + bulge) * dayScale;
 }
 
-function buildCoreSeries(points: Pt[], sunrise: string | null, sunset: string | null, isToday: boolean, dayIndex: number) {
-    const nowTs = Date.now();
+// `nowTs` is passed in rather than read here: it has to come from useNowTick()
+// so the measured/forecast split keeps moving while the app just sits there.
+function buildCoreSeries(
+    points: Pt[],
+    sunrise: string | null,
+    sunset: string | null,
+    isToday: boolean,
+    dayIndex: number,
+    nowTs: number,
+) {
     const sunriseTs = sunrise ? new Date(sunrise).getTime() : null;
     const sunsetTs = sunset ? new Date(sunset).getTime() : null;
     const chartStart = points[0].t;
@@ -786,12 +840,13 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
         return out;
     }, [hourly, index]);
 
+    const nowTs = useNowTick();
     const option = useMemo(() => {
         if (!points.length) return null;
-        const core = buildCoreSeries(points, sunrise, sunset, isToday, index);
+        const core = buildCoreSeries(points, sunrise, sunset, isToday, index, nowTs);
         const formatter = buildTooltipFormatter(hourly);
         return buildDualGridOption(core, points, formatter);
-    }, [points, sunrise, sunset, isToday, index, hourly]);
+    }, [points, sunrise, sunset, isToday, index, hourly, nowTs]);
 
     return (
         <div style={{ padding: '12px 12px 14px' }}>
@@ -1179,9 +1234,13 @@ function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] }) {
 function RainNowcast({ base }: { base: string }) {
     const { value: minutelyRaw } = useDatapoint(`${base}.Minuten15.json`);
     const minutely = useMemo(() => parseJson<MinutelyBlob>(minutelyRaw), [minutelyRaw]);
+    // The raw data covers two days of PAST as well (past_days=2 in
+    // OpenMeteoAbruf.js — time[0] is the day before yesterday at 00:00), so
+    // `now` alone decides which bar comes first. It must come from useNowTick(),
+    // never from a bare Date.now() in here.
+    const now = useNowTick();
     const nowcast = useMemo(() => {
         if (!minutely?.time) return [];
-        const now = Date.now();
         const out: { t: number; rain: number }[] = [];
         for (let i = 0; i < minutely.time.length; i++) {
             const t = new Date(minutely.time[i]).getTime();
@@ -1191,10 +1250,16 @@ function RainNowcast({ base }: { base: string }) {
             if (out.length >= 24) break; // 24 x 15 min = 6 Std.
         }
         return out;
-    }, [minutely]);
+    }, [minutely, now]);
     const nowcastMax = Math.max(0.5, ...nowcast.map((p) => p.rain));
     const nowcastSum = nowcast.reduce((sum, p) => sum + p.rain, 0);
-    const [selected, setSelected] = useState<number | null>(null);
+    // Remember the tapped bar by its timestamp, not by its position: once the
+    // quarter hour rolls over, the whole strip shifts one slot to the left and
+    // a stored index would silently point at a different bar than the one the
+    // user tapped. A timestamp keeps pointing at the same 15 minutes, and
+    // falls out of the list by itself once that slot scrolls off the front.
+    const [selectedT, setSelectedT] = useState<number | null>(null);
+    const selectedBar = selectedT !== null ? nowcast.find((p) => p.t === selectedT) : undefined;
 
     return (
         <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)', padding: '10px 12px' }}>
@@ -1214,11 +1279,11 @@ function RainNowcast({ base }: { base: string }) {
             {nowcast.length ? (
                 <>
                     <div className="flex items-end" style={{ gap: 6, overflowX: 'auto', height: 56 }}>
-                        {nowcast.map((p, i) => (
-                            <div key={i} className="flex flex-col items-center" style={{ flex: '0 0 auto', width: 28 }}>
+                        {nowcast.map((p) => (
+                            <div key={p.t} className="flex flex-col items-center" style={{ flex: '0 0 auto', width: 28 }}>
                                 <button
                                     type="button"
-                                    onClick={() => setSelected(i)}
+                                    onClick={() => setSelectedT(p.t)}
                                     style={{
                                         width: 28,
                                         padding: '18px 0 0',
@@ -1235,7 +1300,7 @@ function RainNowcast({ base }: { base: string }) {
                                             height: Math.max(2, (p.rain / nowcastMax) * 34),
                                             background: C.rain,
                                             opacity: p.rain > 0 ? 1 : 0.25,
-                                            outline: selected === i ? `1px solid ${C.rain}` : 'none',
+                                            outline: selectedT === p.t ? `1px solid ${C.rain}` : 'none',
                                             outlineOffset: 2,
                                             borderRadius: 2,
                                             display: 'block',
@@ -1249,10 +1314,10 @@ function RainNowcast({ base }: { base: string }) {
                         ))}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6, minHeight: 14 }}>
-                        {selected !== null && nowcast[selected] ? (
+                        {selectedBar ? (
                             <>
-                                {new Date(nowcast[selected].t).toTimeString().slice(0, 5)} Uhr —{' '}
-                                <b style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatNum(nowcast[selected].rain, 1)} mm</b>
+                                {new Date(selectedBar.t).toTimeString().slice(0, 5)} Uhr —{' '}
+                                <b style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatNum(selectedBar.rain, 1)} mm</b>
                             </>
                         ) : (
                             'Balken antippen für Uhrzeit + mm'
