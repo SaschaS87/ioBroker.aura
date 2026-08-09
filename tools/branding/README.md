@@ -37,8 +37,19 @@ Ohne Kreis gibt es nichts einzustellen: das Motiv nutzt dort immer die volle
 Flaeche (40x40). Wer es trotzdem versucht, bekommt eine Fehlermeldung statt
 einer wirkungslosen Einstellung.
 
-Quellordner (Standard): `<Benutzer>/OneDrive - viadico GmbH/Dokumente/DENKFABRIK/02 Arbeitsbereich/ioBroker/Logo-Eingang`
-Anders per `--quelle <pfad>` oder Umgebungsvariable `AURA_LOGO_EINGANG`.
+## Wo die Quellbilder liegen
+
+Der Pfad steht **nicht** im Quelltext – er enthält Benutzer- und Firmennamen.
+Gesucht wird in dieser Reihenfolge:
+
+1. `--quelle <pfad>` (einmalig, nur für diesen Aufruf)
+2. Umgebungsvariable `AURA_LOGO_EINGANG`
+3. `branding/eingang.txt` – die gemerkte Angabe. Der Ordner `branding/` ist
+   von der Versionierung ausgenommen, die Datei bleibt also auf dem Rechner.
+
+Ist nichts davon gesetzt (frisch geklontes Repo, zweiter Rechner), fragt der
+Assistent (`npm run logo`) **einmal** danach und merkt sich die Antwort.
+Die anderen Befehle brechen mit einer Meldung ab, die erklärt, was zu tun ist.
 
 **Hinweis:** Die beiden Header-Logos (`aura-header-logo-schwarz.png` und `-weiss.png`) sind derzeit Platzhalter 
 (alte Motive aus der App-Vorversion). Sie werden beim ersten echten `/logo-tausch` durch echte schwarze und weiße 

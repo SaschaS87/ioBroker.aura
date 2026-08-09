@@ -40,15 +40,34 @@ const BRANDING = path.join(REPO, 'branding');
 const BACKUPS = path.join(BRANDING, 'backup');
 const STATE = path.join(BRANDING, 'logo-state.json');
 
-const EINGANG_STANDARD = path.join(
-    os.homedir(),
-    'OneDrive - viadico GmbH',
-    'Dokumente',
-    'DENKFABRIK',
-    '02 Arbeitsbereich',
-    'ioBroker',
-    'Logo-Eingang',
-);
+/**
+ * Wo der Eingangsordner liegt, steht NICHT im Quelltext: Der Pfad enthaelt
+ * Benutzer- und Firmennamen und hat in einem oeffentlichen Repo nichts
+ * verloren. Er wird in dieser Reihenfolge gesucht:
+ *
+ *   1. --quelle <pfad>                (einmalig, fuer diesen Aufruf)
+ *   2. Umgebungsvariable AURA_LOGO_EINGANG
+ *   3. branding/eingang.txt           (gemerkt, liegt im ignorierten Ordner)
+ *
+ * Findet sich nichts, fragt der Assistent danach und schreibt die Merkdatei.
+ * Auf einem zweiten Rechner passiert also genau einmal eine Rueckfrage.
+ */
+const EINGANG_MERKDATEI = path.join(BRANDING, 'eingang.txt');
+
+function eingangGemerkt() {
+    try {
+        // Nur die erste nicht-leere Zeile, Kommentarzeilen (#) ueberspringen.
+        const zeilen = fs.readFileSync(EINGANG_MERKDATEI, 'utf8').split(/\r?\n/);
+        const p = zeilen.map((z) => z.trim()).find((z) => z && !z.startsWith('#'));
+        return p || null;
+    } catch {
+        return null;
+    }
+}
+
+/** Geschrieben wird die Merkdatei vom Assistenten (logo-assistent.mjs) – hier
+ *  wird sie nur gelesen. Dieses Skript laeuft direkt und hat Top-Level-await,
+ *  laesst sich also nicht als Modul einbinden. */
 
 /** Hintergrundfarbe fuer das Homescreen-Symbol, wenn Sascha kein eigenes Bild liefert.
  *  #111827 ist die Farbe, die auch in public/manifest.json als background_color steht. */
@@ -105,7 +124,7 @@ const OPT = {
     force: hatFlag('--force'),
     restore: hatFlag('--restore'),
     liste: hatFlag('--liste'),
-    quelle: flagWert('--quelle') || process.env.AURA_LOGO_EINGANG || EINGANG_STANDARD,
+    quelle: flagWert('--quelle') || process.env.AURA_LOGO_EINGANG || eingangGemerkt(),
     backup: flagWert('--backup'),
     ziele: flagWert('--ziele'),
     kreis: flagWert('--kreis'),
@@ -163,6 +182,10 @@ const NAMENS_VARIANTEN = {
 };
 
 function quelleFinden(ordner, basisName) {
+    // Ohne bekannten Eingangsordner gibt es nichts zu finden. Wichtig fuer
+    // --nur-stil und --vorschau: die brauchen gar keine Quellbilder und
+    // sollen auch ohne festgelegten Ordner laufen.
+    if (!ordner) return null;
     for (const name of NAMENS_VARIANTEN[basisName] || [basisName]) {
         for (const e of ENDUNGEN) {
             const p = path.join(ordner, name + e);
@@ -827,8 +850,27 @@ function svgFaviconBauen(pngSchwarz, pngWeiss, kante) {
 
 // ----------------------------------------------------------------- Hauptlauf
 
+/**
+ * Bricht mit einer erklaerenden Meldung ab, wenn niemand weiss, wo die
+ * Quellbilder liegen. Tritt vor allem auf einem frisch geklonten Repo auf –
+ * die Merkdatei ist absichtlich nicht versioniert.
+ */
+function eingangPruefen() {
+    if (OPT.quelle) return;
+    abbruch(
+        'Es ist nicht festgelegt, wo die Logo-Bilder liegen.\n\n' +
+            'Am einfachsten: den Assistenten starten ("Logo tauschen.cmd" bzw. npm run logo) –\n' +
+            'er fragt einmalig nach dem Ordner und merkt ihn sich.\n\n' +
+            'Von Hand geht auch eines davon:\n' +
+            `  - den Pfad in ${path.relative(REPO, EINGANG_MERKDATEI)} schreiben\n` +
+            '  - die Umgebungsvariable AURA_LOGO_EINGANG setzen\n' +
+            '  - beim Aufruf --quelle <pfad> mitgeben',
+    );
+}
+
 async function hauptlauf() {
     console.log('\n=== Aura Logo-Werkstatt ===\n');
+    eingangPruefen();
     console.log('Eingangsordner: ' + OPT.quelle);
     if (OPT.dryRun) console.log(gelb('Trockenlauf – es wird nichts geschrieben.'));
 

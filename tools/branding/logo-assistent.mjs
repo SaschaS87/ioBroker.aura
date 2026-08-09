@@ -17,7 +17,6 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
@@ -28,9 +27,37 @@ const REPO = path.resolve(HIER, '..', '..');
 const PI = 'pi@192.168.1.200';
 const APP_URL = 'http://192.168.1.200:8095';
 
-const EINGANG =
-    process.env.AURA_LOGO_EINGANG ||
-    path.join(os.homedir(), 'OneDrive - viadico GmbH', 'Dokumente', 'DENKFABRIK', '02 Arbeitsbereich', 'ioBroker', 'Logo-Eingang');
+/**
+ * Wo die Quellbilder liegen, steht NICHT im Quelltext – der Pfad enthaelt
+ * Benutzer- und Firmennamen. Gemerkt wird er in branding/eingang.txt, und
+ * dieser Ordner ist von der Versionierung ausgenommen. Reihenfolge:
+ * Umgebungsvariable, dann Merkdatei. Ist beides leer, fragt der Assistent
+ * einmalig nach (siehe eingangKlaeren weiter unten).
+ */
+const EINGANG_MERKDATEI = path.join(REPO, 'branding', 'eingang.txt');
+
+function eingangLesen() {
+    if (process.env.AURA_LOGO_EINGANG) return process.env.AURA_LOGO_EINGANG;
+    try {
+        const zeilen = fs.readFileSync(EINGANG_MERKDATEI, 'utf8').split(/\r?\n/);
+        return zeilen.map((z) => z.trim()).find((z) => z && !z.startsWith('#')) || null;
+    } catch {
+        return null;
+    }
+}
+
+function eingangMerken(pfad) {
+    fs.mkdirSync(path.dirname(EINGANG_MERKDATEI), { recursive: true });
+    fs.writeFileSync(
+        EINGANG_MERKDATEI,
+        '# Wo die Logo-Quellbilder liegen. Nur auf diesem Rechner, nicht im Git.\n' +
+            '# Aendern: einfach die Zeile darunter ersetzen.\n' +
+            pfad +
+            '\n',
+    );
+}
+
+let EINGANG = eingangLesen();
 
 const GRUPPEN = [
     { schluessel: 'kopfzeile', name: 'Logo in der Kopfzeile', wo: 'oben links neben dem Titel' },
@@ -149,7 +176,7 @@ function standLesen() {
 
 function bilderImEingang() {
     const gefunden = {};
-    if (!fs.existsSync(EINGANG)) return gefunden;
+    if (!EINGANG || !fs.existsSync(EINGANG)) return gefunden;
     const varianten = { schwarz: ['logo-schwarz'], weiss: ['logo-weiss', 'logo-weiß', 'logo-weis'], hintergrund: ['logo-hintergrund'] };
     for (const [art, namen] of Object.entries(varianten)) {
         for (const n of namen) {
@@ -191,6 +218,33 @@ async function mehrfachauswahl(titel, vorauswahl) {
         gewaehlt.push(GRUPPEN[i].schluessel);
     }
     return gewaehlt;
+}
+
+/**
+ * Sorgt dafuer, dass EINGANG gesetzt ist. Beim ersten Lauf auf einem Rechner
+ * ist die Merkdatei noch nicht da – dann einmal fragen und merken. Danach
+ * kommt die Frage nie wieder.
+ */
+async function eingangKlaeren() {
+    if (EINGANG) return true;
+    console.log(gelb('\nNoch nicht festgelegt, wo deine Logo-Bilder liegen.'));
+    console.log('Das wird einmal gefragt und dann gemerkt (nur auf diesem Rechner).');
+    console.log('Gemeint ist der Ordner mit logo-schwarz.png und logo-weiss.png.');
+    for (;;) {
+        const a = (await frage('\n  Pfad zum Ordner (Enter = ueberspringen): ')).trim().replace(/^"|"$/g, '');
+        if (!a) {
+            console.log(gelb('  Uebersprungen – es lassen sich nur Aussehen und Sichtbarkeit aendern.'));
+            return false;
+        }
+        if (!fs.existsSync(a)) {
+            console.log(rot(`  Diesen Ordner gibt es nicht: ${a}`));
+            continue;
+        }
+        EINGANG = a;
+        eingangMerken(a);
+        console.log(gruen(`  Gemerkt in ${path.relative(REPO, EINGANG_MERKDATEI)}`));
+        return true;
+    }
 }
 
 async function jaNein(titel, vorgabeJa) {
@@ -273,7 +327,11 @@ async function feinjustage(start) {
 // ----------------------------------------------------------------- Hauptlauf
 
 console.log(fett('\n=== Aura Logo-Assistent ===\n'));
-console.log('Eingangsordner: ' + EINGANG);
+// Beim allerersten Lauf auf einem Rechner ist noch nicht bekannt, wo die
+// Bilder liegen – dann einmal fragen. Bei vorgegebenen Antworten (Testlauf)
+// wird nicht gefragt, dort zaehlt nur, was auf der Kommandozeile steht.
+if (!EINGANG && !NICHT_INTERAKTIV) await eingangKlaeren();
+console.log('Eingangsordner: ' + (EINGANG || gelb('nicht festgelegt')));
 
 const stand = standLesen();
 const bilder = bilderImEingang();
