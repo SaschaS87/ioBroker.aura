@@ -1425,29 +1425,45 @@ const VORSCHAU_THEMES = [
  */
 async function vorschauMain() {
     const fein = feinstellungLesen();
-    const logos = {
+    const assets = {
         schwarz: path.join(REPO, 'src-vis/assets/aura-header-logo-schwarz.png'),
         weiss: path.join(REPO, 'src-vis/assets/aura-header-logo-weiss.png'),
     };
-    for (const [art, p] of Object.entries(logos)) {
-        if (!fs.existsSync(p)) {
+    // Werden gerade neue Bilder getauscht, muss die Vorschau das KOMMENDE Motiv
+    // zeigen, nicht das eingebaute. Dann wird direkt aus dem Eingangsordner
+    // gerendert – mit derselben Rechnung wie beim Bauen. Nur so laesst sich die
+    // Ausrichtung vor dem Bauen einstellen statt danach.
+    const ausEingang = hatFlag('--aus-eingang');
+    const quellen = ausEingang
+        ? { schwarz: quelleFinden(OPT.quelle, 'logo-schwarz'), weiss: quelleFinden(OPT.quelle, 'logo-weiss') }
+        : {};
+    for (const art of ['schwarz', 'weiss']) {
+        if (ausEingang) {
+            if (!quellen[art]) {
+                abbruch(
+                    `Fuer die Vorschau fehlt das Quellbild logo-${art === 'weiss' ? 'weiss' : 'schwarz'}.png in:\n  ${OPT.quelle || '(Eingangsordner nicht festgelegt)'}`,
+                );
+            }
+        } else if (!fs.existsSync(assets[art])) {
             abbruch(
-                `Fuer die Vorschau fehlt das Kopfzeilen-Logo:\n  ${path.relative(REPO, p)}\n\n` +
+                `Fuer die Vorschau fehlt das Kopfzeilen-Logo:\n  ${path.relative(REPO, assets[art])}\n\n` +
                     `Erst die Bilder erzeugen (npm run logo:build -- --ziele kopfzeile), dann die Vorschau.`,
             );
         }
     }
-    const alsUri = (p) => `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`;
 
     // Genauso runden wie HeaderLogo.tsx, sonst zeigt die Lupe einen halben
     // Pixel mehr als die App spaeter wirklich rendert.
     const motivKante = Math.round((32 * fein.groesse) / 100);
+    // Wird beim Rendern gefuellt – entweder aus den eingebauten Assets oder
+    // frisch aus dem Eingangsordner.
+    const motivUri = {};
     // Ein Chip in beliebigem Massstab. f=1 ist die echte Groesse in der App.
     const chip = (t, f) => `
       <div style="width:${32 * f}px;height:${32 * f}px;border-radius:9999px;display:flex;align-items:center;
                   justify-content:center;flex-shrink:0;overflow:hidden;
                   background:${t.bg};border:${f}px solid ${t.border}">
-        <img src="${alsUri(logos[t.logo])}" style="width:${motivKante * f}px;height:${motivKante * f}px;
+        <img src="${motivUri[t.logo]}" style="width:${motivKante * f}px;height:${motivKante * f}px;
              object-fit:contain;flex-shrink:0;max-width:none;
              transform:translate(${fein.x * f}px, ${fein.y * f}px)">
       </div>`;
@@ -1470,14 +1486,16 @@ async function vorschauMain() {
       </div>`;
 
     const versatzText = (wert, minus, plus) => (wert === 0 ? 'mittig' : `${Math.abs(wert)} px nach ${wert < 0 ? minus : plus}`);
-    const html = `<body style="margin:0;background:#ffffff">
+    // Als Funktion, nicht als Wert: Die Motive stehen erst fest, wenn der
+    // Browser laeuft (sie werden ggf. frisch aus dem Eingangsordner gerendert).
+    const htmlBauen = () => `<body style="margin:0;background:#ffffff">
       <div id="blatt" style="display:inline-block;padding:26px 30px">
         <div style="font:700 17px system-ui;color:#111827">So sieht die Kopfzeile aus</div>
         <div style="font:400 13px system-ui;color:#6b7280;margin:6px 0 20px">
           Logo im Kreis: ${fein.groesse}&#8202;% &nbsp;·&nbsp; waagerecht ${versatzText(fein.x, 'links', 'rechts')}
           &nbsp;·&nbsp; senkrecht ${versatzText(fein.y, 'oben', 'unten')}
           <br>Links die echte Groesse – die beiden Kreise rechts daneben sind die Knoepfe der App als Massstab.
-          Rechts dasselbe ${VORSCHAU_LUPE}-fach vergroessert.
+          Rechts dasselbe ${VORSCHAU_LUPE}-fach vergroessert.${ausEingang ? ' Gezeigt wird das neue Motiv aus dem Eingangsordner.' : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:18px">
           ${VORSCHAU_THEMES.map(zeile).join('')}
@@ -1493,13 +1511,28 @@ async function vorschauMain() {
     });
     try {
         const page = await browser.newPage({ deviceScaleFactor: 2 });
-        await page.setContent(html);
+
+        // Motive besorgen. Aus dem Eingangsordner wird mit derselben Rechnung
+        // gerendert wie beim Bauen (160 px, LOGO_RAND) – so zeigt die Vorschau
+        // genau das Motiv, das nachher im Bundle landet.
+        for (const art of ['schwarz', 'weiss']) {
+            if (ausEingang) {
+                const p = quellen[art];
+                const roh = `data:${MIME[path.extname(p).toLowerCase()] || 'image/png'};base64,${fs.readFileSync(p).toString('base64')}`;
+                const fertig = await bildSkalieren(page, roh, 160, LOGO_RAND);
+                motivUri[art] = `data:image/png;base64,${fertig.toString('base64')}`;
+            } else {
+                motivUri[art] = `data:image/png;base64,${fs.readFileSync(assets[art]).toString('base64')}`;
+            }
+        }
+
+        await page.setContent(htmlBauen());
         fs.mkdirSync(BRANDING, { recursive: true });
         await page.locator('#blatt').screenshot({ path: VORSCHAU_BILD });
     } finally {
         await browser.close();
     }
-    console.log(`\nVorschau: ${fein.groesse} %, x ${fein.x} px, y ${fein.y} px`);
+    console.log(`\nVorschau Kopfzeile: ${fein.groesse} %, x ${fein.x} px, y ${fein.y} px`);
     console.log(`  ${VORSCHAU_BILD}`);
     console.log(gelb('  (nur ein Bild – es wurde nichts an der App geaendert)\n'));
 }

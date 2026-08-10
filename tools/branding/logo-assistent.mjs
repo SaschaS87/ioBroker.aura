@@ -309,7 +309,7 @@ function bildOeffnen(pfad) {
  * Laeuft erst NACH dem Erzeugen der Bilder: die Vorschau zeigt sonst noch das
  * alte Motiv.
  */
-async function feinjustage(start) {
+async function feinjustage(start, ausEingang) {
     let f = { ...start };
     for (;;) {
         f.groesse = await zahlFrage(
@@ -332,7 +332,11 @@ async function feinjustage(start) {
         );
 
         console.log(gelb('\n> Vorschaubild erzeugen'));
-        const r = still(`npm run logo:vorschau -- --logo-groesse ${f.groesse} --logo-x ${f.x} --logo-y ${f.y}`);
+        // Werden neue Bilder getauscht, zeigt die Vorschau das kommende Motiv
+        // aus dem Eingangsordner statt des noch eingebauten.
+        const r = still(
+            `npm run logo:vorschau -- --logo-groesse ${f.groesse} --logo-x ${f.x} --logo-y ${f.y}${ausEingang ? ' --aus-eingang' : ''}`,
+        );
         if (r.code !== 0) {
             // Die Vorschau ist Komfort, kein Muss – der Rest laeuft trotzdem weiter.
             console.log(rot('  Das Vorschaubild hat nicht geklappt:'));
@@ -486,15 +490,34 @@ if (!ziele.length && sichtbar === null && kreis === null && fein === null && app
     ende('Nichts ausgewaehlt – es gibt nichts zu tun.', 0);
 }
 
-// 1. App-Symbol ausrichten – VOR dem Erzeugen. Die Ausrichtung wandert ins
-// Bild, sie muss also feststehen, bevor gerendert wird. Die Vorschau braucht
-// nur das Quellbild, das liegt schon im Eingangsordner.
+// 1. Ausrichten – BEIDES vor dem Erzeugen, damit die zwei Justagen direkt
+// hintereinander kommen und nicht durch die Ausgabe des Bildbaus getrennt
+// werden. Moeglich wird das, weil beide Vorschauen ihr Motiv notfalls selbst
+// aus dem Eingangsordner rendern, statt auf die gebauten Dateien zu warten.
+const anzahlJustagen = (kreis === true ? 1 : 0) + (appAusrichten ? 1 : 0);
+if (anzahlJustagen > 1) {
+    console.log(fett('\n=== Zwei Sachen zum Ausrichten ==='));
+    console.log('Erst das Logo in der Kopfzeile, dann das App-Symbol.');
+    console.log('Fuer beide gibt es ein eigenes Vorschaubild.');
+}
+
+if (kreis === true && !NICHT_INTERAKTIV) {
+    console.log(fett(`\n--- ${anzahlJustagen > 1 ? '1 von 2: ' : ''}Logo in der Kopfzeile ausrichten ---`));
+    console.log('Der Kreis selbst bleibt unveraendert – er muss zu den Knoepfen rechts passen.');
+    console.log('Eingestellt wird nur das Motiv darin. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
+    fein = await feinjustage(stand.fein, ziele.includes('kopfzeile'));
+}
+
 if (appAusrichten) {
-    console.log(fett('\n--- App-Symbol ausrichten ---'));
+    console.log(fett(`\n--- ${anzahlJustagen > 1 ? '2 von 2: ' : ''}App-Symbol ausrichten ---`));
     console.log('Das Symbol ist ein fertiges Bild – die Ausrichtung wird hineingerechnet.');
     console.log('Nach jedem Durchgang gibt es ein Bild mit drei Ansichten zum Anschauen.');
     appFein = await appJustage(stand.app);
 }
+
+// Ab hier wird nichts mehr gefragt – die Eingabe darf zu, sonst haengt der
+// Assistent am Ende und beendet sich nicht.
+if (!NICHT_INTERAKTIV && (kreis === true || appAusrichten)) rl.close();
 
 // 2. Bilder erzeugen. Wurde nur die Ausrichtung geaendert, muss das App-Symbol
 // trotzdem neu entstehen – das Werkzeug erkennt das an der Ausrichtung selbst
@@ -513,28 +536,16 @@ if (zielListe.length) {
     else if (r.status !== 0) ende('Abgebrochen beim Erzeugen der Symbole. Die Meldung steht oben.\nEs wurde nichts ausgerollt.');
 }
 
-// 3. Groesse und Position des Motivs im Kreis – nur mit Kreis. Ohne Kreis nutzt
-// das Motiv immer die volle Flaeche, da gibt es nichts einzustellen.
-if (kreis === true && !NICHT_INTERAKTIV) {
-    console.log(fett('\n--- Logo im Kreis ausrichten ---'));
-    console.log('Der Kreis selbst bleibt unveraendert – er muss zu den Knoepfen rechts passen.');
-    console.log('Eingestellt wird nur das Motiv darin. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
-    fein = await feinjustage(stand.fein);
-}
-// Ab hier wird nichts mehr gefragt – die Eingabe darf zu, sonst haengt der
-// Assistent am Ende und beendet sich nicht.
-if (!NICHT_INTERAKTIV && (kreis === true || appAusrichten)) rl.close();
-
-// 4. Sichtbarkeit und Aussehen setzen – gebuendelt in einem Aufruf. Kreis und
+// 3. Sichtbarkeit und Aussehen setzen – gebuendelt in einem Aufruf. Kreis und
 // Feinstellung laufen bewusst hierueber und nicht ueber logo:build: so steht
-// die Reihenfolge fest und die Werte aus Schritt 3 kommen sicher an.
+// die Reihenfolge fest und die Werte aus Schritt 1 kommen sicher an.
 const stilTeile = [];
 if (anzeigenWert !== null) stilTeile.push(`--anzeigen ${anzeigenWert}`);
 if (kreis !== null) stilTeile.push(`--kreis ${kreis ? 'ja' : 'nein'}`);
 if (fein) stilTeile.push(`--logo-groesse ${fein.groesse}`, `--logo-x ${fein.x}`, `--logo-y ${fein.y}`);
 if (stilTeile.length) lauf(`npm run logo:stil -- ${stilTeile.join(' ')}`, 'Sichtbarkeit und Aussehen setzen');
 
-// 5. Bauen
+// 4. Bauen
 lauf('npm run build', 'App bauen (dauert etwa 15 Sekunden)');
 
 if (VORGABE.keinDeploy) {
@@ -542,7 +553,7 @@ if (VORGABE.keinDeploy) {
     process.exit(0);
 }
 
-// 6. Ausrollen
+// 5. Ausrollen
 fs.rmSync(path.join(REPO, 'aura-www.tar.gz'), { force: true });
 lauf('tar -czf aura-www.tar.gz www', 'Paket schnueren');
 lauf(`scp -q aura-www.tar.gz ${PI}:/tmp/`, 'Auf den Pi kopieren');
@@ -553,7 +564,7 @@ lauf(
 );
 schonAusgerollt = true;
 
-// 7. Nachpruefen
+// 6. Nachpruefen
 console.log(gelb('\n> Nachpruefen, ob es angekommen ist'));
 let erreichbar = false;
 for (let i = 0; i < 10; i++) {
@@ -577,7 +588,7 @@ console.log(`  App erreichbar: ja`);
 console.log(`  Tab-Symbol eingebunden: ${zeigtTab ? 'ja' : 'nein (ausgeblendet)'}`);
 console.log(`  App-Symbol eingebunden: ${zeigtApp ? 'ja' : 'nein (ausgeblendet)'}`);
 
-// 8. Lokal sichern
+// 7. Lokal sichern
 // Erst vormerken, dann pruefen, ob wirklich etwas dabei ist: "git commit" ohne
 // Aenderungen endet mit Fehlercode 1 und wuerde den Assistenten sonst am
 // letzten Schritt abbrechen lassen, obwohl alles gut gegangen ist.

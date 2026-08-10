@@ -33,6 +33,12 @@ in echter Groesse (mit den Knoepfen als Massstab) und 6-fach vergroessert, hell
 und dunkel. Es aendert **nichts** an der App – nur ein Bild zum Anschauen. Der
 Assistent (`npm run logo`) zeigt es nach jedem Einstellversuch automatisch an.
 
+Mit `--aus-eingang` rendert die Vorschau das Motiv direkt aus dem
+Eingangsordner statt aus den eingebauten Dateien – gebraucht wird das, wenn
+gerade neue Bilder getauscht werden: Dann soll die Vorschau das **kommende**
+Motiv zeigen, nicht das alte. Gerechnet wird dabei genauso wie beim Bauen
+(160 px, 6 % Rand), das Ergebnis ist also dasselbe.
+
 Ohne Kreis gibt es nichts einzustellen: das Motiv nutzt dort immer die volle
 Flaeche (40x40). Wer es trotzdem versucht, bekommt eine Fehlermeldung statt
 einer wirkungslosen Einstellung.
