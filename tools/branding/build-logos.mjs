@@ -1322,9 +1322,14 @@ async function hauptlauf() {
             } else if (!OPT.dryRun && fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) {
                 bericht.push({ ...SVG_ZIEL, status: 'unveraendert' });
             }
-        } else {
-            // Tab nicht gewählt
-            if (fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) bericht.push({ ...SVG_ZIEL, status: 'nicht gewaehlt' });
+        } else if (fs.existsSync(path.join(REPO, SVG_ZIEL.datei))) {
+            // Nicht zu bauen – aber "nicht gewaehlt" und "gewaehlt, war schon
+            // aktuell" sind zweierlei. Die beiden Favicons derselben Gruppe
+            // unterscheiden das korrekt, hier fehlte die Unterscheidung.
+            bericht.push({
+                ...SVG_ZIEL,
+                status: ausgewaehltGruppen.includes('tab') ? 'unveraendert' : 'nicht gewaehlt',
+            });
         }
     } finally {
         await browser.close();
