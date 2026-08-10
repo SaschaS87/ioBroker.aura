@@ -272,10 +272,24 @@ async function eingangKlaeren() {
     }
 }
 
+/**
+ * Ja/Nein-Frage. Nimmt alles, was jemand vernuenftigerweise tippt – auch "1",
+ * "y" oder "yes". Und weist alles andere zurueck, statt es still als "nein" zu
+ * werten: Genau das ist passiert, als direkt nach zwei Zahlen-Fragen eine "1"
+ * eingegeben wurde. Der Kreis ging dabei ungewollt aus, und die davon
+ * abhaengige Ausrichtung wurde uebersprungen.
+ */
+const JA_WOERTER = ['j', 'ja', 'y', 'yes', '1'];
+const NEIN_WOERTER = ['n', 'nein', 'no', '0'];
+
 async function jaNein(titel, vorgabeJa) {
-    const a = (await frage(`\n${fett(titel)} [Enter = ${vorgabeJa ? 'ja' : 'nein'}] (j/n): `)).trim().toLowerCase();
-    if (!a) return vorgabeJa;
-    return a.startsWith('j');
+    for (;;) {
+        const a = (await frage(`\n${fett(titel)} [Enter = ${vorgabeJa ? 'ja' : 'nein'}] (j/n): `)).trim().toLowerCase();
+        if (!a) return vorgabeJa;
+        if (JA_WOERTER.includes(a)) return true;
+        if (NEIN_WOERTER.includes(a)) return false;
+        console.log(rot(`  "${a}" verstehe ich nicht. Bitte j fuer ja oder n fuer nein.`));
+    }
 }
 
 /** Fragt eine ganze Zahl ab und laesst nicht locker, bis sie im Bereich liegt. */
@@ -418,9 +432,24 @@ if (Object.keys(bilder).length === 0) {
 
 console.log('\nAktuell sichtbar:');
 for (const g of GRUPPEN) console.log(`  ${stand.sichtbar[g.schluessel] ? 'ja  ' : 'nein'}  ${g.name}`);
-console.log(`  Kopfzeilen-Logo ${stand.mitKreis ? 'mit' : 'ohne'} Kreis`);
-if (stand.mitKreis) {
-    console.log(`  Logo im Kreis: ${stand.fein.groesse} %, versetzt um x ${stand.fein.x} px, y ${stand.fein.y} px`);
+
+// Zwei verschiedene Ausrichtungen, die leicht zu verwechseln sind. Deshalb
+// beide untereinander, jede mit ihrem Namen davor und ihrer eigenen Einheit
+// (Kopfzeile in Pixeln, App-Symbol in Prozent der Kachel).
+const ausrichtung = [];
+if (stand.sichtbar.kopfzeile) {
+    ausrichtung.push(
+        stand.mitKreis
+            ? `  Kopfzeilen-Logo   im Kreis, Motiv ${stand.fein.groesse} % davon, x ${stand.fein.x} px, y ${stand.fein.y} px`
+            : '  Kopfzeilen-Logo   ohne Kreis (Motiv nutzt die volle Flaeche, nichts einzustellen)',
+    );
+}
+if (stand.sichtbar.app) {
+    ausrichtung.push(`  App-Symbol        Motiv ${stand.app.groesse} % der Kachel, x ${stand.app.x} %, y ${stand.app.y} %`);
+}
+if (ausrichtung.length) {
+    console.log('\nAktuelle Ausrichtung:');
+    ausrichtung.forEach((z) => console.log(z));
 }
 
 let ziele, sichtbar, kreis;
@@ -475,7 +504,9 @@ if (NICHT_INTERAKTIV) {
     // durch drei Zahlen und eine Vorschau muessen.
     if (sichtbar.includes('app')) {
         console.log(
-            `\n  (Symbol steht jetzt auf ${stand.app.groesse} % der Kachel, x ${stand.app.x} %, y ${stand.app.y} %)`,
+            `\n  (Das App-Symbol steht jetzt auf ${stand.app.groesse} % der Kachel, ` +
+                `${stand.app.x === 0 && stand.app.y === 0 ? 'mittig' : `x ${stand.app.x} %, y ${stand.app.y} %`}. ` +
+                'Das ist die Kachel auf dem Handy, nicht der Kreis in der Kopfzeile.)',
         );
         appAusrichten = await jaNein('Das App-Symbol auf dem Homescreen ausrichten?', false);
     }
@@ -593,7 +624,10 @@ console.log(`  App-Symbol eingebunden: ${zeigtApp ? 'ja' : 'nein (ausgeblendet)'
 // Aenderungen endet mit Fehlercode 1 und wuerde den Assistenten sonst am
 // letzten Schritt abbrechen lassen, obwohl alles gut gegangen ist.
 console.log(gelb('\n> Stand lokal sichern (kein Push)'));
-still('git add -A index.html public src-vis/components/common src-vis/assets www');
+// tools/branding muss mit: Dort liegt die Ausrichtung des App-Symbols
+// (app-symbol.json). Ohne sie waere im Git ein Symbol, dessen Einstellung
+// fehlt – nach einem Klon liesse es sich nicht mehr identisch nachbauen.
+still('git add -A index.html public src-vis/components/common src-vis/assets tools/branding www');
 if (still('git diff --cached --quiet').code === 0) {
     console.log('  Nichts zu sichern – an den Symbolen hat sich nichts geaendert.');
 } else {
