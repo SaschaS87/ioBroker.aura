@@ -17,7 +17,7 @@ function ShutterViz({
     className,
     style,
 }: {
-    closedFrac: number;
+    closedFrac: number | null;
     accentColor: string;
     isMoving: boolean;
     className?: string;
@@ -32,36 +32,46 @@ function ShutterViz({
                 borderRadius: '6px',
                 overflow: 'hidden',
                 position: 'relative',
+                opacity: closedFrac === null ? 0.4 : 1,
                 ...style,
             }}
         >
-            {/* Slat area fills from top */}
-            <div
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: `${closedFrac * 100}%`,
-                    transition: 'height 0.4s ease',
-                    backgroundImage:
-                        'repeating-linear-gradient(to bottom, transparent 0px, transparent 6px, color-mix(in srgb, var(--text-secondary) 35%, transparent) 6px, color-mix(in srgb, var(--text-secondary) 35%, transparent) 8px)',
-                }}
-            />
-            {/* Edge indicator at the bottom of the blind */}
-            {closedFrac > 0.01 && closedFrac < 0.99 && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        left: 0,
-                        right: 0,
-                        top: `${closedFrac * 100}%`,
-                        height: '2px',
-                        background: accentColor,
-                        transition: 'top 0.4s ease, background 0.3s',
-                        boxShadow: `0 0 4px ${accentColor}66`,
-                    }}
-                />
+            {/* Neutral state: unknown position */}
+            {closedFrac === null ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600' }}>–</span>
+                </div>
+            ) : (
+                <>
+                    {/* Slat area fills from top */}
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: `${closedFrac * 100}%`,
+                            transition: 'height 0.4s ease',
+                            backgroundImage:
+                                'repeating-linear-gradient(to bottom, transparent 0px, transparent 6px, color-mix(in srgb, var(--text-secondary) 35%, transparent) 6px, color-mix(in srgb, var(--text-secondary) 35%, transparent) 8px)',
+                        }}
+                    />
+                    {/* Edge indicator at the bottom of the blind */}
+                    {closedFrac !== null && closedFrac > 0.01 && closedFrac < 0.99 && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: 0,
+                                right: 0,
+                                top: `${closedFrac * 100}%`,
+                                height: '2px',
+                                background: accentColor,
+                                transition: 'top 0.4s ease, background 0.3s',
+                                boxShadow: `0 0 4px ${accentColor}66`,
+                            }}
+                        />
+                    )}
+                </>
             )}
             {/* Pulsing dot when moving */}
             {isMoving && (
@@ -167,7 +177,7 @@ export function ShutterWidget({ config }: WidgetProps) {
     const rawPos = ackedPos !== null ? ackedPos : lastKnownAckedPos;
     const isPositionUnknown = rawPos === null;
     const pos = isPositionUnknown ? 0 : ((opts.invertPosition as boolean) ? 100 - rawPos : rawPos);
-    const closedFrac = isPositionUnknown ? 0 : Math.max(0, Math.min(1, (100 - pos) / 100));
+    const closedFrac = isPositionUnknown ? null : Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const displayPct = isPositionUnknown ? -1 : (showClosedPercent ? 100 - pos : pos);
 

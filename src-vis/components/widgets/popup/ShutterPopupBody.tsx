@@ -9,10 +9,10 @@ interface Props {
     widget: WidgetConfig;
 }
 
-function ShutterViz({ closedFrac, effectiveMoving }: { closedFrac: number; effectiveMoving: boolean }) {
+function ShutterViz({ closedFrac, effectiveMoving }: { closedFrac: number | null; effectiveMoving: boolean }) {
     const accent = effectiveMoving
         ? 'var(--accent-yellow, #f59e0b)'
-        : closedFrac < 1
+        : closedFrac !== null && closedFrac < 1
           ? 'var(--accent)'
           : 'var(--text-secondary)';
     return (
@@ -25,33 +25,43 @@ function ShutterViz({ closedFrac, effectiveMoving }: { closedFrac: number; effec
                 borderRadius: 8,
                 overflow: 'hidden',
                 position: 'relative',
+                opacity: closedFrac === null ? 0.4 : 1,
             }}
         >
-            <div
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: `${closedFrac * 100}%`,
-                    transition: 'height 0.4s ease',
-                    backgroundImage:
-                        'repeating-linear-gradient(to bottom, transparent 0px, transparent 8px, color-mix(in srgb, var(--text-secondary) 30%, transparent) 8px, color-mix(in srgb, var(--text-secondary) 30%, transparent) 10px)',
-                }}
-            />
-            {closedFrac > 0.02 && closedFrac < 0.98 && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        left: 0,
-                        right: 0,
-                        top: `${closedFrac * 100}%`,
-                        height: 2,
-                        background: accent,
-                        transition: 'top 0.4s ease',
-                        boxShadow: `0 0 4px ${accent}88`,
-                    }}
-                />
+            {/* Neutral state: unknown position */}
+            {closedFrac === null ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600' }}>–</span>
+                </div>
+            ) : (
+                <>
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: `${closedFrac * 100}%`,
+                            transition: 'height 0.4s ease',
+                            backgroundImage:
+                                'repeating-linear-gradient(to bottom, transparent 0px, transparent 8px, color-mix(in srgb, var(--text-secondary) 30%, transparent) 8px, color-mix(in srgb, var(--text-secondary) 30%, transparent) 10px)',
+                        }}
+                    />
+                    {closedFrac !== null && closedFrac > 0.02 && closedFrac < 0.98 && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: 0,
+                                right: 0,
+                                top: `${closedFrac * 100}%`,
+                                height: 2,
+                                background: accent,
+                                transition: 'top 0.4s ease',
+                                boxShadow: `0 0 4px ${accent}88`,
+                            }}
+                        />
+                    )}
+                </>
             )}
             {effectiveMoving && (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -99,7 +109,7 @@ export function ShutterPopupBody({ widget }: Props) {
     const rawPos = ackedPos !== null ? ackedPos : lastKnownAckedPos;
     const isPositionUnknown = rawPos === null;
     const pos = isPositionUnknown ? 0 : ((opts.invertPosition as boolean) ? 100 - rawPos : rawPos);
-    const closedFrac = isPositionUnknown ? 0 : Math.max(0, Math.min(1, (100 - pos) / 100));
+    const closedFrac = isPositionUnknown ? null : Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const isMoving = activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
 
