@@ -167,15 +167,20 @@ export function ShutterPopupBody({ widget }: Props) {
 
     const stop = () => {
         const stopDp = opts.stopDp as string | undefined;
+        let commandWasSent = false;
         if (stopDp) {
             setState(stopDp, true);
+            commandWasSent = true;
         } else if (rawPos !== null) {
             setState(widget.datapoint, rawPos);
+            commandWasSent = true;
         }
-        // Immediately clear derived movement indicator
-        setDerivedMoving(false);
-        setMoveTarget(null);
-        if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+        // Only clear derived movement indicator if a stop command was actually sent
+        if (commandWasSent) {
+            setDerivedMoving(false);
+            setMoveTarget(null);
+            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+        }
     };
 
     const btnStyle: React.CSSProperties = {
@@ -254,12 +259,12 @@ export function ShutterPopupBody({ widget }: Props) {
                     onTouchEnd={() => {
                         if (sliderDraft !== null) writePos(sliderDraft);
                     }}
-                    disabled={!isConnected}
+                    disabled={!isConnected || isPositionUnknown}
                     style={{
                         accentColor: 'var(--accent)',
                         width: '100%',
-                        opacity: isConnected ? 1 : 0.5,
-                        cursor: isConnected ? 'pointer' : 'not-allowed',
+                        opacity: (isConnected && !isPositionUnknown) ? 1 : 0.5,
+                        cursor: (isConnected && !isPositionUnknown) ? 'pointer' : 'not-allowed',
                     }}
                     className="h-2 rounded-lg appearance-none"
                 />
@@ -278,8 +283,8 @@ export function ShutterPopupBody({ widget }: Props) {
                         disabled={!isConnected}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
                         style={{
-                            background: Math.abs(display - p) < 3 ? 'var(--accent)' : 'var(--app-bg)',
-                            color: Math.abs(display - p) < 3 ? '#fff' : 'var(--text-primary)',
+                            background: !isPositionUnknown && Math.abs(display - p) < 3 ? 'var(--accent)' : 'var(--app-bg)',
+                            color: !isPositionUnknown && Math.abs(display - p) < 3 ? '#fff' : 'var(--text-primary)',
                             border: '1px solid var(--app-border)',
                             opacity: isConnected ? 1 : 0.5,
                             cursor: isConnected ? 'pointer' : 'not-allowed',
@@ -312,12 +317,12 @@ export function ShutterPopupBody({ widget }: Props) {
                         onTouchEnd={() => {
                             if (slatDraft !== null) writeSlatPos(slatDraft);
                         }}
-                        disabled={!isConnected}
+                        disabled={!isConnected || isSlatUnknown}
                         style={{
                             accentColor: 'var(--accent)',
                             width: '100%',
-                            opacity: isConnected ? 1 : 0.5,
-                            cursor: isConnected ? 'pointer' : 'not-allowed',
+                            opacity: (isConnected && !isSlatUnknown) ? 1 : 0.5,
+                            cursor: (isConnected && !isSlatUnknown) ? 'pointer' : 'not-allowed',
                         }}
                         className="h-2 rounded-lg appearance-none"
                     />
@@ -338,8 +343,8 @@ export function ShutterPopupBody({ widget }: Props) {
                                     disabled={!isConnected}
                                     className="px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity flex-1 flex flex-col items-center gap-0.5"
                                     style={{
-                                        background: Math.abs(slatDisplay - angle) < 3 ? 'var(--accent)' : 'var(--app-bg)',
-                                        color: Math.abs(slatDisplay - angle) < 3 ? '#fff' : 'var(--text-primary)',
+                                        background: !isSlatUnknown && Math.abs(slatDisplay - angle) < 3 ? 'var(--accent)' : 'var(--app-bg)',
+                                        color: !isSlatUnknown && Math.abs(slatDisplay - angle) < 3 ? '#fff' : 'var(--text-primary)',
                                         border: '1px solid var(--app-border)',
                                         opacity: isConnected ? 1 : 0.5,
                                         cursor: isConnected ? 'pointer' : 'not-allowed',

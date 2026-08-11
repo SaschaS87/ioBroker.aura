@@ -80,6 +80,7 @@ function BtnRow({
     iconSz = 16,
     vertical = false,
     disabled = false,
+    disableStop = false,
 }: {
     onUp: () => void;
     onStop: () => void;
@@ -87,10 +88,11 @@ function BtnRow({
     iconSz?: number;
     vertical?: boolean;
     disabled?: boolean;
+    disableStop?: boolean;
 }) {
     const pad = Math.max(2, Math.round(iconSz / 4));
     const radius = Math.max(4, Math.round(iconSz / 2));
-    const dirStyle = (dir: 'up' | 'stop' | 'down'): React.CSSProperties => ({
+    const dirStyle = (dir: 'up' | 'stop' | 'down', isDisabled: boolean): React.CSSProperties => ({
         background: `var(--blind-${dir}-bg, var(--app-bg))`,
         color: `var(--blind-${dir}-color, var(--text-secondary))`,
         border: `1px solid var(--blind-${dir}-border, var(--app-border))`,
@@ -99,8 +101,8 @@ function BtnRow({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: disabled ? 0.5 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.5 : 1,
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
     });
     return (
         <div className={`aura-widget-action flex ${vertical ? 'flex-col' : ''} gap-1`}>
@@ -108,15 +110,15 @@ function BtnRow({
                 onClick={onUp}
                 disabled={disabled}
                 className="hover:opacity-80 transition-opacity"
-                style={dirStyle('up')}
+                style={dirStyle('up', disabled)}
             >
                 <ChevronUp size={iconSz} />
             </button>
             <button
                 onClick={onStop}
-                disabled={disabled}
+                disabled={disabled || disableStop}
                 className="hover:opacity-80 transition-opacity"
-                style={dirStyle('stop')}
+                style={dirStyle('stop', disabled || disableStop)}
             >
                 <Square size={iconSz} />
             </button>
@@ -124,7 +126,7 @@ function BtnRow({
                 onClick={onDown}
                 disabled={disabled}
                 className="hover:opacity-80 transition-opacity"
-                style={dirStyle('down')}
+                style={dirStyle('down', disabled)}
             >
                 <ChevronDown size={iconSz} />
             </button>
@@ -273,17 +275,22 @@ export function ShutterWidget({ config }: WidgetProps) {
     };
     const stop = () => {
         const stopDp = opts.stopDp as string | undefined;
+        let commandWasSent = false;
         if (stopDp) {
             setState(stopDp, true);
+            commandWasSent = true;
         } else if (controlMode !== 'taster' && (rawPos !== null || preMoveRawRef.current !== null)) {
             // Race-condition-safe fallback: use pre-move snapshot, not current rawPos
             const stopTarget = isMoving && rawPos !== preMoveRawRef.current ? (rawPos ?? 0) : (preMoveRawRef.current ?? 0);
             setState(config.datapoint, stopTarget);
+            commandWasSent = true;
         }
-        // Immediately clear derived movement indicator
-        setDerivedMoving(false);
-        setMoveTarget(null);
-        if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+        // Only clear derived movement indicator if a stop command was actually sent
+        if (commandWasSent) {
+            setDerivedMoving(false);
+            setMoveTarget(null);
+            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+        }
     };
 
     const accentColor = isMoving
@@ -364,12 +371,12 @@ export function ShutterWidget({ config }: WidgetProps) {
                 onChange={(e) => handleSliderChange(Number(e.target.value))}
                 onMouseUp={handleSliderRelease}
                 onTouchEnd={handleSliderRelease}
-                disabled={!isConnected}
+                disabled={!isConnected || isPositionUnknown}
                 style={{
                     accentColor: 'var(--accent)',
                     height: sliderHeight,
-                    opacity: isConnected ? 1 : 0.5,
-                    cursor: isConnected ? 'pointer' : 'not-allowed',
+                    opacity: (isConnected && !isPositionUnknown) ? 1 : 0.5,
+                    cursor: (isConnected && !isPositionUnknown) ? 'pointer' : 'not-allowed',
                 }}
                 className="aura-widget-action w-full rounded-full appearance-none"
             />
@@ -441,9 +448,9 @@ export function ShutterWidget({ config }: WidgetProps) {
                     'btn-stop': (
                         <button
                             className="aura-widget-action nodrag"
-                            style={{ ...dirBtnStyle('stop'), opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                            style={{ ...dirBtnStyle('stop'), opacity: (isConnected && !(controlMode === 'taster' && !opts.stopDp)) ? 1 : 0.5, cursor: (isConnected && !(controlMode === 'taster' && !opts.stopDp)) ? 'pointer' : 'not-allowed' }}
                             onClick={stop}
-                            disabled={!isConnected}
+                            disabled={!isConnected || (controlMode === 'taster' && !opts.stopDp)}
                         >
                             <Square size={buttonSize} />
                         </button>
@@ -511,7 +518,7 @@ export function ShutterWidget({ config }: WidgetProps) {
                         {isPositionUnknown ? '–' : `${displayPct}%`}
                     </span>
                 )}
-                {showControls && <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} disabled={!isConnected} />}
+                {showControls && <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} disabled={!isConnected} disableStop={controlMode === 'taster' && !opts.stopDp} />}
                 <StatusBadges config={config} />
             </div>
         );
@@ -632,7 +639,7 @@ export function ShutterWidget({ config }: WidgetProps) {
             <div className="flex gap-2 flex-1 min-h-0">
                 <ShutterViz closedFrac={closedFrac} accentColor={accentColor} isMoving={isMoving} className="flex-1" />
                 {showControls && (
-                    <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} vertical disabled={!isConnected} />
+                    <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} vertical disabled={!isConnected} disableStop={controlMode === 'taster' && !opts.stopDp} />
                 )}
             </div>
             {(showValue || showSlider) &&
