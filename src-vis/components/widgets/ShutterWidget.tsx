@@ -7,7 +7,7 @@ import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { StatusBadges } from './StatusBadges';
 import { CustomGridView } from './CustomGridView';
 import { useStatusFields } from '../../hooks/useStatusFields';
-import { useTranslation } from '../../i18n';
+import { useT } from '../../i18n';
 
 // Shutter visual: horizontal slat lines filling from top = how much is closed
 function ShutterViz({
@@ -138,13 +138,13 @@ export function ShutterWidget({ config }: WidgetProps) {
     const openDp = opts.openDp as string | undefined;
     const closeDp = opts.closeDp as string | undefined;
     const activityMovingRaw = opts.activityMovingValues as string | undefined;
-    const { state, value, setValue } = useDatapoint(config.datapoint);
+    const { state, setValue } = useDatapoint(config.datapoint);
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
     const { value: directionVal } = useDatapoint((opts.directionDp as string) ?? '');
     const { value: connectionVal } = useDatapoint((opts.connectionDp as string) ?? '');
     const { setState } = useIoBroker();
-    const { t } = useTranslation();
     const layout = config.layout ?? 'default';
+    const t = useT();
 
     // ────────────────────────────────────────────────────────────────────────────
     // Aufgabe 1: Only use ack:true values for position display
@@ -170,7 +170,7 @@ export function ShutterWidget({ config }: WidgetProps) {
     const hasActivityDp = typeof opts.activityDp === 'string' && opts.activityDp.length > 0;
     const [moveTarget, setMoveTarget] = useState<number | null>(null);
     const [derivedMoving, setDerivedMoving] = useState(false);
-    const moveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const moveTimeoutRef = useRef<number | null>(null);
 
     // When user writes a position, record it as the move target
     useEffect(() => {

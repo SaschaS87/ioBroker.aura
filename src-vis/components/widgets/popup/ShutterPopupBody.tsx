@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, Square } from 'lucide-react';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useIoBroker } from '../../../hooks/useIoBroker';
-import { useTranslation } from '../../../i18n';
+import { useT } from '../../../i18n';
 import type { WidgetConfig } from '../../../types';
 
 interface Props {
@@ -64,12 +64,12 @@ function ShutterViz({ closedFrac, isMoving }: { closedFrac: number; isMoving: bo
 
 export function ShutterPopupBody({ widget }: Props) {
     const opts = widget.options ?? {};
-    const { state, value, setValue } = useDatapoint(widget.datapoint);
+    const { state, setValue } = useDatapoint(widget.datapoint);
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
-    const { state: slatState, value: slatVal, setValue: setSlatValue } = useDatapoint((opts.slatDp as string) ?? '');
+    const { state: slatState, setValue: setSlatValue } = useDatapoint((opts.slatDp as string) ?? '');
     const { value: connectionVal } = useDatapoint((opts.connectionDp as string) ?? '');
     const { setState } = useIoBroker();
-    const { t } = useTranslation();
+    const t = useT();
 
     const isConnected = connectionVal !== false; // Default to true if no connectionDp set
 
