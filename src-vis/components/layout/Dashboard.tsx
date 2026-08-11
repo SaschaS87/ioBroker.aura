@@ -315,6 +315,8 @@ export function Dashboard({
                                                             // weatherforecaststrip: detail panel height changes
                                                             // when the chart mounts / a different day is picked.
                                                             w.type === 'weatherforecaststrip' ||
+                                                            // shutterrooms: fillTab widget spanning full tab area.
+                                                            w.type === 'shutterrooms' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&
                                                                 wl !== 'minimal' &&

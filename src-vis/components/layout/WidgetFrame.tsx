@@ -73,6 +73,7 @@ import { StatusOverviewConfig } from '../config/StatusOverviewConfig';
 import { EnergiebilanzConfig } from '../config/EnergiebilanzConfig';
 import { StaticListConfig } from '../config/StaticListConfig';
 import { GroupActionConfig } from '../config/GroupActionConfig';
+import { ShutterRoomsConfig } from '../config/ShutterRoomsConfig';
 import {
     listGroupCandidates,
     groupGroupCandidates,
@@ -118,6 +119,10 @@ const HeatingWidget = lazyWithReload(() =>
 // WeatherForecastStripWidget pulls in echarts for its detail chart.
 const WeatherForecastStripWidget = lazyWithReload(() =>
     import('../widgets/WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
+);
+// ShutterRoomsWidget is a specialized full-tab widget for TaHoma roller shutters.
+const ShutterRoomsWidget = lazyWithReload(() =>
+    import('../widgets/shutterrooms/ShutterRoomsWidget').then((m) => ({ default: m.ShutterRoomsWidget })),
 );
 const EChartWidget = lazyWithReload(() => import('../widgets/EChartWidget').then((m) => ({ default: m.EChartWidget })));
 const EChartsPresetWidget = lazyWithReload(() =>
@@ -378,6 +383,7 @@ function getWidgetMap() {
         trash: TrashWidget,
         trashSchedule: TrashScheduleWidget,
         shutter: ShutterWidget,
+        shutterrooms: ShutterRoomsWidget,
         jsontable: JsonTableWidget,
         html: HtmlWidget,
         windowcontact: WindowContactWidget,
@@ -6070,7 +6076,9 @@ export function WidgetFrame({
         config.type === 'heating' ||
         // weatherforecaststrip: same idea — the strip+detail shell is its own
         // full-width card.
-        config.type === 'weatherforecaststrip';
+        config.type === 'weatherforecaststrip' ||
+        // shutterrooms: fillTab widget with own padding and layout — no outer frame padding.
+        config.type === 'shutterrooms';
 
     return (
         <div
@@ -10610,6 +10618,16 @@ export function WidgetFrame({
                         {/* ── Status overview config ── */}
                         {config.type === 'statusoverview' && (
                             <StatusOverviewConfig config={config} onConfigChange={onConfigChange} />
+                        )}
+
+                        {/* ── ShutterRooms config ── */}
+                        {config.type === 'shutterrooms' && (
+                            <ShutterRoomsConfig
+                                options={config.options ?? {}}
+                                onOptionsChange={(opts) =>
+                                    onConfigChange({ ...config, options: opts })
+                                }
+                            />
                         )}
 
                         {/* ── Static List config ── */}

@@ -1444,6 +1444,20 @@ export const de = {
     // ── Shutter Widget Messages ───────────────────────────────────────────────────
     'shutter.notConnected': 'Gerät nicht verbunden',
 
+    // ── ShutterRooms Widget Messages ──────────────────────────────────────────────
+    'shutterrooms.all': 'Alle',
+    'shutterrooms.position': 'Position',
+    'shutterrooms.slatAngle': 'Lamellenwinkel',
+    'shutterrooms.slatFlat': 'Waagerecht',
+    'shutterrooms.slatHalf': 'Halb',
+    'shutterrooms.slatClosed': 'Geschlossen',
+    'shutterrooms.open': 'Öffnen',
+    'shutterrooms.unknown': 'Unbekannt',
+    'shutterrooms.commandSent': 'Befehl gesendet',
+    'shutterrooms.stopped': 'Gestoppt',
+    'shutterrooms.noRooms': 'Keine Räume konfiguriert',
+    'shutterrooms.notConnected': 'TaHoma-Box nicht erreichbar',
+
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',
     'preview.device': 'Gerät',

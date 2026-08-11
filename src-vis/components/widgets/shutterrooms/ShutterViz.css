@@ -1,0 +1,38 @@
+.shutter-viz {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.shutter-viz.viz-small {
+  width: 34px;
+  height: 44px;
+}
+
+.shutter-viz.viz-large {
+  width: 88px;
+  height: 112px;
+}
+
+.shutter-viz.viz-unknown svg {
+  opacity: 0.4;
+}
+
+.shutter-viz svg {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes pulse-viz {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.viz-pulse {
+  animation: pulse-viz 1s infinite;
+}

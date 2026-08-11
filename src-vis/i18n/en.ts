@@ -1441,6 +1441,20 @@ export const en: Record<TranslationKey, string> = {
     // ── Shutter Widget Messages ───────────────────────────────────────────────────
     'shutter.notConnected': 'Device not connected',
 
+    // ── ShutterRooms Widget Messages ──────────────────────────────────────────────
+    'shutterrooms.all': 'All',
+    'shutterrooms.position': 'Position',
+    'shutterrooms.slatAngle': 'Slat angle',
+    'shutterrooms.slatFlat': 'Flat',
+    'shutterrooms.slatHalf': 'Half',
+    'shutterrooms.slatClosed': 'Closed',
+    'shutterrooms.open': 'Open',
+    'shutterrooms.unknown': 'Unknown',
+    'shutterrooms.commandSent': 'Command sent',
+    'shutterrooms.stopped': 'Stopped',
+    'shutterrooms.noRooms': 'No rooms configured',
+    'shutterrooms.notConnected': 'TaHoma box not reachable',
+
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',
     'preview.device': 'Device',
