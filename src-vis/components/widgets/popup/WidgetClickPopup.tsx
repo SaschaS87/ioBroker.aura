@@ -54,6 +54,8 @@ function getTitle(widget: WidgetConfig, action: ClickAction): string {
             return 'Schalter';
         case 'popup-shutter':
             return 'Rolladen';
+        case 'popup-shutterfine':
+            return 'Rollladen-Feinregler';
         case 'popup-mediaplayer':
             return 'Mediaplayer';
         case 'popup-roomtemperature':

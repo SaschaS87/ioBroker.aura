@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, Square } from 'lucide-react';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useIoBroker } from '../../../hooks/useIoBroker';
@@ -64,22 +64,39 @@ function ShutterViz({ closedFrac, isMoving }: { closedFrac: number; isMoving: bo
 
 export function ShutterPopupBody({ widget }: Props) {
     const opts = widget.options ?? {};
-    const { value, setValue } = useDatapoint(widget.datapoint);
+    const { state, value, setValue } = useDatapoint(widget.datapoint);
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
-    const { value: slatVal, setValue: setSlatValue } = useDatapoint((opts.slatDp as string) ?? '');
+    const { state: slatState, value: slatVal, setValue: setSlatValue } = useDatapoint((opts.slatDp as string) ?? '');
     const { value: connectionVal } = useDatapoint((opts.connectionDp as string) ?? '');
     const { setState } = useIoBroker();
     const { t } = useTranslation();
 
     const isConnected = connectionVal !== false; // Default to true if no connectionDp set
 
-    const rawPos = typeof value === 'number' ? Math.round(value) : 0;
+    // ──────────────────────────────────────────────────────────────────────────
+    // Aufgabe 1: Only use ack:true values for position display
+    // ──────────────────────────────────────────────────────────────────────────
+    const [ackedPos, setAckedPos] = useState<number | null>(null);
+    useEffect(() => {
+        if (state?.ack === true && typeof state.val === 'number') {
+            setAckedPos(Math.round(state.val));
+        }
+    }, [state?.val, state?.ack]);
+
+    const [ackedSlatPos, setAckedSlatPos] = useState<number | null>(null);
+    useEffect(() => {
+        if (slatState?.ack === true && typeof slatState.val === 'number') {
+            setAckedSlatPos(Math.round(slatState.val));
+        }
+    }, [slatState?.val, slatState?.ack]);
+
+    const rawPos = ackedPos ?? 0;
     const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
     const closedFrac = Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const isMoving = activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
 
-    const slatPos = typeof slatVal === 'number' ? Math.round(slatVal) : 0;
+    const slatPos = ackedSlatPos ?? 0;
     const hasSlatDp = typeof opts.slatDp === 'string' && opts.slatDp.length > 0;
 
     const [sliderDraft, setSliderDraft] = useState<number | null>(null);
