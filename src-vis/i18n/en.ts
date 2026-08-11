@@ -1439,7 +1439,7 @@ export const en: Record<TranslationKey, string> = {
     'alarm.cfg.sizeScale': 'Global scale',
 
     // ── Shutter Widget Messages ───────────────────────────────────────────────────
-    'shutter.notConnected': 'TaHoma not connected',
+    'shutter.notConnected': 'Device not connected',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',

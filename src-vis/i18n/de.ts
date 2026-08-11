@@ -1442,7 +1442,7 @@ export const de = {
     'alarm.cfg.sizeScale': 'Globale Skalierung',
 
     // ── Shutter Widget Messages ───────────────────────────────────────────────────
-    'shutter.notConnected': 'TaHoma nicht verbunden',
+    'shutter.notConnected': 'Gerät nicht verbunden',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',

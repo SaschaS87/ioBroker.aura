@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronUp, ChevronDown, Square } from 'lucide-react';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useIoBroker } from '../../../hooks/useIoBroker';
@@ -9,8 +9,8 @@ interface Props {
     widget: WidgetConfig;
 }
 
-function ShutterViz({ closedFrac, isMoving }: { closedFrac: number; isMoving: boolean }) {
-    const accent = isMoving
+function ShutterViz({ closedFrac, effectiveMoving }: { closedFrac: number; effectiveMoving: boolean }) {
+    const accent = effectiveMoving
         ? 'var(--accent-yellow, #f59e0b)'
         : closedFrac < 1
           ? 'var(--accent)'
@@ -53,7 +53,7 @@ function ShutterViz({ closedFrac, isMoving }: { closedFrac: number; isMoving: bo
                     }}
                 />
             )}
-            {isMoving && (
+            {effectiveMoving && (
                 <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: accent }} />
                 </div>
@@ -77,27 +77,72 @@ export function ShutterPopupBody({ widget }: Props) {
     // Aufgabe 1: Only use ack:true values for position display
     // ──────────────────────────────────────────────────────────────────────────
     const [ackedPos, setAckedPos] = useState<number | null>(null);
+    const [lastKnownAckedPos, setLastKnownAckedPos] = useState<number | null>(null);
     useEffect(() => {
         if (state?.ack === true && typeof state.val === 'number') {
-            setAckedPos(Math.round(state.val));
+            const rounded = Math.round(state.val);
+            setAckedPos(rounded);
+            setLastKnownAckedPos(rounded);
         }
     }, [state?.val, state?.ack]);
 
     const [ackedSlatPos, setAckedSlatPos] = useState<number | null>(null);
+    const [lastKnownAckedSlatPos, setLastKnownAckedSlatPos] = useState<number | null>(null);
     useEffect(() => {
         if (slatState?.ack === true && typeof slatState.val === 'number') {
-            setAckedSlatPos(Math.round(slatState.val));
+            const rounded = Math.round(slatState.val);
+            setAckedSlatPos(rounded);
+            setLastKnownAckedSlatPos(rounded);
         }
     }, [slatState?.val, slatState?.ack]);
 
-    const rawPos = ackedPos ?? 0;
-    const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
-    const closedFrac = Math.max(0, Math.min(1, (100 - pos) / 100));
+    const rawPos = ackedPos !== null ? ackedPos : lastKnownAckedPos;
+    const isPositionUnknown = rawPos === null;
+    const pos = isPositionUnknown ? 0 : ((opts.invertPosition as boolean) ? 100 - rawPos : rawPos);
+    const closedFrac = isPositionUnknown ? 0 : Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const isMoving = activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
 
-    const slatPos = ackedSlatPos ?? 0;
+    const rawSlatPos = ackedSlatPos !== null ? ackedSlatPos : lastKnownAckedSlatPos;
+    const isSlatUnknown = rawSlatPos === null;
+    const slatPos = isSlatUnknown ? 0 : rawSlatPos;
     const hasSlatDp = typeof opts.slatDp === 'string' && opts.slatDp.length > 0;
+
+    // Derived movement indicator for devices without activity DP (like ShutterWidget)
+    const hasActivityDp = typeof opts.activityDp === 'string' && opts.activityDp.length > 0;
+    const [moveTarget, setMoveTarget] = useState<number | null>(null);
+    const [derivedMoving, setDerivedMoving] = useState(false);
+    const moveTimeoutRef = useRef<number | null>(null);
+
+    // Track movement target and show moving indicator until tolerance reached or timeout
+    useEffect(() => {
+        if (moveTarget !== null && rawPos !== null) {
+            const tolerance = 3; // 3% tolerance
+            const withinTolerance = Math.abs(rawPos - moveTarget) < tolerance;
+            if (withinTolerance) {
+                setMoveTarget(null);
+                setDerivedMoving(false);
+                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+            }
+        }
+    }, [moveTarget, rawPos]);
+
+    // Monitor timeout: after 45 seconds, stop showing derived movement
+    useEffect(() => {
+        if (moveTarget !== null && !hasActivityDp) {
+            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+            moveTimeoutRef.current = setTimeout(() => {
+                setDerivedMoving(false);
+                setMoveTarget(null);
+            }, 45000);
+        }
+        return () => {
+            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+        };
+    }, [moveTarget, hasActivityDp]);
+
+    // Determine actual moving state: either from activity DP or derived
+    const effectiveMoving = hasActivityDp ? isMoving : derivedMoving;
 
     const [sliderDraft, setSliderDraft] = useState<number | null>(null);
     const [slatDraft, setSlatDraft] = useState<number | null>(null);
@@ -108,6 +153,11 @@ export function ShutterPopupBody({ widget }: Props) {
         const raw = (opts.invertPosition as boolean) ? 100 - p : p;
         setValue(raw);
         setSliderDraft(null);
+        // Track movement target for derived movement indicator
+        if (!hasActivityDp) {
+            setMoveTarget(raw);
+            setDerivedMoving(true);
+        }
     };
 
     const writeSlatPos = (p: number) => {
@@ -117,8 +167,15 @@ export function ShutterPopupBody({ widget }: Props) {
 
     const stop = () => {
         const stopDp = opts.stopDp as string | undefined;
-        if (stopDp) setState(stopDp, true);
-        else setState(widget.datapoint, rawPos);
+        if (stopDp) {
+            setState(stopDp, true);
+        } else if (rawPos !== null) {
+            setState(widget.datapoint, rawPos);
+        }
+        // Immediately clear derived movement indicator
+        setDerivedMoving(false);
+        setMoveTarget(null);
+        if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
     };
 
     const btnStyle: React.CSSProperties = {
@@ -131,7 +188,7 @@ export function ShutterPopupBody({ widget }: Props) {
         <div className="flex flex-col items-center gap-6 py-6 px-4">
             <div className="flex items-center gap-8">
                 {/* Visualization */}
-                <ShutterViz closedFrac={closedFrac} isMoving={isMoving} />
+                <ShutterViz closedFrac={closedFrac} effectiveMoving={effectiveMoving} />
 
                 {/* Vertical control column */}
                 <div className="flex flex-col items-center gap-3">
@@ -168,7 +225,7 @@ export function ShutterPopupBody({ widget }: Props) {
                     className="text-xs text-center px-4 py-2"
                     style={{
                         color: 'var(--accent-red, #ef4444)',
-                        background: 'var(--accent-red, #ef4444)11',
+                        background: 'color-mix(in srgb, var(--accent-red, #ef4444) 17%, transparent)',
                         borderRadius: '8px',
                     }}
                 >
@@ -180,8 +237,8 @@ export function ShutterPopupBody({ widget }: Props) {
             <div className="w-full max-w-xs space-y-2">
                 <div className="flex justify-between text-sm">
                     <span style={{ color: 'var(--text-secondary)' }}>Position</span>
-                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                        {showClosedPercent ? 100 - display : display}%
+                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)', opacity: isPositionUnknown ? 0.5 : 1 }}>
+                        {isPositionUnknown ? '–' : `${showClosedPercent ? 100 - display : display}%`}
                     </span>
                 </div>
                 <input
@@ -235,11 +292,11 @@ export function ShutterPopupBody({ widget }: Props) {
 
             {/* Slate orientation (lamella angle) */}
             {hasSlatDp && (
-                <div className="w-full max-w-xs space-y-2 pt-4 border-t border-var(--app-border)" style={{ borderTopColor: 'var(--app-border)' }}>
+                <div className="w-full max-w-xs space-y-2 pt-4 border-t" style={{ borderTopColor: 'var(--app-border)' }}>
                     <div className="flex justify-between text-sm">
                         <span style={{ color: 'var(--text-secondary)' }}>Lamellenwinkel</span>
-                        <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                            {slatDisplay}%
+                        <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)', opacity: isSlatUnknown ? 0.5 : 1 }}>
+                            {isSlatUnknown ? '–' : `${slatDisplay}%`}
                         </span>
                     </div>
                     <input
@@ -272,13 +329,14 @@ export function ShutterPopupBody({ widget }: Props) {
                     {/* Quick slat angles */}
                     <div className="flex gap-2 pt-1">
                         {[0, 50, 90].map((angle) => {
-                            const label = angle === 0 ? 'Waagerecht (0)' : angle === 50 ? 'Halb (50)' : 'Geschlossen (90)';
+                            const shortLabel = angle === 0 ? 'Waagerecht' : angle === 50 ? 'Halb' : 'Geschlossen';
+                            const fullLabel = `${shortLabel} (${angle}%)`;
                             return (
                                 <button
                                     key={angle}
                                     onClick={() => writeSlatPos(angle)}
                                     disabled={!isConnected}
-                                    className="px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity flex-1"
+                                    className="px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity flex-1 flex flex-col items-center gap-0.5"
                                     style={{
                                         background: Math.abs(slatDisplay - angle) < 3 ? 'var(--accent)' : 'var(--app-bg)',
                                         color: Math.abs(slatDisplay - angle) < 3 ? '#fff' : 'var(--text-primary)',
@@ -286,9 +344,10 @@ export function ShutterPopupBody({ widget }: Props) {
                                         opacity: isConnected ? 1 : 0.5,
                                         cursor: isConnected ? 'pointer' : 'not-allowed',
                                     }}
-                                    title={label}
+                                    title={fullLabel}
                                 >
-                                    {angle}%
+                                    <span className="leading-none">{shortLabel}</span>
+                                    <span className="text-[10px] opacity-75 leading-none">{angle}%</span>
                                 </button>
                             );
                         })}

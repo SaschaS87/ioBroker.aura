@@ -150,19 +150,24 @@ export function ShutterWidget({ config }: WidgetProps) {
     // Aufgabe 1: Only use ack:true values for position display
     // ────────────────────────────────────────────────────────────────────────────
     const [ackedPos, setAckedPos] = useState<number | null>(null);
+    const [lastKnownAckedPos, setLastKnownAckedPos] = useState<number | null>(null);
     useEffect(() => {
         if (state?.ack === true && typeof state.val === 'number') {
-            setAckedPos(Math.round(state.val));
+            const rounded = Math.round(state.val);
+            setAckedPos(rounded);
+            setLastKnownAckedPos(rounded);
         }
     }, [state?.val, state?.ack]);
 
     // Normalize position: 0 = closed, 100 = open
-    // Use acked position if available, fallback to last acked or 0
-    const rawPos = ackedPos ?? 0;
-    const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
-    const closedFrac = Math.max(0, Math.min(1, (100 - pos) / 100));
+    // Use acked position if available, fallback to last known acked position.
+    // If never acked yet, use null (signals neutral/disabled display)
+    const rawPos = ackedPos !== null ? ackedPos : lastKnownAckedPos;
+    const isPositionUnknown = rawPos === null;
+    const pos = isPositionUnknown ? 0 : ((opts.invertPosition as boolean) ? 100 - rawPos : rawPos);
+    const closedFrac = isPositionUnknown ? 0 : Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
-    const displayPct = showClosedPercent ? 100 - pos : pos;
+    const displayPct = isPositionUnknown ? -1 : (showClosedPercent ? 100 - pos : pos);
 
     // ────────────────────────────────────────────────────────────────────────────
     // Aufgabe 2: Derived movement indicator for devices without MovingState
@@ -238,6 +243,14 @@ export function ShutterWidget({ config }: WidgetProps) {
         if (controlMode === 'taster' && openDp) {
             preMoveRawRef.current = rawPos;
             setState(openDp, true);
+            // Taster mode: show movement for 45s timeout (no numeric target)
+            if (!hasActivityDp) {
+                setDerivedMoving(true);
+                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+                moveTimeoutRef.current = setTimeout(() => {
+                    setDerivedMoving(false);
+                }, 45000);
+            }
         } else {
             writePos(100);
         }
@@ -246,6 +259,14 @@ export function ShutterWidget({ config }: WidgetProps) {
         if (controlMode === 'taster' && closeDp) {
             preMoveRawRef.current = rawPos;
             setState(closeDp, true);
+            // Taster mode: show movement for 45s timeout (no numeric target)
+            if (!hasActivityDp) {
+                setDerivedMoving(true);
+                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+                moveTimeoutRef.current = setTimeout(() => {
+                    setDerivedMoving(false);
+                }, 45000);
+            }
         } else {
             writePos(0);
         }
@@ -254,11 +275,15 @@ export function ShutterWidget({ config }: WidgetProps) {
         const stopDp = opts.stopDp as string | undefined;
         if (stopDp) {
             setState(stopDp, true);
-        } else if (controlMode !== 'taster') {
+        } else if (controlMode !== 'taster' && (rawPos !== null || preMoveRawRef.current !== null)) {
             // Race-condition-safe fallback: use pre-move snapshot, not current rawPos
-            const stopTarget = isMoving && rawPos !== preMoveRawRef.current ? rawPos : preMoveRawRef.current;
+            const stopTarget = isMoving && rawPos !== preMoveRawRef.current ? (rawPos ?? 0) : (preMoveRawRef.current ?? 0);
             setState(config.datapoint, stopTarget);
         }
+        // Immediately clear derived movement indicator
+        setDerivedMoving(false);
+        setMoveTarget(null);
+        if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
     };
 
     const accentColor = isMoving
@@ -312,19 +337,21 @@ export function ShutterWidget({ config }: WidgetProps) {
     const customIconName = opts.icon as string | undefined;
     const CustomIcon = customIconName ? getWidgetIcon(customIconName, Square) : null;
 
-    const statusText = isMoving
-        ? movingDir === 'up'
-            ? '▲ Fährt auf'
-            : movingDir === 'down'
-              ? '▼ Fährt zu'
-              : '↕ Fährt...'
-        : pos === 100
-          ? 'Geöffnet'
-          : pos === 0
-            ? 'Geschlossen'
-            : showClosedPercent
-              ? `${100 - pos}% geschlossen`
-              : `${pos}% geöffnet`;
+    const statusText = isPositionUnknown
+        ? '–'
+        : isMoving
+          ? movingDir === 'up'
+              ? '▲ Fährt auf'
+              : movingDir === 'down'
+                ? '▼ Fährt zu'
+                : '↕ Fährt...'
+          : pos === 100
+            ? 'Geöffnet'
+            : pos === 0
+              ? 'Geschlossen'
+              : showClosedPercent
+                ? `${100 - pos}% geschlossen`
+                : `${pos}% geöffnet`;
 
     const slider = (
         <>
@@ -374,10 +401,10 @@ export function ShutterWidget({ config }: WidgetProps) {
         return (
             <CustomGridView
                 config={config}
-                value={`${pos}`}
-                rawValue={pos}
+                value={isPositionUnknown ? '–' : `${pos}`}
+                rawValue={isPositionUnknown ? -1 : pos}
                 extraFields={{
-                    position: `${displayPct}%`,
+                    position: isPositionUnknown ? '–' : `${displayPct}%`,
                     status: statusText,
                     moving: isMoving ? 'Ja' : 'Nein',
                     battery,
@@ -478,9 +505,10 @@ export function ShutterWidget({ config }: WidgetProps) {
                             color: thresholdColor ?? (isMoving ? 'var(--accent-yellow)' : 'var(--text-primary)'),
                             fontSize: valueSize,
                             lineHeight: 1,
+                            opacity: isPositionUnknown ? 0.5 : 1,
                         }}
                     >
-                        {displayPct}%
+                        {isPositionUnknown ? '–' : `${displayPct}%`}
                     </span>
                 )}
                 {showControls && <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} disabled={!isConnected} />}
@@ -527,8 +555,8 @@ export function ShutterWidget({ config }: WidgetProps) {
                 )}
                 {showValue && (
                     <div className="aura-widget-value text-center">
-                        <p className="font-bold leading-none" style={{ color: valueColor, fontSize: valueSize }}>
-                            {displayPct}%
+                        <p className="font-bold leading-none" style={{ color: valueColor, fontSize: valueSize, opacity: isPositionUnknown ? 0.5 : 1 }}>
+                            {isPositionUnknown ? '–' : `${displayPct}%`}
                         </p>
                         {isMoving && (
                             <p className="text-[10px] animate-pulse mt-0.5" style={{ color: 'var(--accent-yellow)' }}>
@@ -621,15 +649,15 @@ export function ShutterWidget({ config }: WidgetProps) {
                                 <div className="aura-widget-value flex justify-between items-baseline mb-1">
                                     <span
                                         className="text-[11px]"
-                                        style={{ color: isMoving ? 'var(--accent-yellow)' : 'var(--text-secondary)' }}
+                                        style={{ color: isMoving ? 'var(--accent-yellow)' : 'var(--text-secondary)', opacity: isPositionUnknown ? 0.5 : 1 }}
                                     >
                                         {statusText}
                                     </span>
                                     <span
                                         className="font-bold"
-                                        style={{ color: valueColor, fontSize: valueSize, lineHeight: 1 }}
+                                        style={{ color: valueColor, fontSize: valueSize, lineHeight: 1, opacity: isPositionUnknown ? 0.5 : 1 }}
                                     >
-                                        {displayPct}%
+                                        {isPositionUnknown ? '–' : `${displayPct}%`}
                                     </span>
                                 </div>
                             )}
