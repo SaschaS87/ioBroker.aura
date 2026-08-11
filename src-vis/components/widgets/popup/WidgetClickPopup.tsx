@@ -131,6 +131,8 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                 return <SwitchPopupBody widget={widget} />;
             case 'popup-shutter':
                 return <ShutterPopupBody widget={widget} />;
+            case 'popup-shutterfine':
+                return <ShutterPopupBody widget={widget} />;
             case 'popup-mediaplayer':
                 return <MediaplayerPopupBody widget={widget} />;
             case 'popup-roomtemperature':

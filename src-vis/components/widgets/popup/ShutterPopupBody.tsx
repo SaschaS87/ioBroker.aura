@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronUp, ChevronDown, Square } from 'lucide-react';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useIoBroker } from '../../../hooks/useIoBroker';
+import { useTranslation } from '../../../i18n';
 import type { WidgetConfig } from '../../../types';
 
 interface Props {
@@ -65,7 +66,12 @@ export function ShutterPopupBody({ widget }: Props) {
     const opts = widget.options ?? {};
     const { value, setValue } = useDatapoint(widget.datapoint);
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
+    const { value: slatVal, setValue: setSlatValue } = useDatapoint((opts.slatDp as string) ?? '');
+    const { value: connectionVal } = useDatapoint((opts.connectionDp as string) ?? '');
     const { setState } = useIoBroker();
+    const { t } = useTranslation();
+
+    const isConnected = connectionVal !== false; // Default to true if no connectionDp set
 
     const rawPos = typeof value === 'number' ? Math.round(value) : 0;
     const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
@@ -73,13 +79,23 @@ export function ShutterPopupBody({ widget }: Props) {
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const isMoving = activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
 
+    const slatPos = typeof slatVal === 'number' ? Math.round(slatVal) : 0;
+    const hasSlatDp = typeof opts.slatDp === 'string' && opts.slatDp.length > 0;
+
     const [sliderDraft, setSliderDraft] = useState<number | null>(null);
+    const [slatDraft, setSlatDraft] = useState<number | null>(null);
     const display = sliderDraft ?? pos;
+    const slatDisplay = slatDraft ?? slatPos;
 
     const writePos = (p: number) => {
         const raw = (opts.invertPosition as boolean) ? 100 - p : p;
         setValue(raw);
         setSliderDraft(null);
+    };
+
+    const writeSlatPos = (p: number) => {
+        setSlatValue(p);
+        setSlatDraft(null);
     };
 
     const stop = () => {
@@ -104,27 +120,44 @@ export function ShutterPopupBody({ widget }: Props) {
                 <div className="flex flex-col items-center gap-3">
                     <button
                         onClick={() => writePos(100)}
+                        disabled={!isConnected}
                         className="w-12 h-12 flex items-center justify-center rounded-xl hover:opacity-80 transition-opacity"
-                        style={btnStyle}
+                        style={{ ...btnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
                     >
                         <ChevronUp size={22} />
                     </button>
                     <button
                         onClick={stop}
+                        disabled={!isConnected}
                         className="w-12 h-12 flex items-center justify-center rounded-xl hover:opacity-80 transition-opacity"
-                        style={btnStyle}
+                        style={{ ...btnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
                     >
                         <Square size={18} />
                     </button>
                     <button
                         onClick={() => writePos(0)}
+                        disabled={!isConnected}
                         className="w-12 h-12 flex items-center justify-center rounded-xl hover:opacity-80 transition-opacity"
-                        style={btnStyle}
+                        style={{ ...btnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
                     >
                         <ChevronDown size={22} />
                     </button>
                 </div>
             </div>
+
+            {/* Connection status warning */}
+            {!isConnected && (
+                <div
+                    className="text-xs text-center px-4 py-2"
+                    style={{
+                        color: 'var(--accent-red, #ef4444)',
+                        background: 'var(--accent-red, #ef4444)11',
+                        borderRadius: '8px',
+                    }}
+                >
+                    {t('shutter.notConnected')}
+                </div>
+            )}
 
             {/* Position display + slider */}
             <div className="w-full max-w-xs space-y-2">
@@ -147,8 +180,14 @@ export function ShutterPopupBody({ widget }: Props) {
                     onTouchEnd={() => {
                         if (sliderDraft !== null) writePos(sliderDraft);
                     }}
-                    style={{ accentColor: 'var(--accent)', width: '100%' }}
-                    className="h-2 rounded-lg appearance-none cursor-pointer"
+                    disabled={!isConnected}
+                    style={{
+                        accentColor: 'var(--accent)',
+                        width: '100%',
+                        opacity: isConnected ? 1 : 0.5,
+                        cursor: isConnected ? 'pointer' : 'not-allowed',
+                    }}
+                    className="h-2 rounded-lg appearance-none"
                 />
                 <div className="flex justify-between text-[10px]" style={{ color: 'var(--text-secondary)' }}>
                     <span>Zu</span>
@@ -162,17 +201,83 @@ export function ShutterPopupBody({ widget }: Props) {
                     <button
                         key={p}
                         onClick={() => writePos(p)}
+                        disabled={!isConnected}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
                         style={{
                             background: Math.abs(display - p) < 3 ? 'var(--accent)' : 'var(--app-bg)',
                             color: Math.abs(display - p) < 3 ? '#fff' : 'var(--text-primary)',
                             border: '1px solid var(--app-border)',
+                            opacity: isConnected ? 1 : 0.5,
+                            cursor: isConnected ? 'pointer' : 'not-allowed',
                         }}
                     >
                         {p}%
                     </button>
                 ))}
             </div>
+
+            {/* Slate orientation (lamella angle) */}
+            {hasSlatDp && (
+                <div className="w-full max-w-xs space-y-2 pt-4 border-t border-var(--app-border)" style={{ borderTopColor: 'var(--app-border)' }}>
+                    <div className="flex justify-between text-sm">
+                        <span style={{ color: 'var(--text-secondary)' }}>Lamellenwinkel</span>
+                        <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                            {slatDisplay}%
+                        </span>
+                    </div>
+                    <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={slatDisplay}
+                        onChange={(e) => setSlatDraft(Number(e.target.value))}
+                        onMouseUp={() => {
+                            if (slatDraft !== null) writeSlatPos(slatDraft);
+                        }}
+                        onTouchEnd={() => {
+                            if (slatDraft !== null) writeSlatPos(slatDraft);
+                        }}
+                        disabled={!isConnected}
+                        style={{
+                            accentColor: 'var(--accent)',
+                            width: '100%',
+                            opacity: isConnected ? 1 : 0.5,
+                            cursor: isConnected ? 'pointer' : 'not-allowed',
+                        }}
+                        className="h-2 rounded-lg appearance-none"
+                    />
+                    <div className="flex justify-between text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                        <span>Waagerecht</span>
+                        <span>Geschlossen</span>
+                    </div>
+
+                    {/* Quick slat angles */}
+                    <div className="flex gap-2 pt-1">
+                        {[0, 50, 90].map((angle) => {
+                            const label = angle === 0 ? 'Waagerecht (0)' : angle === 50 ? 'Halb (50)' : 'Geschlossen (90)';
+                            return (
+                                <button
+                                    key={angle}
+                                    onClick={() => writeSlatPos(angle)}
+                                    disabled={!isConnected}
+                                    className="px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity flex-1"
+                                    style={{
+                                        background: Math.abs(slatDisplay - angle) < 3 ? 'var(--accent)' : 'var(--app-bg)',
+                                        color: Math.abs(slatDisplay - angle) < 3 ? '#fff' : 'var(--text-primary)',
+                                        border: '1px solid var(--app-border)',
+                                        opacity: isConnected ? 1 : 0.5,
+                                        cursor: isConnected ? 'pointer' : 'not-allowed',
+                                    }}
+                                    title={label}
+                                >
+                                    {angle}%
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -1438,6 +1438,9 @@ export const en: Record<TranslationKey, string> = {
     'alarm.cfg.logLines': 'Log entries (max.)',
     'alarm.cfg.sizeScale': 'Global scale',
 
+    // ── Shutter Widget Messages ───────────────────────────────────────────────────
+    'shutter.notConnected': 'TaHoma not connected',
+
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',
     'preview.device': 'Device',

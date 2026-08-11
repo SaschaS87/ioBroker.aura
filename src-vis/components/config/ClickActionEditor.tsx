@@ -54,7 +54,7 @@ const MODE_GROUPS: { label: string; modes: ClickAction['kind'][] }[] = [
     },
     {
         label: 'Popup',
-        modes: ['popup-view', 'popup-image', 'popup-iframe', 'popup-json', 'popup-html', 'popup-widget'],
+        modes: ['popup-view', 'popup-image', 'popup-iframe', 'popup-json', 'popup-html', 'popup-widget', 'popup-shutterfine'],
     },
     {
         label: 'Navigation',
@@ -87,6 +87,8 @@ function modeLabel(kind: ClickAction['kind']): string {
             return 'Popup: HTML';
         case 'popup-widget':
             return 'Popup: Widget-Inhalt';
+        case 'popup-shutterfine':
+            return 'Popup: Rollladen-Feinregler';
         case 'link-tab':
             return 'Sprung: Tab';
         case 'link-external':
@@ -192,6 +194,9 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                 break;
             case 'popup-widget':
                 setAction({ kind: 'popup-widget' });
+                break;
+            case 'popup-shutterfine':
+                setAction({ kind: 'popup-shutterfine' });
                 break;
             case 'link-tab': {
                 const firstLayout = layouts[0];

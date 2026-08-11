@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, Square } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
@@ -7,6 +7,7 @@ import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { StatusBadges } from './StatusBadges';
 import { CustomGridView } from './CustomGridView';
 import { useStatusFields } from '../../hooks/useStatusFields';
+import { useTranslation } from '../../i18n';
 
 // Shutter visual: horizontal slat lines filling from top = how much is closed
 function ShutterViz({
@@ -78,12 +79,14 @@ function BtnRow({
     onDown,
     iconSz = 16,
     vertical = false,
+    disabled = false,
 }: {
     onUp: () => void;
     onStop: () => void;
     onDown: () => void;
     iconSz?: number;
     vertical?: boolean;
+    disabled?: boolean;
 }) {
     const pad = Math.max(2, Math.round(iconSz / 4));
     const radius = Math.max(4, Math.round(iconSz / 2));
@@ -96,16 +99,33 @@ function BtnRow({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
     });
     return (
         <div className={`aura-widget-action flex ${vertical ? 'flex-col' : ''} gap-1`}>
-            <button onClick={onUp} className="hover:opacity-80 transition-opacity" style={dirStyle('up')}>
+            <button
+                onClick={onUp}
+                disabled={disabled}
+                className="hover:opacity-80 transition-opacity"
+                style={dirStyle('up')}
+            >
                 <ChevronUp size={iconSz} />
             </button>
-            <button onClick={onStop} className="hover:opacity-80 transition-opacity" style={dirStyle('stop')}>
+            <button
+                onClick={onStop}
+                disabled={disabled}
+                className="hover:opacity-80 transition-opacity"
+                style={dirStyle('stop')}
+            >
                 <Square size={iconSz} />
             </button>
-            <button onClick={onDown} className="hover:opacity-80 transition-opacity" style={dirStyle('down')}>
+            <button
+                onClick={onDown}
+                disabled={disabled}
+                className="hover:opacity-80 transition-opacity"
+                style={dirStyle('down')}
+            >
                 <ChevronDown size={iconSz} />
             </button>
         </div>
@@ -118,27 +138,83 @@ export function ShutterWidget({ config }: WidgetProps) {
     const openDp = opts.openDp as string | undefined;
     const closeDp = opts.closeDp as string | undefined;
     const activityMovingRaw = opts.activityMovingValues as string | undefined;
-    const { value, setValue } = useDatapoint(config.datapoint);
+    const { state, value, setValue } = useDatapoint(config.datapoint);
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
     const { value: directionVal } = useDatapoint((opts.directionDp as string) ?? '');
+    const { value: connectionVal } = useDatapoint((opts.connectionDp as string) ?? '');
     const { setState } = useIoBroker();
+    const { t } = useTranslation();
     const layout = config.layout ?? 'default';
 
+    // ────────────────────────────────────────────────────────────────────────────
+    // Aufgabe 1: Only use ack:true values for position display
+    // ────────────────────────────────────────────────────────────────────────────
+    const [ackedPos, setAckedPos] = useState<number | null>(null);
+    useEffect(() => {
+        if (state?.ack === true && typeof state.val === 'number') {
+            setAckedPos(Math.round(state.val));
+        }
+    }, [state?.val, state?.ack]);
+
     // Normalize position: 0 = closed, 100 = open
-    const rawPos = typeof value === 'number' ? Math.round(value) : 0;
+    // Use acked position if available, fallback to last acked or 0
+    const rawPos = ackedPos ?? 0;
     const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
     const closedFrac = Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const displayPct = showClosedPercent ? 100 - pos : pos;
 
-    const isMoving = activityMovingRaw
+    // ────────────────────────────────────────────────────────────────────────────
+    // Aufgabe 2: Derived movement indicator for devices without MovingState
+    // ────────────────────────────────────────────────────────────────────────────
+    const hasActivityDp = typeof opts.activityDp === 'string' && opts.activityDp.length > 0;
+    const [moveTarget, setMoveTarget] = useState<number | null>(null);
+    const [derivedMoving, setDerivedMoving] = useState(false);
+    const moveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // When user writes a position, record it as the move target
+    useEffect(() => {
+        if (moveTarget !== null && ackedPos !== null) {
+            const tolerance = 3; // 3% tolerance
+            const withinTolerance = Math.abs(ackedPos - moveTarget) < tolerance;
+            if (withinTolerance) {
+                setMoveTarget(null);
+                setDerivedMoving(false);
+                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+            }
+        }
+    }, [moveTarget, ackedPos]);
+
+    // Monitor timeout: after 45 seconds, stop showing derived movement
+    useEffect(() => {
+        if (moveTarget !== null && !hasActivityDp) {
+            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+            moveTimeoutRef.current = setTimeout(() => {
+                setDerivedMoving(false);
+                setMoveTarget(null);
+            }, 45000);
+        }
+        return () => {
+            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
+        };
+    }, [moveTarget, hasActivityDp]);
+
+    const isMoving = hasActivityDp
         ? activityMovingRaw
-              .split(',')
-              .map((s) => s.trim())
-              .some((v) => String(activityVal) === v)
-        : activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
+              ? activityMovingRaw
+                    .split(',')
+                    .map((s) => s.trim())
+                    .some((v) => String(activityVal) === v)
+              : activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true'
+        : derivedMoving;
+
     const movingDir: 'up' | 'down' | null =
         directionVal === 1 || directionVal === '1' ? 'up' : directionVal === 2 || directionVal === '2' ? 'down' : null;
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // Aufgabe 3: Connection status and control disable
+    // ────────────────────────────────────────────────────────────────────────────
+    const isConnected = connectionVal !== false; // Default to true if no connectionDp set
 
     // Save the raw position just before a move command so stop can reference it.
     // This avoids the race where rawPos has already changed to the new target (e.g. 0)
@@ -149,6 +225,13 @@ export function ShutterWidget({ config }: WidgetProps) {
     const writePos = (p: number) => {
         preMoveRawRef.current = rawPos; // snapshot before command
         const raw = (opts.invertPosition as boolean) ? 100 - p : p;
+
+        // Aufgabe 2: Set movement target and derived moving flag for acks-false devices
+        if (!hasActivityDp) {
+            setMoveTarget(raw);
+            setDerivedMoving(true);
+        }
+
         setValue(raw);
     };
     const openFully = () => {
@@ -244,18 +327,37 @@ export function ShutterWidget({ config }: WidgetProps) {
               : `${pos}% geöffnet`;
 
     const slider = (
-        <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={sliderPos}
-            onChange={(e) => handleSliderChange(Number(e.target.value))}
-            onMouseUp={handleSliderRelease}
-            onTouchEnd={handleSliderRelease}
-            style={{ accentColor: 'var(--accent)', height: sliderHeight }}
-            className="aura-widget-action w-full rounded-full appearance-none cursor-pointer"
-        />
+        <>
+            <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={sliderPos}
+                onChange={(e) => handleSliderChange(Number(e.target.value))}
+                onMouseUp={handleSliderRelease}
+                onTouchEnd={handleSliderRelease}
+                disabled={!isConnected}
+                style={{
+                    accentColor: 'var(--accent)',
+                    height: sliderHeight,
+                    opacity: isConnected ? 1 : 0.5,
+                    cursor: isConnected ? 'pointer' : 'not-allowed',
+                }}
+                className="aura-widget-action w-full rounded-full appearance-none"
+            />
+            {!isConnected && (
+                <div
+                    className="text-xs mt-1"
+                    style={{
+                        color: 'var(--accent-red, #ef4444)',
+                        textAlign: 'center',
+                    }}
+                >
+                    {t('shutter.notConnected')}
+                </div>
+            )}
+        </>
     );
 
     const { battery, reach, batteryIcon, reachIcon, statusBadges } = useStatusFields(config);
@@ -300,17 +402,32 @@ export function ShutterWidget({ config }: WidgetProps) {
                         )
                     ) : null,
                     'btn-up': (
-                        <button className="aura-widget-action nodrag" style={dirBtnStyle('up')} onClick={openFully}>
+                        <button
+                            className="aura-widget-action nodrag"
+                            style={{ ...dirBtnStyle('up'), opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                            onClick={openFully}
+                            disabled={!isConnected}
+                        >
                             <ChevronUp size={buttonSize} />
                         </button>
                     ),
                     'btn-stop': (
-                        <button className="aura-widget-action nodrag" style={dirBtnStyle('stop')} onClick={stop}>
+                        <button
+                            className="aura-widget-action nodrag"
+                            style={{ ...dirBtnStyle('stop'), opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                            onClick={stop}
+                            disabled={!isConnected}
+                        >
                             <Square size={buttonSize} />
                         </button>
                     ),
                     'btn-down': (
-                        <button className="aura-widget-action nodrag" style={dirBtnStyle('down')} onClick={closeFully}>
+                        <button
+                            className="aura-widget-action nodrag"
+                            style={{ ...dirBtnStyle('down'), opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                            onClick={closeFully}
+                            disabled={!isConnected}
+                        >
                             <ChevronDown size={buttonSize} />
                         </button>
                     ),
@@ -366,7 +483,7 @@ export function ShutterWidget({ config }: WidgetProps) {
                         {displayPct}%
                     </span>
                 )}
-                {showControls && <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} />}
+                {showControls && <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} disabled={!isConnected} />}
                 <StatusBadges config={config} />
             </div>
         );
@@ -401,8 +518,9 @@ export function ShutterWidget({ config }: WidgetProps) {
                 {showControls && (
                     <button
                         onClick={openFully}
+                        disabled={!isConnected}
                         className="aura-widget-action hover:opacity-80 transition-opacity"
-                        style={minBtnStyle}
+                        style={{ ...minBtnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
                     >
                         <ChevronUp size={buttonSize} />
                     </button>
@@ -417,21 +535,28 @@ export function ShutterWidget({ config }: WidgetProps) {
                                 {movingDir === 'up' ? '▲' : '▼'}
                             </p>
                         )}
+                        {!isConnected && (
+                            <p className="text-[10px] mt-0.5" style={{ color: 'var(--accent-red, #ef4444)' }}>
+                                {t('shutter.notConnected')}
+                            </p>
+                        )}
                     </div>
                 )}
                 {showControls && (
                     <>
                         <button
                             onClick={stop}
+                            disabled={!isConnected}
                             className="aura-widget-action hover:opacity-80 transition-opacity"
-                            style={stopBtnStyle}
+                            style={{ ...stopBtnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
                         >
                             <Square size={stopSz} />
                         </button>
                         <button
                             onClick={closeFully}
+                            disabled={!isConnected}
                             className="aura-widget-action hover:opacity-80 transition-opacity"
-                            style={downBtnStyle}
+                            style={{ ...downBtnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
                         >
                             <ChevronDown size={buttonSize} />
                         </button>
@@ -479,7 +604,7 @@ export function ShutterWidget({ config }: WidgetProps) {
             <div className="flex gap-2 flex-1 min-h-0">
                 <ShutterViz closedFrac={closedFrac} accentColor={accentColor} isMoving={isMoving} className="flex-1" />
                 {showControls && (
-                    <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} vertical />
+                    <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} vertical disabled={!isConnected} />
                 )}
             </div>
             {(showValue || showSlider) &&

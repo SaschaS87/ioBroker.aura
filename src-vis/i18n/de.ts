@@ -1441,6 +1441,9 @@ export const de = {
     'alarm.cfg.logLines': 'Log-Einträge (max.)',
     'alarm.cfg.sizeScale': 'Globale Skalierung',
 
+    // ── Shutter Widget Messages ───────────────────────────────────────────────────
+    'shutter.notConnected': 'TaHoma nicht verbunden',
+
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',
     'preview.device': 'Gerät',
