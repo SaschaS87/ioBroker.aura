@@ -221,20 +221,12 @@ async function takeScreenshots() {
 
           // Falls Sheet gewünscht: auf Kachel klicken
           if (scenario.sheet) {
-            const tiles = await page.locator('.shutter-tile');
-            const count = await tiles.count();
-            let found = false;
-            for (let i = 0; i < count; i++) {
-              const label = await tiles.nth(i).locator('.tile-label').textContent();
-              if (label?.includes(scenario.sheet)) {
-                await tiles.nth(i).click();
-                await page.waitForTimeout(700);
-                found = true;
-                break;
-              }
-            }
-            if (!found) {
-              console.warn(`Could not find tile with label containing '${scenario.sheet}'`);
+            const tile = await page.locator(`[data-key="${scenario.sheet}"]`);
+            if (await tile.isVisible()) {
+              await tile.click();
+              await page.waitForTimeout(700);
+            } else {
+              throw new Error(`Could not find tile with data-key="${scenario.sheet}"`);
             }
           }
 
