@@ -23,6 +23,11 @@ export const usePendingStore = () => {
     return ctx;
 };
 
+/** Schlüssel für einen laufenden Lamellen-Auftrag. Eigener Eintrag im
+ *  Pending-Store, damit Position und Lamelle sich nicht gegenseitig
+ *  überschreiben – die Kachel liest weiterhin nur den Positions-Eintrag. */
+export const slatPendingKey = (deviceKey: string) => `${deviceKey}::slat`;
+
 interface ShutterDeviceState {
     ackedPos: number | null;
     lastKnownAckedPos: number | null;
@@ -36,6 +41,10 @@ interface ShutterDeviceState {
     targetOpen: number | null;
     slatAckedPos: number | null;
     isSlatUnknown: boolean;
+    /** Zielwert eines laufenden Lamellen-Auftrags (Rohwert wie der Datenpunkt). */
+    slatTarget: number | null;
+    /** Läuft gerade ein Lamellen-Befehl? */
+    isSlatActing: boolean;
 }
 
 export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
@@ -77,6 +86,11 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     // isMoving: aus ActivityDP wenn vorhanden, sonst aus pendingEntry
     const isMoving = dev.activityDp ? !!activityVal : isActing;
 
+    // Lamellen Pending State auslesen
+    const slatPendingEntry = store.pending[slatPendingKey(dev.key)];
+    const isSlatActing = !!slatPendingEntry;
+    const slatTarget = slatPendingEntry?.targetRaw ?? null;
+
     // Toleranzband ±3%: wenn Position nah bei Ziel, Pending zurücksetzen
     useEffect(() => {
         if (pendingEntry && ackedPos !== null) {
@@ -86,6 +100,17 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
             }
         }
     }, [ackedPos, pendingEntry, dev.key, store]);
+
+    // Toleranzband ±3: meldet die Box den Lamellenwinkel nah am Ziel, ist der
+    // Auftrag erledigt. Der 45s-Aufräumer im Widget fängt den Rest ab.
+    useEffect(() => {
+        if (slatPendingEntry && slatAckedPos !== null) {
+            const target = slatPendingEntry.targetRaw;
+            if (target !== null && Math.abs(slatAckedPos - target) <= 3) {
+                store.clearPending(slatPendingKey(dev.key));
+            }
+        }
+    }, [slatAckedPos, slatPendingEntry, dev.key, store]);
 
     // Richtung und Ziel eines laufenden Auftrags. Rohwert = Closure (100 = zu),
     // die Anzeige rechnet in Offen-Prozent – deshalb hier einmal umdrehen.
@@ -108,5 +133,7 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
         targetOpen,
         slatAckedPos,
         isSlatUnknown: slatAckedPos === null,
+        slatTarget,
+        isSlatActing,
     };
 };

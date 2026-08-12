@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
-import { useShutterDevice, usePendingStore } from './useShutterDevice';
+import { useShutterDevice, usePendingStore, slatPendingKey } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
 import { HapticButton } from './HapticButton';
 import { tapFeedback } from './haptics';
@@ -37,6 +37,13 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
     const displayPos = positionDraft !== null ? positionDraft : (state.posOpen ?? 0);
     const displaySlat = slatDraft !== null ? slatDraft : (state.slatAckedPos ?? 0);
+
+    // Welchen Wert die Schnellwahl-Knöpfe als "aktiv" markieren: beim Ziehen den
+    // Finger, bei laufendem Auftrag das ZIEL, sonst den bestätigten Ist-Wert.
+    // Vorher stand hier immer der Ist-Wert – während der Fahrt blieb deshalb der
+    // alte Knopf eingefärbt, obwohl längst ein anderer angefahren wurde.
+    const posChipRef = positionDraft !== null ? positionDraft : (state.targetOpen ?? state.posOpen ?? 0);
+    const slatChipRef = slatDraft !== null ? slatDraft : (state.slatTarget ?? state.slatAckedPos ?? 0);
 
     // Escape-Taste schließt das Sheet
     useEffect(() => {
@@ -80,6 +87,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const handleSlatEnd = () => {
         if (slatDraft !== null && device.slatDp) {
             setState(device.slatDp, slatDraft);
+            markPending(slatPendingKey(device.key), slatDraft);
             setSlatDraft(null);
         }
     };
@@ -98,6 +106,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
         if (!device.slatDp) return;
         tapFeedback();
         setState(device.slatDp, val);
+        markPending(slatPendingKey(device.key), val);
     };
 
     const handleOpen = () => {
@@ -222,7 +231,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 {posQuick.map((val) => (
                                     <HapticButton
                                         key={val}
-                                        className={`quick-chip ${Math.abs(displayPos - val) < 5 ? 'active' : ''}`}
+                                        className={`quick-chip ${Math.abs(posChipRef - val) < 5 ? 'active' : ''}`}
                                         onPress={() => handlePositionQuick(val)}
                                         disabled={!connected}
                                         label={`Auf ${val} Prozent fahren`}
@@ -256,7 +265,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                     {slatQuick.map(([val, label]) => (
                                         <HapticButton
                                             key={val}
-                                            className={`quick-chip ${Math.abs(displaySlat - val) < 5 ? 'active' : ''}`}
+                                            className={`quick-chip ${Math.abs(slatChipRef - val) < 5 ? 'active' : ''}`}
                                             onPress={() => handleSlatQuick(val)}
                                             disabled={!connected}
                                             label={`Lamelle: ${label}`}
