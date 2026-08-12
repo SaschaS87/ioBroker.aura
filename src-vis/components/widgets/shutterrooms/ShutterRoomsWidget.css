@@ -1,3 +1,18 @@
+/* ── Warum hier unten ein Innenabstand steht ──────────────────────────────
+   Die App ist auf dem iPhone-Homescreen absichtlich hoeher als ihr Fenster:
+   html/body stehen auf calc(100dvh + env(safe-area-inset-bottom)), damit unten
+   am Home-Indicator kein toter Streifen bleibt (siehe index.html). Bei den
+   scrollenden Tabs faellt das nicht auf – die haben 4rem Puffer.
+
+   Dieses Widget laeuft aber als fillTab: es liegt starr ueber der ganzen
+   Tab-Flaeche und scrollt als Ganzes nicht. Seine untersten ~34px lagen damit
+   unter der sichtbaren Fensterkante – genau dort, wo die Fusszeile klebt. Sie
+   war deshalb auf dem iPhone angeschnitten.
+
+   Der Innenabstand holt den Inhalt in den sichtbaren Bereich zurueck. Die
+   Flaeche selbst laeuft in --app-bg weiter bis zur physischen Kante, der
+   Vollbild-Eindruck bleibt also erhalten. Auf dem Desktop ist env(...) = 0.
+   ─────────────────────────────────────────────────────────────────────── */
 .shutter-rooms-widget {
   position: relative;
   height: 100%;
@@ -5,6 +20,8 @@
   display: flex;
   flex-direction: column;
   background-color: var(--app-bg);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
 }
 
 /* Kopfzeile */
@@ -161,7 +178,10 @@
 /* Toast */
 .widget-toast {
   position: absolute;
-  bottom: 20px;
+  /* Absolute Kinder beziehen sich auf die Padding-Box des Widgets, die bis zur
+     physischen Kante reicht – ohne den Zuschlag saesse die Einblendung in der
+     Home-Indicator-Zone. */
+  bottom: calc(20px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(0, 0, 0, 0.8);
@@ -169,7 +189,9 @@
   padding: 8px 16px;
   border-radius: 6px;
   font-size: 12px;
-  z-index: 100;
+  /* Ueber dem Sheet (z-index 1000) – sonst waere die Stopp-Meldung genau dann
+     unsichtbar, wenn man sie im geoeffneten Fenster ausloest. */
+  z-index: 1100;
   animation: toast-fade 900ms ease-out;
   pointer-events: none;
 }

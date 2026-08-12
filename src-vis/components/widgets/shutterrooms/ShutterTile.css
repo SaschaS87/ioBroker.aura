@@ -20,6 +20,47 @@
   outline-offset: -1px;
 }
 
+/* Auf dem iPhone gibt es kein :hover – ohne :active passiert beim Antippen
+   sichtbar gar nichts. Deshalb quittiert jede Flaeche ihre Beruehrung selbst. */
+.shutter-tile:active {
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--widget-bg));
+}
+
+/* ── Auftrag laeuft ─────────────────────────────────────────────────────── */
+.shutter-tile.tile-busy {
+  border-color: var(--accent-yellow);
+}
+
+.tile-puls {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--accent-yellow);
+  flex-shrink: 0;
+  align-self: center;
+  animation: tile-puls 1.2s ease-in-out infinite;
+}
+
+@keyframes tile-puls {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.75);
+  }
+}
+
+.tile-ziel {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-yellow);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tile-busy .tile-percent b {
+  color: var(--text-secondary);
+}
+
 .tile-header {
   display: flex;
   align-items: center;
@@ -99,7 +140,7 @@
   gap: 4px;
 }
 
-.tile-actions button {
+.tile-actions .haptic-btn {
   flex: 1;
   padding: 6px 4px;
   border: 1px solid var(--widget-border);
@@ -108,15 +149,39 @@
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, color 0.15s, transform 0.09s;
+  /* Kein grauer iOS-Standardblitz (wir faerben selbst) und keine
+     Doppeltipp-Verzoegerung beim Antippen. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.tile-actions button:hover:not(:disabled) {
+/* Die Taste ist ein <span> (siehe HapticButton) – :disabled greift dort nicht,
+   deshalb laeuft der Gesperrt-Zustand ueber .is-disabled. */
+.tile-actions .haptic-btn:hover:not(.is-disabled) {
   background-color: var(--accent);
   color: white;
 }
 
-.tile-actions button:disabled {
+/* Die Quittung an den Finger: faerbt sofort und sinkt leicht ein, noch bevor
+   die TaHoma-Box ueberhaupt geantwortet hat. */
+.tile-actions .haptic-btn:active:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  transform: scale(0.94);
+}
+
+.tile-actions .haptic-btn.is-disabled {
   opacity: 0.4;
-  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-puls {
+    animation: none;
+  }
+
+  .tile-actions .haptic-btn:active:not(.is-disabled) {
+    transform: none;
+  }
 }

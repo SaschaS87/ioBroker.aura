@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
+import { HapticButton } from './HapticButton';
+import { tapFeedback } from './haptics';
 import type { ShutterDeviceDef } from './types';
 import './ShutterSheet.css';
 
@@ -26,7 +28,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 }) => {
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
-    const { markPending } = usePendingStore();
+    const { markPending, clearPending, showToast } = usePendingStore();
     const [positionDraft, setPositionDraft] = useState<number | null>(null);
     const [slatDraft, setSlatDraft] = useState<number | null>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
     const handlePositionEnd = () => {
         if (positionDraft !== null && device.posDp) {
+            tapFeedback();
             const targetRaw = device.invertPosition ? 100 - positionDraft : positionDraft;
             setState(device.posDp, targetRaw);
             markPending(device.key, targetRaw);
@@ -84,6 +87,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     // Position Quick-Chips
     const handlePositionQuick = (val: number) => {
         if (!device.posDp) return;
+        tapFeedback();
         const targetRaw = device.invertPosition ? 100 - val : val;
         setState(device.posDp, targetRaw);
         markPending(device.key, targetRaw);
@@ -92,11 +96,13 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     // Slat Quick-Chips
     const handleSlatQuick = (val: number) => {
         if (!device.slatDp) return;
+        tapFeedback();
         setState(device.slatDp, val);
     };
 
     const handleOpen = () => {
         if (!device.upDp) return;
+        tapFeedback();
         const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.upDp, true);
         markPending(device.key, targetRaw);
@@ -104,6 +110,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
     const handleClose = () => {
         if (!device.downDp) return;
+        tapFeedback();
         const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.downDp, true);
         markPending(device.key, targetRaw);
@@ -111,13 +118,16 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
     const handleStop = () => {
         if (!device.stopDp) return;
-        const targetRaw = state.ackedPos !== null ? state.ackedPos : 50;
+        tapFeedback();
         setState(device.stopDp, true);
-        markPending(device.key, targetRaw);
+        // Stopp hat kein Ziel – Auftrags-Zustand beenden, Wort statt Bild.
+        clearPending(device.key);
+        showToast('Gestoppt');
     };
 
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
     const effFacade = device.facade || room_facade;
+    const busy = state.isMoving || state.isActing;
 
     return (
         <div className="shutter-sheet-backdrop" onClick={handleBackdropClick}>
@@ -146,35 +156,39 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                     <div className="sheet-left">
                         <ShutterViz
                             closedFrac={closedFrac}
-                            isMoving={state.isMoving}
+                            isMoving={state.isMoving || state.isActing}
                             isUnknown={state.isUnknown}
+                            direction={state.direction}
                             size="large"
                         />
                         <div className="sheet-buttons-vertical">
-                            <button
+                            <HapticButton
                                 className="sheet-btn sheet-btn-up"
-                                onClick={handleOpen}
+                                onPress={handleOpen}
                                 disabled={!connected}
                                 title="Vollständig öffnen"
+                                label="Vollständig öffnen"
                             >
                                 ▲
-                            </button>
-                            <button
+                            </HapticButton>
+                            <HapticButton
                                 className="sheet-btn sheet-btn-stop"
-                                onClick={handleStop}
+                                onPress={handleStop}
                                 disabled={!connected}
                                 title="Stopp"
+                                label="Stopp"
                             >
                                 ⏸
-                            </button>
-                            <button
+                            </HapticButton>
+                            <HapticButton
                                 className="sheet-btn sheet-btn-down"
-                                onClick={handleClose}
+                                onPress={handleClose}
                                 disabled={!connected}
                                 title="Vollständig schließen"
+                                label="Vollständig schließen"
                             >
                                 ▼
-                            </button>
+                            </HapticButton>
                         </div>
                     </div>
 
@@ -183,7 +197,15 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                         {/* Position Block */}
                         <div className="sheet-block">
                             <h3 className="block-title">Position</h3>
-                            <div className="block-value">{state.isUnknown ? '−' : `${Math.round(displayPos)}%`}</div>
+                            <div className="block-value">
+                                {state.isUnknown ? '−' : `${Math.round(displayPos)}%`}
+                                {/* Laufender Auftrag: das Ziel steht daneben, bis die Box
+                                    die neue Position gemeldet hat. Nicht waehrend des
+                                    Ziehens – dann fuehrt der Finger die Zahl. */}
+                                {busy && positionDraft === null && state.targetOpen !== null && (
+                                    <span className="block-ziel">→ {Math.round(state.targetOpen)}%</span>
+                                )}
+                            </div>
                             <input
                                 ref={sliderRef}
                                 type="range"
@@ -198,14 +220,15 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                             />
                             <div className="quick-chips">
                                 {posQuick.map((val) => (
-                                    <button
+                                    <HapticButton
                                         key={val}
                                         className={`quick-chip ${Math.abs(displayPos - val) < 5 ? 'active' : ''}`}
-                                        onClick={() => handlePositionQuick(val)}
+                                        onPress={() => handlePositionQuick(val)}
                                         disabled={!connected}
+                                        label={`Auf ${val} Prozent fahren`}
                                     >
                                         {val}%
-                                    </button>
+                                    </HapticButton>
                                 ))}
                             </div>
                         </div>
@@ -231,14 +254,15 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 />
                                 <div className="quick-chips">
                                     {slatQuick.map(([val, label]) => (
-                                        <button
+                                        <HapticButton
                                             key={val}
                                             className={`quick-chip ${Math.abs(displaySlat - val) < 5 ? 'active' : ''}`}
-                                            onClick={() => handleSlatQuick(val)}
+                                            onPress={() => handleSlatQuick(val)}
                                             disabled={!connected}
+                                            label={`Lamelle: ${label}`}
                                         >
                                             {label}
-                                        </button>
+                                        </HapticButton>
                                     ))}
                                 </div>
                             </div>

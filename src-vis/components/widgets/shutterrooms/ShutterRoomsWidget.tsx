@@ -49,11 +49,12 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     const [selectedDevice, setSelectedDevice] = useState<ShutterDeviceDef | null>(null);
     const [selectedRoom, setSelectedRoom] = useState<ShutterRoomDef | null>(null);
 
-    // Toast
-    const [toast, setToast] = useState<string>('');
+    // Toast. Traegt einen Zaehler mit, damit zweimal dieselbe Meldung
+    // hintereinander die Einblendung neu startet statt still zu verpuffen.
+    const [toast, setToast] = useState<{ text: string; n: number }>({ text: '', n: 0 });
     useEffect(() => {
-        if (toast) {
-            const timer = setTimeout(() => setToast(''), 900);
+        if (toast.text) {
+            const timer = setTimeout(() => setToast((t) => ({ text: '', n: t.n })), 900);
             return () => clearTimeout(timer);
         }
     }, [toast]);
@@ -94,6 +95,9 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                     delete updated[key];
                     return updated;
                 });
+            },
+            showToast: (text: string) => {
+                setToast((t) => ({ text, n: t.n + 1 }));
             },
         }),
         [pending],
@@ -195,8 +199,12 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                     </div>
                 )}
 
-                {/* Toast */}
-                {toast && <div className="widget-toast">{toast}</div>}
+                {/* Toast – key erzwingt den Neustart der Animation bei Wiederholung */}
+                {toast.text && (
+                    <div className="widget-toast" key={toast.n} role="status">
+                        {toast.text}
+                    </div>
+                )}
 
                 {/* Sheet-Overlay */}
                 {selectedDevice && selectedRoom && (

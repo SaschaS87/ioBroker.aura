@@ -2,6 +2,7 @@ import React from 'react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
+import { HapticButton } from './HapticButton';
 import type { ShutterDeviceDef } from './types';
 import './ShutterTile.css';
 
@@ -15,26 +16,27 @@ interface ShutterTileProps {
 export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roomFacade, onOpenSheet }) => {
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
-    const { markPending } = usePendingStore();
+    const { markPending, clearPending, showToast } = usePendingStore();
 
-    const handleOpen = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    // Das Abfangen des Klicks (sonst öffnet die Kachel darunter das Sheet) und
+    // die spürbare Quittung erledigt HapticButton.
+    const handleOpen = () => {
         if (!device.upDp) return;
         const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.upDp, true);
         markPending(device.key, targetRaw);
     };
 
-    const handleStop = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleStop = () => {
         if (!device.stopDp) return;
-        const targetRaw = state.ackedPos !== null ? state.ackedPos : 50;
         setState(device.stopDp, true);
-        markPending(device.key, targetRaw);
+        // Stopp hat kein Ziel und damit kein Bild – der Auftrags-Zustand endet,
+        // und nur hier meldet sich die Einblendung zu Wort.
+        clearPending(device.key);
+        showToast('Gestoppt');
     };
 
-    const handleClose = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleClose = () => {
         if (!device.downDp) return;
         const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.downDp, true);
@@ -55,9 +57,14 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
     const facadeMismatch = device.facade && device.facade !== roomFacade;
 
+    // Auftrags-Zustand: laeuft, solange die Box Bewegung meldet ODER ein von
+    // hier abgeschickter Befehl noch nicht am Ziel angekommen ist.
+    const busy = state.isMoving || state.isActing;
+    const showTarget = state.targetOpen !== null && !state.isUnknown;
+
     return (
         <div
-            className="shutter-tile"
+            className={`shutter-tile${busy ? ' tile-busy' : ''}`}
             data-key={device.key}
             role="button"
             tabIndex={0}
@@ -77,6 +84,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
                             {device.badge === 'raffstore' ? 'Raffstore' : 'Dachfenster'}
                         </div>
                     )}
+                    {busy && <span className="tile-puls" aria-hidden="true" />}
                 </div>
             </div>
 
@@ -84,32 +92,55 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
             <div className="tile-content">
                 <ShutterViz
                     closedFrac={closedFrac}
-                    isMoving={state.isMoving}
+                    isMoving={busy}
                     isUnknown={state.isUnknown}
+                    direction={state.direction}
                     size="small"
                 />
                 <div className="tile-percent">
                     <b>{state.isUnknown ? '−' : `${Math.round(state.posOpen ?? 0)}%`}</b>
                     <span>offen</span>
                 </div>
+                {busy && showTarget && (
+                    <span className="tile-ziel" aria-label={`Ziel ${Math.round(state.targetOpen ?? 0)} Prozent`}>
+                        → {Math.round(state.targetOpen ?? 0)}%
+                    </span>
+                )}
             </div>
 
-            {/* Unten: 3 Buttons */}
+            {/* Unten: 3 Tasten. HapticButton statt <button>, damit der Finger den
+                versteckten Schalter trifft und iOS spürbar quittiert. */}
             <div className="tile-actions">
-                <button className="nodrag aura-widget-action" onClick={handleOpen} disabled={!connected} title="Öffnen">
-                    ▲
-                </button>
-                <button className="nodrag aura-widget-action" onClick={handleStop} disabled={!connected} title="Stopp">
-                    ⏸
-                </button>
-                <button
+                <HapticButton
                     className="nodrag aura-widget-action"
-                    onClick={handleClose}
+                    onPress={handleOpen}
+                    disabled={!connected}
+                    title="Öffnen"
+                    label={`${device.label} öffnen`}
+                    stopPropagation
+                >
+                    ▲
+                </HapticButton>
+                <HapticButton
+                    className="nodrag aura-widget-action"
+                    onPress={handleStop}
+                    disabled={!connected}
+                    title="Stopp"
+                    label={`${device.label} stoppen`}
+                    stopPropagation
+                >
+                    ⏸
+                </HapticButton>
+                <HapticButton
+                    className="nodrag aura-widget-action"
+                    onPress={handleClose}
                     disabled={!connected}
                     title="Schließen"
+                    label={`${device.label} schließen`}
+                    stopPropagation
                 >
                     ▼
-                </button>
+                </HapticButton>
             </div>
         </div>
     );

@@ -21,16 +21,31 @@
   }
 }
 
+/* max-height war 88vh – das rechnet mit dem ganzen Bildschirm, waehrend das
+   Sheet in Wahrheit im Widget haengt (position: absolute), das nur die
+   Tab-Flaeche hoch ist. Zwei verschiedene Bezugsgroessen: das Sheet durfte
+   hoeher werden als der Platz, den es hat. Zusammen mit den ~34px, die das
+   fillTab-Widget unter die sichtbare Fensterkante reicht, lagen die
+   Prozent-Knoepfe unten ausserhalb des Bildschirms.
+
+   Jetzt bezieht sich die Grenze auf den Container (100% = Backdrop-Hoehe),
+   und der Innenabstand unten holt den Inhalt aus der Home-Indicator-Zone
+   zurueck – die Sheet-Flaeche selbst laeuft weiter bis zur Kante. */
 .shutter-sheet {
   display: flex;
   flex-direction: column;
   background-color: var(--app-bg);
   border-radius: 16px 16px 0 0;
-  max-height: 88vh;
+  max-height: 92%;
   width: 100%;
   max-width: 600px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Sicherheitsabstand + 20px Reserve: Der reine safe-area-Wert setzt die
+     Prozent-Knoepfe exakt auf die Kante, das fasst sich zu knapp an. */
+  padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
+  box-sizing: border-box;
   animation: sheet-in 280ms ease-out;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
 }
@@ -113,10 +128,16 @@
   flex: 1;
 }
 
+/* Fenster und Knopfsaeule stehen NEBENEINANDER, die Knoepfe selbst bleiben
+   senkrecht: oben faehrt hoch, unten faehrt runter – diese Zuordnung liest man
+   ohne Nachdenken. Untereinander gestapelt brauchte der Block 112 + 16 + 148 =
+   276px Hoehe; nebeneinander sind es 148. Die gesparten 128px sind genau die,
+   die unten fuer die Prozent-Knoepfe gefehlt haben. */
 .sheet-left {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: center;
   gap: 16px;
   flex-shrink: 0;
 }
@@ -126,6 +147,7 @@
   flex-direction: column;
   gap: 8px;
   width: 44px;
+  flex-shrink: 0;
 }
 
 .sheet-btn {
@@ -136,22 +158,32 @@
   background-color: var(--widget-bg);
   color: var(--text-primary);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, color 0.15s, transform 0.09s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.sheet-btn:hover:not(:disabled) {
+/* Tasten sind <span> (HapticButton) – gesperrt laeuft ueber .is-disabled. */
+.sheet-btn:hover:not(.is-disabled) {
   background-color: var(--accent);
   color: white;
 }
 
-.sheet-btn:disabled {
+/* Quittung an den Finger – :hover allein gibt es auf dem iPhone nicht. */
+.sheet-btn:active:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  transform: scale(0.94);
+}
+
+.sheet-btn.is-disabled {
   opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .sheet-right {
@@ -182,6 +214,13 @@
   font-weight: 500;
   color: var(--text-primary);
   text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.block-ziel {
+  margin-left: 8px;
+  color: var(--accent-yellow);
+  font-weight: 600;
 }
 
 .block-slider {
@@ -239,12 +278,21 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.09s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.quick-chip:hover:not(:disabled) {
+.quick-chip:hover:not(.is-disabled) {
   border-color: var(--accent);
   background-color: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.quick-chip:active:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  transform: scale(0.94);
 }
 
 .quick-chip.active {
@@ -269,11 +317,6 @@
 }
 
 @media (max-width: 480px) {
-  .sheet-body {
-    flex-direction: column;
-    gap: 12px;
-  }
-
   .shutter-sheet {
     max-width: 100%;
   }
@@ -283,6 +326,26 @@
   }
 
   .sheet-body {
+    flex-direction: column;
+    gap: 12px;
     padding: 12px;
+  }
+
+  /* Auf dem Handy steht der Fenster-Block allein in seiner Zeile und hat
+     Platz – etwas groesser gezeichnet liest er sich deutlich besser. */
+  .sheet-left {
+    gap: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutter-sheet,
+  .shutter-sheet-backdrop {
+    animation: none;
+  }
+
+  .sheet-btn:active:not(.is-disabled),
+  .quick-chip:active:not(.is-disabled) {
+    transform: none;
   }
 }

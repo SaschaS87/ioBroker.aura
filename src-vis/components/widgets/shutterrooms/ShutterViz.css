@@ -24,15 +24,61 @@
   height: 100%;
 }
 
-@keyframes pulse-viz {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
+/* ── Fahrt ────────────────────────────────────────────────────────────────
+   Waehrend die TaHoma-Box MovingState=true meldet, wandern die Lamellen in
+   Fahrtrichtung und der Behang faerbt sich bernstein. Die Kante folgt der
+   gemeldeten Position: liefert die Box Zwischenwerte, gleitet sie mit; kommt
+   nur der Endwert, gleitet sie am Schluss dorthin. Es wird also nichts
+   geschaetzt, nur weich dargestellt.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.viz-fill-clip {
+  transition: height 900ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.viz-pulse {
-  animation: pulse-viz 1s infinite;
+.shutter-viz.viz-moving {
+  color: var(--accent-yellow);
+}
+
+.viz-frame {
+  transition: stroke 250ms ease;
+}
+
+@keyframes viz-slats-down {
+  from { transform: translateY(-8px); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes viz-slats-up {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-8px); }
+}
+
+/* 8 = eine Lamellen-Periode des Musters, dadurch ist der Lauf nahtlos. */
+.viz-dir-down .viz-slats {
+  animation: viz-slats-down 700ms linear infinite;
+}
+
+.viz-dir-up .viz-slats {
+  animation: viz-slats-up 700ms linear infinite;
+}
+
+/* Bewegung ohne bekannte Richtung (z.B. am Wandschalter ausgeloest):
+   ruhiges Pulsieren statt Wandern. */
+.viz-moving:not(.viz-dir-up):not(.viz-dir-down) .viz-slats {
+  animation: viz-slats-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes viz-slats-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-fill-clip {
+    transition: none;
+  }
+
+  .viz-slats {
+    animation: none !important;
+  }
 }

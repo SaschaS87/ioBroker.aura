@@ -11,6 +11,8 @@ interface PendingStore {
     pending: Record<string, PendingState>;
     markPending: (key: string, targetRaw: number) => void;
     clearPending: (key: string) => void;
+    /** Kurze Einblendung am unteren Rand – nur fuer Aktionen ohne eigenes Bild (Stopp). */
+    showToast: (text: string) => void;
 }
 
 export const PendingContext = createContext<PendingStore | null>(null);
@@ -28,6 +30,10 @@ interface ShutterDeviceState {
     isUnknown: boolean;
     isMoving: boolean;
     isActing: boolean;
+    /** Fahrtrichtung eines laufenden Auftrags – null, wenn nicht ableitbar. */
+    direction: 'up' | 'down' | null;
+    /** Zielwert des laufenden Auftrags, als Offen-Prozent wie die Anzeige. */
+    targetOpen: number | null;
     slatAckedPos: number | null;
     isSlatUnknown: boolean;
 }
@@ -81,6 +87,16 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
         }
     }, [ackedPos, pendingEntry, dev.key, store]);
 
+    // Richtung und Ziel eines laufenden Auftrags. Rohwert = Closure (100 = zu),
+    // die Anzeige rechnet in Offen-Prozent – deshalb hier einmal umdrehen.
+    const targetRaw = pendingEntry?.targetRaw ?? null;
+    const targetOpen = targetRaw !== null ? (dev.invertPosition ? 100 - targetRaw : targetRaw) : null;
+
+    let direction: 'up' | 'down' | null = null;
+    if (targetRaw !== null && ackedPos !== null && Math.abs(targetRaw - ackedPos) > 3) {
+        direction = targetRaw > ackedPos ? 'down' : 'up';
+    }
+
     return {
         ackedPos,
         lastKnownAckedPos: lastKnownRef.current,
@@ -88,6 +104,8 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
         isUnknown: ackedPos === null,
         isMoving,
         isActing,
+        direction,
+        targetOpen,
         slatAckedPos,
         isSlatUnknown: slatAckedPos === null,
     };
