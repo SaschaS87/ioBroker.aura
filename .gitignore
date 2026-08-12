@@ -16,6 +16,9 @@ examples/
 CLAUDE_CODE_BRIEFING.md
 compose.yml
 
+# Ausgabe von tools/screenshots/*.mjs (Playwright-Screenshots zur Abnahme)
+/scratchpad-screenshots/
+
 # OS
 .DS_Store
 Thumbs.db
