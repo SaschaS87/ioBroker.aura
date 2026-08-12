@@ -118,8 +118,19 @@ export function setOptimisticEcho(enabled: boolean): void {
 // NOTE: a plain space is legal in ioBroker IDs (common in hand-created
 // 0_userdata.0.* objects, e.g. "...Pool.PoolPumpe Switch"), so it must NOT
 // be filtered — only the URL/query characters that break the socket are.
+// NOTE: ':' USED TO BE FILTERED HERE AND MUST NOT BE. It is a normal
+// character in ioBroker IDs — the whole tahoma adapter uses it for every
+// single state (tahoma.1.devices.SPK.states.core:ClosureState), and so do
+// others. The consequence was severe and silent: subscribe() refused all of
+// them, so the Rollläden tab never received a single live update. Values
+// still appeared on load (prefetchStates fetches them once via getState),
+// which is exactly why it looked like it worked — the numbers were simply
+// frozen at page-load time and drifted further from reality with every
+// movement. Verified against the live server on 12.08.2026: subscribing to
+// an ID containing ':' returns an ack WITHOUT error and delivers
+// stateChange events normally. URLs stay excluded via '/'.
 function isValidStateId(id: unknown): id is string {
-    return typeof id === 'string' && id.length > 0 && !/[/?&=:]/.test(id);
+    return typeof id === 'string' && id.length > 0 && !/[/?&=]/.test(id);
 }
 
 /** Fetch multiple state IDs in parallel and warm the cache. Returns when all have resolved (or 4 s timeout). */

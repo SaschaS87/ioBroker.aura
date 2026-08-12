@@ -7,8 +7,11 @@
  *   myadapter.0.battery?devices.0.soc      (dot notation)
  *   myadapter.0.battery?devices[0].soc     (bracket notation, equivalent)
  *
- * The separator is `?` because isValidStateId() forbids it (along with
- * whitespace and & = :), so it can never collide with a real state ID. `#`
+ * The separator is `?` because isValidStateId() forbids it (along with / & =),
+ * so it can never collide with a real state ID. `:` was on that list too until
+ * 12.08.2026 — it had to be removed because it is a perfectly normal character
+ * in ioBroker IDs (every tahoma state uses it) and its filtering silently
+ * blocked all subscriptions for those datapoints. `#`
  * must NOT be used here: it is a legitimate character in some adapters
  * (e.g. Shelly: shelly.0.SHSW-25#XXXXXX#1.Relay0.Switch) — splitting on `#`
  * truncated such IDs and broke writes (state could no longer be set).
