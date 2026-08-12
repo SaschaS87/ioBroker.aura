@@ -210,6 +210,12 @@ export function Dashboard({
     const activeTab = tabs.find((t) => t.id === activeTabId);
     const fillTabWidget = activeTab?.widgets?.find((w) => (w.options as Record<string, unknown>)?.fillTab);
 
+    // Shared, empty footer bar at the bottom of every tab. Rendered inside the same
+    // relative wrapper as the fill-tab overlay, so the shutter tab's own footer simply
+    // covers it (overlay z-index 10) without a special case. Hidden in the editor so
+    // the editing canvas keeps its full height.
+    const showTabFooter = !editMode;
+
     // ── mobile: single-column stack ───────────────────────────────────────
     if (containerWidth > 0 && containerWidth < mobileBreakpoint) {
         return (
@@ -228,7 +234,7 @@ export function Dashboard({
                         )}
                         <div
                             ref={containerRefCallback}
-                            className="aura-scroll absolute inset-0 overflow-auto p-2"
+                            className={`aura-scroll absolute inset-0 overflow-auto p-2${showTabFooter ? ' has-tab-footer' : ''}`}
                             style={{ scrollbarGutter: 'stable both-edges' }}
                         >
                             {/* Reflow-hidden widgets from all tabs rendered off-screen */}
@@ -357,6 +363,7 @@ export function Dashboard({
                                     );
                                 })}
                         </div>
+                        {showTabFooter && <div className="tab-footer-bar" aria-hidden="true" />}
                         {showIframeOverlay && (
                             <IframeOverlay data={iframeFullscreen!} onClose={() => setIframeFullscreen(null)} />
                         )}
@@ -382,7 +389,7 @@ export function Dashboard({
                 )}
                 <div
                     ref={containerRefCallback}
-                    className="aura-scroll absolute inset-0 overflow-auto p-2 sm:p-4"
+                    className={`aura-scroll absolute inset-0 overflow-auto p-2 sm:p-4${showTabFooter ? ' has-tab-footer' : ''}`}
                     style={{
                         scrollbarGutter: 'stable both-edges',
                         ...(effectiveRglWidth > containerWidth ? { overflowX: 'auto' } : {}),
@@ -618,6 +625,7 @@ export function Dashboard({
                         </>
                     )}
                 </div>
+                {showTabFooter && <div className="tab-footer-bar" aria-hidden="true" />}
                 {showIframeOverlay && (
                     <IframeOverlay data={iframeFullscreen!} onClose={() => setIframeFullscreen(null)} />
                 )}
