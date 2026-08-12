@@ -71,6 +71,13 @@ function buildMockData() {
     ts: Date.now(),
   };
 
+  // Alive DP
+  dps['system.adapter.tahoma.1.alive'] = {
+    val: true,
+    ack: true,
+    ts: Date.now(),
+  };
+
   return dps;
 }
 
@@ -100,6 +107,7 @@ async function takeScreenshots() {
       } },
       { name: 'S4-disconnected', mockFn: (dps) => {
         dps['tahoma.1.info.connection'] = { val: false, ack: true, ts: Date.now() };
+        dps['system.adapter.tahoma.1.alive'] = { val: false, ack: true, ts: Date.now() };
         return dps;
       } },
       { name: 'S5-filter-SW', mockFn: (dps) => dps, filter: 'SW' },
@@ -151,11 +159,10 @@ async function takeScreenshots() {
             fillTab: true,
             transparent: true,
             showTitle: false,
-            headerTitle: 'Rollläden',
-            statusText: 'lokal · tahoma.1',
             connectionDp: 'tahoma.1.info.connection',
+            aliveDp: 'system.adapter.tahoma.1.alive',
+            instanceLabel: 'tahoma.1',
             showFooter: true,
-            footerNote: 'Direkte Steuerung über die TaHoma-Box im Heimnetz',
             facades: ['Alle', 'SO', 'SW', 'NW', 'NO'],
             posQuick: [0, 25, 50, 75, 100],
             slatQuick: [[0, 'Waagerecht'], [50, 'Halb'], [90, 'Geschlossen']],

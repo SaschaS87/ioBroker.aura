@@ -9,10 +9,9 @@ interface ShutterRoomsConfigProps {
 export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options, onOptionsChange }) => {
     const [roomsJsonError, setRoomsJsonError] = useState<string>('');
 
-    const headerTitle = (options.headerTitle as string) || 'Rollläden';
-    const statusText = (options.statusText as string) || 'lokal · tahoma.1';
-    const footerNote = (options.footerNote as string) || '';
     const connectionDp = (options.connectionDp as string) || '';
+    const aliveDp = (options.aliveDp as string) || '';
+    const instanceLabel = (options.instanceLabel as string) || 'tahoma.1';
     const showFooter = (options.showFooter as boolean | undefined) !== false;
     const roomsJson = JSON.stringify((options.rooms as ShutterRoomDef[]) || [], null, 2);
 
@@ -28,20 +27,16 @@ export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options,
         // ignore
     }
 
-    const handleHeaderTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        onOptionsChange({ ...options, headerTitle: e.target.value });
-    };
-
-    const handleStatusTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        onOptionsChange({ ...options, statusText: e.target.value });
-    };
-
-    const handleFooterNoteChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        onOptionsChange({ ...options, footerNote: e.target.value });
-    };
-
     const handleConnectionDpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         onOptionsChange({ ...options, connectionDp: e.target.value });
+    };
+
+    const handleAliveDpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        onOptionsChange({ ...options, aliveDp: e.target.value });
+    };
+
+    const handleInstanceLabelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        onOptionsChange({ ...options, instanceLabel: e.target.value });
     };
 
     const handleShowFooterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,44 +60,6 @@ export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options,
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Header Title */}
-            <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600 }}>
-                    Kopfzeilen-Titel
-                </label>
-                <input
-                    type="text"
-                    value={headerTitle}
-                    onChange={handleHeaderTitleChange}
-                    style={{
-                        width: '100%',
-                        padding: '6px 8px',
-                        border: '1px solid var(--app-border)',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                    }}
-                />
-            </div>
-
-            {/* Status Text */}
-            <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600 }}>
-                    Status-Text
-                </label>
-                <input
-                    type="text"
-                    value={statusText}
-                    onChange={handleStatusTextChange}
-                    style={{
-                        width: '100%',
-                        padding: '6px 8px',
-                        border: '1px solid var(--app-border)',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                    }}
-                />
-            </div>
-
             {/* Connection DP */}
             <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600 }}>
@@ -123,25 +80,49 @@ export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options,
                 />
             </div>
 
-            {/* Footer Note */}
+            {/* Alive DP */}
             <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600 }}>
-                    Fußzeilen-Text
+                    Alive-Datenpunkt
                 </label>
-                <textarea
-                    value={footerNote}
-                    onChange={handleFooterNoteChange}
+                <input
+                    type="text"
+                    value={aliveDp}
+                    onChange={handleAliveDpChange}
+                    placeholder="z.B. system.adapter.tahoma.1.alive"
                     style={{
                         width: '100%',
                         padding: '6px 8px',
                         border: '1px solid var(--app-border)',
                         borderRadius: '4px',
                         fontSize: '12px',
-                        minHeight: '60px',
-                        fontFamily: 'inherit',
-                        resize: 'vertical',
                     }}
                 />
+            </div>
+
+            {/* Instance Label */}
+            <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600 }}>
+                    Instanz-Name (Fußzeile)
+                </label>
+                <input
+                    type="text"
+                    value={instanceLabel}
+                    onChange={handleInstanceLabelChange}
+                    placeholder="z.B. tahoma.1"
+                    style={{
+                        width: '100%',
+                        padding: '6px 8px',
+                        border: '1px solid var(--app-border)',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                    }}
+                />
+            </div>
+
+            {/* Info Text */}
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                Grün nur, wenn beide Datenpunkte <code>true</code> sind.
             </div>
 
             {/* Show Footer */}

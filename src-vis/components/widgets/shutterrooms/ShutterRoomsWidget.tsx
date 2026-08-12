@@ -9,10 +9,9 @@ import { ShutterSheet } from './ShutterSheet';
 import './ShutterRoomsWidget.css';
 
 interface ShutterRoomsOptions {
-    headerTitle?: string;
-    statusText?: string;
-    footerNote?: string;
     connectionDp?: string;
+    aliveDp?: string;
+    instanceLabel?: string;
     showFooter?: boolean;
     facades?: string[];
     posQuick?: number[];
@@ -23,10 +22,9 @@ interface ShutterRoomsOptions {
 export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     const options = (config.options as ShutterRoomsOptions) || {};
     const {
-        headerTitle = 'Rollläden',
-        statusText = 'lokal · tahoma.1',
-        footerNote = '',
         connectionDp = '',
+        aliveDp = 'system.adapter.tahoma.1.alive',
+        instanceLabel = 'tahoma.1',
         showFooter = true,
         facades: configFacades = ['Alle', 'SO', 'SW', 'NW', 'NO'],
         posQuick = [0, 25, 50, 75, 100],
@@ -41,6 +39,10 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Connection Status
     const connState = useDatapoint(connectionDp);
     const connected = connState.state?.val === true;
+
+    // Alive Status
+    const aliveState = useDatapoint(aliveDp);
+    const instanceOk = aliveState.state?.val === true && connected === true;
 
     // Fassaden-Filter
     const [activeFacade, setActiveFacade] = useState<string>(configFacades[0] || 'Alle');
@@ -139,15 +141,6 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     return (
         <PendingContext.Provider value={pendingStore}>
             <div className="shutter-rooms-widget">
-                {/* Kopfzeile */}
-                <div className="widget-header">
-                    <h1 className="header-title">{headerTitle}</h1>
-                    <div className="header-status">
-                        <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
-                        <span className="status-text">{statusText}</span>
-                    </div>
-                </div>
-
                 {/* Fassaden-Chips (horizontal scrollbar) */}
                 <div className="facades-bar">
                     <div className="facades-scroll">
@@ -191,11 +184,12 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                     )}
                 </div>
 
-                {/* Fußzeile */}
+                {/* Fußzeile: eine Pille, die den Zustand der Instanz meldet */}
                 {showFooter && (
                     <div className="widget-footer">
-                        <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
-                        <span className="footer-text">{footerNote}</span>
+                        <span className={`instance-pill ${instanceOk ? 'ok' : 'fail'}`}>
+                            {instanceLabel} {instanceOk ? 'aktiv' : 'nicht erreichbar'}
+                        </span>
                     </div>
                 )}
 
