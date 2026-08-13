@@ -88,13 +88,19 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, onO
                     direction={state.direction}
                     size="small"
                 />
+                {/* Gezaehlt wird der GESCHLOSSENE Anteil - dieselbe Richtung wie im
+                    Feinregler und im Rollos-Tab. Zwei Zaehlrichtungen im selben Haus
+                    waeren eine Verwechslungsquelle. */}
                 <div className="tile-percent">
-                    <b>{state.isUnknown ? '−' : `${Math.round(state.posOpen ?? 0)}%`}</b>
-                    <span>offen</span>
+                    <b>{state.isUnknown ? '−' : `${Math.round(closedFrac ?? 0)}%`}</b>
+                    <span>zu</span>
                 </div>
                 {busy && showTarget && (
-                    <span className="tile-ziel" aria-label={`Ziel ${Math.round(state.targetOpen ?? 0)} Prozent`}>
-                        → {Math.round(state.targetOpen ?? 0)}%
+                    <span
+                        className="tile-ziel"
+                        aria-label={`Ziel ${Math.round(100 - (state.targetOpen ?? 0))} Prozent geschlossen`}
+                    >
+                        → {Math.round(100 - (state.targetOpen ?? 0))}%
                     </span>
                 )}
             </div>

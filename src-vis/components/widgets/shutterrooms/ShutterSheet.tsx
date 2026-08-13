@@ -15,6 +15,10 @@ interface ShutterSheetProps {
     connected: boolean;
     posQuick: number[];
     slatQuick: Array<[number, string]>;
+    /** Himmelsrichtung im Untertitel zeigen. Der Rollos-Tab gruppiert nach
+     *  Etage und braucht sie nicht; der Rolllaeden-Tab gruppiert nach Fassade
+     *  und behaelt sie - deshalb Default true. */
+    showFacade?: boolean;
     onClose: () => void;
 }
 
@@ -25,6 +29,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     connected,
     posQuick,
     slatQuick,
+    showFacade = true,
     onClose,
 }) => {
     const { setState } = useIoBroker();
@@ -36,14 +41,17 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const sliderRef = useRef<HTMLInputElement>(null);
     const slatSliderRef = useRef<HTMLInputElement>(null);
 
-    const displayPos = positionDraft !== null ? positionDraft : (state.posOpen ?? 0);
+    // Angezeigt und geregelt wird durchgaengig der GESCHLOSSENE Anteil
+    // (0 % = offen, 100 % = zu), damit Liste und Feinregler dieselbe Zahl meinen.
+    // Der Hook liefert weiterhin den offenen Anteil - hier wird nur gespiegelt.
+    const displayClosed = positionDraft !== null ? positionDraft : 100 - (state.posOpen ?? 0);
     const displaySlat = slatDraft !== null ? slatDraft : (state.slatAckedPos ?? 0);
 
     // Welchen Wert die Schnellwahl-Knöpfe als "aktiv" markieren: beim Ziehen den
     // Finger, bei laufendem Auftrag das ZIEL, sonst den bestätigten Ist-Wert.
     // Vorher stand hier immer der Ist-Wert – während der Fahrt blieb deshalb der
     // alte Knopf eingefärbt, obwohl längst ein anderer angefahren wurde.
-    const posChipRef = positionDraft !== null ? positionDraft : (state.targetOpen ?? state.posOpen ?? 0);
+    const posChipRef = positionDraft !== null ? positionDraft : 100 - (state.targetOpen ?? state.posOpen ?? 0);
     const slatChipRef = slatDraft !== null ? slatDraft : (state.slatTarget ?? state.slatAckedPos ?? 0);
 
     // Escape-Taste schließt das Sheet
@@ -73,7 +81,10 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const handlePositionEnd = () => {
         if (positionDraft !== null && device.posDp) {
             tapFeedback();
-            const targetRaw = device.invertPosition ? 100 - positionDraft : positionDraft;
+            // positionDraft ist der GESCHLOSSENE Anteil. Der offene waere
+            // 100 - draft; mit der Invertierung verrechnet bleibt bei
+            // invertPosition genau der Draft-Wert stehen.
+            const targetRaw = device.invertPosition ? positionDraft : 100 - positionDraft;
             setState(device.posDp, targetRaw);
             markPending(device.key, targetRaw);
             setPositionDraft(null);
@@ -97,7 +108,8 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const handlePositionQuick = (val: number) => {
         if (!device.posDp) return;
         tapFeedback();
-        const targetRaw = device.invertPosition ? 100 - val : val;
+        // val ist der gewuenschte GESCHLOSSENE Anteil (0 = offen, 100 = zu).
+        const targetRaw = device.invertPosition ? val : 100 - val;
         setState(device.posDp, targetRaw);
         markPending(device.key, targetRaw);
     };
@@ -151,9 +163,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                 <div className="sheet-header">
                     <div className="sheet-header-title">
                         <h2 className="sheet-title">{device.label}</h2>
-                        <p className="sheet-subtitle">
-                            {room} · {effFacade}
-                        </p>
+                        <p className="sheet-subtitle">{showFacade && effFacade ? `${room} · ${effFacade}` : room}</p>
                     </div>
                     <button className="sheet-close-btn" onClick={onClose} title="Schließen" aria-label="Schließen">
                         ✕
@@ -208,12 +218,12 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                         <div className="sheet-block">
                             <h3 className="block-title">Position</h3>
                             <div className="block-value">
-                                {state.isUnknown ? '−' : `${Math.round(displayPos)}%`}
+                                {state.isUnknown ? '−' : `${Math.round(displayClosed)} % zu`}
                                 {/* Laufender Auftrag: das Ziel steht daneben, bis die Box
                                     die neue Position gemeldet hat. Nicht waehrend des
                                     Ziehens – dann fuehrt der Finger die Zahl. */}
                                 {busy && positionDraft === null && state.targetOpen !== null && (
-                                    <span className="block-ziel">→ {Math.round(state.targetOpen)}%</span>
+                                    <span className="block-ziel">→ {Math.round(100 - state.targetOpen)} %</span>
                                 )}
                             </div>
                             <input
@@ -221,7 +231,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 type="range"
                                 min="0"
                                 max="100"
-                                value={displayPos}
+                                value={displayClosed}
                                 onChange={handlePositionChange}
                                 onMouseUp={handlePositionEnd}
                                 onTouchEnd={handlePositionEnd}
