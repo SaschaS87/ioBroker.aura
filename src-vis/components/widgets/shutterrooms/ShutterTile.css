@@ -86,29 +86,6 @@
   flex-shrink: 0;
 }
 
-.tile-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.badge-facade {
-  background-color: color-mix(in srgb, var(--accent-yellow) 16%, transparent);
-  color: var(--accent-yellow);
-}
-
-.badge-raffstore {
-  background-color: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
-}
-
-.badge-dachfenster {
-  background-color: color-mix(in srgb, var(--accent-yellow) 16%, transparent);
-  color: var(--accent-yellow);
-}
-
 .tile-content {
   display: flex;
   flex-direction: row;

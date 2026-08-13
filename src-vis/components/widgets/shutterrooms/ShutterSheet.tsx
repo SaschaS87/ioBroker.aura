@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ChevronUp, Square, ChevronDown } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore, slatPendingKey } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
@@ -178,7 +179,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 title="Vollständig öffnen"
                                 label="Vollständig öffnen"
                             >
-                                ▲
+                                <ChevronUp size={22} />
                             </HapticButton>
                             <HapticButton
                                 className="sheet-btn sheet-btn-stop"
@@ -187,7 +188,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 title="Stopp"
                                 label="Stopp"
                             >
-                                ⏸
+                                <Square size={18} />
                             </HapticButton>
                             <HapticButton
                                 className="sheet-btn sheet-btn-down"
@@ -196,7 +197,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 title="Vollständig schließen"
                                 label="Vollständig schließen"
                             >
-                                ▼
+                                <ChevronDown size={22} />
                             </HapticButton>
                         </div>
                     </div>

@@ -174,7 +174,6 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                                             key={device.key}
                                             device={device}
                                             connected={connected}
-                                            roomFacade={room.facade}
                                             onOpenSheet={(dev) => handleOpenSheet(dev, room)}
                                         />
                                     ))}

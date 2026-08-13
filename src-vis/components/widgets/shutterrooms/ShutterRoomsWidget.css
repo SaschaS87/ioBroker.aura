@@ -111,6 +111,11 @@
 .devices-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 220px));
+  /* Reihen mit ungenutztem Restplatz (z.B. ein einzelnes Geraet) links UND
+     rechts gleich viel Luft lassen, statt den Rest komplett rechts liegen zu
+     lassen. Kacheln bleiben dabei bei ihrer bisherigen Maximalbreite - kein
+     Aufblaehen auf volle Breite, nur die Zentrierung wird korrigiert. */
+  justify-content: center;
   gap: 8px;
 }
 
@@ -205,6 +210,7 @@
 
   .devices-grid {
     grid-template-columns: repeat(auto-fit, minmax(120px, 180px));
+    justify-content: center;
     gap: 6px;
   }
 

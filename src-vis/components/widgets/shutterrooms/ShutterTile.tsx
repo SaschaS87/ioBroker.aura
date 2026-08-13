@@ -1,4 +1,5 @@
 import React from 'react';
+import { ChevronUp, Square, ChevronDown } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
@@ -9,11 +10,10 @@ import './ShutterTile.css';
 interface ShutterTileProps {
     device: ShutterDeviceDef;
     connected: boolean;
-    roomFacade: string;
     onOpenSheet: (device: ShutterDeviceDef) => void;
 }
 
-export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roomFacade, onOpenSheet }) => {
+export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, onOpenSheet }) => {
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
     const { markPending, clearPending, showToast } = usePendingStore();
@@ -55,7 +55,6 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
     };
 
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
-    const facadeMismatch = device.facade && device.facade !== roomFacade;
 
     // Auftrags-Zustand: laeuft, solange die Box Bewegung meldet ODER ein von
     // hier abgeschickter Befehl noch nicht am Ziel angekommen ist.
@@ -77,15 +76,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
             {/* Kopfzeile: Label + Badges */}
             <div className="tile-header">
                 <div className="tile-label">{device.label}</div>
-                <div className="tile-badges">
-                    {facadeMismatch && <div className="tile-badge badge-facade">{device.facade}</div>}
-                    {device.badge && (
-                        <div className={`tile-badge badge-${device.badge}`}>
-                            {device.badge === 'raffstore' ? 'Raffstore' : 'Dachfenster'}
-                        </div>
-                    )}
-                    {busy && <span className="tile-puls" aria-hidden="true" />}
-                </div>
+                <div className="tile-badges">{busy && <span className="tile-puls" aria-hidden="true" />}</div>
             </div>
 
             {/* Mitte: Visualisierung + Prozentwert */}
@@ -119,7 +110,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
                     label={`${device.label} öffnen`}
                     stopPropagation
                 >
-                    ▲
+                    <ChevronUp size={16} />
                 </HapticButton>
                 <HapticButton
                     className="nodrag aura-widget-action"
@@ -129,7 +120,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
                     label={`${device.label} stoppen`}
                     stopPropagation
                 >
-                    ⏸
+                    <Square size={13} />
                 </HapticButton>
                 <HapticButton
                     className="nodrag aura-widget-action"
@@ -139,7 +130,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, roo
                     label={`${device.label} schließen`}
                     stopPropagation
                 >
-                    ▼
+                    <ChevronDown size={16} />
                 </HapticButton>
             </div>
         </div>
