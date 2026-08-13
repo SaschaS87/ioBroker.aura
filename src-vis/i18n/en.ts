@@ -1455,6 +1455,14 @@ export const en: Record<TranslationKey, string> = {
     'shutterrooms.noRooms': 'No rooms configured',
     'shutterrooms.notConnected': 'TaHoma box not reachable',
 
+    // ── ShutterFloors Widget Messages ─────────────────────────────────────────────
+    'shutterfloors.unknown': 'unknown',
+    'shutterfloors.open': 'Open',
+    'shutterfloors.closed': 'Closed',
+    'shutterfloors.stopped': 'Stopped',
+    'shutterfloors.commandSent': 'Command sent',
+    'shutterfloors.noFloors': 'No floors configured',
+
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',
     'preview.device': 'Device',

@@ -1,0 +1,144 @@
+.shutter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: var(--app-bg);
+  border-bottom: 1px solid var(--app-border);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.shutter-row:hover {
+  background-color: var(--widget-bg-hover, var(--widget-bg));
+}
+
+.shutter-row:active {
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--app-bg));
+}
+
+.shutter-row:last-child {
+  border-bottom: none;
+}
+
+.shutter-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.row-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+}
+
+/* Der Name bekommt den freien Platz, nicht der Balken - sonst reisst ein langer
+   Geraetename ("Esszimmer Raffstore Nachbar") auch auf breiten Bildschirmen ab.
+   min-width:0 ist Pflicht, damit text-overflow:ellipsis im Flex-Kind greift. */
+.row-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Platz für blinkenden Punkt */
+.row-pulse-container {
+  flex: 0 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Schmaler Statusbalken mit fester Breite - er soll den Zustand andeuten,
+   nicht den Platz des Namens beanspruchen. */
+.row-bar {
+  flex: 0 0 44px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.row-actions .haptic-btn {
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, transform 0.09s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.row-actions .haptic-btn:hover:not(.is-disabled) {
+  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.row-actions .haptic-btn:active:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+  transform: scale(0.94);
+}
+
+.row-actions .haptic-btn.is-disabled {
+  opacity: 0.4;
+}
+
+/* Blinkender Punkt bei Bewegung */
+.row-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--accent-yellow);
+  flex-shrink: 0;
+  animation: row-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes row-pulse {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.75);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-pulse {
+    animation: none;
+  }
+
+  .row-actions .haptic-btn:active:not(.is-disabled) {
+    transform: none;
+  }
+}

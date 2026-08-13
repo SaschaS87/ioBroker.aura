@@ -1,0 +1,81 @@
+.floor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: var(--app-surface);
+  transition: opacity 0.2s;
+}
+
+.floor-name {
+  flex: 1;
+}
+
+/* Variante A: schlicht */
+.floor-header.floor-head--a .floor-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Variante B: typografisch abgesetzt */
+.floor-header.floor-head--b .floor-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+/* Variante C: mit Akzent */
+.floor-header.floor-head--c .floor-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-left: 10px;
+  border-left: 3px solid var(--accent);
+}
+
+.floor-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.floor-actions .haptic-btn {
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, transform 0.09s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floor-actions .haptic-btn:hover:not(.is-disabled) {
+  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.floor-actions .haptic-btn:active:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+  transform: scale(0.94);
+}
+
+.floor-actions .haptic-btn.is-disabled {
+  opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floor-actions .haptic-btn:active:not(.is-disabled) {
+    transform: none;
+  }
+}

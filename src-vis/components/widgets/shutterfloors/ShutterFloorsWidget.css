@@ -1,0 +1,38 @@
+.shutter-floors-widget {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.floors-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 10px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+.floor-section {
+  margin-bottom: 16px;
+}
+
+.floor-section:last-child {
+  margin-bottom: 0;
+}
+
+.floor-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 13px;
+  color: var(--text-secondary);
+}

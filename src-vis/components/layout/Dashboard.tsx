@@ -323,6 +323,8 @@ export function Dashboard({
                                                             w.type === 'weatherforecaststrip' ||
                                                             // shutterrooms: fillTab widget spanning full tab area.
                                                             w.type === 'shutterrooms' ||
+                                                            // shutterfloors: fillTab widget spanning full tab area.
+                                                            w.type === 'shutterfloors' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&
                                                                 wl !== 'minimal' &&

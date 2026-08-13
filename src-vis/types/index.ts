@@ -37,6 +37,7 @@ export type WidgetType =
     | 'trash'
     | 'shutter'
     | 'shutterrooms'
+    | 'shutterfloors'
     | 'jsontable'
     | 'windowcontact'
     | 'binarysensor'

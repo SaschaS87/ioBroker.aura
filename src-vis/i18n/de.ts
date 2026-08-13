@@ -1458,6 +1458,14 @@ export const de = {
     'shutterrooms.noRooms': 'Keine Räume konfiguriert',
     'shutterrooms.notConnected': 'TaHoma-Box nicht erreichbar',
 
+    // ── ShutterFloors Widget Messages ─────────────────────────────────────────────
+    'shutterfloors.unknown': 'unbekannt',
+    'shutterfloors.open': 'Offen',
+    'shutterfloors.closed': 'Geschlossen',
+    'shutterfloors.stopped': 'Gestoppt',
+    'shutterfloors.commandSent': 'Befehl gesendet',
+    'shutterfloors.noFloors': 'Keine Etagen konfiguriert',
+
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',
     'preview.device': 'Gerät',

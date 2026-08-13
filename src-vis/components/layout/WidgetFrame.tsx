@@ -124,6 +124,10 @@ const WeatherForecastStripWidget = lazyWithReload(() =>
 const ShutterRoomsWidget = lazyWithReload(() =>
     import('../widgets/shutterrooms/ShutterRoomsWidget').then((m) => ({ default: m.ShutterRoomsWidget })),
 );
+// ShutterFloorsWidget is a specialized full-tab widget for TaHoma roller shutters grouped by floors.
+const ShutterFloorsWidget = lazyWithReload(() =>
+    import('../widgets/shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
+);
 const EChartWidget = lazyWithReload(() => import('../widgets/EChartWidget').then((m) => ({ default: m.EChartWidget })));
 const EChartsPresetWidget = lazyWithReload(() =>
     import('../widgets/EChartsPresetWidget').then((m) => ({ default: m.EChartsPresetWidget })),
@@ -384,6 +388,7 @@ function getWidgetMap() {
         trashSchedule: TrashScheduleWidget,
         shutter: ShutterWidget,
         shutterrooms: ShutterRoomsWidget,
+        shutterfloors: ShutterFloorsWidget,
         jsontable: JsonTableWidget,
         html: HtmlWidget,
         windowcontact: WindowContactWidget,
@@ -6078,7 +6083,9 @@ export function WidgetFrame({
         // full-width card.
         config.type === 'weatherforecaststrip' ||
         // shutterrooms: fillTab widget with own padding and layout — no outer frame padding.
-        config.type === 'shutterrooms';
+        config.type === 'shutterrooms' ||
+        // shutterfloors: fillTab widget with own padding and layout — no outer frame padding.
+        config.type === 'shutterfloors';
 
     return (
         <div
