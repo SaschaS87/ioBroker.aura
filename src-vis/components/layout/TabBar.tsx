@@ -198,10 +198,14 @@ function TabBadges({ tab }: { tab: Tab }) {
     return <BadgeOverlay badges={badges} />;
 }
 
-// ── Scrollable tab row + custom "more tabs" indicator ─────────────────────────
-// Wraps a horizontally scrolling row. On mobile the native (flickering, low)
-// scrollbar is hidden and replaced with a static thumb that tracks the scroll
-// position and sits just under the tabs. See .aura-tab-scroll-* in index.css.
+// ── Scrollable tab row ──────────────────────────────────────────────────────
+// Wraps a horizontally scrolling row. On mobile the native scrollbar is
+// hidden (it flickers on some browsers and sits at the padding edge, reading
+// like a rendering glitch) — the row still scrolls the same way via touch,
+// just without a visible scrollbar chrome. See .aura-tab-scroll--mobile in
+// index.css. A custom position-thumb used to replace the hidden native
+// scrollbar here; removed 13.08.2026 at Sascha's request (looked odd for the
+// small, often-imperceptible overflow this row tends to have).
 
 function TabScrollRow({
     isMobile,
@@ -214,42 +218,6 @@ function TabScrollRow({
     scrollClassName?: string;
     children: React.ReactNode;
 }) {
-    const ref = useRef<HTMLDivElement>(null);
-    const [ind, setInd] = useState<{ show: boolean; left: number; width: number }>({
-        show: false,
-        left: 0,
-        width: 0,
-    });
-
-    const recompute = useCallback(() => {
-        const el = ref.current;
-        if (!el) return;
-        const { scrollWidth, clientWidth, scrollLeft } = el;
-        const overflow = scrollWidth - clientWidth;
-        if (overflow <= 2) {
-            setInd((p) => (p.show ? { show: false, left: 0, width: 0 } : p));
-            return;
-        }
-        const width = Math.max((clientWidth / scrollWidth) * 100, 15);
-        const left = (scrollLeft / overflow) * (100 - width);
-        setInd({ show: true, left, width });
-    }, []);
-
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        recompute();
-        const ro = new ResizeObserver(recompute);
-        ro.observe(el);
-        const inner = el.firstElementChild;
-        if (inner) ro.observe(inner);
-        el.addEventListener('scroll', recompute, { passive: true });
-        return () => {
-            ro.disconnect();
-            el.removeEventListener('scroll', recompute);
-        };
-    }, [recompute]);
-
     // Outer must be a flex container so the scroll row is stretched to the bar height
     // via align-items:stretch. The scroll row carries .aura-badge-room (padding 14 /
     // margin -14 so corner badges aren't clipped); when stretched, that yields a content
@@ -259,14 +227,10 @@ function TabScrollRow({
     return (
         <div className={`relative flex ${outerClassName}`}>
             <div
-                ref={ref}
                 className={`aura-scroll aura-badge-room overflow-x-auto ${isMobile ? 'aura-tab-scroll--mobile' : ''} ${scrollClassName}`}
             >
                 {children}
             </div>
-            {isMobile && ind.show && (
-                <div className="aura-tab-scroll-ind" style={{ left: `${ind.left}%`, width: `${ind.width}%` }} />
-            )}
         </div>
     );
 }

@@ -150,26 +150,18 @@ body,
     margin-bottom: -14px;
 }
 
-/* Tab-bar horizontal scroll indicator ───────────────────────────────────────
+/* Tab-bar horizontal scroll ───────────────────────────────────────────────
    On touch devices the native overlay scrollbar auto-hides and flickers on
    some browsers, and it sits at the very bottom padding edge where it reads
    like a rendering glitch rather than a "there are more tabs" hint. On mobile
-   we hide it (class toggled from JS) and render a static, non-animated thumb
-   (.aura-tab-scroll-ind) that tracks scroll position and sits just under the
-   tabs — deliberate, higher up, and never blinking. */
+   we hide it (class toggled from JS) — the row still scrolls via touch, just
+   without the scrollbar chrome. A custom position-thumb used to replace it
+   here; removed 13.08.2026, see TabBar.tsx (TabScrollRow). */
 .aura-tab-scroll--mobile {
     scrollbar-width: none;
 }
 .aura-tab-scroll--mobile::-webkit-scrollbar {
     display: none;
-}
-.aura-tab-scroll-ind {
-    position: absolute;
-    bottom: 3px;
-    height: 3px;
-    border-radius: 99px;
-    background: color-mix(in srgb, var(--accent, #888) 60%, transparent);
-    pointer-events: none;
 }
 
 /* Hide-scrollbar utility — used by the carousel widget when options.hideScrollbar is set */
