@@ -56,12 +56,44 @@
         document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
       });
     </script>
+    <script>
+      /* Wisch-vom-Bildschirmrand als Browser-Vor/Zurueck verhindern (bestaetigt
+         18.08.2026 am iPhone, Homescreen-App): iOS deutet ein Wischen, das ganz
+         am linken/rechten Rand beginnt, als Verlaufs-Navigation - auch ganz ohne
+         Safari-Oberflaeche. Das ist eine systemnahe UIKit-Geste (kein CSS-Scroll-
+         Verhalten), die die touch-action-Regel oben (html, body) NICHT zuverlaessig
+         stoppt. Einziger verlaesslicher Weg: den Touch selbst per preventDefault
+         als "von der Seite beansprucht" markieren, solange er in der aeussersten
+         Randzone beginnt. .aura-page haelt genau diese Zone per safe-area-inset
+         ohnehin frei von Inhalten (siehe .aura-page unten) - es geht also kein
+         Klick-Ziel verloren. Nur Einzelfinger-Touches (sonst Konflikt mit
+         Leaflets Pinch-to-Zoom auf der Karte). */
+      (function () {
+        var EDGE_PX = 24;
+        function startsAtEdge(e) {
+          if (e.touches.length !== 1) return false;
+          var x = e.touches[0].clientX;
+          return x <= EDGE_PX || x >= window.innerWidth - EDGE_PX;
+        }
+        ['touchstart', 'touchmove'].forEach(function (type) {
+          document.addEventListener(type, function (e) { if (startsAtEdge(e)) e.preventDefault(); }, { passive: false });
+        });
+      })();
+    </script>
     <style>
       /* iOS-Homescreen-App: randlos. Auras Theme-Hintergrund fuellt die ganze
          Flaeche bis an alle Kanten -> kein toter Balken oben/unten. Der Inhalt
          wird nur aus Dynamic Island (oben) und Home-Indicator (unten) gehalten,
          der Hintergrund laeuft darunter durch. */
-      html, body { background: var(--app-bg, #0f172a); touch-action: pan-x pan-y; }
+      /* Seitliches Wischen auf Seitenebene sperren: pan-x hier erlaubte dem
+         Browser, ein Wischen von links/rechts als "Zurueck/Vor im Verlauf"
+         zu deuten (Chrome/Edge-Randgeste, iOS-Homescreen-App-Randgeste).
+         Vertikales Scrollen (pan-y) bleibt erlaubt. overscroll-behavior-x
+         nimmt Chrome zusaetzlich die Randgeste weg. Einzelne Widgets, die
+         selbst seitlich scrollen (Tableiste, Karussell, Wetterstreifen, ...),
+         erlauben pan-x lokal wieder - siehe .overflow-x-auto in index.css
+         und die betroffenen Widget-Dateien. */
+      html, body { background: var(--app-bg, #0f172a); touch-action: pan-y; overscroll-behavior-x: none; }
       /* Vollbild bis zur PHYSISCHEN Unterkante. iOS gibt einer Homescreen-Web-App
          ein Fenster, das um env(safe-area-inset-bottom) (Home-Indicator, ~34px)
          kuerzer ist als der Screen (per Messung belegt: innerHeight endet 34px
@@ -156,7 +188,7 @@
         to { transform: rotate(360deg); }
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-C-0pfHSR.js"></script>
+    <script type="module" crossorigin src="./assets/index-Bcpx7Nes.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/react-Bk2tEoOi.js">
     <link rel="modulepreload" crossorigin href="./assets/react-dom-Bt2Mxcwn.js">
     <link rel="modulepreload" crossorigin href="./assets/router-DRgFpRnU.js">
@@ -165,7 +197,7 @@
     <link rel="modulepreload" crossorigin href="./assets/dompurify-D6gMnemd.js">
     <link rel="modulepreload" crossorigin href="./assets/echarts-Cv-_nZ52.js">
     <link rel="stylesheet" crossorigin href="./assets/grid-DULRuONn.css">
-    <link rel="stylesheet" crossorigin href="./assets/index-ZxsLnBWJ.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-udtrOgNP.css">
   </head>
   <body>
     <div id="aura-boot">
