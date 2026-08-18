@@ -4,6 +4,10 @@ import { X } from 'lucide-react';
 import type { WidgetConfig, ClickAction } from '../../../types';
 import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import { usePopupConfigStore } from '../../../store/popupConfigStore';
+import { useDatapoint } from '../../../hooks/useDatapoint';
+import { useGlobalSettingsStore } from '../../../store/globalSettingsStore';
+import { formatNum } from '../../../utils/formatValue';
+import { TEMP_COLOR } from '../RoomClimateDetails';
 import { DimmerPopupBody } from './DimmerPopupBody';
 import { ThermostatPopupBody } from './ThermostatPopupBody';
 import { SwitchPopupBody } from './SwitchPopupBody';
@@ -16,6 +20,35 @@ import { JsonPopupBody } from './JsonPopupBody';
 import { HtmlPopupBody } from './HtmlPopupBody';
 import { WidgetEmbedBody } from './WidgetEmbedBody';
 import { TabEmbedBody } from './TabEmbedBody';
+
+interface PopupHeaderTempProps {
+    action: ClickAction;
+    widget: WidgetConfig;
+}
+
+function PopupHeaderTemp({ action, widget }: PopupHeaderTempProps) {
+    // Only render for roomtemperature popups with the option enabled
+    if (action.kind !== 'popup-roomtemperature' || widget.options?.detailsHeaderValue !== true) {
+        return null;
+    }
+
+    const dp = action.temperatureDp || widget.datapoint;
+    const { value: rawTemp } = useDatapoint(dp);
+    const temp = typeof rawTemp === 'number' ? rawTemp : null;
+    const { defaultDecimals } = useGlobalSettingsStore();
+    const decimals = (widget.options?.decimals as number) ?? defaultDecimals;
+    const unit = (widget.options?.unit as string) ?? '°C';
+
+    // No numeric value: don't render anything
+    if (temp === null) return null;
+
+    return (
+        <span className="ml-2 font-semibold text-sm" style={{ color: TEMP_COLOR }}>
+            {formatNum(temp, decimals)}
+            {unit}
+        </span>
+    );
+}
 
 function normalizeAction(action: ClickAction): ClickAction {
     switch (action.kind) {
@@ -195,6 +228,7 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                         <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
                             {title}
                         </span>
+                        <PopupHeaderTemp action={action} widget={widget} />
                     </div>
                 )}
 

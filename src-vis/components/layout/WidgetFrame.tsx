@@ -3,7 +3,7 @@ import { lazyWithReload } from '../../utils/lazyWithReload';
 import { recordWidgetRender, recordWidgetReady, isWidgetTrackingEnabled } from '../../utils/perfBreakdown';
 import { createPortal } from 'react-dom';
 import { usePortalTarget } from '../../contexts/PortalTargetContext';
-import { useT, t } from '../../i18n';
+import { useT } from '../../i18n';
 import {
     X,
     Pencil,
@@ -36,6 +36,7 @@ import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { SANDBOX_PRESETS, type SandboxPreset } from '../../utils/iframeSandbox';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
 import { baseDpId } from '../../utils/dpRef';
+import { formatLastChange } from '../../utils/formatLastChange';
 import { JsonPathButton } from '../config/JsonPathButton';
 import { ColorPicker } from '../common/ColorPicker';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
@@ -1534,6 +1535,72 @@ function RoomClimateConfig({
                 </div>
             </div>
 
+            {/* Details auf dem Handy: Aufklappen vs. Sheet */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Details auf dem Handy
+                </label>
+                <div className="flex gap-1">
+                    <button
+                        onClick={() => set({ mobileDetails: undefined })}
+                        className="flex-1 px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                        style={{
+                            background: o.mobileDetails === undefined ? 'var(--accent)' : 'var(--app-border)',
+                            color: o.mobileDetails === undefined ? '#fff' : 'var(--text-secondary)',
+                        }}
+                    >
+                        Aufklappen
+                    </button>
+                    <button
+                        onClick={() => set({ mobileDetails: 'sheet' })}
+                        className="flex-1 px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                        style={{
+                            background: o.mobileDetails === 'sheet' ? 'var(--accent)' : 'var(--app-border)',
+                            color: o.mobileDetails === 'sheet' ? '#fff' : 'var(--text-secondary)',
+                        }}
+                    >
+                        Sheet von unten
+                    </button>
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Sheet blendet zusätzlich das Dreieck aus — auch auf breiten Bildschirmen.
+                </p>
+            </div>
+
+            {/* Temperatur in Kopfzeile (Popup/Sheet) */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Temperatur in der Kopfzeile (Popup/Sheet)
+                </label>
+                <button
+                    onClick={() => set({ detailsHeaderValue: !o.detailsHeaderValue })}
+                    className="w-full px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                    style={{
+                        background: o.detailsHeaderValue ? 'var(--accent)' : 'var(--app-border)',
+                        color: o.detailsHeaderValue ? '#fff' : 'var(--text-secondary)',
+                    }}
+                >
+                    {o.detailsHeaderValue ? 'An' : 'Aus'}
+                </button>
+            </div>
+
+            {/* Zuletzt aktualisiert im Popup/Sheet */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Zuletzt aktualisiert im Popup/Sheet
+                </label>
+                <button
+                    onClick={() => set({ detailsLastChange: !o.detailsLastChange })}
+                    className="w-full px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                    style={{
+                        background: o.detailsLastChange ? 'var(--accent)' : 'var(--app-border)',
+                        color: o.detailsLastChange ? '#fff' : 'var(--text-secondary)',
+                    }}
+                >
+                    {o.detailsLastChange ? 'An' : 'Aus'}
+                </button>
+            </div>
+
             {/* History-Konfiguration (Adapter-Instanz + Zeitraum) */}
             <ChartHistoryConfig config={config} onConfigChange={onConfigChange} />
         </>
@@ -2914,31 +2981,6 @@ function WeatherConfigSection({ o, set, onOpenPicker, onOpenAdapterPicker, layou
             )}
         </>
     );
-}
-
-function formatLastChange(ts: number): string {
-    const diffSec = Math.round((Date.now() - ts) / 1000);
-
-    if (diffSec < 10) return t('lc.lessThan10s');
-    if (diffSec < 20) return t('lc.lessThan20s');
-    if (diffSec < 30) return t('lc.lessThan30s');
-    if (diffSec < 45) return t('lc.halfMinute');
-    if (diffSec < 90) return t('lc.lessThan1Min');
-
-    const diffMin = Math.round(diffSec / 60);
-    if (diffMin < 45) return diffMin === 1 ? t('lc.1Min') : t('lc.nMin', { n: diffMin });
-
-    const diffHour = Math.round(diffSec / 3_600);
-    if (diffHour < 24) return diffHour === 1 ? t('lc.1Hour') : t('lc.nHours', { n: diffHour });
-
-    const diffDay = Math.round(diffSec / 86_400);
-    if (diffDay < 30) return diffDay === 1 ? t('lc.1Day') : t('lc.nDays', { n: diffDay });
-
-    const diffMonth = Math.round(diffDay / 30);
-    if (diffMonth < 12) return diffMonth === 1 ? t('lc.1Month') : t('lc.nMonths', { n: diffMonth });
-
-    const diffYear = Math.round(diffDay / 365);
-    return diffYear === 1 ? t('lc.1Year') : t('lc.nYears', { n: diffYear });
 }
 
 // ── Camera slot editor row (used in Standard and Custom Grid config) ──────────
@@ -6262,7 +6304,7 @@ export function WidgetFrame({
             {showLastChange &&
                 lastChangedTs > 0 &&
                 (() => {
-                    const text = formatLastChange(lastChangedTs);
+                    const text = formatLastChange(t as (k: string, v?: Record<string, string | number>) => string, lastChangedTs);
                     // Anchor across the full widget width (left+right) so the relative-time
                     // string wraps inside the widget instead of overflowing nowrap and being
                     // clipped/covered by an adjacent widget — common on narrow widgets like

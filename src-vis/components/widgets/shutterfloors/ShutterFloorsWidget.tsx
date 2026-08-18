@@ -31,6 +31,10 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
+    // Zaehlt jedes Oeffnen hoch und dient als key: so entsteht garantiert eine
+    // frische Sheet-Instanz. Ohne das bliebe ein Sheet, das waehrend seines
+    // Ausgleitens erneut geoeffnet wird, unsichtbar im Schliess-Zustand haengen.
+    const [sheetSeq, setSheetSeq] = useState(0);
 
     // Pending Store mit 45s Cleanup
     const [pending, setPending] = useState<Record<string, PendingState>>({});
@@ -77,6 +81,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     );
 
     const handleOpenSheet = (device: ShutterFloorDeviceDef) => {
+        setSheetSeq((n) => n + 1);
         setSheetDevice(device);
     };
 
@@ -119,6 +124,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                 {/* Sheet-Overlay */}
                 {sheetDevice && (
                     <ShutterSheet
+                        key={sheetSeq}
                         device={sheetDevice}
                         room={sheetDevice.room || ''}
                         room_facade=""

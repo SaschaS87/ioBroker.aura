@@ -49,6 +49,8 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
 
     // Sheet-State
     const [selectedDevice, setSelectedDevice] = useState<ShutterDeviceDef | null>(null);
+    // Siehe ShutterFloorsWidget: erzwingt eine frische Sheet-Instanz je Oeffnen.
+    const [sheetSeq, setSheetSeq] = useState(0);
     const [selectedRoom, setSelectedRoom] = useState<ShutterRoomDef | null>(null);
 
     // Toast. Traegt einen Zaehler mit, damit zweimal dieselbe Meldung
@@ -121,6 +123,7 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     }, [rooms, activeFacade]);
 
     const handleOpenSheet = (device: ShutterDeviceDef, room: ShutterRoomDef) => {
+        setSheetSeq((n) => n + 1);
         setSelectedDevice(device);
         setSelectedRoom(room);
     };
@@ -202,6 +205,7 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                 {/* Sheet-Overlay */}
                 {selectedDevice && selectedRoom && (
                     <ShutterSheet
+                        key={sheetSeq}
                         device={selectedDevice}
                         room={selectedRoom.name}
                         room_facade={selectedRoom.facade}

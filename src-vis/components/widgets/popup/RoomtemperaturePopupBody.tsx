@@ -23,6 +23,7 @@ export function RoomtemperaturePopupBody({ widget, action }: Props) {
                 title={widget.title ?? 'Temperatur'}
                 decimals={widget.options?.decimals as number | undefined}
                 showCurrentHeader
+                showLastChangeFooter={widget.options?.detailsLastChange === true}
             />
         </div>
     );

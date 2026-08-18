@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { BarChart2, Droplets, Loader, TrendingDown, TrendingUp } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
-import { useIoBroker } from '../../hooks/useIoBroker';
+import { useIoBroker, getStateDirect, subscribeStateDirect } from '../../hooks/useIoBroker';
+import { useT } from '../../i18n';
 import { useMultiSeriesData, type EChartSeriesConfig } from '../../hooks/useMultiSeriesData';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
 import { formatNum } from '../../utils/formatValue';
+import { baseDpId } from '../../utils/dpRef';
+import { formatLastChange } from '../../utils/formatLastChange';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 
@@ -13,7 +16,7 @@ import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 // signal colors. ECharts renders to canvas, so the chart colors must be literal
 // hex anyway (CSS variables don't resolve there); axis colors below match
 // EChartWidget exactly (#888 labels, #444 axis line, #333 grid lines).
-const TEMP_COLOR = '#e8927c';
+export const TEMP_COLOR = '#e8927c';
 const TEMP_FILL_TOP = 'rgba(232,146,124,0.16)';
 const TEMP_FILL_BOTTOM = 'rgba(232,146,124,0.03)';
 const HUM_COLOR = '#8aa8c8';
@@ -29,6 +32,7 @@ export interface RoomClimateDetailsProps {
     showCurrentHeader?: boolean;
     initialMode?: PeriodMode;
     chartHeight?: number;
+    showLastChangeFooter?: boolean;
 }
 
 export function RoomClimateDetails({
@@ -40,10 +44,15 @@ export function RoomClimateDetails({
     showCurrentHeader = true,
     initialMode = 'day',
     chartHeight = 192,
+    showLastChangeFooter = false,
 }: RoomClimateDetailsProps) {
     const { subscribe, getState, connected } = useIoBroker();
     const { defaultDecimals } = useGlobalSettingsStore();
     const decimals = decimalsProp ?? defaultDecimals;
+    const t = useT();
+
+    const [lastChangedTs, setLastChangedTs] = useState<number>(0);
+    const [, forceRedraw] = useState(0);
 
     const { value: rawTemp } = useDatapoint(temperatureDp);
     const { value: rawHumidity } = useDatapoint(humidityDp);
@@ -53,6 +62,28 @@ export function RoomClimateDetails({
     const [mode, setMode] = useState<PeriodMode>(initialMode);
     const [offset, setOffset] = useState(0);
     const viewWindow = useMemo(() => periodWindow(mode, offset), [mode, offset]);
+
+    // Subscribe to temperature datapoint's timestamp for footer display
+    useEffect(() => {
+        if (!showLastChangeFooter) return;
+        const dpId = baseDpId(temperatureDp);
+        if (!dpId) return;
+
+        getStateDirect(dpId).then((s) => {
+            if (s) setLastChangedTs(s.lc > 0 ? s.lc : s.ts);
+        });
+
+        return subscribeStateDirect(dpId, (s) => {
+            if (s) setLastChangedTs(s.lc > 0 ? s.lc : s.ts);
+        });
+    }, [temperatureDp, showLastChangeFooter]);
+
+    // Periodically redraw the relative-time string
+    useEffect(() => {
+        if (!showLastChangeFooter || lastChangedTs === 0) return;
+        const iv = setInterval(() => forceRedraw((n) => n + 1), 10_000);
+        return () => clearInterval(iv);
+    }, [showLastChangeFooter, lastChangedTs]);
 
     const echartSeries: EChartSeriesConfig[] = useMemo(
         () => [
@@ -234,6 +265,12 @@ export function RoomClimateDetails({
                     />
                 )}
             </div>
+
+            {showLastChangeFooter && lastChangedTs > 0 && (
+                <div className="text-[8px] text-right" style={{ color: 'var(--text-secondary)', opacity: 0.5, lineHeight: 1.15 }}>
+                    {formatLastChange(t as (k: string, v?: Record<string, string | number>) => string, lastChangedTs)}
+                </div>
+            )}
         </div>
     );
 }

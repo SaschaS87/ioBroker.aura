@@ -10,6 +10,7 @@ import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
 import { useRoomClimateHeightStore, type RoomClimateHeightMode } from '../../store/roomClimateHeightStore';
 import { formatNum } from '../../utils/formatValue';
 import { RoomClimateDetails } from './RoomClimateDetails';
+import { RoomClimateSheet } from './RoomClimateSheet';
 import { WidgetClickPopup } from './popup/WidgetClickPopup';
 
 /**
@@ -31,6 +32,11 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
     const isMobile = useDashboardMobile();
     const [expanded, setExpanded] = useState(false);
     const [popupOpen, setPopupOpen] = useState(false);
+    const [sheetOpen, setSheetOpen] = useState(false);
+    // Zaehlt jedes Oeffnen hoch und dient als key: erzwingt eine frische
+    // Sheet-Instanz, damit ein waehrend des Ausgleitens erneut geoeffnetes
+    // Sheet nicht unsichtbar im Schliess-Zustand haengen bleibt.
+    const [sheetSeq, setSheetSeq] = useState(0);
 
     const o = config.options ?? {};
     const { value: rawTemp } = useDatapoint(config.datapoint);
@@ -49,6 +55,7 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
     // icon, an understated room name and the temperature as the accent number.
     // Look only — behaviour (expand, chevron, popup) is identical to the slim bar.
     const cardStyle = o.cardStyle === true;
+    const useSheet = o.mobileDetails === 'sheet';
 
     // Same cell-height formula the mobile stack uses for fixed-height widgets
     // (Dashboard.tsx): h * gridRowHeight + (h - 1) * gridGap.
@@ -102,8 +109,15 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
 
     const toggle = () => {
         if (editMode) return;
-        if (isMobile) setExpanded((x) => !x);
-        else setPopupOpen(true);
+        if (!isMobile) {
+            setPopupOpen(true);
+            return;
+        }
+        if (useSheet) {
+            setSheetSeq((n) => n + 1);
+            setSheetOpen(true);
+        }
+        else setExpanded((x) => !x);
     };
 
     const popupAction: Extract<ClickAction, { kind: 'popup-roomtemperature' }> = {
@@ -187,14 +201,16 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
                             >
                                 {temp !== null ? `${formatNum(temp, decimals)}${unit}` : '–'}
                             </span>
-                            <ChevronDown
-                                size={15}
-                                className="shrink-0 transition-transform duration-200"
-                                style={{
-                                    color: 'var(--text-secondary)',
-                                    transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                }}
-                            />
+                            {!useSheet && (
+                                <ChevronDown
+                                    size={15}
+                                    className="shrink-0 transition-transform duration-200"
+                                    style={{
+                                        color: 'var(--text-secondary)',
+                                        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                    }}
+                                />
+                            )}
                         </>
                     ) : (
                         <>
@@ -216,21 +232,23 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
                                     {temp !== null ? `${formatNum(temp, decimals)}${unit}` : '–'}
                                 </span>
                             </span>
-                            <ChevronDown
-                                size={15}
-                                className="shrink-0 transition-transform duration-200"
-                                style={{
-                                    color: 'var(--text-secondary)',
-                                    transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                }}
-                            />
+                            {!useSheet && (
+                                <ChevronDown
+                                    size={15}
+                                    className="shrink-0 transition-transform duration-200"
+                                    style={{
+                                        color: 'var(--text-secondary)',
+                                        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                    }}
+                                />
+                            )}
                         </>
                     )}
                 </button>
             </div>
 
             {/* Inline expand (mobile stack only — pushes the bars below down) */}
-            {isMobile && expanded && (
+            {isMobile && !useSheet && expanded && (
                 <div
                     style={{ borderTop: '1px solid var(--app-border)', paddingTop: 12, paddingBottom: 10 }}
                     onClick={(e) => e.stopPropagation()}
@@ -250,6 +268,23 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
             {/* Desktop: same details in the centered popup */}
             {popupOpen && !isMobile && (
                 <WidgetClickPopup widget={config} action={popupAction} onClose={() => setPopupOpen(false)} />
+            )}
+
+            {/* Mobile sheet: open from bottom (replaces inline expand and popup) */}
+            {sheetOpen && isMobile && (
+                <RoomClimateSheet
+                    key={sheetSeq}
+                    title={config.title || config.datapoint.split('.').slice(-2)[0]}
+                    temperatureDp={config.datapoint}
+                    humidityDp={humidityDp}
+                    historyInstance={historyInstance}
+                    decimals={decimals}
+                    onClose={() => setSheetOpen(false)}
+                    currentTemp={temp}
+                    unit={unit}
+                    showHeaderValue={o.detailsHeaderValue === true}
+                    showLastChangeFooter={o.detailsLastChange === true}
+                />
             )}
         </div>
     );

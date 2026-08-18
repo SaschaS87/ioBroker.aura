@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ChevronUp, Square, ChevronDown } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore, slatPendingKey } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
 import { HapticButton } from './HapticButton';
 import { tapFeedback } from './haptics';
+import { useSheetDismiss } from '../useSheetDismiss';
 import type { ShutterDeviceDef } from './types';
 import './ShutterSheet.css';
 
@@ -54,24 +55,9 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const posChipRef = positionDraft !== null ? positionDraft : 100 - (state.targetOpen ?? state.posOpen ?? 0);
     const slatChipRef = slatDraft !== null ? slatDraft : (state.slatTarget ?? state.slatAckedPos ?? 0);
 
-    // Escape-Taste schließt das Sheet
-    useEffect(() => {
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleEscape);
-        return () => window.removeEventListener('keydown', handleEscape);
-    }, [onClose]);
-
-    // Backdrop-Klick schließt
-    const handleBackdropClick = (e: React.MouseEvent) => {
-        if (e.target === e.currentTarget) {
-            onClose();
-        }
-    };
+    // Schließen: nach unten wischen, Backdrop-Klick oder Escape. Dieselbe
+    // Mechanik wie beim Raumklima-Sheet – der Baustein liegt gemeinsam daneben.
+    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onClose);
 
     // Position Slider: nur beim Loslassen schreiben
     const handlePositionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,22 +138,35 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const busy = state.isMoving || state.isActing;
 
     return (
-        <div className="shutter-sheet-backdrop" onClick={handleBackdropClick}>
-            <div ref={sheetRef} className="shutter-sheet" role="dialog" aria-modal="true">
-                {/* Griff-Balken */}
-                <div className="sheet-grip">
-                    <div className="grip-handle" />
-                </div>
-
-                {/* Kopfzeile */}
-                <div className="sheet-header">
-                    <div className="sheet-header-title">
-                        <h2 className="sheet-title">{device.label}</h2>
-                        <p className="sheet-subtitle">{showFacade && effFacade ? `${room} · ${effFacade}` : room}</p>
+        <div className="shutter-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
+            <div ref={sheetRef} className="shutter-sheet" style={sheetStyle} role="dialog" aria-modal="true">
+                {/* Griff-Balken und Kopfzeile bilden zusammen die Ziehflaeche.
+                    Der Koerper bleibt aussen vor, sonst kollidiert das Ziehen
+                    mit dem Scrollen in den Reglern. */}
+                <div
+                    className="sheet-drag"
+                    {...dragHandlers}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Nach unten wischen zum Schließen"
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') startClose();
+                    }}
+                >
+                    {/* Griff-Balken */}
+                    <div className="sheet-grip">
+                        <div className="grip-handle" />
                     </div>
-                    <button className="sheet-close-btn" onClick={onClose} title="Schließen" aria-label="Schließen">
-                        ✕
-                    </button>
+
+                    {/* Kopfzeile */}
+                    <div className="sheet-header">
+                        <div className="sheet-header-title">
+                            <h2 className="sheet-title">{device.label}</h2>
+                            <p className="sheet-subtitle">
+                                {showFacade && effFacade ? `${room} · ${effFacade}` : room}
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Körper */}

@@ -59,6 +59,20 @@
   }
 }
 
+/* Griff + Kopfzeile bilden die Ziehflaeche. touch-action: none haelt den
+   Browser davon ab, die Abwaertsgeste vorher als Scrollen zu deuten. */
+.sheet-drag {
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sheet-drag:active {
+  cursor: grabbing;
+}
+
 .sheet-grip {
   display: flex;
   justify-content: center;

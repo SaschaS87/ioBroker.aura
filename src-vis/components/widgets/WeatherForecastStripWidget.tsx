@@ -1278,7 +1278,12 @@ function RainNowcast({ base }: { base: string }) {
             </div>
             {nowcast.length ? (
                 <>
-                    <div className="flex items-end" style={{ gap: 6, overflowX: 'auto', height: 56 }}>
+                    <div
+                        className="flex items-end"
+                        // touchAction: seitenweite Sperre (index.html, Swipe-Back-Fix) lokal
+                        // aufheben - dieser Nowcast-Streifen scrollt bewusst seitlich.
+                        style={{ gap: 6, overflowX: 'auto', height: 56, touchAction: 'pan-x pan-y' }}
+                    >
                         {nowcast.map((p) => (
                             <div key={p.t} className="flex flex-col items-center" style={{ flex: '0 0 auto', width: 28 }}>
                                 <button
@@ -1466,6 +1471,9 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
                         scrollSnapType: 'x proximity',
                         borderTopLeftRadius: 'var(--widget-radius)',
                         borderTopRightRadius: 'var(--widget-radius)',
+                        // Seitenweite touch-action-Sperre (index.html, Swipe-Back-Fix) lokal
+                        // wieder aufheben - dieser Tagesstreifen scrollt bewusst seitlich.
+                        touchAction: 'pan-x pan-y',
                     }}
                 >
                     {DAY_INDICES.map((i) => (

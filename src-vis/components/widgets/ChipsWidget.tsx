@@ -91,6 +91,9 @@ export function ChipsWidget({ config }: WidgetProps) {
                       scrollbarWidth: 'none',
                       paddingBottom: '2px',
                       justifyContent: alignFlex,
+                      // Seitenweite touch-action-Sperre (index.html, Swipe-Back-Fix) lokal
+                      // wieder aufheben - diese Chip-Reihe scrollt bewusst seitlich.
+                      touchAction: 'pan-x pan-y',
                   };
 
     const chipActive = 'var(--chip-active, var(--accent))';

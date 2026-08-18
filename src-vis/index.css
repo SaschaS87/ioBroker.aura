@@ -150,6 +150,20 @@ body,
     margin-bottom: -14px;
 }
 
+/* Seitliches Wischen fuer die App eigenen Scroll-Container ─────────────────
+   index.html sperrt touch-action auf html/body auf pan-y (vertikal), damit
+   ein Wisch am Bildschirmrand nicht mehr als Browser-Zurueck/Vor gedeutet
+   wird. Widgets, die bewusst seitlich scrollen (Tableiste, Wetterstreifen,
+   Regen-Nowcast, Chart-Navigation, ...) und dafuer Tailwinds overflow-x-auto
+   nutzen, brauchen pan-x lokal zurueck - sonst blockiert die Sperre vom
+   Elternelement auch ihr eigenes seitliches Scrollen. Widgets mit reinem
+   Inline-Style statt dieser Klasse (Karussell, Chips, JSON-Tabelle) tragen
+   touchAction direkt in ihrem style-Objekt.
+   ─────────────────────────────────────────────────────────────────────────── */
+.overflow-x-auto {
+    touch-action: pan-x pan-y;
+}
+
 /* Tab-bar horizontal scroll ───────────────────────────────────────────────
    On touch devices the native overlay scrollbar auto-hides and flickers on
    some browsers, and it sits at the very bottom padding edge where it reads

@@ -535,6 +535,9 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
                         gap: isSingle ? 0 : `${gap}px`,
                         overflowX: 'auto',
                         overflowY: 'hidden',
+                        // Seitenweite touch-action-Sperre (index.html, Swipe-Back-Fix) lokal
+                        // wieder aufheben - dieses Karussell scrollt bewusst seitlich.
+                        touchAction: 'pan-x pan-y',
                         scrollbarWidth: hideScrollbar ? 'none' : 'thin',
                         // Single mode forces mandatory snap so each release lands on an
                         // item boundary. Carousel mode keeps snap opt-in via the toggle.
