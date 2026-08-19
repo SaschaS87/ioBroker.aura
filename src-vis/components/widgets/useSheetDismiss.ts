@@ -22,6 +22,13 @@ export function useSheetDismiss(onClose: () => void) {
     // startY anchors the drag; prev feeds the release velocity (flick detection).
     const drag = useRef({ startY: 0, prevY: 0, prevT: 0, velocity: 0 });
     const closeTimer = useRef<number | null>(null);
+    // Once the head has been touched, the CSS entry animation must stay
+    // disabled for good. Letting the inline "animation: none" override
+    // disappear again (e.g. after an upward swipe, where dragY snaps back
+    // to 0) makes the browser treat the class animation as freshly applied
+    // and replay it from the start - the sheet visibly slides up from the
+    // bottom again. Swiping up must do nothing, not retrigger the intro.
+    const hasDragged = useRef(false);
 
     const startClose = () => {
         if (closing) return;
@@ -53,6 +60,7 @@ export function useSheetDismiss(onClose: () => void) {
             const now = performance.now();
             drag.current = { startY: e.clientY, prevY: e.clientY, prevT: now, velocity: 0 };
             setDragging(true);
+            hasDragged.current = true;
             // Capture keeps the move/up events coming even if the finger leaves
             // the head. Losing capture is harmless — never let it abort the drag.
             try {
@@ -93,7 +101,11 @@ export function useSheetDismiss(onClose: () => void) {
               transition: dragging ? 'none' : `transform ${CLOSE_MS}ms ease-out`,
               animation: 'none',
           }
-        : {};
+        : // Keep the intro animation switched off for good once the head has
+          // been touched once - see hasDragged above.
+          hasDragged.current
+          ? { animation: 'none' }
+          : {};
 
     const backdropStyle: React.CSSProperties | undefined = closing
         ? { opacity: 0, transition: `opacity ${CLOSE_MS}ms ease-out` }
