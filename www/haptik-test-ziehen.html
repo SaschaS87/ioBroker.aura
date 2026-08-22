@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haptik-Test: Ziehen</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 16px; background: #f5f5f5; }
+        h1 { font-size: 18px; margin-bottom: 16px; text-align: center; }
+        .intro { background: white; padding: 12px; border-radius: 8px; margin-bottom: 16px; text-align: center; border: 1px solid #ddd; }
+        .tests { display: flex; flex-direction: column; gap: 16px; max-width: 600px; margin: 0 auto; }
+        .test { background: white; padding: 16px; border-radius: 8px; border: 1px solid #ddd; }
+        .test-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666; }
+        .drag-area { width: 100%; height: 200px; background: linear-gradient(to bottom, #e8e8e8, #f0f0f0); border: 2px solid #ccc; border-radius: 6px; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 600; color: #333; position: relative; overflow: hidden; }
+        .snap-marks { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+        .snap-mark { position: absolute; left: 0; right: 0; height: 1px; background: rgba(0,0,0,0.2); }
+        .snap-label { position: absolute; right: 4px; font-size: 11px; color: rgba(0,0,0,0.3); transform: translateY(-50%); }
+        .drag-value { position: relative; z-index: 1; pointer-events: none; text-shadow: 0 0 2px rgba(255,255,255,0.8); }
+        .trigger-count { position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #999; z-index: 1; pointer-events: none; }
+        .info { font-size: 12px; color: #666; margin-top: 8px; }
+        .env { background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-top: 16px; font-family: monospace; font-size: 13px; }
+        .env h3 { font-family: sans-serif; font-size: 14px; margin-bottom: 8px; }
+        .env-line { padding: 4px 0; border-bottom: 1px solid #eee; }
+        .env-line:last-child { border-bottom: none; }
+        .switch-input { position: absolute; width: 100%; height: 100%; opacity: 0; appearance: none; -webkit-appearance: none; cursor: pointer; margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <h1>Haptik-Test: Ziehgeste</h1>
+    <div class="intro">
+        <p>Ziehe auf jeder Fläche langsam von oben nach unten und merke dir, bei welcher es tickt.</p>
+    </div>
+
+    <div class="tests">
+        <!-- V1: navigator.vibrate -->
+        <div class="test">
+            <div class="test-label">V1: navigator.vibrate(8)</div>
+            <div id="v1" class="drag-area">
+                <div class="snap-marks">
+                    <div class="snap-mark" style="top: 0%;"><span class="snap-label">0</span></div>
+                    <div class="snap-mark" style="top: 25%;"><span class="snap-label">25</span></div>
+                    <div class="snap-mark" style="top: 50%;"><span class="snap-label">50</span></div>
+                    <div class="snap-mark" style="top: 75%;"><span class="snap-label">75</span></div>
+                    <div class="snap-mark" style="top: 100%;"><span class="snap-label">100</span></div>
+                </div>
+                <div class="drag-value">0</div>
+                <div class="trigger-count">Auslöser: 0</div>
+            </div>
+            <div class="info">navigator.vibrate() – sollte auf iOS stumm bleiben</div>
+        </div>
+
+        <!-- V2: Echter Schalter, wie in haptics.ts -->
+        <div class="test">
+            <div class="test-label">V2: Label mit switch-Schalter (wie haptics.ts)</div>
+            <div id="v2" class="drag-area">
+                <div class="snap-marks">
+                    <div class="snap-mark" style="top: 0%;"><span class="snap-label">0</span></div>
+                    <div class="snap-mark" style="top: 25%;"><span class="snap-label">25</span></div>
+                    <div class="snap-mark" style="top: 50%;"><span class="snap-label">50</span></div>
+                    <div class="snap-mark" style="top: 75%;"><span class="snap-label">75</span></div>
+                    <div class="snap-mark" style="top: 100%;"><span class="snap-label">100</span></div>
+                </div>
+                <div class="drag-value">0</div>
+                <div class="trigger-count">Auslöser: 0</div>
+            </div>
+            <div class="info">Heutiger Stand (haptics.ts) – label+switch, echte Beruehrung</div>
+        </div>
+
+        <!-- V3: Echter Schalter unsichtbar über der Fläche -->
+        <div class="test">
+            <div class="test-label">V3: Unsichtbarer switch über der Ziehfläche</div>
+            <div id="v3" class="drag-area">
+                <div class="snap-marks">
+                    <div class="snap-mark" style="top: 0%;"><span class="snap-label">0</span></div>
+                    <div class="snap-mark" style="top: 25%;"><span class="snap-label">25</span></div>
+                    <div class="snap-mark" style="top: 50%;"><span class="snap-label">50</span></div>
+                    <div class="snap-mark" style="top: 75%;"><span class="snap-label">75</span></div>
+                    <div class="snap-mark" style="top: 100%;"><span class="snap-label">100</span></div>
+                </div>
+                <div class="drag-value">0</div>
+                <div class="trigger-count">Auslöser: 0</div>
+            </div>
+            <div class="info">Finger überstreicht echten Schalter – iOS-Haptik?</div>
+        </div>
+
+        <!-- V4: Raster aus Schaltern -->
+        <div class="test">
+            <div class="test-label">V4: Raster aus Schaltern über der Fläche</div>
+            <div id="v4" class="drag-area">
+                <div class="snap-marks">
+                    <div class="snap-mark" style="top: 0%;"><span class="snap-label">0</span></div>
+                    <div class="snap-mark" style="top: 25%;"><span class="snap-label">25</span></div>
+                    <div class="snap-mark" style="top: 50%;"><span class="snap-label">50</span></div>
+                    <div class="snap-mark" style="top: 75%;"><span class="snap-label">75</span></div>
+                    <div class="snap-mark" style="top: 100%;"><span class="snap-label">100</span></div>
+                </div>
+                <div class="drag-value">0</div>
+                <div class="trigger-count">Auslöser: 0</div>
+            </div>
+            <div class="info">Raster aus unsichtbaren Schaltern – beim Überstreichen tickt es?</div>
+        </div>
+    </div>
+
+    <div class="env">
+        <h3>Umgebung</h3>
+        <div class="env-line"><strong>User-Agent:</strong> <code id="ua">—</code></div>
+        <div class="env-line"><strong>navigator.vibrate:</strong> <code id="vibrate">—</code></div>
+        <div class="env-line"><strong>switch-Input unterstützt:</strong> <code id="switch-support">—</code></div>
+    </div>
+
+    <script>
+        document.getElementById('ua').textContent = navigator.userAgent.substring(0, 60) + '...';
+        document.getElementById('vibrate').textContent = typeof navigator.vibrate === 'function' ? 'ja' : 'nein';
+
+        const testSwitch = document.createElement('input');
+        testSwitch.type = 'checkbox';
+        testSwitch.setAttribute('switch', '');
+        document.getElementById('switch-support').textContent = testSwitch.type === 'checkbox' ? 'ja (Fallback: checkbox)' : 'nein';
+
+        const SNAP_POINTS = [0, 25, 50, 75, 100];
+        const SNAP_RANGE = 5;
+
+        // V1: navigator.vibrate
+        const v1 = document.getElementById('v1');
+        const v1Value = v1.querySelector('.drag-value');
+        const v1Count = v1.querySelector('.trigger-count');
+        let v1Triggered = 0;
+        let v1LastSnap = -100;
+
+        v1.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const rect = v1.getBoundingClientRect();
+            const percent = ((touch.clientY - rect.top) / rect.height) * 100;
+            v1Value.textContent = Math.round(Math.max(0, Math.min(100, percent)));
+
+            for (const snap of SNAP_POINTS) {
+                if (Math.abs(percent - snap) < SNAP_RANGE && Math.abs(v1LastSnap - snap) > 1) {
+                    if (typeof navigator.vibrate === 'function') {
+                        navigator.vibrate(8);
+                    }
+                    v1Triggered++;
+                    v1Count.textContent = `Auslöser: ${v1Triggered}`;
+                    v1LastSnap = snap;
+                    break;
+                }
+            }
+        });
+        v1.addEventListener('touchend', () => { v1Value.textContent = '0'; v1LastSnap = -100; });
+
+        // V2: Label mit switch (wie haptics.ts:24–41)
+        // Das Label liegt AUSSERHALB der Ziehfläche, damit V2 eine echte
+        // Kontrollgruppe ist: nur programmatisch, ohne echte Berührung.
+        const v2 = document.getElementById('v2');
+        const v2Value = v2.querySelector('.drag-value');
+        const v2Count = v2.querySelector('.trigger-count');
+        let v2Triggered = 0;
+        let v2LastSnap = -100;
+
+        const v2Label = document.createElement('label');
+        v2Label.style.position = 'fixed';
+        v2Label.style.top = '0';
+        v2Label.style.left = '0';
+        v2Label.style.width = '1px';
+        v2Label.style.height = '1px';
+        v2Label.style.opacity = '0';
+        v2Label.style.pointerEvents = 'none';
+        v2Label.style.margin = '0';
+        v2Label.style.padding = '0';
+
+        const v2Switch = document.createElement('input');
+        v2Switch.type = 'checkbox';
+        v2Switch.setAttribute('switch', '');
+        v2Switch.style.position = 'absolute';
+        v2Switch.style.width = '100%';
+        v2Switch.style.height = '100%';
+        v2Switch.style.opacity = '0';
+        v2Switch.style.appearance = 'none';
+        v2Switch.style.webkitAppearance = 'none';
+        v2Switch.style.margin = '0';
+        v2Switch.style.padding = '0';
+        v2Label.appendChild(v2Switch);
+        document.body.appendChild(v2Label);
+
+        v2.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const rect = v2.getBoundingClientRect();
+            const percent = ((touch.clientY - rect.top) / rect.height) * 100;
+            v2Value.textContent = Math.round(Math.max(0, Math.min(100, percent)));
+
+            for (const snap of SNAP_POINTS) {
+                if (Math.abs(percent - snap) < SNAP_RANGE && Math.abs(v2LastSnap - snap) > 1) {
+                    v2Label.click();
+                    v2Triggered++;
+                    v2Count.textContent = `Auslöser: ${v2Triggered}`;
+                    v2LastSnap = snap;
+                    break;
+                }
+            }
+        });
+        v2.addEventListener('touchend', () => { v2Value.textContent = '0'; v2LastSnap = -100; });
+
+        // V3: Unsichtbarer Schalter über der Fläche
+        const v3 = document.getElementById('v3');
+        const v3Value = v3.querySelector('.drag-value');
+        const v3Count = v3.querySelector('.trigger-count');
+        let v3Triggered = 0;
+        let v3LastSnap = -100;
+
+        const v3Switch = document.createElement('input');
+        v3Switch.type = 'checkbox';
+        v3Switch.setAttribute('switch', '');
+        v3Switch.style.position = 'absolute';
+        v3Switch.style.inset = '0';
+        v3Switch.style.width = '100%';
+        v3Switch.style.height = '100%';
+        v3Switch.style.opacity = '0';
+        v3Switch.style.appearance = 'none';
+        v3Switch.style.webkitAppearance = 'none';
+        v3Switch.style.margin = '0';
+        v3Switch.style.padding = '0';
+        v3Switch.style.cursor = 'pointer';
+        v3.appendChild(v3Switch);
+
+        v3.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const rect = v3.getBoundingClientRect();
+            const percent = ((touch.clientY - rect.top) / rect.height) * 100;
+            v3Value.textContent = Math.round(Math.max(0, Math.min(100, percent)));
+
+            for (const snap of SNAP_POINTS) {
+                if (Math.abs(percent - snap) < SNAP_RANGE && Math.abs(v3LastSnap - snap) > 1) {
+                    v3Switch.checked = !v3Switch.checked;
+                    v3Triggered++;
+                    v3Count.textContent = `Auslöser: ${v3Triggered}`;
+                    v3LastSnap = snap;
+                    break;
+                }
+            }
+        });
+        v3.addEventListener('touchend', () => { v3Value.textContent = '0'; v3LastSnap = -100; });
+
+        // V4: Raster aus Schaltern über volle Fläche
+        // Das Raster bedeckt 100% der Ziehfläche, damit der Finger überall
+        // einen Schalter berühren kann. Beim Rastpunkt wird der Schalter
+        // unter dem Finger via elementFromPoint() gefunden und geklickt.
+        const v4 = document.getElementById('v4');
+        const v4Value = v4.querySelector('.drag-value');
+        const v4Count = v4.querySelector('.trigger-count');
+        let v4Triggered = 0;
+        let v4LastSnap = -100;
+
+        const stepSize = 32;  // Schalter-Schritt und -Größe
+        const switchW = stepSize;   // Breite des Schalters (lückenlos)
+        const switchH = stepSize;   // Höhe des Schalters (lückenlos)
+        const grid = document.createElement('div');
+        grid.style.position = 'absolute';
+        grid.style.inset = '0';
+        grid.style.pointerEvents = 'none';
+        v4.appendChild(grid);
+
+        // Berechne Spalten und Reihen nach der aktuellen Größe der Ziehfläche.
+        // Das Raster muss VOR der ersten Berührung stehen, sonst gehört die
+        // Geste für ihre ganze Dauer dem .drag-area statt einem Schalter.
+        const buildGrid = () => {
+            grid.innerHTML = '';
+            const rect = v4.getBoundingClientRect();
+            const cols = Math.ceil(rect.width / stepSize);
+            const rows = Math.ceil(rect.height / stepSize);
+            const totalCount = cols * rows;
+
+            for (let i = 0; i < totalCount; i++) {
+                const sw = document.createElement('input');
+                sw.type = 'checkbox';
+                sw.setAttribute('switch', '');
+                sw.style.position = 'absolute';
+                sw.style.opacity = '0';
+                sw.style.width = switchW + 'px';
+                sw.style.height = switchH + 'px';
+                sw.style.left = (i % cols) * stepSize + 'px';
+                sw.style.top = Math.floor(i / cols) * stepSize + 'px';
+                sw.style.appearance = 'none';
+                sw.style.webkitAppearance = 'none';
+                sw.style.cursor = 'pointer';
+                sw.style.pointerEvents = 'auto';
+                sw.style.margin = '0';
+                sw.style.padding = '0';
+                grid.appendChild(sw);
+            }
+        };
+
+        // Raster beim Laden aufbauen und bei Größenänderungen erneuern
+        buildGrid();
+        window.addEventListener('resize', buildGrid);
+        window.addEventListener('orientationchange', buildGrid);
+
+        v4.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const rect = v4.getBoundingClientRect();
+            const percent = ((touch.clientY - rect.top) / rect.height) * 100;
+            v4Value.textContent = Math.round(Math.max(0, Math.min(100, percent)));
+
+            // Prüfe, ob wir an einem Rastpunkt sind
+            for (const snap of SNAP_POINTS) {
+                if (Math.abs(percent - snap) < SNAP_RANGE && Math.abs(v4LastSnap - snap) > 1) {
+                    // Finde den Schalter unter dem Finger
+                    const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (elem && elem.tagName === 'INPUT' && elem.parentElement === grid) {
+                        elem.click();
+                        v4Triggered++;
+                        v4Count.textContent = `Auslöser: ${v4Triggered}`;
+                        v4LastSnap = snap;
+                    }
+                    break;
+                }
+            }
+        });
+        v4.addEventListener('touchend', () => { v4Value.textContent = '0'; v4LastSnap = -100; });
+    </script>
+</body>
+</html>
