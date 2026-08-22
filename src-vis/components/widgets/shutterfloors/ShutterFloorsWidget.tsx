@@ -10,8 +10,6 @@ import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
-    posQuick?: number[];
-    slatQuick?: Array<[number, string]>;
     /** Optik des Etagenkopfs: a = schlicht, b = typografisch abgesetzt, c = Akzentstreifen */
     headVariant?: 'a' | 'b' | 'c';
 }
@@ -20,12 +18,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     const options = (config.options as ShutterFloorsOptions) || {};
     const {
         floors = [],
-        posQuick = [0, 25, 50, 75, 100],
-        slatQuick = [
-            [0, 'Waagerecht'],
-            [50, 'Halb'],
-            [90, 'Geschlossen'],
-        ],
         headVariant = 'b',
     } = options;
 
@@ -129,8 +121,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                         room={sheetDevice.room || ''}
                         room_facade=""
                         connected={connected}
-                        posQuick={posQuick}
-                        slatQuick={slatQuick}
                         showFacade={false}
                         onClose={handleCloseSheet}
                     />

@@ -1,10 +1,11 @@
 import React from 'react';
-import { ChevronUp, Square, ChevronDown } from 'lucide-react';
+import { Square } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore } from '../shutterrooms/useShutterDevice';
+import { useYellowForeground } from '../shutterrooms/useYellowForeground';
 import { HapticButton } from '../shutterrooms/HapticButton';
 import { WindowIcon, RoofWindowIcon, RaffstoreIcon } from '../../icons/ShutterTypeIcons';
-import { ShutterBar } from './ShutterBar';
+import { ArrowToTopIcon, ArrowToBottomIcon } from '../../icons/ShutterActionIcons';
 import type { ShutterFloorDeviceDef } from './types';
 import './ShutterRow.css';
 
@@ -18,6 +19,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
     const { markPending, clearPending } = usePendingStore();
+    const stopFgColor = useYellowForeground();
 
     // Berechne geschlossenen Anteil für Statustext
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
@@ -106,43 +108,45 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
             {/* Blinkender Punkt wenn Bewegung läuft */}
             <div className="row-pulse-container">{busy && <span className="row-pulse" aria-hidden="true" />}</div>
 
-            {/* Positionsbalken */}
-            <div className="row-bar">
-                <ShutterBar closedFrac={closedFrac} />
-            </div>
-
-            {/* Drei Knöpfe */}
+            {/* Zwei oder eine Taste */}
             <div className="row-actions">
-                <HapticButton
-                    className="nodrag aura-widget-action"
-                    onPress={handleOpen}
-                    disabled={!connected}
-                    title="Öffnen"
-                    label={`${device.label} öffnen`}
-                    stopPropagation
-                >
-                    <ChevronUp size={14} />
-                </HapticButton>
-                <HapticButton
-                    className="nodrag aura-widget-action"
-                    onPress={handleStop}
-                    disabled={!connected}
-                    title="Stopp"
-                    label={`${device.label} stoppen`}
-                    stopPropagation
-                >
-                    <Square size={12} />
-                </HapticButton>
-                <HapticButton
-                    className="nodrag aura-widget-action"
-                    onPress={handleClose}
-                    disabled={!connected}
-                    title="Schließen"
-                    label={`${device.label} schließen`}
-                    stopPropagation
-                >
-                    <ChevronDown size={14} />
-                </HapticButton>
+                {busy ? (
+                    <div style={{ '--stop-fg': stopFgColor } as React.CSSProperties}>
+                        <HapticButton
+                            className="row-btn row-btn-stop nodrag aura-widget-action"
+                            onPress={handleStop}
+                            disabled={!connected}
+                            title="Stopp"
+                            label={`${device.label} stoppen`}
+                            stopPropagation
+                        >
+                            <Square size={16} fill="currentColor" />
+                        </HapticButton>
+                    </div>
+                ) : (
+                    <>
+                        <HapticButton
+                            className="row-btn nodrag aura-widget-action"
+                            onPress={handleOpen}
+                            disabled={!connected}
+                            title="Öffnen"
+                            label={`${device.label} öffnen`}
+                            stopPropagation
+                        >
+                            <ArrowToTopIcon size={20} />
+                        </HapticButton>
+                        <HapticButton
+                            className="row-btn nodrag aura-widget-action"
+                            onPress={handleClose}
+                            disabled={!connected}
+                            title="Schließen"
+                            label={`${device.label} schließen`}
+                            stopPropagation
+                        >
+                            <ArrowToBottomIcon size={20} />
+                        </HapticButton>
+                    </>
+                )}
             </div>
         </div>
     );

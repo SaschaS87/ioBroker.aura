@@ -2,7 +2,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  height: 64px;
+  padding: 0 12px;
+  box-sizing: border-box;
   background-color: var(--app-bg);
   border-bottom: 1px solid var(--app-border);
   cursor: pointer;
@@ -73,21 +75,15 @@
   justify-content: center;
 }
 
-/* Schmaler Statusbalken mit fester Breite - er soll den Zustand andeuten,
-   nicht den Platz des Namens beanspruchen. */
-.row-bar {
-  flex: 0 0 44px;
-}
-
 .row-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.row-actions .haptic-btn {
-  width: 27px;
-  height: 27px;
+.row-actions .row-btn {
+  width: 48px;
+  height: 44px;
   padding: 0;
   border: none;
   background-color: transparent;
@@ -102,18 +98,34 @@
   justify-content: center;
 }
 
-.row-actions .haptic-btn:hover:not(.is-disabled) {
+.row-actions .row-btn:hover:not(.is-disabled) {
   background-color: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
-.row-actions .haptic-btn:active:not(.is-disabled) {
+.row-actions .row-btn:active:not(.is-disabled) {
   background-color: var(--accent);
   color: white;
   transform: scale(0.94);
 }
 
-.row-actions .haptic-btn.is-disabled {
+.row-actions .row-btn.is-disabled {
   opacity: 0.4;
+}
+
+.row-actions .row-btn-stop {
+  width: 104px;
+  background-color: var(--accent-yellow);
+  color: var(--stop-fg, #1c1917);
+}
+
+.row-actions .row-btn-stop:hover:not(.is-disabled) {
+  background-color: var(--accent-yellow);
+  color: var(--stop-fg, #1c1917);
+}
+
+.row-actions .row-btn-stop:active:not(.is-disabled) {
+  background-color: color-mix(in srgb, var(--accent-yellow) 82%, #000);
+  color: var(--stop-fg, #1c1917);
 }
 
 /* Blinkender Punkt bei Bewegung */

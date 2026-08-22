@@ -14,8 +14,6 @@ interface ShutterRoomsOptions {
     instanceLabel?: string;
     showFooter?: boolean;
     facades?: string[];
-    posQuick?: number[];
-    slatQuick?: Array<[number, string]>;
     rooms?: ShutterRoomDef[];
 }
 
@@ -27,12 +25,6 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
         instanceLabel = 'tahoma.1',
         showFooter = true,
         facades: configFacades = ['Alle', 'SO', 'SW', 'NW', 'NO'],
-        posQuick = [0, 25, 50, 75, 100],
-        slatQuick = [
-            [0, 'Waagerecht'],
-            [50, 'Halb'],
-            [90, 'Geschlossen'],
-        ],
         rooms = [],
     } = options;
 
@@ -210,8 +202,6 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                         room={selectedRoom.name}
                         room_facade={selectedRoom.facade}
                         connected={connected}
-                        posQuick={posQuick}
-                        slatQuick={slatQuick}
                         onClose={handleCloseSheet}
                     />
                 )}

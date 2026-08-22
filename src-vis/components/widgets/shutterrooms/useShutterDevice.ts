@@ -45,6 +45,10 @@ interface ShutterDeviceState {
     slatTarget: number | null;
     /** Läuft gerade ein Lamellen-Befehl? */
     isSlatActing: boolean;
+    /** Letzter bekannter bestätigter Lamellenwinkel (für Fallback-Anzeige). */
+    slatShownPos: number | null;
+    /** Startwert (Rohwert) der aktuellen Fahrt, null wenn nicht in Fahrt. Eingefroren bei Fahrtbeginn. */
+    startOpen: number | null;
 }
 
 export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
@@ -76,8 +80,13 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
         }
     }, [ackedPos]);
 
+    // Der Rohwert bleibt streng (nur ack:true) – daran hängt die Auftragslogik.
+    // Für die ANZEIGE fällt die App auf den letzten bestätigten Wert zurück,
+    // solange ein unquittierter Wunschwert obendrauf liegt (from: web.0).
+    const shownPos = ackedPos !== null ? ackedPos : lastKnownRef.current;
+
     // Position invertieren
-    const posOpen = ackedPos !== null ? (dev.invertPosition ? 100 - ackedPos : ackedPos) : null;
+    const posOpen = shownPos !== null ? (dev.invertPosition ? 100 - shownPos : shownPos) : null;
 
     // Pending State auslesen
     const pendingEntry = store.pending[dev.key];
@@ -91,7 +100,22 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     const isSlatActing = !!slatPendingEntry;
     const slatTarget = slatPendingEntry?.targetRaw ?? null;
 
+    // Letzte bekannte Lamellenposition (für Fallback-Anzeige)
+    const lastKnownSlatRef = useRef<number | null>(slatAckedPos);
+    useEffect(() => {
+        if (slatAckedPos !== null) {
+            lastKnownSlatRef.current = slatAckedPos;
+        }
+    }, [slatAckedPos]);
+
+    // Fallback für Lamellen-Anzeige (wie shownPos für Position)
+    const slatShownPos = slatAckedPos !== null ? slatAckedPos : lastKnownSlatRef.current;
+
     // Toleranzband ±3%: wenn Position nah bei Ziel, Pending zurücksetzen
+    // WICHTIG: Streng auf ackedPos prüfen (ack:true), nie auf Fallback (shownPos).
+    // Mit Fallback würde ein echter Auftrag (z.B. 20 → 80) sofort nach dem
+    // Absenden „am Ziel" erscheinen, und die Fahrtanzeige samt Animation
+    // verschwände im selben Moment. Das ist die gefährlichste Falle des Umbaus.
     useEffect(() => {
         if (pendingEntry && ackedPos !== null) {
             const targetRaw = pendingEntry.targetRaw;
@@ -103,6 +127,8 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
 
     // Toleranzband ±3: meldet die Box den Lamellenwinkel nah am Ziel, ist der
     // Auftrag erledigt. Der 45s-Aufräumer im Widget fängt den Rest ab.
+    // WICHTIG: Streng auf slatAckedPos prüfen (ack:true), nie auf Fallback.
+    // Dasselbe Risiko wie beim Position-Effekt oben.
     useEffect(() => {
         if (slatPendingEntry && slatAckedPos !== null) {
             const target = slatPendingEntry.targetRaw;
@@ -117,23 +143,41 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     const targetRaw = pendingEntry?.targetRaw ?? null;
     const targetOpen = targetRaw !== null ? (dev.invertPosition ? 100 - targetRaw : targetRaw) : null;
 
+    // Startwert der Fahrt einfrieren: wird bei Fahrtbeginn gespeichert und
+    // bleibt stehen, bis die Fahrt endet. Verhindert, dass zwischenzeitliche
+    // Position-Updates (von der Box) die Startzahl mitwandern lassen.
+    const prevBusyRef = useRef(false);
+    const moveStartRef = useRef<number | null>(null);
+    const busy = isMoving || isActing;
+    useEffect(() => {
+        if (busy && !prevBusyRef.current) moveStartRef.current = lastKnownRef.current;
+        if (!busy) moveStartRef.current = null;
+        prevBusyRef.current = busy;
+    }, [busy]);
+
+    const startOpen = moveStartRef.current !== null
+        ? (dev.invertPosition ? 100 - moveStartRef.current : moveStartRef.current)
+        : null;
+
     let direction: 'up' | 'down' | null = null;
-    if (targetRaw !== null && ackedPos !== null && Math.abs(targetRaw - ackedPos) > 3) {
-        direction = targetRaw > ackedPos ? 'down' : 'up';
+    if (targetRaw !== null && shownPos !== null && Math.abs(targetRaw - shownPos) > 3) {
+        direction = targetRaw > shownPos ? 'down' : 'up';
     }
 
     return {
         ackedPos,
         lastKnownAckedPos: lastKnownRef.current,
         posOpen,
-        isUnknown: ackedPos === null,
+        isUnknown: shownPos === null,
         isMoving,
         isActing,
         direction,
         targetOpen,
         slatAckedPos,
-        isSlatUnknown: slatAckedPos === null,
+        isSlatUnknown: slatShownPos === null,
+        slatShownPos,
         slatTarget,
         isSlatActing,
+        startOpen,
     };
 };

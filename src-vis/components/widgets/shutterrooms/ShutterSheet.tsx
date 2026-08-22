@@ -1,11 +1,14 @@
 import React, { useRef, useState } from 'react';
-import { ChevronUp, Square, ChevronDown } from 'lucide-react';
+import { Square } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore, slatPendingKey } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
+import { SlatSlider } from './SlatSlider';
 import { HapticButton } from './HapticButton';
 import { tapFeedback } from './haptics';
 import { useSheetDismiss } from '../useSheetDismiss';
+import { useDragValue, SNAP_POS, KNOB_PAD } from './useDragValue';
+import { useYellowForeground } from './useYellowForeground';
 import type { ShutterDeviceDef } from './types';
 import './ShutterSheet.css';
 
@@ -14,8 +17,6 @@ interface ShutterSheetProps {
     room: string;
     room_facade: string;
     connected: boolean;
-    posQuick: number[];
-    slatQuick: Array<[number, string]>;
     /** Himmelsrichtung im Untertitel zeigen. Der Rollos-Tab gruppiert nach
      *  Etage und braucht sie nicht; der Rolllaeden-Tab gruppiert nach Fassade
      *  und behaelt sie - deshalb Default true. */
@@ -28,101 +29,44 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     room,
     room_facade,
     connected,
-    posQuick,
-    slatQuick,
     showFacade = true,
     onClose,
 }) => {
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
     const { markPending, clearPending, showToast } = usePendingStore();
+    const stopFgColor = useYellowForeground();
     const [positionDraft, setPositionDraft] = useState<number | null>(null);
     const [slatDraft, setSlatDraft] = useState<number | null>(null);
+    const [localSlatIsDragging, setLocalSlatIsDragging] = useState(false);
     const sheetRef = useRef<HTMLDivElement>(null);
-    const sliderRef = useRef<HTMLInputElement>(null);
-    const slatSliderRef = useRef<HTMLInputElement>(null);
+
+    // Eine Rechnung, nicht zwei: Fenster-, Regler- und Tastenbreite zentralisiert
+    const VIZ_W_PLAIN = 170;   // Fenster ohne Lamelle
+    const VIZ_W_SLAT  = 150;   // Fenster mit Lamelle daneben
+    const SLAT_W      = 44;    // Lamellenregler
+    const INSTR_GAP   = 16;    // Abstand dazwischen
+    const vizW = device.slatDp ? VIZ_W_SLAT : VIZ_W_PLAIN;
+    const instrW = vizW + (device.slatDp ? INSTR_GAP + SLAT_W : 0);   // 210 bzw. 170
 
     // Angezeigt und geregelt wird durchgaengig der GESCHLOSSENE Anteil
     // (0 % = offen, 100 % = zu), damit Liste und Feinregler dieselbe Zahl meinen.
     // Der Hook liefert weiterhin den offenen Anteil - hier wird nur gespiegelt.
     const displayClosed = positionDraft !== null ? positionDraft : 100 - (state.posOpen ?? 0);
-    const displaySlat = slatDraft !== null ? slatDraft : (state.slatAckedPos ?? 0);
-
-    // Welchen Wert die Schnellwahl-Knöpfe als "aktiv" markieren: beim Ziehen den
-    // Finger, bei laufendem Auftrag das ZIEL, sonst den bestätigten Ist-Wert.
-    // Vorher stand hier immer der Ist-Wert – während der Fahrt blieb deshalb der
-    // alte Knopf eingefärbt, obwohl längst ein anderer angefahren wurde.
-    const posChipRef = positionDraft !== null ? positionDraft : 100 - (state.targetOpen ?? state.posOpen ?? 0);
-    const slatChipRef = slatDraft !== null ? slatDraft : (state.slatTarget ?? state.slatAckedPos ?? 0);
+    const displaySlat = slatDraft !== null ? slatDraft : (state.slatShownPos ?? 0);
 
     // Schließen: nach unten wischen, Backdrop-Klick oder Escape. Dieselbe
     // Mechanik wie beim Raumklima-Sheet – der Baustein liegt gemeinsam daneben.
     const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onClose);
 
-    // Position Slider: nur beim Loslassen schreiben
-    const handlePositionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setPositionDraft(Number(e.target.value));
-    };
+    // Position Zieh-Handler (eine Instanz)
+    const { handlers: positionDragHandlers, isDragging: positionIsDragging } = useDragValue({
+        get: () => positionDraft !== null ? positionDraft : displayClosed,
+        set: setPositionDraft,
+        snapPoints: SNAP_POS,
+        spanPx: 280,
+    });
 
-    const handlePositionEnd = () => {
-        if (positionDraft !== null && device.posDp) {
-            tapFeedback();
-            // positionDraft ist der GESCHLOSSENE Anteil. Der offene waere
-            // 100 - draft; mit der Invertierung verrechnet bleibt bei
-            // invertPosition genau der Draft-Wert stehen.
-            const targetRaw = device.invertPosition ? positionDraft : 100 - positionDraft;
-            setState(device.posDp, targetRaw);
-            markPending(device.key, targetRaw);
-            setPositionDraft(null);
-        }
-    };
-
-    // Slat Slider: nur beim Loslassen schreiben
-    const handleSlatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSlatDraft(Number(e.target.value));
-    };
-
-    const handleSlatEnd = () => {
-        if (slatDraft !== null && device.slatDp) {
-            setState(device.slatDp, slatDraft);
-            markPending(slatPendingKey(device.key), slatDraft);
-            setSlatDraft(null);
-        }
-    };
-
-    // Position Quick-Chips
-    const handlePositionQuick = (val: number) => {
-        if (!device.posDp) return;
-        tapFeedback();
-        // val ist der gewuenschte GESCHLOSSENE Anteil (0 = offen, 100 = zu).
-        const targetRaw = device.invertPosition ? val : 100 - val;
-        setState(device.posDp, targetRaw);
-        markPending(device.key, targetRaw);
-    };
-
-    // Slat Quick-Chips
-    const handleSlatQuick = (val: number) => {
-        if (!device.slatDp) return;
-        tapFeedback();
-        setState(device.slatDp, val);
-        markPending(slatPendingKey(device.key), val);
-    };
-
-    const handleOpen = () => {
-        if (!device.upDp) return;
-        tapFeedback();
-        const targetRaw = device.invertPosition ? 100 : 0;
-        setState(device.upDp, true);
-        markPending(device.key, targetRaw);
-    };
-
-    const handleClose = () => {
-        if (!device.downDp) return;
-        tapFeedback();
-        const targetRaw = device.invertPosition ? 0 : 100;
-        setState(device.downDp, true);
-        markPending(device.key, targetRaw);
-    };
 
     const handleStop = () => {
         if (!device.stopDp) return;
@@ -131,11 +75,88 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
         // Stopp hat kein Ziel – Auftrags-Zustand beenden, Wort statt Bild.
         clearPending(device.key);
         showToast('Gestoppt');
+        // Entwürfe verwerfen (F4)
+        setPositionDraft(null);
+        setSlatDraft(null);
     };
 
-    const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
+    const handleConfirm = () => {
+        tapFeedback();
+        if (positionDraft !== null && device.posDp) {
+            const targetRaw = device.invertPosition ? positionDraft : 100 - positionDraft;
+            // Denselben Wert nochmal schreiben bewegt nichts, die Box quittiert
+            // nichts – der Datenpunkt bliebe dauerhaft auf ack:false stehen und
+            // die Anzeige waere blind. Also gar nicht erst senden.
+            const alreadyThere = state.ackedPos !== null
+                && Math.round(state.ackedPos) === Math.round(targetRaw);
+            if (!alreadyThere) {
+                setState(device.posDp, targetRaw);
+                markPending(device.key, targetRaw);
+            }
+            setPositionDraft(null);
+        }
+        if (slatDraft !== null && device.slatDp) {
+            // Gleiches Prinzip für Lamelle: nicht schreiben, wenn Ziel schon anliegt
+            const alreadyThereSat = state.slatAckedPos !== null
+                && Math.round(state.slatAckedPos) === Math.round(slatDraft);
+            if (!alreadyThereSat) {
+                setState(device.slatDp, slatDraft);
+                markPending(slatPendingKey(device.key), slatDraft);
+            }
+            setSlatDraft(null);
+        }
+    };
+
+    // Wortzeilen für Position
+    const getPositionWord = (): string => {
+        // Fahrt mit bekanntem Ziel: Richtung anzeigen
+        if (travel) {
+            return targetClosed !== null && startClosed !== null
+                ? (targetClosed > startClosed ? 'fährt zu' : 'fährt auf')
+                : 'fährt';
+        }
+        // Fahrt ohne bekanntes Ziel
+        if (busy && positionDraft === null) {
+            return 'fährt';
+        }
+        // Unbekannter Wert (und kein Entwurf): leer
+        if (state.isUnknown && positionDraft === null) {
+            return '';
+        }
+        // Ruhe, Wert bekannt
+        if (displayClosed <= 3) return 'ganz offen';
+        if (displayClosed >= 97) return 'ganz geschlossen';
+        return '';
+    };
+
+    // Wortzeilen für Lamelle
+    const getSlatWord = (): string => {
+        // Unbekannter Wert (und kein Entwurf): leer
+        if (state.isSlatUnknown && slatDraft === null) {
+            return '';
+        }
+        if (displaySlat <= 5) return 'waagerecht';
+        if (displaySlat >= 88) return 'geschlossen';
+        return 'halb offen';
+    };
+
     const effFacade = device.facade || room_facade;
-    const busy = state.isMoving || state.isActing;
+    const busy = state.isMoving || state.isActing || state.isSlatActing;
+    const hasDraft = positionDraft !== null || slatDraft !== null;
+
+    // Fahrt mit bekanntem Ziel und Startwert: zeigt Start → Ziel
+    const travel = busy && positionDraft === null && state.targetOpen !== null && state.startOpen !== null;
+    const startClosed = state.startOpen !== null ? 100 - state.startOpen : null;
+    const targetClosed = state.targetOpen !== null ? 100 - state.targetOpen : null;
+
+    // Während der Fahrt zeigt das Fenster das ZIEL – die 900-ms-Transition in
+    // ShutterViz.css lässt den Behang dorthin gleiten. Ohne bekanntes Ziel
+    // (z. B. Fahrt vom Wandschalter) bleibt der letzte bekannte Stand stehen:
+    // lieber unbewegt als falsch.
+    const vizClosed =
+        positionDraft !== null ? positionDraft
+      : travel && targetClosed !== null ? targetClosed
+      : displayClosed;
 
     return (
         <div className="shutter-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
@@ -170,126 +191,98 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                 </div>
 
                 {/* Körper */}
-                <div className="sheet-body">
-                    {/* Linke Spalte: große Visualisierung + vertikale Buttons */}
-                    <div className="sheet-left">
-                        <ShutterViz
-                            closedFrac={closedFrac}
-                            isMoving={state.isMoving || state.isActing}
-                            isUnknown={state.isUnknown}
-                            direction={state.direction}
-                            size="large"
-                        />
-                        <div className="sheet-buttons-vertical">
-                            <HapticButton
-                                className="sheet-btn sheet-btn-up"
-                                onPress={handleOpen}
-                                disabled={!connected}
-                                title="Vollständig öffnen"
-                                label="Vollständig öffnen"
-                            >
-                                <ChevronUp size={22} />
-                            </HapticButton>
-                            <HapticButton
-                                className="sheet-btn sheet-btn-stop"
-                                onPress={handleStop}
-                                disabled={!connected}
-                                title="Stopp"
-                                label="Stopp"
-                            >
-                                <Square size={18} />
-                            </HapticButton>
-                            <HapticButton
-                                className="sheet-btn sheet-btn-down"
-                                onPress={handleClose}
-                                disabled={!connected}
-                                title="Vollständig schließen"
-                                label="Vollständig schließen"
-                            >
-                                <ChevronDown size={22} />
-                            </HapticButton>
-                        </div>
-                    </div>
-
-                    {/* Rechte Spalte: Position + optional Lamelle */}
-                    <div className="sheet-right">
-                        {/* Position Block */}
-                        <div className="sheet-block">
-                            <h3 className="block-title">Position</h3>
-                            <div className="block-value">
-                                {state.isUnknown ? '−' : `${Math.round(displayClosed)} % zu`}
-                                {/* Laufender Auftrag: das Ziel steht daneben, bis die Box
-                                    die neue Position gemeldet hat. Nicht waehrend des
-                                    Ziehens – dann fuehrt der Finger die Zahl. */}
-                                {busy && positionDraft === null && state.targetOpen !== null && (
-                                    <span className="block-ziel">→ {Math.round(100 - state.targetOpen)} %</span>
+                <div className="sheet-body" style={{ '--instr-w': `${instrW}px`, '--instr-gap': `${INSTR_GAP}px` } as React.CSSProperties}>
+                    {/* Zwei Instrumente nebeneinander */}
+                    <div className="sheet-instruments">
+                        {/* Position */}
+                        <div className="instrument">
+                            <h3 className="block-title">POSITION</h3>
+                            <div className={`block-value ${positionIsDragging ? 'live' : ''} ${travel ? 'is-travel' : ''}`}>
+                                {state.isUnknown && positionDraft === null ? (
+                                    '−'
+                                ) : travel && targetClosed !== null && startClosed !== null ? (
+                                    <>
+                                        {Math.round(startClosed)} → <span className="block-ziel">{Math.round(targetClosed)} %</span>
+                                    </>
+                                ) : (
+                                    `${Math.round(displayClosed)} % zu`
                                 )}
                             </div>
-                            <input
-                                ref={sliderRef}
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={displayClosed}
-                                onChange={handlePositionChange}
-                                onMouseUp={handlePositionEnd}
-                                onTouchEnd={handlePositionEnd}
-                                disabled={!connected || state.isUnknown}
-                                className="block-slider"
-                            />
-                            <div className="quick-chips">
-                                {posQuick.map((val) => (
-                                    <HapticButton
-                                        key={val}
-                                        className={`quick-chip ${Math.abs(posChipRef - val) < 5 ? 'active' : ''}`}
-                                        onPress={() => handlePositionQuick(val)}
-                                        disabled={!connected}
-                                        label={`Auf ${val} Prozent fahren`}
-                                    >
-                                        {val}%
-                                    </HapticButton>
-                                ))}
+                            <div className="block-word">{getPositionWord()}</div>
+                            <div
+                                className="shutter-viz-wrapper"
+                                {...positionDragHandlers}
+                            >
+                                <ShutterViz
+                                    closedFrac={state.isUnknown && positionDraft === null ? null : vizClosed}
+                                    isMoving={state.isMoving || state.isActing}
+                                    isUnknown={state.isUnknown}
+                                    direction={state.direction}
+                                    size="control"
+                                    widthPx={vizW}
+                                    heightPx={280}
+                                    snapMarks={SNAP_POS}
+                                    isDragging={positionIsDragging}
+                                />
                             </div>
                         </div>
 
-                        {/* Lamellen Block (nur wenn slatDp vorhanden) */}
+                        {/* Lamelle (nur wenn slatDp vorhanden) */}
                         {device.slatDp && (
-                            <div className="sheet-block">
-                                <h3 className="block-title">Lamellenwinkel</h3>
-                                <div className="block-value">
+                            <div className="instrument">
+                                <h3 className="block-title">LAMELLE</h3>
+                                <div className={`block-value ${localSlatIsDragging ? 'live' : ''}`}>
                                     {state.isSlatUnknown ? '−' : `${Math.round(displaySlat)}°`}
                                 </div>
-                                <input
-                                    ref={slatSliderRef}
-                                    type="range"
-                                    min="0"
-                                    max="100"
+                                <div className="block-word">{getSlatWord()}</div>
+                                <SlatSlider
                                     value={displaySlat}
-                                    onChange={handleSlatChange}
-                                    onMouseUp={handleSlatEnd}
-                                    onTouchEnd={handleSlatEnd}
+                                    onChange={setSlatDraft}
+                                    spanPx={280 - 2 * KNOB_PAD}
                                     disabled={!connected || state.isSlatUnknown}
-                                    className="block-slider"
+                                    onDraggingChange={setLocalSlatIsDragging}
                                 />
-                                <div className="quick-chips">
-                                    {slatQuick.map(([val, label]) => (
-                                        <HapticButton
-                                            key={val}
-                                            className={`quick-chip ${Math.abs(slatChipRef - val) < 5 ? 'active' : ''}`}
-                                            onPress={() => handleSlatQuick(val)}
-                                            disabled={!connected}
-                                            label={`Lamelle: ${label}`}
-                                        >
-                                            {label}
-                                        </HapticButton>
-                                    ))}
-                                </div>
                             </div>
                         )}
-
-                        {/* Nicht verbunden Hinweis */}
-                        {!connected && <div className="sheet-notice">TaHoma-Box nicht erreichbar</div>}
                     </div>
+
+                    {/* OK-/Stopp-Taste */}
+                    <div className="sheet-confirm-container">
+                        {busy ? (
+                            <div style={{ '--stop-fg': stopFgColor } as React.CSSProperties}>
+                                <HapticButton
+                                    className="sheet-confirm sheet-confirm-stop"
+                                    onPress={handleStop}
+                                    label="Stopp"
+                                >
+                                    <span className="sheet-confirm-label">
+                                        <Square size={20} fill="currentColor" />
+                                        Stopp
+                                    </span>
+                                </HapticButton>
+                            </div>
+                        ) : hasDraft ? (
+                            <HapticButton
+                                className="sheet-confirm"
+                                onPress={handleConfirm}
+                                label="OK"
+                            >
+                                OK
+                            </HapticButton>
+                        ) : (
+                            <HapticButton
+                                className="sheet-confirm is-disabled"
+                                disabled
+                                onPress={() => {}}
+                                label="OK"
+                            >
+                                OK
+                            </HapticButton>
+                        )}
+                    </div>
+
+                    {/* Nicht verbunden Hinweis */}
+                    {!connected && <div className="sheet-notice">TaHoma-Box nicht erreichbar</div>}
                 </div>
             </div>
         </div>
