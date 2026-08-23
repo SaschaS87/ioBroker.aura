@@ -516,7 +516,8 @@ function BarChart({
                 const showXLabel =
                     !hourMode &&
                     (d.isToday ||
-                        (i % labelEvery === 0 && (todayIdx < 0 || Math.abs(i - todayIdx) >= 2)));
+                        (i % labelEvery === 0 &&
+                            (labelEvery === 1 || todayIdx < 0 || Math.abs(i - todayIdx) >= 2)));
                 // Narrow bars (hour mode, 30-day view) are too tight for labels
                 // everywhere — always mark at least the period's peak. Hour mode
                 // never labels dry hours (24 zeros would be pure noise).
