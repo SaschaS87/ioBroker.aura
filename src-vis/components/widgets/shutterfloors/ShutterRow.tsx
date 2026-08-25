@@ -55,7 +55,9 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     // Knopf-Handler mit Pending-Logik (analog ShutterTile)
     const handleOpen = () => {
         if (!device.upDp) return;
-        const targetRaw = device.invertPosition ? 100 : 0;
+        // Ziel als Rohwert: 0 = ganz offen, 100 = ganz zu. Der Hook rechnet
+        // daraus targetOpen = 100 - targetRaw; "Auf" muss also 0 setzen.
+        const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.upDp, true);
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
@@ -68,7 +70,9 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
 
     const handleClose = () => {
         if (!device.downDp) return;
-        const targetRaw = device.invertPosition ? 0 : 100;
+        // Ziel als Rohwert: 0 = ganz offen, 100 = ganz zu. Der Hook rechnet
+        // daraus targetOpen = 100 - targetRaw; "Zu" muss also 100 setzen.
+        const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.downDp, true);
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
