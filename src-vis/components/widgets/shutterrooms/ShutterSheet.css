@@ -287,3 +287,8 @@
     transform: none;
   }
 }
+
+/* Zahl ohne Quittung der Box: gedaempft, dazu "nicht bestaetigt" darunter. */
+.block-value.is-estimate {
+  opacity: 0.6;
+}

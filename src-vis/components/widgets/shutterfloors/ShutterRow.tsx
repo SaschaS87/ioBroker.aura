@@ -32,6 +32,11 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     let statusText = '';
     if (state.isUnknown) {
         statusText = 'unbekannt';
+    } else if (state.isEstimate && closedFrac !== null) {
+        // Ohne Quittung der Box ist die Zahl eine Vermutung. Dann bewusst die
+        // Prozentform mit Tilde: "~ 40 % zu" traegt die Unsicherheit sichtbar,
+        // ein blankes "Geschlossen" waere eine Behauptung.
+        statusText = `~ ${Math.round(closedFrac)} % zu`;
     } else if (closedFrac !== null) {
         if (closedFrac <= 3) {
             statusText = 'Offen';
@@ -52,7 +57,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         if (!device.upDp) return;
         const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.upDp, true);
-        markPending(device.key, targetRaw);
+        markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
 
     const handleStop = () => {
@@ -65,7 +70,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         if (!device.downDp) return;
         const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.downDp, true);
-        markPending(device.key, targetRaw);
+        markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
 
     const handleRowClick = () => {
@@ -102,11 +107,8 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
             {/* Zweizeilig: Label + Status */}
             <div className="row-labels">
                 <div className="row-label">{device.label}</div>
-                <div className="row-status">{statusText}</div>
+                <div className={`row-status${state.isEstimate ? ' is-estimate' : ''}`}>{statusText}</div>
             </div>
-
-            {/* Blinkender Punkt wenn Bewegung läuft */}
-            <div className="row-pulse-container">{busy && <span className="row-pulse" aria-hidden="true" />}</div>
 
             {/* Zwei oder eine Taste */}
             <div className="row-actions">

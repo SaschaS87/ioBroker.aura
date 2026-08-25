@@ -52,10 +52,10 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     const pendingStore = useMemo(
         () => ({
             pending,
-            markPending: (key: string, targetRaw: number) => {
+            markPending: (key: string, targetRaw: number, startRaw: number | null = null) => {
                 setPending((prev) => ({
                     ...prev,
-                    [key]: { targetRaw, startedAt: Date.now() },
+                    [key]: { targetRaw, startedAt: Date.now(), startRaw },
                 }));
             },
             clearPending: (key: string) => {

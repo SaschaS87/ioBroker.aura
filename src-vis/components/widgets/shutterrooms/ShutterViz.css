@@ -2,7 +2,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent);
+  /* Grundfarbe der Lamellen. Bernstein setzt .viz-moving darauf, sonst grau. */
+  color: var(--text-secondary);
 }
 
 .shutter-viz.viz-small {

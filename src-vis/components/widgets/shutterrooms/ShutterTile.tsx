@@ -24,7 +24,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, onO
         if (!device.upDp) return;
         const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.upDp, true);
-        markPending(device.key, targetRaw);
+        markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
 
     const handleStop = () => {
@@ -40,7 +40,7 @@ export const ShutterTile: React.FC<ShutterTileProps> = ({ device, connected, onO
         if (!device.downDp) return;
         const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.downDp, true);
-        markPending(device.key, targetRaw);
+        markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
 
     const handleCardClick = () => {

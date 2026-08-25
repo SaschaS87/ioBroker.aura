@@ -91,7 +91,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                 && Math.round(state.ackedPos) === Math.round(targetRaw);
             if (!alreadyThere) {
                 setState(device.posDp, targetRaw);
-                markPending(device.key, targetRaw);
+                markPending(device.key, targetRaw, state.lastKnownAckedPos);
             }
             setPositionDraft(null);
         }
@@ -122,6 +122,10 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
         // Unbekannter Wert (und kein Entwurf): leer
         if (state.isUnknown && positionDraft === null) {
             return '';
+        }
+        // Zahl ohne Quittung der Box: sagen, dass sie eine Vermutung ist
+        if (state.isEstimate && positionDraft === null) {
+            return 'nicht bestätigt';
         }
         // Ruhe, Wert bekannt
         if (displayClosed <= 3) return 'ganz offen';
@@ -183,9 +187,10 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                     <div className="sheet-header">
                         <div className="sheet-header-title">
                             <h2 className="sheet-title">{device.label}</h2>
-                            <p className="sheet-subtitle">
-                                {showFacade && effFacade ? `${room} · ${effFacade}` : room}
-                            </p>
+                            {/* Untertitel nur, wenn die Himmelsrichtung etwas beitraegt.
+                                Der nackte Raumname ist am 25.08. entfallen - er steckt
+                                ohnehin im Namen des Antriebs eine Zeile darueber. */}
+                            {showFacade && effFacade && <p className="sheet-subtitle">{`${room} · ${effFacade}`}</p>}
                         </div>
                     </div>
                 </div>
@@ -197,7 +202,11 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                         {/* Position */}
                         <div className="instrument">
                             <h3 className="block-title">POSITION</h3>
-                            <div className={`block-value ${positionIsDragging ? 'live' : ''} ${travel ? 'is-travel' : ''}`}>
+                            <div
+                                className={`block-value ${positionIsDragging ? 'live' : ''} ${travel ? 'is-travel' : ''} ${
+                                    !travel && positionDraft === null && state.isEstimate ? 'is-estimate' : ''
+                                }`}
+                            >
                                 {state.isUnknown && positionDraft === null ? (
                                     '−'
                                 ) : travel && targetClosed !== null && startClosed !== null ? (

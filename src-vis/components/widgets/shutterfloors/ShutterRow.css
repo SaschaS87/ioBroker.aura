@@ -67,14 +67,6 @@
   white-space: nowrap;
 }
 
-/* Platz für blinkenden Punkt */
-.row-pulse-container {
-  flex: 0 0 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .row-actions {
   display: flex;
   gap: 8px;
@@ -128,29 +120,13 @@
   color: var(--stop-fg, #1c1917);
 }
 
-/* Blinkender Punkt bei Bewegung */
-.row-pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: var(--accent-yellow);
-  flex-shrink: 0;
-  animation: row-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes row-pulse {
-  50% {
-    opacity: 0.25;
-    transform: scale(0.75);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .row-pulse {
-    animation: none;
-  }
-
   .row-actions .haptic-btn:active:not(.is-disabled) {
     transform: none;
   }
+}
+
+/* Zahl ohne Quittung der Box: gedaempft, dazu die Tilde im Text. */
+.row-status.is-estimate {
+  opacity: 0.6;
 }

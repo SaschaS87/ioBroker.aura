@@ -32,14 +32,10 @@ export const ShutterViz: React.FC<ShutterVizProps> = ({
     const patternId = `slats-${uid}`;
     const clipId = `fill-${uid}`;
 
-    const isClosed = closedFrac !== null && closedFrac > 0;
-
-    let borderColor = 'var(--text-secondary)';
-    if (isMoving) {
-        borderColor = 'var(--accent-yellow)';
-    } else if (isClosed) {
-        borderColor = 'var(--accent)';
-    }
+    // Farbe sagt nur eines: faehrt oder faehrt nicht. Im Stillstand bleibt das
+    // Fenster grau - egal ob offen, halb oder ganz zu; wie weit es zu ist, sagt
+    // schon die Kante des Behangs. Bernstein ist der Fahrt vorbehalten.
+    const borderColor = isMoving ? 'var(--accent-yellow)' : 'var(--text-secondary)';
 
     const sizeClass = size === 'large' ? 'viz-large' : size === 'control' ? 'viz-control' : 'viz-small';
     const opacityClass = isUnknown ? 'viz-unknown' : '';

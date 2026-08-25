@@ -1,19 +1,32 @@
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import type { ShutterDeviceDef } from './types';
 
 export interface PendingState {
     targetRaw: number | null;
     startedAt: number;
+    /** Rohwert bei Fahrtbeginn. Liegt bewusst im Auftrag und nicht im Fenster:
+     *  der Auftrag lebt im Widget und ueberlebt das Schliessen des
+     *  Detail-Fensters, ein useRef im Fenster tut das nicht. */
+    startRaw: number | null;
 }
 
 interface PendingStore {
     pending: Record<string, PendingState>;
-    markPending: (key: string, targetRaw: number) => void;
+    markPending: (key: string, targetRaw: number, startRaw?: number | null) => void;
     clearPending: (key: string) => void;
     /** Kurze Einblendung am unteren Rand – nur fuer Aktionen ohne eigenes Bild (Stopp). */
     showToast: (text: string) => void;
 }
+
+/** Letzter BESTAETIGTER Wert je Datenpunkt - bewusst ausserhalb von React.
+ *  Liste und Detail-Fenster teilen sich diesen Merkzettel. Frueher lag er in
+ *  einem useRef je Komponente; das Detail-Fenster wird aber bei jedem Oeffnen
+ *  frisch erzeugt (key={sheetSeq}, Fix vom 18.08. gegen haengende Sheets) und
+ *  startete deshalb blind. Lag gleichzeitig ein unquittierter Wunschwert im
+ *  Datenpunkt - also bei JEDER Fahrt aus der App - stand dort "-" statt einer
+ *  Zahl. Von Sascha am 25.08.2026 am Gaeste-WC gemeldet. */
+const lastAckedByDp = new Map<string, number>();
 
 export const PendingContext = createContext<PendingStore | null>(null);
 
@@ -33,6 +46,8 @@ interface ShutterDeviceState {
     lastKnownAckedPos: number | null;
     posOpen: number | null;
     isUnknown: boolean;
+    /** Angezeigter Wert ist nicht von der Box bestaetigt - Oberflaeche kennzeichnet ihn. */
+    isEstimate: boolean;
     isMoving: boolean;
     isActing: boolean;
     /** Fahrtrichtung eines laufenden Auftrags – null, wenn nicht ableitbar. */
@@ -72,21 +87,10 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     const ackedPos = typeof posAcked === 'number' && posAck === true ? posAcked : null;
     const slatAckedPos = typeof slatAcked === 'number' && slatAck === true ? slatAcked : null;
 
-    // Letzte bekannte Position (für Referenz)
-    const lastKnownRef = useRef<number | null>(ackedPos);
-    useEffect(() => {
-        if (ackedPos !== null) {
-            lastKnownRef.current = ackedPos;
-        }
-    }, [ackedPos]);
-
-    // Der Rohwert bleibt streng (nur ack:true) – daran hängt die Auftragslogik.
-    // Für die ANZEIGE fällt die App auf den letzten bestätigten Wert zurück,
-    // solange ein unquittierter Wunschwert obendrauf liegt (from: web.0).
-    const shownPos = ackedPos !== null ? ackedPos : lastKnownRef.current;
-
-    // Position invertieren
-    const posOpen = shownPos !== null ? (dev.invertPosition ? 100 - shownPos : shownPos) : null;
+    // Der UNQUITTIERTE Wert im Datenpunkt: unser eigener Wunschwert, den die
+    // Box noch nicht bestaetigt hat (from: web.0). Nur als Notnagel fuer die
+    // Anzeige - niemals fuer die Auftragslogik.
+    const unackedPos = typeof posAcked === 'number' && posAck !== true ? posAcked : null;
 
     // Pending State auslesen
     const pendingEntry = store.pending[dev.key];
@@ -95,21 +99,45 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     // isMoving: aus ActivityDP wenn vorhanden, sonst aus pendingEntry
     const isMoving = dev.activityDp ? !!activityVal : isActing;
 
+    // Letzte bestaetigte Position - je DATENPUNKT, nicht je Komponente.
+    useEffect(() => {
+        if (ackedPos !== null && dev.posDp) lastAckedByDp.set(dev.posDp, ackedPos);
+    }, [ackedPos, dev.posDp]);
+    const lastKnownPos = ackedPos !== null ? ackedPos : dev.posDp ? (lastAckedByDp.get(dev.posDp) ?? null) : null;
+
+    // Der Rohwert bleibt streng (nur ack:true) – daran hängt die Auftragslogik.
+    // Fuer die ANZEIGE gilt eine Rangfolge:
+    //   1. der bestaetigte Wert,
+    //   2. laeuft KEIN Auftrag mehr und liegt ein unquittierter Wunschwert vor:
+    //      diesen zeigen. Genau der Fall, wenn der Adapter stumm bleibt -
+    //      "vermutlich 40 %" ist ehrlicher als ein falsches "offen",
+    //   3. sonst der letzte bestaetigte Wert.
+    // Waehrend ein Auftrag laeuft, bleibt es bei 3.: Fenster und Animation
+    // zeigen dann ohnehin Start -> Ziel.
+    const shownPos = ackedPos !== null ? ackedPos : !isActing && unackedPos !== null ? unackedPos : lastKnownPos;
+
+    // Angezeigter Wert ohne Quittung - die Oberflaeche kennzeichnet ihn.
+    const isEstimate = ackedPos === null && shownPos !== null;
+
+    // Position invertieren
+    const posOpen = shownPos !== null ? (dev.invertPosition ? 100 - shownPos : shownPos) : null;
+
     // Lamellen Pending State auslesen
     const slatPendingEntry = store.pending[slatPendingKey(dev.key)];
     const isSlatActing = !!slatPendingEntry;
     const slatTarget = slatPendingEntry?.targetRaw ?? null;
 
-    // Letzte bekannte Lamellenposition (für Fallback-Anzeige)
-    const lastKnownSlatRef = useRef<number | null>(slatAckedPos);
+    // Letzter bestaetigter Lamellenwinkel - ebenfalls je Datenpunkt.
     useEffect(() => {
-        if (slatAckedPos !== null) {
-            lastKnownSlatRef.current = slatAckedPos;
-        }
-    }, [slatAckedPos]);
+        if (slatAckedPos !== null && dev.slatDp) lastAckedByDp.set(dev.slatDp, slatAckedPos);
+    }, [slatAckedPos, dev.slatDp]);
+    const lastKnownSlat =
+        slatAckedPos !== null ? slatAckedPos : dev.slatDp ? (lastAckedByDp.get(dev.slatDp) ?? null) : null;
 
-    // Fallback für Lamellen-Anzeige (wie shownPos für Position)
-    const slatShownPos = slatAckedPos !== null ? slatAckedPos : lastKnownSlatRef.current;
+    // Fallback fuer die Lamellen-Anzeige, dieselbe Rangfolge wie bei der Position.
+    const unackedSlat = typeof slatAcked === 'number' && slatAck !== true ? slatAcked : null;
+    const slatShownPos =
+        slatAckedPos !== null ? slatAckedPos : !isSlatActing && unackedSlat !== null ? unackedSlat : lastKnownSlat;
 
     // Toleranzband ±3%: wenn Position nah bei Ziel, Pending zurücksetzen
     // WICHTIG: Streng auf ackedPos prüfen (ack:true), nie auf Fallback (shownPos).
@@ -143,21 +171,13 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     const targetRaw = pendingEntry?.targetRaw ?? null;
     const targetOpen = targetRaw !== null ? (dev.invertPosition ? 100 - targetRaw : targetRaw) : null;
 
-    // Startwert der Fahrt einfrieren: wird bei Fahrtbeginn gespeichert und
-    // bleibt stehen, bis die Fahrt endet. Verhindert, dass zwischenzeitliche
-    // Position-Updates (von der Box) die Startzahl mitwandern lassen.
-    const prevBusyRef = useRef(false);
-    const moveStartRef = useRef<number | null>(null);
-    const busy = isMoving || isActing;
-    useEffect(() => {
-        if (busy && !prevBusyRef.current) moveStartRef.current = lastKnownRef.current;
-        if (!busy) moveStartRef.current = null;
-        prevBusyRef.current = busy;
-    }, [busy]);
-
-    const startOpen = moveStartRef.current !== null
-        ? (dev.invertPosition ? 100 - moveStartRef.current : moveStartRef.current)
-        : null;
+    // Startwert der Fahrt kommt aus dem AUFTRAG. Der liegt im Widget und
+    // ueberlebt das Schliessen des Detail-Fensters; das fruehere useRef je
+    // Komponente war nach dem Neuoeffnen leer, und die Start-Ziel-Anzeige
+    // verschwand mitten in der Fahrt. Der Wert steht ab Fahrtbeginn fest,
+    // spaetere Meldungen der Box lassen ihn nicht mitwandern.
+    const startRaw = pendingEntry?.startRaw ?? null;
+    const startOpen = startRaw !== null ? (dev.invertPosition ? 100 - startRaw : startRaw) : null;
 
     let direction: 'up' | 'down' | null = null;
     if (targetRaw !== null && shownPos !== null && Math.abs(targetRaw - shownPos) > 3) {
@@ -166,9 +186,10 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
 
     return {
         ackedPos,
-        lastKnownAckedPos: lastKnownRef.current,
+        lastKnownAckedPos: lastKnownPos,
         posOpen,
         isUnknown: shownPos === null,
+        isEstimate,
         isMoving,
         isActing,
         direction,
