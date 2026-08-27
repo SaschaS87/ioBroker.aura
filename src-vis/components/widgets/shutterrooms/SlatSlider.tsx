@@ -9,6 +9,10 @@ interface SlatSliderProps {
     spanPx: number; // Höhe der Ziehfläche in px
     disabled?: boolean;
     onDraggingChange?: (isDragging: boolean) => void;
+    /** Laeuft gerade ein Lamellen-Auftrag? Dann faerbt sich der Regler
+     *  bernstein und der Griff gleitet zum Ziel - dasselbe Bild wie im
+     *  Fenster nebenan, nur eben an dem Teil, der sich wirklich bewegt. */
+    isMoving?: boolean;
 }
 
 export const SlatSlider: React.FC<SlatSliderProps> = ({
@@ -17,6 +21,7 @@ export const SlatSlider: React.FC<SlatSliderProps> = ({
     spanPx,
     disabled = false,
     onDraggingChange,
+    isMoving = false,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -86,7 +91,7 @@ export const SlatSlider: React.FC<SlatSliderProps> = ({
                 viewBox={`0 0 ${w} ${h}`}
                 width={w}
                 height={h}
-                className={isDragging ? 'dragging' : ''}
+                className={`${isDragging ? 'dragging' : ''} ${isMoving ? 'moving' : ''}`}
             >
                 {/* Schiene */}
                 <rect
@@ -98,12 +103,15 @@ export const SlatSlider: React.FC<SlatSliderProps> = ({
                     fill="var(--app-border)"
                 />
 
-                {/* Füllung */}
+                {/* Füllung. Hoehe per style, nicht als Attribut: nur so greift
+                    die CSS-Transition, die sie zum Ziel gleiten laesst -
+                    derselbe Kniff wie bei der Behangkante im Fenster. */}
                 <rect
+                    className="slat-fill"
                     x={w / 2 - 5}
                     y={schieneY}
                     width={10}
-                    height={fillHeight}
+                    style={{ height: fillHeight }}
                     rx={5}
                     fill="var(--accent)"
                 />
@@ -125,15 +133,33 @@ export const SlatSlider: React.FC<SlatSliderProps> = ({
                     );
                 })}
 
-                {/* Griff */}
-                <circle
-                    cx={w / 2}
-                    cy={griffY}
-                    r={14}
-                    fill="var(--accent)"
-                    stroke="white"
-                    strokeWidth={3}
-                />
+                {/* Griff. Seine Hoehe steckt in einer CSS-Verschiebung statt im
+                    cy-Attribut - nur die laesst sich weich zum Ziel gleiten.
+                    Waehrend einer Fahrt pulsiert zusaetzlich ein Ring darum,
+                    damit auch ein Griff, der schon am Ziel steht, sagt: es
+                    laeuft noch. */}
+                <g className="slat-knob" style={{ transform: `translateY(${griffY}px)` }}>
+                    {isMoving && (
+                        <circle
+                            className="slat-halo"
+                            cx={w / 2}
+                            cy={0}
+                            r={20}
+                            fill="none"
+                            stroke="var(--accent-yellow)"
+                            strokeWidth={3}
+                        />
+                    )}
+                    <circle
+                        className="slat-dot"
+                        cx={w / 2}
+                        cy={0}
+                        r={14}
+                        fill="var(--accent)"
+                        stroke="white"
+                        strokeWidth={3}
+                    />
+                </g>
             </svg>
         </div>
     );

@@ -129,11 +129,33 @@
   align-items: flex-start;
 }
 
+/* Feste Spaltenbreite - die Spalte ist so breit wie ihr INSTRUMENT (Fenster
+   bzw. Lamellenregler), nie so breit wie ihre Beschriftung. Ohne das bestimmte
+   das laengste Wort die Breite: aus "geschlossen" (64 px) wurde "halb offen"
+   (54 px), die Spalte schrumpfte, und weil die Reihe zentriert ist, wanderte
+   das ganze Fenster mit. Am 27.08.2026 von Sascha am Raffstore gemeldet.
+   Die Woerter ragen jetzt sichtbar ueber ihre Spalte hinaus - sie stehen
+   mittig ueber ihrem Instrument und stossen dabei an nichts an. */
 .instrument {
   display: flex;
   flex-direction: column;
   gap: 8px;
   align-items: center;
+  width: var(--col-w, auto);
+  flex: 0 0 auto;
+}
+
+.instrument > .block-title,
+.instrument > .block-value,
+.instrument > .block-word {
+  width: 100%;
+  /* Mittig per Flexbox, nicht per text-align: ein Wort, das breiter ist als
+     seine Spalte, haengt bei text-align nur nach rechts ueber. Flex zentriert
+     es auch dann, wenn es an beiden Seiten hinausragt. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
 }
 
 .block-title {
@@ -168,6 +190,12 @@
   font-size: 20px;
 }
 
+/* Lamelle in Fahrt: die Zahl ist das ZIEL, nicht der Ist-Wert - bernstein
+   wie der Zielwert des Fensters. */
+.block-value.is-target {
+  color: var(--accent-yellow);
+}
+
 .block-ziel {
   margin-left: 8px;
   color: var(--accent-yellow);
@@ -181,7 +209,6 @@
   line-height: 1.2;
   height: 1.2em;
   white-space: nowrap;
-  overflow: hidden;
 }
 
 .shutter-viz-wrapper {
@@ -195,7 +222,7 @@
 }
 
 .sheet-confirm {
-  width: var(--instr-w, 210px);
+  width: var(--btn-w, 170px);
   max-width: 100%;
   height: 48px;
   display: flex;

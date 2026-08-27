@@ -46,8 +46,11 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const VIZ_W_SLAT  = 150;   // Fenster mit Lamelle daneben
     const SLAT_W      = 44;    // Lamellenregler
     const INSTR_GAP   = 16;    // Abstand dazwischen
+    // Die OK-/Stopp-Taste ist bei JEDEM Antrieb gleich breit. Vorher spannte
+    // sie sich ueber die ganze Instrumentenreihe und war beim Raffstore deshalb
+    // 210 statt 170 px - von Sascha am 27.08.2026 gemeldet.
+    const BTN_W       = VIZ_W_PLAIN;
     const vizW = device.slatDp ? VIZ_W_SLAT : VIZ_W_PLAIN;
-    const instrW = vizW + (device.slatDp ? INSTR_GAP + SLAT_W : 0);   // 210 bzw. 170
 
     // Angezeigt und geregelt wird durchgaengig der GESCHLOSSENE Anteil
     // (0 % = offen, 100 % = zu), damit Liste und Feinregler dieselbe Zahl meinen.
@@ -135,6 +138,14 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
     // Wortzeilen für Lamelle
     const getSlatWord = (): string => {
+        // Laufender Lamellen-Auftrag: Richtung statt Zustand, wie beim Fenster
+        if (slatTravel) {
+            const from = state.slatShownPos;
+            if (from !== null && state.slatTarget !== null && Math.abs(state.slatTarget - from) > 3) {
+                return state.slatTarget > from ? 'dreht zu' : 'dreht auf';
+            }
+            return 'dreht';
+        }
         // Unbekannter Wert (und kein Entwurf): leer
         if (state.isSlatUnknown && slatDraft === null) {
             return '';
@@ -150,6 +161,16 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
     // Fahrt mit bekanntem Ziel und Startwert: zeigt Start → Ziel
     const travel = busy && positionDraft === null && state.targetOpen !== null && state.startOpen !== null;
+
+    // Dasselbe fuer die Lamelle: solange ihr Auftrag laeuft, zeigen Zahl und
+    // Regler das ZIEL - der Griff gleitet dorthin, statt erst auf den alten
+    // Wert zurueckzuspringen und spaeter stumm auf den neuen zu huepfen.
+    const slatTravel = state.isSlatActing && slatDraft === null && state.slatTarget !== null;
+    const slatViz = slatDraft !== null ? slatDraft
+        : slatTravel ? (state.slatTarget as number)
+        : displaySlat;
+    // Waehrend der Fahrt ist der Wert bekannt, auch wenn die Box gerade schweigt.
+    const slatKnown = !state.isSlatUnknown || slatDraft !== null || slatTravel;
     const startClosed = state.startOpen !== null ? 100 - state.startOpen : null;
     const targetClosed = state.targetOpen !== null ? 100 - state.targetOpen : null;
 
@@ -196,11 +217,11 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                 </div>
 
                 {/* Körper */}
-                <div className="sheet-body" style={{ '--instr-w': `${instrW}px`, '--instr-gap': `${INSTR_GAP}px` } as React.CSSProperties}>
+                <div className="sheet-body" style={{ '--btn-w': `${BTN_W}px`, '--instr-gap': `${INSTR_GAP}px` } as React.CSSProperties}>
                     {/* Zwei Instrumente nebeneinander */}
                     <div className="sheet-instruments">
                         {/* Position */}
-                        <div className="instrument">
+                        <div className="instrument" style={{ '--col-w': `${vizW}px` } as React.CSSProperties}>
                             <h3 className="block-title">POSITION</h3>
                             <div
                                 className={`block-value ${positionIsDragging ? 'live' : ''} ${travel ? 'is-travel' : ''} ${
@@ -238,18 +259,19 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
                         {/* Lamelle (nur wenn slatDp vorhanden) */}
                         {device.slatDp && (
-                            <div className="instrument">
+                            <div className="instrument" style={{ '--col-w': `${SLAT_W}px` } as React.CSSProperties}>
                                 <h3 className="block-title">LAMELLE</h3>
-                                <div className={`block-value ${localSlatIsDragging ? 'live' : ''}`}>
-                                    {state.isSlatUnknown ? '−' : `${Math.round(displaySlat)}°`}
+                                <div className={`block-value ${localSlatIsDragging ? 'live' : ''} ${slatTravel ? 'is-target' : ''}`}>
+                                    {slatKnown ? `${Math.round(slatViz)}°` : '−'}
                                 </div>
                                 <div className="block-word">{getSlatWord()}</div>
                                 <SlatSlider
-                                    value={displaySlat}
+                                    value={slatViz}
                                     onChange={setSlatDraft}
                                     spanPx={280 - 2 * KNOB_PAD}
-                                    disabled={!connected || state.isSlatUnknown}
+                                    disabled={!connected || !slatKnown}
                                     onDraggingChange={setLocalSlatIsDragging}
+                                    isMoving={slatTravel}
                                 />
                             </div>
                         )}

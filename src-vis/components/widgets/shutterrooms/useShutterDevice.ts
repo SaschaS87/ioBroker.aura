@@ -96,8 +96,11 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     const pendingEntry = store.pending[dev.key];
     const isActing = !!pendingEntry;
 
-    // isMoving: aus ActivityDP wenn vorhanden, sonst aus pendingEntry
-    const isMoving = dev.activityDp ? !!activityVal : isActing;
+    // Faehrt das Geraet? Aus dem ActivityDP wenn vorhanden, sonst aus dem
+    // Auftrag. Achtung: Die TaHoma-Box meldet diesen Zustand fuer das ganze
+    // Geraet - auch dann, wenn sich in Wahrheit nur die Lamellen drehen.
+    // Deshalb weiter unten noch ein Filter.
+    const isDeviceBusy = dev.activityDp ? !!activityVal : isActing;
 
     // Letzte bestaetigte Position - je DATENPUNKT, nicht je Komponente.
     useEffect(() => {
@@ -165,6 +168,16 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
             }
         }
     }, [slatAckedPos, slatPendingEntry, dev.key, store]);
+
+    // Dreht sich NUR die Lamelle, faerbte sich bisher das Fenster bernstein und
+    // die Behang-Lamellen wanderten los - obwohl der Behang stillsteht. Solange
+    // ein reiner Lamellen-Auftrag laeuft und keiner fuer die Position, gehoert
+    // die Bewegungsmeldung der Lamelle, nicht dem Behang. Von Sascha am
+    // 27.08.2026 gemeldet. Einzige Luecke: eine Behang-Fahrt, die im selben
+    // Moment am Wandschalter ausgeloest wird, bleibt bis zum Ende des
+    // Lamellen-Auftrags unbebildert - dafuer stimmt das Bild im Alltag.
+    const slatOnly = isSlatActing && !isActing;
+    const isMoving = isDeviceBusy && !slatOnly;
 
     // Richtung und Ziel eines laufenden Auftrags. Rohwert = Closure (100 = zu),
     // die Anzeige rechnet in Offen-Prozent – deshalb hier einmal umdrehen.
