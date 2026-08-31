@@ -1,0 +1,33 @@
+/* Fahrt-Anzeige im Zeilen-Symbol, Variante „O5 – grau, pulsierend“
+   (von Sascha am 31.08.2026 aus fuenf Varianten gewaehlt).
+
+   Bewusst OHNE Farbe: waehrend der Fahrt traegt die Zeile ohnehin schon eine
+   vollflaechige Bernstein-Flaeche, naemlich die Stopp-Taste mit 104 x 44 px.
+   Das Symbol misst 18 x 18 px – ein bernsteinfarbenes Symbol wuerde die
+   farbige Flaeche nur um rund sieben Prozent vergroessern, aber einen ZWEITEN
+   Farbfleck am gegenueberliegenden Zeilenrand setzen. Bei acht fahrenden
+   Zeilen waeren das sechzehn Punkte statt acht, und die Farbe saegte nichts
+   Neues: dass etwas faehrt, steht schon rechts.
+
+   Die Flaeche atmet stattdessen. Werte und Periode wie im grossen Fenster
+   (`viz-slats-pulse`), damit sich beides gleich anfuehlt. */
+
+@keyframes ti-pulse {
+  0%,
+  100% {
+    opacity: 0.44;
+  }
+  50% {
+    opacity: 0.12;
+  }
+}
+
+.shutter-type-icon.ti-moving .ti-fill {
+  animation: ti-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutter-type-icon.ti-moving .ti-fill {
+    animation: none;
+  }
+}

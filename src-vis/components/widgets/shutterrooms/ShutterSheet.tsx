@@ -224,7 +224,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                         <div className="instrument" style={{ '--col-w': `${vizW}px` } as React.CSSProperties}>
                             <h3 className="block-title">POSITION</h3>
                             <div
-                                className={`block-value ${positionIsDragging ? 'live' : ''} ${travel ? 'is-travel' : ''} ${
+                                className={`block-value ${positionIsDragging ? 'live' : ''} ${
                                     !travel && positionDraft === null && state.isEstimate ? 'is-estimate' : ''
                                 }`}
                             >

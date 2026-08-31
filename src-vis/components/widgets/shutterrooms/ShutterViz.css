@@ -57,17 +57,20 @@
   transition: stroke 250ms ease;
 }
 
+/* Verschoben wird um GENAU eine Lamellen-Periode, dadurch ist der Lauf
+   nahtlos. Die Periode haengt seit dem 31.08.2026 an der Fenstergroesse
+   (eine Lamelle = 5 % Fahrweg), steht also nicht mehr fest – ShutterViz.tsx
+   reicht sie als --viz-p herein. */
 @keyframes viz-slats-down {
-  from { transform: translateY(-8px); }
+  from { transform: translateY(calc(var(--viz-p, 8) * -1px)); }
   to   { transform: translateY(0); }
 }
 
 @keyframes viz-slats-up {
   from { transform: translateY(0); }
-  to   { transform: translateY(-8px); }
+  to   { transform: translateY(calc(var(--viz-p, 8) * -1px)); }
 }
 
-/* 8 = eine Lamellen-Periode des Musters, dadurch ist der Lauf nahtlos. */
 .viz-dir-down .viz-slats {
   animation: viz-slats-down 700ms linear infinite;
 }

@@ -103,9 +103,12 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                 opacity: !connected ? 0.5 : 1,
             }}
         >
-            {/* Icon */}
+            {/* Icon. Es zeigt seit dem 31.08.2026 auch den Stand: der Behang
+                faellt so weit herunter, wie der Rollladen zu ist. Waehrend der
+                Fahrt pulsiert die Flaeche ruhig – ohne Farbwechsel, denn die
+                Stopp-Taste rechts ist bereits bernstein. */}
             <div className="row-icon">
-                <TypeIcon size={18} />
+                <TypeIcon size={18} closedFrac={closedFrac} isMoving={busy} />
             </div>
 
             {/* Zweizeilig: Label + Status */}
