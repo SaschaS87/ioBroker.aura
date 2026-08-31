@@ -28,6 +28,22 @@ interface PendingStore {
  *  Zahl. Von Sascha am 25.08.2026 am Gaeste-WC gemeldet. */
 const lastAckedByDp = new Map<string, number>();
 
+/** Hoechstalter eines Auftrags in Millisekunden. Danach gilt er als verfallen –
+ *  eine Rollladenfahrt dauert nie laenger.
+ *
+ *  Die Zahl stand frueher nur im 5-Sekunden-Aufraeumer der beiden Widgets, und
+ *  DAS war der Fehler: Auf dem iPhone haelt iOS alle Timer an, sobald die App
+ *  in den Hintergrund wandert. Wer abends einen Rollladen fuhr, die App
+ *  wegwischte und sie Stunden spaeter zurueckholte, sah den alten Auftrag noch
+ *  als laufende Fahrt – gelbe Stopp-Taste, obwohl sich nichts bewegte. Von
+ *  Sascha am 30.08.2026 gemeldet (zwei Bilder: 07:37 und 22:17). Deshalb wird
+ *  das Alter jetzt BEIM LESEN geprueft, nicht nur beim Aufraeumen. */
+export const PENDING_MAX_AGE_MS = 45000;
+
+/** Ist der Auftrag noch gueltig? Ein verfallener zaehlt wie keiner. */
+const isFresh = (entry: PendingState | undefined): entry is PendingState =>
+    !!entry && Date.now() - entry.startedAt <= PENDING_MAX_AGE_MS;
+
 export const PendingContext = createContext<PendingStore | null>(null);
 
 export const usePendingStore = () => {
@@ -92,8 +108,10 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     // Anzeige - niemals fuer die Auftragslogik.
     const unackedPos = typeof posAcked === 'number' && posAck !== true ? posAcked : null;
 
-    // Pending State auslesen
-    const pendingEntry = store.pending[dev.key];
+    // Pending State auslesen. Verfallene Auftraege werden hier bereits
+    // aussortiert, damit die Anzeige nie auf den 5-Sekunden-Aufraeumer warten
+    // muss – siehe PENDING_MAX_AGE_MS.
+    const pendingEntry = isFresh(store.pending[dev.key]) ? store.pending[dev.key] : undefined;
     const isActing = !!pendingEntry;
 
     // Faehrt das Geraet? Aus dem ActivityDP wenn vorhanden, sonst aus dem
@@ -117,16 +135,26 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
     //   3. sonst der letzte bestaetigte Wert.
     // Waehrend ein Auftrag laeuft, bleibt es bei 3.: Fenster und Animation
     // zeigen dann ohnehin Start -> Ziel.
-    const shownPos = ackedPos !== null ? ackedPos : !isActing && unackedPos !== null ? unackedPos : lastKnownPos;
+    const showsUnacked = ackedPos === null && !isActing && unackedPos !== null;
+    const shownPos = ackedPos !== null ? ackedPos : showsUnacked ? unackedPos : lastKnownPos;
 
     // Angezeigter Wert ohne Quittung - die Oberflaeche kennzeichnet ihn.
-    const isEstimate = ackedPos === null && shownPos !== null;
+    // ACHTUNG, hier lag ein Fehler: Frueher genuegte `ackedPos === null`. Das
+    // trifft aber auch zu, wenn wir den zuletzt BESTAETIGTEN Wert aus
+    // lastAckedByDp zeigen – und dazu kommt es bei jeder Bedienung, weil der
+    // optimistische Nachhall des Schreibens (`ack:false`) die Quittung im
+    // Zwischenspeicher ueberschreibt. Ergebnis: „~ 0 % zu" statt „Offen",
+    // obwohl die Box den Wert sehr wohl bestaetigt hatte. Von Sascha am
+    // 30.08.2026 am Gaeste-WC fotografiert. Eine Vermutung ist es nur dann,
+    // wenn wir tatsaechlich den unquittierten Wunschwert anzeigen.
+    const isEstimate = showsUnacked;
 
     // Position invertieren
     const posOpen = shownPos !== null ? (dev.invertPosition ? 100 - shownPos : shownPos) : null;
 
-    // Lamellen Pending State auslesen
-    const slatPendingEntry = store.pending[slatPendingKey(dev.key)];
+    // Lamellen Pending State auslesen – dieselbe Altersgrenze wie oben.
+    const slatEntryRaw = store.pending[slatPendingKey(dev.key)];
+    const slatPendingEntry = isFresh(slatEntryRaw) ? slatEntryRaw : undefined;
     const isSlatActing = !!slatPendingEntry;
     const slatTarget = slatPendingEntry?.targetRaw ?? null;
 

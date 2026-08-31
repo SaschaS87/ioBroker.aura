@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WidgetProps } from '../../../types';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import type { ShutterRoomDef, ShutterDeviceDef } from './types';
 import type { PendingState } from './useShutterDevice';
-import { PendingContext } from './useShutterDevice';
+import { PendingContext, PENDING_MAX_AGE_MS } from './useShutterDevice';
 import { ShutterTile } from './ShutterTile';
 import { ShutterSheet } from './ShutterSheet';
 import './ShutterRoomsWidget.css';
@@ -55,26 +55,44 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
         }
     }, [toast]);
 
-    // Pending Store mit 45s Cleanup
+    // Pending Store mit Aufraeumer
     const [pending, setPending] = useState<Record<string, PendingState>>({});
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const now = Date.now();
-            setPending((prev) => {
-                const updated = { ...prev };
-                let changed = false;
-                Object.keys(updated).forEach((key) => {
-                    if (now - updated[key].startedAt > 45000) {
-                        delete updated[key];
-                        changed = true;
-                    }
-                });
-                return changed ? updated : prev;
+    const sweepPending = useCallback(() => {
+        const now = Date.now();
+        setPending((prev) => {
+            const updated = { ...prev };
+            let changed = false;
+            Object.keys(updated).forEach((key) => {
+                if (now - updated[key].startedAt > PENDING_MAX_AGE_MS) {
+                    delete updated[key];
+                    changed = true;
+                }
             });
-        }, 5000);
-        return () => clearInterval(interval);
+            return changed ? updated : prev;
+        });
     }, []);
+
+    useEffect(() => {
+        const interval = setInterval(sweepPending, 5000);
+        return () => clearInterval(interval);
+    }, [sweepPending]);
+
+    // Rueckkehr aus dem Hintergrund – iOS haelt Timer an, der Aufraeumer oben
+    // lief in dieser Zeit nicht. Siehe ShutterFloorsWidget, gleicher Grund.
+    useEffect(() => {
+        const onWake = () => {
+            if (document.visibilityState === 'visible') sweepPending();
+        };
+        document.addEventListener('visibilitychange', onWake);
+        window.addEventListener('focus', onWake);
+        window.addEventListener('pageshow', onWake);
+        return () => {
+            document.removeEventListener('visibilitychange', onWake);
+            window.removeEventListener('focus', onWake);
+            window.removeEventListener('pageshow', onWake);
+        };
+    }, [sweepPending]);
 
     const pendingStore = useMemo(
         () => ({
