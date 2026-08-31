@@ -7,7 +7,7 @@ import { usePopupConfigStore } from '../../../store/popupConfigStore';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useGlobalSettingsStore } from '../../../store/globalSettingsStore';
 import { formatNum } from '../../../utils/formatValue';
-import { TEMP_COLOR } from '../RoomClimateDetails';
+import { TEMP_COLOR_CSS } from '../../../themes';
 import { DimmerPopupBody } from './DimmerPopupBody';
 import { ThermostatPopupBody } from './ThermostatPopupBody';
 import { SwitchPopupBody } from './SwitchPopupBody';
@@ -43,7 +43,7 @@ function PopupHeaderTemp({ action, widget }: PopupHeaderTempProps) {
     if (temp === null) return null;
 
     return (
-        <span className="ml-2 font-semibold text-sm" style={{ color: TEMP_COLOR }}>
+        <span className="ml-2 font-semibold text-sm" style={{ color: TEMP_COLOR_CSS }}>
             {formatNum(temp, decimals)}
             {unit}
         </span>

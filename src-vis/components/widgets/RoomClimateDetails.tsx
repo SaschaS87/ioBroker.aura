@@ -11,16 +11,22 @@ import { baseDpId } from '../../utils/dpRef';
 import { formatLastChange } from '../../utils/formatLastChange';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
+import { TEMP_COLOR_CSS, TEMP_COLOR_DEFAULT } from '../../themes';
+import { useCssVar } from '../../hooks/useCssVar';
 
 // Muted accents (soft coral / blue-gray) — deliberately calmer than the theme's
-// signal colors. ECharts renders to canvas, so the chart colors must be literal
-// hex anyway (CSS variables don't resolve there); axis colors below match
-// EChartWidget exactly (#888 labels, #444 axis line, #333 grid lines).
-export const TEMP_COLOR = '#e8927c';
-const TEMP_FILL_TOP = 'rgba(232,146,124,0.16)';
-const TEMP_FILL_BOTTOM = 'rgba(232,146,124,0.03)';
+// signal colors. The temperature accent is themeable via --temp-color and lives
+// in themes/; DOM styles use TEMP_COLOR_CSS, while echarts (canvas, no CSS vars)
+// gets the resolved literal from useCssVar below. Axis colors match EChartWidget
+// exactly (#888 labels, #444 axis line, #333 grid lines).
 const HUM_COLOR = '#8aa8c8';
 const MIN_COLOR = '#7cbfa9';
+
+/** Same accent at low alpha for the chart's area gradient (8-digit hex). */
+function tempFill(color: string, alphaHex: string): string {
+    const base = /^#[0-9a-fA-F]{6}$/.test(color) ? color : TEMP_COLOR_DEFAULT;
+    return `${base}${alphaHex}`;
+}
 
 export interface RoomClimateDetailsProps {
     temperatureDp: string;
@@ -50,6 +56,8 @@ export function RoomClimateDetails({
     const { defaultDecimals } = useGlobalSettingsStore();
     const decimals = decimalsProp ?? defaultDecimals;
     const t = useT();
+    // echarts paints on canvas and cannot resolve CSS vars — resolve the literal here.
+    const tempColor = useCssVar('--temp-color', TEMP_COLOR_DEFAULT);
 
     const [lastChangedTs, setLastChangedTs] = useState<number>(0);
     const [, forceRedraw] = useState(0);
@@ -92,7 +100,7 @@ export function RoomClimateDetails({
                 name: title,
                 datapointId: temperatureDp,
                 chartType: 'line',
-                color: TEMP_COLOR,
+                color: tempColor,
                 historyInstance,
                 aggregate: 'average',
                 yAxisIndex: 0,
@@ -102,7 +110,7 @@ export function RoomClimateDetails({
                 historyEnd: viewWindow.end,
             },
         ],
-        [temperatureDp, title, historyInstance, viewWindow],
+        [temperatureDp, title, historyInstance, viewWindow, tempColor],
     );
 
     const seriesDataMap = useMultiSeriesData(echartSeries, connected, subscribe, getState);
@@ -151,8 +159,8 @@ export function RoomClimateDetails({
                     smooth: true,
                     smoothMonotone: 'x',
                     data: chartData,
-                    itemStyle: { color: TEMP_COLOR },
-                    lineStyle: { color: TEMP_COLOR, width: 2 },
+                    itemStyle: { color: tempColor },
+                    lineStyle: { color: tempColor, width: 2 },
                     areaStyle: {
                         color: {
                             type: 'linear',
@@ -161,8 +169,8 @@ export function RoomClimateDetails({
                             x2: 0,
                             y2: 1,
                             colorStops: [
-                                { offset: 0, color: TEMP_FILL_TOP },
-                                { offset: 1, color: TEMP_FILL_BOTTOM },
+                                { offset: 0, color: tempFill(tempColor, '29') },
+                                { offset: 1, color: tempFill(tempColor, '08') },
                             ],
                         },
                     },
@@ -191,7 +199,7 @@ export function RoomClimateDetails({
                 },
             },
         };
-    }, [chartData, viewWindow, title, decimals]);
+    }, [chartData, viewWindow, title, decimals, tempColor]);
 
     return (
         <div className="flex flex-col gap-2 w-full">
@@ -201,7 +209,7 @@ export function RoomClimateDetails({
                         <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                             Temperatur
                         </div>
-                        <div className="text-3xl font-bold" style={{ color: TEMP_COLOR }}>
+                        <div className="text-3xl font-bold" style={{ color: TEMP_COLOR_CSS }}>
                             {temp !== null ? `${formatNum(temp, decimals)}°C` : '–'}
                         </div>
                     </div>
@@ -232,7 +240,7 @@ export function RoomClimateDetails({
                 )}
                 {statsTemp.max !== null && (
                     <span className="flex items-center gap-1">
-                        <TrendingUp size={12} style={{ color: TEMP_COLOR }} />
+                        <TrendingUp size={12} style={{ color: TEMP_COLOR_CSS }} />
                         {formatNum(statsTemp.max, decimals)}°C
                     </span>
                 )}

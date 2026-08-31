@@ -464,6 +464,7 @@ export const de = {
     'theme.vars.elArc': 'Bogen',
     'theme.vars.elHeat': 'Heizen',
     'theme.vars.elCool': 'Kühlen',
+    'theme.vars.elTemp': 'Temperaturwert',
     'theme.vars.elActive': 'Aktiv',
     'theme.vars.elOn': 'An',
     'theme.vars.elOff': 'Aus',

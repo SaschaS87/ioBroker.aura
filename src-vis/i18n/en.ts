@@ -464,6 +464,7 @@ export const en: Record<TranslationKey, string> = {
     'theme.vars.elArc': 'Arc',
     'theme.vars.elHeat': 'Heat',
     'theme.vars.elCool': 'Cool',
+    'theme.vars.elTemp': 'Temperature value',
     'theme.vars.elActive': 'Active',
     'theme.vars.elOn': 'On',
     'theme.vars.elOff': 'Off',

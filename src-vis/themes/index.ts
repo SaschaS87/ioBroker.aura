@@ -69,6 +69,7 @@ export interface ElementVars {
     // Climate / thermostat
     '--climate-heat': string;
     '--climate-cool': string;
+    '--temp-color': string; // measured temperature (room-climate readouts & charts)
     // Chips
     '--chip-bg': string;
     '--chip-border': string;
@@ -84,6 +85,23 @@ export interface ElementVars {
     '--nav-bg': string;
     '--nav-active': string;
 }
+
+/**
+ * Muted coral for measured temperature (room-climate readouts and their charts)
+ * — deliberately calmer than the theme's signal red.
+ *
+ * Lives here rather than next to the widget so plain DOM consumers can reach it
+ * without importing the chart-heavy detail view: that one import used to drag all
+ * of echarts (~1.1 MB) into the initial bundle.
+ *
+ * Use TEMP_COLOR_CSS for anything the browser styles — it picks up a user's
+ * --temp-color override. Canvas renderers (echarts) cannot resolve CSS vars, so
+ * those resolve the literal at runtime via useCssVar().
+ */
+export const TEMP_COLOR_DEFAULT = '#e8927c';
+
+/** CSS value for DOM styles: honours a --temp-color override, else the default. */
+export const TEMP_COLOR_CSS = `var(--temp-color, ${TEMP_COLOR_DEFAULT})`;
 
 /**
  * Maps each element var to the base var (or literal) it inherits from when unset.
@@ -123,6 +141,7 @@ export const ELEMENT_VAR_FALLBACKS: Record<keyof ElementVars, keyof ThemeVars | 
     '--gauge-track': '--app-border',
     '--climate-heat': '--accent-red',
     '--climate-cool': '--accent',
+    '--temp-color': TEMP_COLOR_DEFAULT,
     '--chip-bg': '--app-bg',
     '--chip-border': '--app-border',
     '--chip-active': '--accent',

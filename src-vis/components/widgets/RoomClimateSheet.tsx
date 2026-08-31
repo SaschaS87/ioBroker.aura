@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { usePortalTarget } from '../../contexts/PortalTargetContext';
-import { RoomClimateDetails, TEMP_COLOR } from './RoomClimateDetails';
+import { RoomClimateDetails } from './RoomClimateDetails';
+import { TEMP_COLOR_CSS } from '../../themes';
 import { useSheetDismiss } from './useSheetDismiss';
 import { formatNum } from '../../utils/formatValue';
 import './RoomClimateSheet.css';
@@ -61,7 +62,7 @@ export function RoomClimateSheet({
                     <div className="rc-sheet-header">
                         <div className="rc-sheet-title">{title}</div>
                         {showHeaderValue && typeof currentTemp === 'number' && (
-                            <div style={{ fontWeight: 600, color: TEMP_COLOR, fontSize: '16px' }}>
+                            <div style={{ fontWeight: 600, color: TEMP_COLOR_CSS, fontSize: '16px' }}>
                                 {formatNum(currentTemp, decimals ?? 0)}
                                 {unit}
                             </div>
