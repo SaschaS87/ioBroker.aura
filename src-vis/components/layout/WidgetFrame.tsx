@@ -109,10 +109,6 @@ const ChartWidget = lazyWithReload(() => import('../widgets/ChartWidget').then((
 const ClimateWidget = lazyWithReload(() =>
     import('../widgets/ClimateWidget').then((m) => ({ default: m.ClimateWidget })),
 );
-// RoomClimateWidget pulls in echarts via RoomClimateDetails — lazy like the chart widgets.
-const RoomClimateWidget = lazyWithReload(() =>
-    import('../widgets/RoomClimateWidget').then((m) => ({ default: m.RoomClimateWidget })),
-);
 // HeatingWidget will pull in echarts for its detail chart later — lazy from the start.
 const HeatingWidget = lazyWithReload(() =>
     import('../widgets/HeatingWidget').then((m) => ({ default: m.HeatingWidget })),
@@ -144,6 +140,11 @@ import { ListWidget } from '../widgets/ListWidget';
 import { ClockWidget } from '../widgets/ClockWidget';
 import { CalendarWidget, getSources, DEFAULT_CAL_COLORS, type CalendarSource } from '../widgets/CalendarWidget';
 import { HeaderWidget } from '../widgets/HeaderWidget';
+// Static on purpose: RoomClimateWidget is light (it defers its own
+// echarts-backed detail views), so the Wohnklima bars paint with the tab instead
+// of waiting for a separate chunk to arrive — a wait long enough over VPN to
+// show the whole tab as collapsed strips.
+import { RoomClimateWidget } from '../widgets/RoomClimateWidget';
 // GroupWidget imports WidgetFrame (circular) — safe because it only uses WidgetFrame
 // inside its render function, never at module-init time.
 import { GroupWidget } from '../widgets/GroupWidget';
@@ -6129,6 +6130,21 @@ export function WidgetFrame({
         // shutterfloors: fillTab widget with own padding and layout — no outer frame padding.
         config.type === 'shutterfloors';
 
+    // Height the Suspense placeholder has to reserve while a lazy widget's chunk
+    // is still downloading. 'h-full' alone is not enough: in the mobile stack the
+    // autoHeight widget types (roomclimate, heating, weatherforecaststrip, …) sit
+    // in a wrapper without a height, so height:100% resolves to 0 and the card
+    // collapses to a 1 px strip — measured on the Wohnklima tab over VPN,
+    // 30.08.2026. Mirror the grid cell formula Dashboard.tsx uses instead, minus
+    // the frame padding the placeholder sits inside.
+    const framePadding = isNoPad ? 0 : widgetPadding;
+    const suspenseRowH = effectiveSettings.gridRowHeight ?? 20;
+    const suspenseGap = effectiveSettings.gridGap ?? 10;
+    const suspenseMinHeight = Math.max(
+        0,
+        config.gridPos.h * suspenseRowH + (config.gridPos.h - 1) * suspenseGap - 2 * framePadding,
+    );
+
     return (
         <div
             ref={focusRef}
@@ -6270,7 +6286,12 @@ export function WidgetFrame({
 
             {Widget ? (
                 <Suspense
-                    fallback={<div className="h-full w-full" style={{ background: 'var(--app-bg)', opacity: 0.3 }} />}
+                    fallback={
+                        <div
+                            className="h-full w-full"
+                            style={{ background: 'var(--app-bg)', opacity: 0.3, minHeight: suspenseMinHeight }}
+                        />
+                    }
                 >
                     <ProfiledWidget
                         widgetKey={config.id}

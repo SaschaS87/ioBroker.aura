@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import ReactECharts from 'echarts-for-react';
 import {
     Sun,
@@ -237,6 +237,81 @@ function GroupLabel({ text }: { text: string }) {
         </div>
     );
 }
+// Keeps a row of metrics on ONE line, whatever the values happen to be. The
+// current-conditions row (cloud cover, humidity, wind + gusts, UV, rain) grows
+// and shrinks with its values — 'SSW · Böen 10' is narrower than 'WSW · Böen 32'
+// — so it used to fit some of the time and push the last item onto a second line
+// the rest of the time (measured 30.08.2026: 369 px of content in a 334 px row on
+// a 375 px phone). Wrapping is not wanted here, so the row is laid out nowrap at
+// its natural width and scaled down just enough to fit. Where it fits anyway the
+// scale stays 1 and nothing changes — desktop included.
+function FitOneLine({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
+    const outerRef = useRef<HTMLDivElement>(null);
+    const innerRef = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
+    const [height, setHeight] = useState<number | undefined>(undefined);
+
+    // No dependency array on purpose: re-measuring on every render is what picks
+    // up a changed value. The listeners cover what does not cause a render —
+    // rotating the phone, resizing a window.
+    useLayoutEffect(() => {
+        const outer = outerRef.current;
+        const inner = innerRef.current;
+        if (!outer || !inner) return;
+        // scrollWidth/offsetHeight are layout values: a CSS transform does not
+        // feed back into them, so measuring the already-scaled row is safe.
+        const measure = () => {
+            const avail = outer.clientWidth;
+            const need = inner.scrollWidth;
+            const k = avail > 0 && need > 0 ? Math.min(1, avail / need) : 1;
+            setScale(k);
+            setHeight(inner.offsetHeight * k);
+        };
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(outer);
+        ro.observe(inner);
+        window.addEventListener('resize', measure);
+        window.addEventListener('orientationchange', measure);
+        return () => {
+            ro.disconnect();
+            window.removeEventListener('resize', measure);
+            window.removeEventListener('orientationchange', measure);
+        };
+    });
+
+    return (
+        // The outer box centres and clips; the inner box is laid out at its natural
+        // (max-content) width so scrollWidth reports the true single-line width
+        // rather than only the overflow to the right. alignItems must not be the
+        // default 'stretch' — that would tie the inner height to the height set
+        // here and every measurement would shrink it again (18px → 4.5px).
+        <div
+            ref={outerRef}
+            style={{
+                ...style,
+                height,
+                overflow: 'hidden',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'flex-start',
+            }}
+        >
+            <div
+                ref={innerRef}
+                style={{
+                    width: 'max-content',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top center',
+                }}
+            >
+                {children}
+            </div>
+        </div>
+    );
+}
 function DetailRow({ Icon, label, value, dim }: { Icon: LucideIcon; label: string; value: string; dim?: boolean }) {
     return (
         <span className="inline-flex items-center gap-1" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -317,27 +392,29 @@ function CurrentConditionsCard({ base }: { base: string }) {
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
                 gefühlt {feels !== null ? `${formatNum(feels, 0)}°` : '–'}
             </div>
-            <div className="flex items-center justify-center flex-wrap" style={{ gap: 16, marginTop: 11 }}>
-                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <Cloud size={14} /> {cloud !== null ? `${formatNum(cloud, 0)}%` : '–'}
-                </span>
-                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <Droplet size={14} /> {humidity !== null ? `${formatNum(humidity, 0)}%` : '–'}
-                </span>
-                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <Wind size={14} />
-                    {windSpeed !== null ? formatNum(windSpeed, 0) : '–'}
-                    {windDir !== null && <ArrowUp size={11} style={{ transform: `rotate(${windDir}deg)` }} />}
-                    {compassLabel(windDir)}
-                    {windGusts !== null ? ` · Böen ${formatNum(windGusts, 0)}` : ''}
-                </span>
-                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <Sun size={14} /> UV {currentUv !== null ? formatNum(currentUv, 0) : '–'}
-                </span>
-                <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <CloudRain size={14} /> {precipitation !== null ? `${formatNum(precipitation, 1)}mm` : '–'}
-                </span>
-            </div>
+            <FitOneLine style={{ marginTop: 11 }}>
+                <div className="flex items-center justify-center flex-nowrap" style={{ gap: 16 }}>
+                    <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <Cloud size={14} /> {cloud !== null ? `${formatNum(cloud, 0)}%` : '–'}
+                    </span>
+                    <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <Droplet size={14} /> {humidity !== null ? `${formatNum(humidity, 0)}%` : '–'}
+                    </span>
+                    <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <Wind size={14} />
+                        {windSpeed !== null ? formatNum(windSpeed, 0) : '–'}
+                        {windDir !== null && <ArrowUp size={11} style={{ transform: `rotate(${windDir}deg)` }} />}
+                        {compassLabel(windDir)}
+                        {windGusts !== null ? ` · Böen ${formatNum(windGusts, 0)}` : ''}
+                    </span>
+                    <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <Sun size={14} /> UV {currentUv !== null ? formatNum(currentUv, 0) : '–'}
+                    </span>
+                    <span className="inline-flex items-center gap-1" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <CloudRain size={14} /> {precipitation !== null ? `${formatNum(precipitation, 1)}mm` : '–'}
+                    </span>
+                </div>
+            </FitOneLine>
             <div className="flex items-center justify-center" style={{ gap: 18, marginTop: 11, fontSize: 12, color: 'var(--text-secondary)' }}>
                 <span className="inline-flex items-center gap-1">
                     <Sunrise size={13} /> {timeOnly(sunriseToday)}

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { ChevronDown, Thermometer } from 'lucide-react';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useDashboardMobile } from '../../contexts/DashboardMobileContext';
 import { useActiveLayoutId } from '../../contexts/ActiveLayoutContext';
@@ -9,9 +10,23 @@ import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
 import { useRoomClimateHeightStore, type RoomClimateHeightMode } from '../../store/roomClimateHeightStore';
 import { formatNum } from '../../utils/formatValue';
-import { RoomClimateDetails } from './RoomClimateDetails';
-import { RoomClimateSheet } from './RoomClimateSheet';
-import { WidgetClickPopup } from './popup/WidgetClickPopup';
+
+// Only the detail views need echarts (through RoomClimateDetails). Keeping them
+// out of this module is what lets WidgetFrame import the widget statically: the
+// widget used to sit in its own lazy chunk, and until that chunk arrived every
+// bar was just a Suspense placeholder. On a fast link that is a few ms; over VPN
+// the extra round trip lasted long enough to show the Wohnklima tab as a row of
+// collapsed strips (measured 30.08.2026). The bars now paint with the tab, and
+// the detail chunk is fetched when a room is actually tapped.
+const RoomClimateDetails = lazyWithReload(() =>
+    import('./RoomClimateDetails').then((m) => ({ default: m.RoomClimateDetails })),
+);
+const RoomClimateSheet = lazyWithReload(() =>
+    import('./RoomClimateSheet').then((m) => ({ default: m.RoomClimateSheet })),
+);
+const WidgetClickPopup = lazyWithReload(() =>
+    import('./popup/WidgetClickPopup').then((m) => ({ default: m.WidgetClickPopup })),
+);
 
 /**
  * Slim room-climate bar: icon + room name + temperature + chevron. The
@@ -253,38 +268,45 @@ export function RoomClimateWidget({ config, editMode }: WidgetProps) {
                     style={{ borderTop: '1px solid var(--app-border)', paddingTop: 12, paddingBottom: 10 }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <RoomClimateDetails
-                        temperatureDp={config.datapoint}
-                        humidityDp={humidityDp}
-                        historyInstance={historyInstance || 'history.0'}
-                        title={config.title || 'Temperatur'}
-                        decimals={decimals}
-                        showCurrentHeader={false}
-                        chartHeight={150}
-                    />
+                    {/* Placeholder keeps the panel's height while echarts arrives. */}
+                    <Suspense fallback={<div style={{ height: 150 }} />}>
+                        <RoomClimateDetails
+                            temperatureDp={config.datapoint}
+                            humidityDp={humidityDp}
+                            historyInstance={historyInstance || 'history.0'}
+                            title={config.title || 'Temperatur'}
+                            decimals={decimals}
+                            showCurrentHeader={false}
+                            chartHeight={150}
+                        />
+                    </Suspense>
                 </div>
             )}
 
             {/* Desktop: same details in the centered popup */}
             {popupOpen && !isMobile && (
-                <WidgetClickPopup widget={config} action={popupAction} onClose={() => setPopupOpen(false)} />
+                <Suspense fallback={null}>
+                    <WidgetClickPopup widget={config} action={popupAction} onClose={() => setPopupOpen(false)} />
+                </Suspense>
             )}
 
             {/* Mobile sheet: open from bottom (replaces inline expand and popup) */}
             {sheetOpen && isMobile && (
-                <RoomClimateSheet
-                    key={sheetSeq}
-                    title={config.title || config.datapoint.split('.').slice(-2)[0]}
-                    temperatureDp={config.datapoint}
-                    humidityDp={humidityDp}
-                    historyInstance={historyInstance}
-                    decimals={decimals}
-                    onClose={() => setSheetOpen(false)}
-                    currentTemp={temp}
-                    unit={unit}
-                    showHeaderValue={o.detailsHeaderValue === true}
-                    showLastChangeFooter={o.detailsLastChange === true}
-                />
+                <Suspense fallback={null}>
+                    <RoomClimateSheet
+                        key={sheetSeq}
+                        title={config.title || config.datapoint.split('.').slice(-2)[0]}
+                        temperatureDp={config.datapoint}
+                        humidityDp={humidityDp}
+                        historyInstance={historyInstance}
+                        decimals={decimals}
+                        onClose={() => setSheetOpen(false)}
+                        currentTemp={temp}
+                        unit={unit}
+                        showHeaderValue={o.detailsHeaderValue === true}
+                        showLastChangeFooter={o.detailsLastChange === true}
+                    />
+                </Suspense>
             )}
         </div>
     );
