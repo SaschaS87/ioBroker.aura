@@ -378,7 +378,18 @@ function bounceSocketDebounced(): void {
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    const WATCHDOG_INTERVAL_MS = 15000;
+    // Interval was 15000 (45s threshold) until 31.08.2026. Too coarse: Sascha
+    // closed both Elternzimmer shutters via the TaHoma app/wall switch, briefly
+    // switching away from Aura and back within well under 45s. That's plenty
+    // of time for iOS to suspend the standalone PWA and zombie the socket, but
+    // the resulting freeze never crossed the old threshold — so the watchdog
+    // never fired, 'visibilitychange' didn't fire either (the known iOS gap,
+    // see bounceSocketDebounced() above), and the shutter row was stuck on its
+    // pre-freeze value (9+ minutes later, until the next full reload) even
+    // though the header still showed "Verbunden". A shorter tick and threshold
+    // catches brief app-switches too, at the cost of a few more watchdog checks
+    // per minute — negligible next to a resubscribe burst.
+    const WATCHDOG_INTERVAL_MS = 5000;
     let lastTick = Date.now();
     setInterval(() => {
         const now = Date.now();

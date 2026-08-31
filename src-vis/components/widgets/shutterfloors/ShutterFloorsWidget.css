@@ -65,13 +65,18 @@
 }
 
 /* Fusszeile und Zustands-Pille – gleiche Masse wie im Rollos-Tab, damit beide
-   Tabs identisch hoch abschliessen. */
+   Tabs identisch hoch abschliessen.
+   iOS-Homescreen: wie .tab-footer-bar (index.css) muss der Inhalt vor dem
+   Sicherheitsabstand unten stehen bleiben, nicht die Box selbst. Ohne die
+   env(...)-Erweiterung lag die Pille im Bereich des Home-Indicators und war
+   dort praktisch unsichtbar - von Sascha am 31.08.2026 am Elternzimmer
+   gemeldet. Auf dem Desktop ist env(...) 0, keine Aenderung dort. */
 .shutter-floors-widget .widget-footer {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: var(--tab-footer-h, 38px);
-  padding: 0 16px;
+  height: calc(var(--tab-footer-h, 38px) + env(safe-area-inset-bottom));
+  padding: 0 16px env(safe-area-inset-bottom);
   box-sizing: border-box;
   border-top: 1px solid var(--app-border);
   flex-shrink: 0;
