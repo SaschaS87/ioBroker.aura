@@ -53,3 +53,5 @@
 - Weather - new collapsible data-source health box: a header dot shows "alles aktuell" or a problem count even collapsed, expands to list each configured source with its last-update age and an optional one-click restart button
 - Weather - the data-source footer (model run time, next update, last fetch) moved into the health box as a detail line under the Open-Meteo source; the standalone footer widget was removed
 - Weather - rain nowcast now shows a sum + max/15min header for the 6h window, and tapping a bar reveals its exact time and mm value
+- Shutter widgets (floor list / room cards) - no longer a fixed full-tab overlay; both now behave like a normal, growing widget that can sit alongside other widgets and be moved/resized in the editor
+- Shutter widgets - the footer pill was replaced by the same collapsible data-source health box used on the Weather tab, now with a one-click restart button for the shutter adapter instance
