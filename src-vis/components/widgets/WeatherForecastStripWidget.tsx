@@ -1197,7 +1197,13 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     const healthSources = (config.options?.healthSources as HealthSourceDef[] | undefined) ?? [];
 
     return (
-        <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }} data-widget-interactive>
+        // marginTop:7 as this tab's first widget: matches the 15px Wohnklima/
+        // Rollläden start under the tab bar (8px container padding + this 7px).
+        // Angeglichen 01.09.2026 (Runde 7) auf Saschas Wunsch nach einer
+        // einheitlichen Starthöhe auf allen Tabs. Only the main strip return
+        // path — the footerOnly instance above returns early and never reaches
+        // here, so the pinned footer copy at the tab's bottom stays unaffected.
+        <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 7 }} data-widget-interactive>
             <CurrentConditionsCard base={base} />
             <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)' }}>
                 {/* borderTopLeft/RightRadius matches the card's own radius: the

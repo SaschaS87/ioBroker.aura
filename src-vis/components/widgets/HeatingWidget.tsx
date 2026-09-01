@@ -206,9 +206,11 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     return (
         // No outer frame (frame set transparent) and no frame padding: the inner
         // status card + tiles span the FULL column width, each its own card.
-        // No own padding → the first card's top edge sits exactly at the grid
-        // top, matching the framed widgets (e.g. rainstation) on other tabs.
-        <div className="flex flex-col h-full" data-widget-interactive>
+        // marginTop:7 as this tab's first widget: matches the 15px Wohnklima/
+        // Rollläden start under the tab bar (8px container padding + this 7px),
+        // instead of sitting flush at 8px. Angeglichen 01.09.2026 (Runde 7) auf
+        // Saschas Wunsch nach einer einheitlichen Starthöhe auf allen Tabs.
+        <div className="flex flex-col h-full" style={{ marginTop: 7 }} data-widget-interactive>
             {/* Status card ("switch") — only THIS colours by mode; centered */}
             <div style={{ background: style.bg, border: `1px solid ${style.border}`, borderRadius: 'var(--widget-radius)', padding: '14px 12px', textAlign: 'center' }}>
                 <div
