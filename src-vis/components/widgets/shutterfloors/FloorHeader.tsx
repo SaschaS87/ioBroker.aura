@@ -1,68 +1,27 @@
 import React from 'react';
-import { ChevronUp, Square, ChevronDown } from 'lucide-react';
-import { HapticButton } from '../shutterrooms/HapticButton';
 import './FloorHeader.css';
 
 interface FloorHeaderProps {
     name: string;
     connected?: boolean;
-    variant?: 'a' | 'b' | 'c';
 }
 
 /**
- * Etagenkopf mit Name und Sammelknöpfen.
- * Die Knöpfe führen in diesem Baustein noch keine Aktion aus.
- * TODO: Sammelbefehl wird in Baustein 2 verdrahtet.
+ * Etagenkopf: Name + Trennlinie, im selben Stil wie die Abschnittsköpfe auf
+ * dem Wohnklima-Tab (HeaderWidget, layout "minimal" – text-xs/font-semibold/
+ * tracking-widest/uppercase in var(--text-secondary), plus eine bis zum
+ * rechten Rand laufende 1px-Linie in var(--app-border)). Angeglichen
+ * 01.09.2026 (Runde 7) auf Saschas Wunsch nach der Abnahme: vorher trug der
+ * Etagenkopf eine eigene, davon abweichende Schrift (headVariant "b").
+ *
+ * Die Sammel-Auf/Ab/Stopp-Knöpfe pro Etage sind im selben Zug entfernt:
+ * Sascha hat sie bewusst gestrichen, weil "alle Rollos einer Etage auf
+ * einmal fahren" hier nicht gewollt ist. Sie hatten ohnehin noch keine
+ * Funktion (TODO "Sammelbefehl folgt in Baustein 2" wurde nie eingelöst).
  */
-export const FloorHeader: React.FC<FloorHeaderProps> = ({ name, connected = true, variant = 'a' }) => {
-    // Knöpfe tun vorerst nichts – nur für Optik
-    const handleAllOpen = () => {
-        // TODO: Sammelbefehl folgt in Baustein 2
-    };
-
-    const handleAllStop = () => {
-        // TODO: Sammelbefehl folgt in Baustein 2
-    };
-
-    const handleAllClose = () => {
-        // TODO: Sammelbefehl folgt in Baustein 2
-    };
-
-    return (
-        <div className={`floor-header floor-head--${variant}`} style={{ opacity: !connected ? 0.5 : 1 }}>
-            <div className="floor-name">{name}</div>
-            <div className="floor-actions">
-                <HapticButton
-                    className="nodrag"
-                    onPress={handleAllOpen}
-                    disabled={!connected}
-                    title="Alle öffnen"
-                    label={`${name}: Alle öffnen`}
-                    stopPropagation
-                >
-                    <ChevronUp size={14} />
-                </HapticButton>
-                <HapticButton
-                    className="nodrag"
-                    onPress={handleAllStop}
-                    disabled={!connected}
-                    title="Alle stoppen"
-                    label={`${name}: Alle stoppen`}
-                    stopPropagation
-                >
-                    <Square size={12} />
-                </HapticButton>
-                <HapticButton
-                    className="nodrag"
-                    onPress={handleAllClose}
-                    disabled={!connected}
-                    title="Alle schließen"
-                    label={`${name}: Alle schließen`}
-                    stopPropagation
-                >
-                    <ChevronDown size={14} />
-                </HapticButton>
-            </div>
-        </div>
-    );
-};
+export const FloorHeader: React.FC<FloorHeaderProps> = ({ name, connected = true }) => (
+    <div className="floor-header" style={{ opacity: !connected ? 0.5 : 1 }}>
+        <span className="floor-name">{name}</span>
+        <div className="floor-name-line" />
+    </div>
+);

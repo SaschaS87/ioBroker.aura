@@ -12,8 +12,6 @@ import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
-    /** Optik des Etagenkopfs: a = schlicht, b = typografisch abgesetzt, c = Akzentstreifen */
-    headVariant?: 'a' | 'b' | 'c';
     /** Meldet der Adapter eine stehende Verbindung zur Box? */
     connectionDp?: string;
     /** Laeuft die Adapter-Instanz ueberhaupt? Traegt `expire`, faellt also von
@@ -27,7 +25,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     const options = (config.options as ShutterFloorsOptions) || {};
     const {
         floors = [],
-        headVariant = 'b',
         connectionDp = '',
         aliveDp = '',
         instanceLabel = 'tahoma.1',
@@ -196,7 +193,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                 <div className="floors-scroll">
                     {floors.map((floor) => (
                         <div key={floor.name} className="floor-section">
-                            <FloorHeader name={floor.name} connected={connected} variant={headVariant} />
+                            <FloorHeader name={floor.name} connected={connected} />
 
                             <div className="floor-devices">
                                 {floor.devices.map((device) => (

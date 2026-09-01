@@ -3,7 +3,7 @@ import { tapFeedback } from './haptics';
 
 export const SNAP_POS = [0, 25, 50, 75, 100];
 export const SNAP_SLAT = [0, 50, 90];
-export const SNAP_RANGE = 6;
+export const SNAP_RANGE = 4;
 export const DRAG_THRESHOLD = 6;
 export const KNOB_PAD = 17;
 
