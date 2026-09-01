@@ -4,6 +4,7 @@ import type { PendingState } from '../shutterrooms/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shutterrooms/useShutterDevice';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { ShutterSheet } from '../shutterrooms/ShutterSheet';
+import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
 import { FloorHeader } from './FloorHeader';
 import { ShutterRow } from './ShutterRow';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
@@ -135,6 +136,38 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     const aliveOk = !aliveDp || aliveState.state?.val === true;
     const connected = connOk && aliveOk;
 
+    // Instanz-Id fuer den Neustart-Knopf aus aliveDp ableiten (z.B.
+    // "system.adapter.tahoma.1.alive" -> "tahoma.1"), statt sie hart zu
+    // verdrahten – so laufen Beschriftung und Neustart-Ziel nie auseinander.
+    // main.js prueft dieselbe Form serverseitig (^[a-z0-9_-]+\.\d+$).
+    const restartAdapterId = useMemo(() => {
+        const m = aliveDp.match(/^system\.adapter\.([a-z0-9_-]+\.\d+)\.alive$/i);
+        return m ? m[1] : undefined;
+    }, [aliveDp]);
+
+    // Fuer die aufklappbare Status-Box: reicht ein reines Alterskriterium
+    // nicht, weil connectionDp seinen letzten Wert behaelt und weiter "true"
+    // meldet, wenn der Adapter laengst beendet ist (siehe Kommentar oben zu
+    // connState/aliveState). requireTrueDps verlangt stattdessen, dass beide
+    // Datenpunkte tatsaechlich true sind.
+    const healthSources: HealthSourceDef[] = useMemo(() => {
+        if (!aliveDp) return [];
+        return [
+            {
+                id: 'tahoma',
+                label: instanceLabel,
+                watchDp: aliveDp,
+                // Wirkungslos, solange requireTrueDps gesetzt ist (immer der
+                // Fall hier, da aliveDp vorhanden ist) – dient nur als
+                // Rueckfallwert fuer den (in der Praxis nicht vorkommenden)
+                // Fall ohne requireTrueDps.
+                maxAgeMin: 30,
+                requireTrueDps: [aliveDp, connectionDp].filter((dp) => dp),
+                restartAdapterId,
+            },
+        ];
+    }, [aliveDp, connectionDp, instanceLabel, restartAdapterId]);
+
     if (!floors || floors.length === 0) {
         return (
             <div className="shutter-floors-widget">
@@ -179,16 +212,11 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                     ))}
                 </div>
 
-                {/* Fusszeile: eine Pille wie im Rollos-Tab, meldet den Zustand
-                    der Instanz auch im Normalfall. `showFooter` stand schon in
-                    der Konfiguration, wurde bisher aber nicht gelesen. */}
-                {showFooter && (
-                    <div className="widget-footer">
-                        <span className={`instance-pill ${connected ? 'ok' : 'fail'}`}>
-                            {instanceLabel} {connected ? 'aktiv' : 'nicht erreichbar'}
-                        </span>
-                    </div>
-                )}
+                {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
+                    Wetter-Tab, DataSourceHealthBox). Meldet den Zustand der
+                    Instanz auch im Normalfall, mit Neustart-Knopf im
+                    Stoerfall. `showFooter` stand schon in der Konfiguration. */}
+                {showFooter && <DataSourceHealthBox sources={healthSources} />}
 
                 {/* Sheet-Overlay */}
                 {sheetDevice && (

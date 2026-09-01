@@ -103,7 +103,7 @@ export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options,
             {/* Instance Label */}
             <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600 }}>
-                    Instanz-Name (Fußzeile)
+                    Instanz-Name (Status-Box)
                 </label>
                 <input
                     type="text"
@@ -122,7 +122,7 @@ export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options,
 
             {/* Info Text */}
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                Grün nur, wenn beide Datenpunkte <code>true</code> sind.
+                Der Punkt in der Status-Box ist nur grün, wenn beide Datenpunkte <code>true</code> sind.
             </div>
 
             {/* Show Footer */}
@@ -135,7 +135,7 @@ export const ShutterRoomsConfig: React.FC<ShutterRoomsConfigProps> = ({ options,
                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                 />
                 <label htmlFor="showFooter" style={{ fontSize: '12px', cursor: 'pointer' }}>
-                    Fußzeile anzeigen
+                    Status-Box anzeigen
                 </label>
             </div>
 

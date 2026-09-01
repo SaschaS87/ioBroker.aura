@@ -117,11 +117,11 @@ const HeatingWidget = lazyWithReload(() =>
 const WeatherForecastStripWidget = lazyWithReload(() =>
     import('../widgets/WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
 );
-// ShutterRoomsWidget is a specialized full-tab widget for TaHoma roller shutters.
+// ShutterRoomsWidget is a specialized widget for TaHoma roller shutters, grouped by room.
 const ShutterRoomsWidget = lazyWithReload(() =>
     import('../widgets/shutterrooms/ShutterRoomsWidget').then((m) => ({ default: m.ShutterRoomsWidget })),
 );
-// ShutterFloorsWidget is a specialized full-tab widget for TaHoma roller shutters grouped by floors.
+// ShutterFloorsWidget is a specialized widget for TaHoma roller shutters, grouped by floor.
 const ShutterFloorsWidget = lazyWithReload(() =>
     import('../widgets/shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
 );
@@ -6125,9 +6125,11 @@ export function WidgetFrame({
         // weatherforecaststrip: same idea — the strip+detail shell is its own
         // full-width card.
         config.type === 'weatherforecaststrip' ||
-        // shutterrooms: fillTab widget with own padding and layout — no outer frame padding.
+        // shutterrooms: no outer frame (transparent) + no frame padding, so the
+        // room list spans the full column width, just like heating.
         config.type === 'shutterrooms' ||
-        // shutterfloors: fillTab widget with own padding and layout — no outer frame padding.
+        // shutterfloors: no outer frame (transparent) + no frame padding, so the
+        // floor list spans the full column width, just like heating.
         config.type === 'shutterfloors';
 
     // Height the Suspense placeholder has to reserve while a lazy widget's chunk

@@ -1,9 +1,6 @@
 .shutter-sheet-backdrop {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  top: 0;
+  position: fixed;
+  inset: 0;
   background-color: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: flex-end;
@@ -21,22 +18,25 @@
   }
 }
 
-/* max-height war 88vh – das rechnet mit dem ganzen Bildschirm, waehrend das
-   Sheet in Wahrheit im Widget haengt (position: absolute), das nur die
-   Tab-Flaeche hoch ist. Zwei verschiedene Bezugsgroessen: das Sheet durfte
-   hoeher werden als der Platz, den es hat. Zusammen mit den ~34px, die das
-   fillTab-Widget unter die sichtbare Fensterkante reicht, lagen die
-   Prozent-Knoepfe unten ausserhalb des Bildschirms.
+/* Korrektur vom 12.08.2026 hier bewusst umgedreht (Rollläden-Umbau,
+   01.09.2026): Damals war max-height auf 92% des Backdrops gestellt, weil
+   88vh mit dem ganzen Bildschirm rechnete, waehrend Backdrop UND Widget
+   deckungsgleich die ganze Tab-Flaeche gross waren (fillTab-Overlay) - 92%
+   ergab in diesem Sonderfall zufaellig wieder ~92% des Bildschirms.
 
-   Jetzt bezieht sich die Grenze auf den Container (100% = Backdrop-Hoehe),
-   und der Innenabstand unten holt den Inhalt aus der Home-Indicator-Zone
-   zurueck – die Sheet-Flaeche selbst laeuft weiter bis zur Kante. */
+   Jetzt ist shutterfloors/shutterrooms ein normales, mitwachsendes Widget.
+   Der Backdrop ist ueber position: fixed; inset: 0 wieder an den Bildschirm
+   gebunden, nicht mehr an die (potenziell viel hoehere) Widget-Kachel. Ein
+   Prozentwert wuerde also wieder auf die Kachel zeigen, wenn das Widget
+   jemals in einem absolut positionierten Vorfahren steckt - dvh bezieht sich
+   direkt auf den sichtbaren Bildschirmausschnitt und ist damit die robustere
+   Wahl fuer "faellt niemals aus dem Fenster". */
 .shutter-sheet {
   display: flex;
   flex-direction: column;
   background-color: var(--app-bg);
   border-radius: 16px 16px 0 0;
-  max-height: 92%;
+  max-height: 92dvh;
   width: 100%;
   max-width: 600px;
   overflow-y: auto;

@@ -152,7 +152,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         addMode: 'free',
         widgetGroup: 'control',
         mock: { t: 'Rollläden', v: '' },
-        hint: 'Ganzer Tab: Raumkarten mit Fassaden-Filter, Kachel-Steuerung und Feinregler-Sheet (TaHoma)',
+        hint: 'Raumkarten mit Fassaden-Filter, Kachel-Steuerung und Feinregler-Sheet (TaHoma)',
     },
     {
         type: 'shutterfloors',

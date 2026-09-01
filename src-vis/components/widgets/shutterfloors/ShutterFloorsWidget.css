@@ -1,16 +1,18 @@
 .shutter-floors-widget {
   position: relative;
   height: 100%;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+/* Kein eigener Sicherheitsabstand unten mehr (Rollläden-Umbau, 01.09.2026):
+   als normales Widget liegt der Inhalt im .aura-scroll-Container, der schon
+   4rem Puffer traegt (index.html) und sich bei sichtbarer Fussleiste zusaetzlich
+   um calc(var(--tab-footer-h) + env(safe-area-inset-bottom)) verkuerzt
+   (index.css) – ein zweiter Zuschlag hier waere doppelt. */
 .floors-scroll {
-  flex: 1;
-  overflow-y: auto;
   padding-top: 10px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  padding-bottom: 10px;
 }
 
 .floor-section {
@@ -32,7 +34,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  min-height: 200px;
   font-size: 13px;
   color: var(--text-secondary);
 }
@@ -64,45 +66,3 @@
   color: var(--text-secondary);
 }
 
-/* Fusszeile und Zustands-Pille – gleiche Masse wie im Rollos-Tab, damit beide
-   Tabs identisch hoch abschliessen.
-   iOS-Homescreen: wie .tab-footer-bar (index.css) muss der Inhalt vor dem
-   Sicherheitsabstand unten stehen bleiben, nicht die Box selbst. Ohne die
-   env(...)-Erweiterung lag die Pille im Bereich des Home-Indicators und war
-   dort praktisch unsichtbar - von Sascha am 31.08.2026 am Elternzimmer
-   gemeldet. Auf dem Desktop ist env(...) 0, keine Aenderung dort. */
-.shutter-floors-widget .widget-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: calc(var(--tab-footer-h, 38px) + env(safe-area-inset-bottom));
-  padding: 0 16px env(safe-area-inset-bottom);
-  box-sizing: border-box;
-  border-top: 1px solid var(--app-border);
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.shutter-floors-widget .instance-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.shutter-floors-widget .instance-pill.ok {
-  background-color: color-mix(in srgb, var(--accent-green, #4ade80) 18%, transparent);
-  color: var(--accent-green, #4ade80);
-  border: 1px solid color-mix(in srgb, var(--accent-green, #4ade80) 45%, transparent);
-}
-
-.shutter-floors-widget .instance-pill.fail {
-  background-color: color-mix(in srgb, var(--accent-red, #ef4444) 18%, transparent);
-  color: var(--accent-red, #ef4444);
-  border: 1px solid color-mix(in srgb, var(--accent-red, #ef4444) 45%, transparent);
-}

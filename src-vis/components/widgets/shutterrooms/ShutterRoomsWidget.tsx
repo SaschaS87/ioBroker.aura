@@ -6,6 +6,7 @@ import type { PendingState } from './useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from './useShutterDevice';
 import { ShutterTile } from './ShutterTile';
 import { ShutterSheet } from './ShutterSheet';
+import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
 import './ShutterRoomsWidget.css';
 
 interface ShutterRoomsOptions {
@@ -32,9 +33,34 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     const connState = useDatapoint(connectionDp);
     const connected = connState.state?.val === true;
 
-    // Alive Status
-    const aliveState = useDatapoint(aliveDp);
-    const instanceOk = aliveState.state?.val === true && connected === true;
+    // Instanz-Id fuer den Neustart-Knopf aus aliveDp ableiten (z.B.
+    // "system.adapter.tahoma.1.alive" -> "tahoma.1"), statt sie hart zu
+    // verdrahten – so laufen Beschriftung und Neustart-Ziel nie auseinander.
+    // main.js prueft dieselbe Form serverseitig (^[a-z0-9_-]+\.\d+$).
+    const restartAdapterId = useMemo(() => {
+        const m = aliveDp.match(/^system\.adapter\.([a-z0-9_-]+\.\d+)\.alive$/i);
+        return m ? m[1] : undefined;
+    }, [aliveDp]);
+
+    // Fuer die aufklappbare Status-Box (siehe ShutterFloorsWidget fuer die
+    // ausfuehrliche Begruendung): requireTrueDps statt reinem Alterskriterium,
+    // weil connectionDp seinen letzten Wert behaelt, wenn der Adapter laengst
+    // beendet ist.
+    const healthSources: HealthSourceDef[] = useMemo(() => {
+        if (!aliveDp) return [];
+        return [
+            {
+                id: 'tahoma',
+                label: instanceLabel,
+                watchDp: aliveDp,
+                // Wirkungslos, solange requireTrueDps gesetzt ist (immer der
+                // Fall hier, da aliveDp vorhanden ist).
+                maxAgeMin: 30,
+                requireTrueDps: [aliveDp, connectionDp].filter((dp) => dp),
+                restartAdapterId,
+            },
+        ];
+    }, [aliveDp, connectionDp, instanceLabel, restartAdapterId]);
 
     // Fassaden-Filter
     const [activeFacade, setActiveFacade] = useState<string>(configFacades[0] || 'Alle');
@@ -196,14 +222,9 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                     )}
                 </div>
 
-                {/* Fußzeile: eine Pille, die den Zustand der Instanz meldet */}
-                {showFooter && (
-                    <div className="widget-footer">
-                        <span className={`instance-pill ${instanceOk ? 'ok' : 'fail'}`}>
-                            {instanceLabel} {instanceOk ? 'aktiv' : 'nicht erreichbar'}
-                        </span>
-                    </div>
-                )}
+                {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
+                    Wetter-Tab, DataSourceHealthBox – siehe ShutterFloorsWidget). */}
+                {showFooter && <DataSourceHealthBox sources={healthSources} />}
 
                 {/* Toast – key erzwingt den Neustart der Animation bei Wiederholung */}
                 {toast.text && (

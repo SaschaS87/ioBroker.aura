@@ -321,9 +321,11 @@ export function Dashboard({
                                                             // weatherforecaststrip: detail panel height changes
                                                             // when the chart mounts / a different day is picked.
                                                             w.type === 'weatherforecaststrip' ||
-                                                            // shutterrooms: fillTab widget spanning full tab area.
+                                                            // shutterrooms grows with its room/device list so the
+                                                            // tab scrolls as a whole instead of the widget itself.
                                                             w.type === 'shutterrooms' ||
-                                                            // shutterfloors: fillTab widget spanning full tab area.
+                                                            // shutterfloors grows with its floor/device list so the
+                                                            // tab scrolls as a whole instead of the widget itself.
                                                             w.type === 'shutterfloors' ||
                                                             (w.type === 'weather' &&
                                                                 wl !== 'custom' &&

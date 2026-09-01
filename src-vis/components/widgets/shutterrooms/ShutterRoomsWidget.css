@@ -1,27 +1,21 @@
-/* ── Warum hier unten ein Innenabstand steht ──────────────────────────────
-   Die App ist auf dem iPhone-Homescreen absichtlich hoeher als ihr Fenster:
-   html/body stehen auf calc(100dvh + env(safe-area-inset-bottom)), damit unten
-   am Home-Indicator kein toter Streifen bleibt (siehe index.html). Bei den
-   scrollenden Tabs faellt das nicht auf – die haben 4rem Puffer.
+/* ── Rollläden-Umbau, 01.09.2026: kein fillTab mehr ───────────────────────
+   Bis 01.09.2026 lief dieses Widget als fillTab: es lag starr ueber der
+   ganzen Tab-Flaeche, scrollte als Ganzes nicht und brauchte deshalb einen
+   eigenen Sicherheitsabstand unten (env(safe-area-inset-bottom)), weil seine
+   untersten ~34px sonst unter der sichtbaren Fensterkante lagen.
 
-   Dieses Widget laeuft aber als fillTab: es liegt starr ueber der ganzen
-   Tab-Flaeche und scrollt als Ganzes nicht. Seine untersten ~34px lagen damit
-   unter der sichtbaren Fensterkante – genau dort, wo die Fusszeile klebt. Sie
-   war deshalb auf dem iPhone angeschnitten.
-
-   Der Innenabstand holt den Inhalt in den sichtbaren Bereich zurueck. Die
-   Flaeche selbst laeuft in --app-bg weiter bis zur physischen Kante, der
-   Vollbild-Eindruck bleibt also erhalten. Auf dem Desktop ist env(...) = 0.
+   Jetzt ist es ein normales, mitwachsendes Widget wie roomclimate/heating:
+   Hoehe und Scrollen kommen vom umgebenden Tab-Container (.aura-scroll), der
+   bereits 4rem Puffer traegt und sich bei sichtbarer Fussleiste zusaetzlich um
+   die Home-Indicator-Zone verkuerzt (index.css) – ein eigener Zuschlag hier
+   waere doppelt.
    ─────────────────────────────────────────────────────────────────────── */
 .shutter-rooms-widget {
   position: relative;
   height: 100%;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   background-color: var(--app-bg);
-  padding-bottom: env(safe-area-inset-bottom);
-  box-sizing: border-box;
 }
 
 /* Fassaden-Chips */
@@ -69,9 +63,6 @@
 
 /* Scroll-Bereich mit Räumen */
 .rooms-scroll {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 16px;
   gap: 16px;
   display: flex;
@@ -119,57 +110,12 @@
   gap: 8px;
 }
 
-/* Fußzeile. Höhe kommt aus derselben Variablen wie die leere Leiste auf den
-   anderen Tabs, damit beide exakt gleich hoch sind.
-   iOS-Homescreen: wie .tab-footer-bar (index.css) muss der Inhalt vor dem
-   Sicherheitsabstand unten stehen bleiben, nicht die Box selbst. Ohne die
-   env(...)-Erweiterung lag die Pille im Bereich des Home-Indicators und war
-   dort praktisch unsichtbar - von Sascha am 31.08.2026 am Elternzimmer
-   gemeldet. Auf dem Desktop ist env(...) 0, keine Aenderung dort. */
-.widget-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: calc(var(--tab-footer-h, 38px) + env(safe-area-inset-bottom));
-  padding: 0 16px env(safe-area-inset-bottom);
-  box-sizing: border-box;
-  border-top: 1px solid var(--app-border);
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-/* Statusanzeige der Instanz. Sieht aus wie ein Chip, ist aber keiner:
-   nur Anzeige, kein Knopf. Farben wie beim früheren Statuspunkt. */
-.instance-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.instance-pill.ok {
-  background-color: color-mix(in srgb, var(--accent-green, #4ade80) 18%, transparent);
-  color: var(--accent-green, #4ade80);
-  border: 1px solid color-mix(in srgb, var(--accent-green, #4ade80) 45%, transparent);
-}
-
-.instance-pill.fail {
-  background-color: color-mix(in srgb, var(--accent-red, #ef4444) 18%, transparent);
-  color: var(--accent-red, #ef4444);
-  border: 1px solid color-mix(in srgb, var(--accent-red, #ef4444) 45%, transparent);
-}
-
-/* Toast */
+/* Toast. position: fixed statt absolute (Rollläden-Umbau, 01.09.2026): als
+   normales, mitwachsendes Widget deckt sich die Widget-Flaeche nicht mehr mit
+   dem Bildschirm – ein absolut positionierter Toast wuerde bei gescrolltem
+   Tab irgendwo im Dokument statt sichtbar unten auf dem Screen landen. */
 .widget-toast {
-  position: absolute;
-  /* Absolute Kinder beziehen sich auf die Padding-Box des Widgets, die bis zur
-     physischen Kante reicht – ohne den Zuschlag saesse die Einblendung in der
-     Home-Indicator-Zone. */
+  position: fixed;
   bottom: calc(20px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
