@@ -288,7 +288,7 @@ export function Dashboard({
                                             className={`aura-tab aura-tab-${tab.slug}`}
                                             style={{ display: isActive ? undefined : 'none' }}
                                         >
-                                            {isActive && tabWidgets.length === 0 ? (
+                                            {isActive && tabWidgets.length === 0 && !fillTabWidget ? (
                                                 <div
                                                     className="flex flex-col items-center justify-center flex-1 h-64 space-y-2"
                                                     style={{ color: 'var(--text-secondary)' }}
@@ -535,7 +535,7 @@ export function Dashboard({
                                             return { ...w, gridPos: { x: pos.x, y: pos.y, w: pos.w, h } };
                                         });
 
-                                    if (isActive && tabGridWidgets.length === 0) {
+                                    if (isActive && tabGridWidgets.length === 0 && !fillTabWidget) {
                                         return (
                                             <div
                                                 key={tab.id}
