@@ -2,7 +2,16 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  /* Kein eigenes vertikales Polster mehr (vorher 10px oben/unten): der
+     Abstand VOR dem Titel kommt jetzt allein aus .floor-section
+     (margin-bottom, 18px), der Abstand DANACH ist bewusst 0 – der Titel
+     sitzt direkt auf der Geraetekarte, wie ein Bereichstitel auf Wohnklima
+     auf seiner Raumklima-Liste sitzt. Vorher stand fuer dieses Widget
+     zusaetzlich eine `!important`-Regel in der Admin-Custom-CSS, die genau
+     diese Werte lokal ueberschrieb (0 10px 7px) – beide Quellen zusammen
+     ergaben ein anderes Vorher/Nachher-Verhaeltnis als auf Wohnklima. Jetzt
+     eine einzige Quelle. Angeglichen 01.09.2026 (Runde 7). */
+  padding: 0 12px;
   transition: opacity 0.2s;
 }
 
