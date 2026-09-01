@@ -99,6 +99,11 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
             tabIndex={0}
             onClick={handleRowClick}
             onKeyDown={handleRowKeyDown}
+            // Der Status steht seit dem 01.09.2026 nicht mehr als eigener Text
+            // in der Zeile (Platz fuer den Namen in Wohnklima-Groesse, siehe
+            // Namenslaengen-Test), lebt aber hier weiter - fuer Screenreader,
+            // die sonst nur noch den Namen vorlesen wuerden.
+            aria-label={statusText ? `${device.label}, ${statusText}` : device.label}
             style={{
                 opacity: !connected ? 0.5 : 1,
             }}
@@ -111,11 +116,12 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                 <TypeIcon size={18} closedFrac={closedFrac} isMoving={busy} />
             </div>
 
-            {/* Zweizeilig: Label + Status */}
-            <div className="row-labels">
-                <div className="row-label">{device.label}</div>
-                <div className={`row-status${state.isEstimate ? ' is-estimate' : ''}`}>{statusText}</div>
-            </div>
+            {/* Einzeilig, nur Name (01.09.2026, nach Namenslaengen-Test): der
+                Status verschwindet als eigener Text - der Fuellstand zeigt sich
+                allein im Icon (inkl. Puls waehrend der Fahrt). Der Name laeuft
+                dafuer in 14 px wie die Raumnamen auf Wohnklima (cardStyle-
+                Zweig, live nachgemessen) statt vormals 13 px. */}
+            <div className="row-name">{device.label}</div>
 
             {/* Zwei oder eine Taste */}
             <div className="row-actions">

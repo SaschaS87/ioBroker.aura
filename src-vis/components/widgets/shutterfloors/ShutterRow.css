@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 64px;
+  height: 52px;
   padding: 0 12px;
   box-sizing: border-box;
   background-color: var(--app-bg);
@@ -36,32 +36,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
+  /* Angeglichen an den Rollladen-Viz auf dem Karten-Tab (ShutterViz.css),
+     der schon immer in --text-secondary zeichnet. */
+  color: var(--text-secondary);
 }
 
-/* Der Name bekommt den freien Platz, nicht der Balken - sonst reisst ein langer
-   Geraetename ("Esszimmer Raffstore Nachbar") auch auf breiten Bildschirmen ab.
-   min-width:0 ist Pflicht, damit text-overflow:ellipsis im Flex-Kind greift. */
-.row-labels {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* Einzeilig, nur Name (01.09.2026, nach Namenslaengen-Test): kein Status-Text
+   mehr daneben - der Fuellstand zeigt sich allein im Icon. Schriftgroesse
+   1:1 von Wohnklima uebernommen, nicht neu erfunden: die dortigen Raumnamen
+   (RoomClimateWidget.tsx, cardStyle-Zweig) laufen in der Praxis mit
+   `fontSize: 14, fontWeight: 400` - nachgemessen per getComputedStyle im
+   laufenden Dev-Server, NICHT der ungenutzte `nameFontSize`-Default (17) aus
+   dem anderen, dort gar nicht aktiven Zweig. Passt bei den laengsten
+   Geraetenamen ("Raffstore Nachbar" u.ae.) auf iPhone- wie auf
+   Galaxy-Breite vollstaendig - nachgemessen in der lokalen Dev-Vorschau. */
+.row-name {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.row-label {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.row-status {
-  font-size: 11px;
-  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -124,9 +118,4 @@
   .row-actions .haptic-btn:active:not(.is-disabled) {
     transform: none;
   }
-}
-
-/* Zahl ohne Quittung der Box: gedaempft, dazu die Tilde im Text. */
-.row-status.is-estimate {
-  opacity: 0.6;
 }
