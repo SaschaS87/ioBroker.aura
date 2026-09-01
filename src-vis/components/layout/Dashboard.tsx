@@ -208,7 +208,16 @@ export function Dashboard({
     // stays mounted in all cases — keepAlive iframes are never unmounted when
     // switching between fill-tab and normal tabs.
     const activeTab = tabs.find((t) => t.id === activeTabId);
-    const fillTabWidget = activeTab?.widgets?.find((w) => (w.options as Record<string, unknown>)?.fillTab);
+    // Nur noch iFrames duerfen fillTab nutzen (Rollläden-Umbau, 01.09.2026):
+    // shutterfloors/shutterrooms sind jetzt normale Widgets, und die Admin-UI
+    // fuer den fillTab-Umschalter existiert ohnehin nur fuer config.type ===
+    // 'iframe' (WidgetFrame.tsx). Verhindert, dass ein Skript oder eine
+    // Altkonfiguration die Shutter-Widgets versehentlich wieder in den
+    // Overlay-Modus schickt. Live-State am 01.09.2026 geprueft: ausser dem
+    // damaligen shutterfloors-Widget trug kein einziges Widget fillTab:true.
+    const fillTabWidget = activeTab?.widgets?.find(
+        (w) => w.type === 'iframe' && (w.options as Record<string, unknown>)?.fillTab,
+    );
 
     // Shared, empty footer bar at the bottom of every tab. Rendered inside the same
     // relative wrapper as the fill-tab overlay, so the shutter tab's own footer simply
