@@ -4,7 +4,7 @@ import { useDashboardMobile } from '../../../contexts/DashboardMobileContext';
 import { useIoBroker, sendToDirect, getStateFromCache } from '../../../hooks/useIoBroker';
 import { SEVERITY_COLOR } from '../../../utils/statusOverview';
 import { NS } from '../../../utils/namespace';
-import { localTime } from '../WeatherForecastStripWidget';
+import { localTime } from '../../../utils/formatTime';
 import type { ioBrokerState } from '../../../types';
 
 // ── Data-source health box (Variante D) — collapsible status card. Header

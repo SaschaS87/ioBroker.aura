@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { WidgetProps } from '../../../types';
 import { useDatapoint } from '../../../hooks/useDatapoint';
+import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import type { ShutterRoomDef, ShutterDeviceDef } from './types';
 import type { PendingState } from './useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from './useShutterDevice';
@@ -32,6 +34,14 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Connection Status
     const connState = useDatapoint(connectionDp);
     const connected = connState.state?.val === true;
+
+    // Portal-Ziel fuer den Toast (01.09.2026, Rollläden-Umbau): das Widget ist
+    // seit dem Wegfall von fillTab ein normales react-grid-layout-Kind, dessen
+    // Vorfahre ein CSS-`transform` traegt (useCSSTransforms) - das macht ihn
+    // zum Containing Block fuer `position: fixed`. Ohne Portal deckt der Toast
+    // nur die Kachel ab statt den Bildschirm. Gleiches Muster wie ShutterSheet.
+    const adminPortalTarget = usePortalTarget();
+    const toastPortalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
 
     // Instanz-Id fuer den Neustart-Knopf aus aliveDp ableiten (z.B.
     // "system.adapter.tahoma.1.alive" -> "tahoma.1"), statt sie hart zu
@@ -226,12 +236,15 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
                     Wetter-Tab, DataSourceHealthBox – siehe ShutterFloorsWidget). */}
                 {showFooter && <DataSourceHealthBox sources={healthSources} />}
 
-                {/* Toast – key erzwingt den Neustart der Animation bei Wiederholung */}
-                {toast.text && (
-                    <div className="widget-toast" key={toast.n} role="status">
-                        {toast.text}
-                    </div>
-                )}
+                {/* Toast – key erzwingt den Neustart der Animation bei Wiederholung.
+                    Portal (siehe Kommentar oben) statt Inline-Rendering. */}
+                {toast.text &&
+                    createPortal(
+                        <div className="widget-toast" key={toast.n} role="status">
+                            {toast.text}
+                        </div>,
+                        toastPortalTarget,
+                    )}
 
                 {/* Sheet-Overlay */}
                 {selectedDevice && selectedRoom && (

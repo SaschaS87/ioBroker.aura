@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Square } from 'lucide-react';
+import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore, slatPendingKey } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
@@ -32,6 +34,16 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     showFacade = true,
     onClose,
 }) => {
+    // Portal statt Inline-Rendering (01.09.2026, Rollläden-Umbau): Das Widget
+    // ist seit dem Wegfall von fillTab ein normales react-grid-layout-Kind.
+    // react-grid-layout setzt per Default useCSSTransforms=true und damit ein
+    // `transform` auf den Vorfahren – das macht ihn zum Containing Block fuer
+    // `position: fixed`, der Backdrop wuerde dann nur die Kachel abdecken statt
+    // den Bildschirm. Portal nach dem Frontend-Root umgeht das, exakt wie beim
+    // Raumklima-Sheet (RoomClimateSheet.tsx).
+    const adminPortalTarget = usePortalTarget();
+    const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
+
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
     const { markPending, clearPending, showToast } = usePendingStore();
@@ -183,7 +195,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
       : travel && targetClosed !== null ? targetClosed
       : displayClosed;
 
-    return (
+    return createPortal(
         <div className="shutter-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
             <div ref={sheetRef} className="shutter-sheet" style={sheetStyle} role="dialog" aria-modal="true">
                 {/* Griff-Balken und Kopfzeile bilden zusammen die Ziehflaeche.
@@ -316,6 +328,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                     {!connected && <div className="sheet-notice">TaHoma-Box nicht erreichbar</div>}
                 </div>
             </div>
-        </div>
+        </div>,
+        portalTarget,
     );
 };

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
+import { localTime } from '../../utils/formatTime';
 import { DataSourceHealthBox, type HealthSourceDef } from './shared/DataSourceHealthBox';
 import type { WidgetProps } from '../../types';
 
@@ -142,15 +143,6 @@ function timeOnly(iso: string | null): string {
     if (!iso) return '–';
     const idx = iso.indexOf('T');
     return idx >= 0 ? iso.slice(idx + 1, idx + 6) : iso;
-}
-// For real UTC timestamps (Status.modelllaufZeit / letzterAbruf, with a "Z"
-// suffix) — unlike timeOnly() above, this must actually convert to local
-// time rather than slice the string, or it'd be off by the UTC offset.
-export function localTime(iso: string | null): string {
-    if (!iso) return '–';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '–';
-    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
 interface HourlyBlob {
