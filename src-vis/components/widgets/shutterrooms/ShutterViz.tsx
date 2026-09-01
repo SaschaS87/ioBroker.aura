@@ -101,11 +101,31 @@ export const ShutterViz: React.FC<ShutterVizProps> = ({
                 <defs>
                     {/* Lamellen-Muster. Der Anker bei y = PAD ist das Entscheidende:
                         nur so trifft die Behangkante bei jedem Fuenferschritt genau
-                        auf eine Fuge. Die Linie sitzt am Periodenanfang, ihre
-                        Oberkante liegt damit exakt auf der Prozentgrenze. */}
+                        auf eine Fuge.
+
+                        Fallstrick (von Sascha am 01.09.2026 gemeldet, Foto-Vergleich
+                        50%/55%): Die Fugenlinie MARKIERT die Prozentgrenze - sie darf
+                        also nicht GENAU auf ihr liegen. Bei "0.5" (Periodenanfang plus
+                        0.5 fuer eine scharfe Linie) landete sie hauchduenn HINTER der
+                        Beschnittkante (clipPath), die exakt an der Grenze endet. Bei
+                        jedem glatten Fuenferwert - also bei praktisch jeder Position,
+                        die man wirklich einstellt - wurde die Linie dadurch komplett
+                        weggeschnitten. Sichtbar blieb dann nur die naechsthoehere
+                        Fuge, eine Lamelle (5 Prozentpunkte) zu frueh: 55 % zeigte sich
+                        wie 50 %, 50 % wie 45 %. Jetzt sitzt sie am Periodenende minus
+                        0.5 - knapp VOR der Grenze, sicher innerhalb des Zuschnitts,
+                        genauso scharf gerendert. */}
                     {zeigeLamellen && (
                         <pattern id={patternId} x="0" y={PAD} width={w} height={periode} patternUnits="userSpaceOnUse">
-                            <line x1="0" y1="0.5" x2={w} y2="0.5" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+                            <line
+                                x1="0"
+                                y1={periode - 0.5}
+                                x2={w}
+                                y2={periode - 0.5}
+                                stroke="currentColor"
+                                strokeWidth="1"
+                                opacity="0.5"
+                            />
                         </pattern>
                     )}
                     {/* Die Kante des Behangs schneidet das wandernde Muster ab, damit
