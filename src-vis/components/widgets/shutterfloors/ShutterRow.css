@@ -66,10 +66,12 @@
   gap: 8px;
   flex-shrink: 0;
   --btn-h: 30px;
+  --btn-w: 34px;
+  --btn-gap: 8px;
 }
 
 .row-actions .row-btn {
-  width: 34px;
+  width: var(--btn-w);
   height: var(--btn-h);
   padding: 0;
   /* Pflicht, weil im Projekt kein globales box-sizing: border-box gilt -
@@ -77,8 +79,15 @@
   box-sizing: border-box;
   /* Deckender Rand statt transparent: mit 0% Deckkraft lief die
      Kuchengrafik (Schritt is-armed) im Gerätetest ruckelig, mit deckendem
-     Rand sauber (Feature 15, 02.09.2026). */
-  border: 1.5px solid var(--app-bg);
+     Rand sauber (Feature 15, 02.09.2026).
+     Farbe --widget-bg statt --app-bg (Korrektur 02.09.2026, Gerätetest):
+     die Zeile selbst ist per Sammelkarten-Custom-CSS
+     (aura.0.config.app-config, .aura-widget-wr2-01 .shutter-row)
+     transparent geschaltet, die sichtbare Karte dahinter ist
+     .floor-devices mit background: var(--widget-bg). Ein Rand in
+     --app-bg (fast Schwarz) stach deshalb sichtbar als dunkler Rahmen
+     gegen die hellere Karte ab, obwohl er "unsichtbar" gemeint war. */
+  border: 1.5px solid var(--widget-bg);
   background: color-mix(in srgb, var(--accent) 8%, var(--app-bg));
   color: var(--text-primary);
   border-radius: 6px;
@@ -93,8 +102,15 @@
   justify-content: center;
 }
 
-.row-actions .row-btn:hover:not(.is-disabled) {
-  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+/* Nur auf Geraeten mit echtem Zeiger aktiv: auf iOS bleibt :hover nach dem
+   Antippen sonst haengen (Element hat einen Klick-Handler ueber
+   stopPropagation), bis irgendwo anders hingetippt wird - sichtbar als
+   Taste in falscher Farbe nach dem Ablauf des Tippschutz-Countdowns
+   (Feature 15, Korrektur 02.09.2026, Gerätetest). */
+@media (hover: hover) and (pointer: fine) {
+  .row-actions .row-btn:hover:not(.is-disabled) {
+    background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
 }
 
 .row-actions .row-btn:active:not(.is-disabled) {
@@ -110,24 +126,35 @@
 /* Tippschutz: bewaffnete Taste zeigt eine schrumpfende Kuchengrafik als
    Countdown bis zum automatischen Entwaffnen. --pie-pct wird direkt vom
    rAF-Treiber in ShutterRow.tsx am DOM-Knoten gesetzt, nicht ueber React-
-   State - deshalb hier keine Transition auf --pie-pct und kein @property.
-   Dieses CSS ist wortgleich am iPhone getestet und bestaetigt. */
+   State - deshalb hier keine Transition auf --pie-pct und kein @property. */
 .row-actions .row-btn.is-armed {
   --pie-fill: color-mix(in srgb, var(--accent) 55%, var(--widget-bg));
-  background: conic-gradient(var(--pie-fill) var(--pie-pct, 100%), var(--app-bg) 0);
+  /* Leerer Sektor --widget-bg statt --app-bg (Korrektur 02.09.2026,
+     Gerätetest, gleicher Grund wie beim Rand oben): die "abgelaufene"
+     Haelfte soll in die tatsaechliche Karte (--widget-bg) uebergehen,
+     nicht als zu dunkler Fleck dagegen stehen. */
+  background: conic-gradient(var(--pie-fill) var(--pie-pct, 100%), var(--widget-bg) 0);
   color: var(--text-primary);
 }
 
 .row-actions .row-btn-stop {
   height: var(--btn-h);
-  width: calc(var(--btn-h) * 2.3636);
+  /* Exakt die Breite der zwei Auf/Zu-Tasten plus der Luecke dazwischen -
+     nicht mehr der feste Faktor 2,3636 aus Feature 14 (der galt fuer die
+     alten 48x44-px-Tasten und war nach der Verkleinerung auf 34x30 px
+     falsch: 2 x 34 + 8 = 76 px, der alte Faktor ergab nur 70,9 px -
+     sichtbar schmaler als die beiden Tasten zusammen. Korrektur
+     02.09.2026, Gerätetest). */
+  width: calc(var(--btn-w) * 2 + var(--btn-gap));
   background-color: var(--accent-yellow);
   color: var(--stop-fg, #1c1917);
 }
 
-.row-actions .row-btn-stop:hover:not(.is-disabled) {
-  background-color: var(--accent-yellow);
-  color: var(--stop-fg, #1c1917);
+@media (hover: hover) and (pointer: fine) {
+  .row-actions .row-btn-stop:hover:not(.is-disabled) {
+    background-color: var(--accent-yellow);
+    color: var(--stop-fg, #1c1917);
+  }
 }
 
 .row-actions .row-btn-stop:active:not(.is-disabled) {
