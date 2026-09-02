@@ -122,6 +122,16 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         const tick = () => {
             const pct = Math.max(0, 100 - ((performance.now() - start) / ARM_MS) * 100);
             el.style.setProperty('--pie-pct', `${pct}%`);
+            // Erzwungener Layout-Read: Safari repaintet eine Aenderung an einer
+            // Custom-Property, die nur INNERHALB eines conic-gradient()
+            // referenziert wird, nicht zuverlaessig bei jedem rAF-Tick - ohne
+            // das hier blieb die Kuchengrafik im Geraetetest gelegentlich auf
+            // einem Zwischenstand haengen (ein "Randschnipsel", der die
+            // Countdown-Animation ueberlebte). Bewusst NICHT nur am Ende,
+            // sondern auf jedem Tick, weil auch der Lauf selbst ruckelte, nicht
+            // nur der letzte Frame. Vermutung, noch nicht am Geraet bestaetigt
+            // (Feature 15, 02.09.2026).
+            void el.offsetHeight;
             if (pct <= 0) {
                 setArmed(null);
                 return;
@@ -133,6 +143,10 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         return () => {
             cancelAnimationFrame(raf);
             el.style.removeProperty('--pie-pct');
+            // Dieselbe Absicherung beim Entwaffnen: ohne den Read blieb der
+            // letzte Gradient-Frame manchmal sichtbar, obwohl --pie-pct schon
+            // entfernt war.
+            void el.offsetHeight;
         };
     }, [armed]);
 

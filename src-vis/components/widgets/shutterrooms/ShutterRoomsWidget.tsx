@@ -134,6 +134,16 @@ export const ShutterRoomsWidget: React.FC<WidgetProps> = ({ config }) => {
         () => ({
             pending,
             markPending: (key: string, targetRaw: number, startRaw: number | null = null) => {
+                // Kein Auftrag, wenn das Geraet den Zielwert schon (in derselben
+                // Toleranz wie der Aufraeum-Effekt in useShutterDevice.ts) haelt -
+                // z.B. "Auf" auf einem bereits offenen Rollladen. Sonst legt sich
+                // hier ein Pending-Eintrag an, den der Toleranzband-Effekt im
+                // selben Tick wieder wegraeumt (ackedPos hat sich ja nicht
+                // veraendert) - sichtbar als Stopp-Taste, die nur einen
+                // Wimpernschlag lang aufblitzt. Von Sascha am 02.09.2026 am
+                // Wohnzimmer-Rollladen gemeldet (dort: shutterfloors, derselbe
+                // Store hier fuer shutterrooms).
+                if (startRaw !== null && Math.abs(startRaw - targetRaw) <= 3) return;
                 setPending((prev) => ({
                     ...prev,
                     [key]: { targetRaw, startedAt: Date.now(), startRaw },
