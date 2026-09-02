@@ -65,17 +65,26 @@
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  --btn-h: 30px;
 }
 
 .row-actions .row-btn {
-  width: 48px;
-  height: 44px;
+  width: 34px;
+  height: var(--btn-h);
   padding: 0;
-  border: none;
-  background-color: transparent;
+  /* Pflicht, weil im Projekt kein globales box-sizing: border-box gilt -
+     sonst wuerde der Rand unten die 34x30 px auf 37x33 px aufblasen. */
+  box-sizing: border-box;
+  /* Deckender Rand statt transparent: mit 0% Deckkraft lief die
+     Kuchengrafik (Schritt is-armed) im Gerätetest ruckelig, mit deckendem
+     Rand sauber (Feature 15, 02.09.2026). */
+  border: 1.5px solid var(--app-bg);
+  background: color-mix(in srgb, var(--accent) 8%, var(--app-bg));
   color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
+  /* border-color bewusst NICHT in der Liste: eine transitionierte
+     border-color blieb im Test reproduzierbar haengen (Feature 15). */
   transition: background-color 0.15s, color 0.15s, transform 0.09s;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -98,8 +107,20 @@
   opacity: 0.4;
 }
 
+/* Tippschutz: bewaffnete Taste zeigt eine schrumpfende Kuchengrafik als
+   Countdown bis zum automatischen Entwaffnen. --pie-pct wird direkt vom
+   rAF-Treiber in ShutterRow.tsx am DOM-Knoten gesetzt, nicht ueber React-
+   State - deshalb hier keine Transition auf --pie-pct und kein @property.
+   Dieses CSS ist wortgleich am iPhone getestet und bestaetigt. */
+.row-actions .row-btn.is-armed {
+  --pie-fill: color-mix(in srgb, var(--accent) 55%, var(--widget-bg));
+  background: conic-gradient(var(--pie-fill) var(--pie-pct, 100%), var(--app-bg) 0);
+  color: var(--text-primary);
+}
+
 .row-actions .row-btn-stop {
-  width: 104px;
+  height: var(--btn-h);
+  width: calc(var(--btn-h) * 2.3636);
   background-color: var(--accent-yellow);
   color: var(--stop-fg, #1c1917);
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Square } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore } from '../shutterrooms/useShutterDevice';
@@ -8,6 +8,11 @@ import { WindowIcon, RoofWindowIcon, RaffstoreIcon } from '../../icons/ShutterTy
 import { ArrowToTopIcon, ArrowToBottomIcon } from '../../icons/ShutterActionIcons';
 import type { ShutterFloorDeviceDef } from './types';
 import './ShutterRow.css';
+
+// Wartezeit des Tippschutzes: erster Tipp bewaffnet die Taste, erst der
+// zweite (innerhalb dieser Frist) loest die Fahrt aus. Mit Sascha im
+// Artefakt festgelegt, am iPhone bestaetigt (Feature 15, 02.09.2026).
+const ARM_MS = 2500;
 
 interface ShutterRowProps {
     device: ShutterFloorDeviceDef;
@@ -20,6 +25,11 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     const state = useShutterDevice(device);
     const { markPending, clearPending } = usePendingStore();
     const stopFgColor = useYellowForeground();
+
+    // Tippschutz: 'up'/'down' waehrend die jeweilige Taste bewaffnet ist,
+    // sonst null. Erst der zweite Tipp innerhalb ARM_MS loest die Fahrt aus.
+    const [armed, setArmed] = useState<'up' | 'down' | null>(null);
+    const actionsRef = useRef<HTMLDivElement>(null);
 
     // Berechne geschlossenen Anteil für Statustext
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
@@ -77,6 +87,71 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
     };
 
+    // Tippschutz-Zwischenschicht: erster Tipp bewaffnet nur, zweiter Tipp
+    // (bei bereits bewaffneter Taste) loest die eigentliche Fahrt aus.
+    const handleUpPress = () => {
+        if (armed === 'up') {
+            setArmed(null);
+            handleOpen();
+        } else {
+            setArmed('up');
+        }
+    };
+
+    const handleDownPress = () => {
+        if (armed === 'down') {
+            setArmed(null);
+            handleClose();
+        } else {
+            setArmed('down');
+        }
+    };
+
+    // rAF-Treiber fuer die Kuchengrafik: schreibt --pie-pct direkt am
+    // DOM-Knoten (nicht ueber React-State), damit es nicht jeden Frame
+    // rendert. Laeuft nur, solange eine Taste bewaffnet ist.
+    useEffect(() => {
+        if (armed === null) return;
+        const el = actionsRef.current;
+        if (!el) return;
+
+        const start = performance.now();
+        el.style.setProperty('--pie-pct', '100%');
+
+        let raf: number;
+        const tick = () => {
+            const pct = Math.max(0, 100 - ((performance.now() - start) / ARM_MS) * 100);
+            el.style.setProperty('--pie-pct', `${pct}%`);
+            if (pct <= 0) {
+                setArmed(null);
+                return;
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+
+        return () => {
+            cancelAnimationFrame(raf);
+            el.style.removeProperty('--pie-pct');
+        };
+    }, [armed]);
+
+    // Entwaffnen, sobald die Zeile in Fahrt geht - eine bewaffnete Taste
+    // waehrend der Fahrt waere irrefuehrend.
+    useEffect(() => {
+        if (busy) setArmed(null);
+    }, [busy]);
+
+    // Entwaffnen beim Wegschalten der App - eine noch bewaffnete Taste beim
+    // Zurueckkehren waere eine Ueberraschung.
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.hidden) setArmed(null);
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+
     const handleRowClick = () => {
         onOpenSheet(device);
     };
@@ -124,7 +199,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
             <div className="row-name">{device.label}</div>
 
             {/* Zwei oder eine Taste */}
-            <div className="row-actions">
+            <div className="row-actions" ref={actionsRef}>
                 {busy ? (
                     <div style={{ '--stop-fg': stopFgColor } as React.CSSProperties}>
                         <HapticButton
@@ -141,21 +216,29 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                 ) : (
                     <>
                         <HapticButton
-                            className="row-btn nodrag aura-widget-action"
-                            onPress={handleOpen}
+                            className={`row-btn nodrag aura-widget-action${armed === 'up' ? ' is-armed' : ''}`}
+                            onPress={handleUpPress}
                             disabled={!connected}
-                            title="Öffnen"
-                            label={`${device.label} öffnen`}
+                            title={armed === 'up' ? 'Öffnen bestätigen' : 'Öffnen'}
+                            label={
+                                armed === 'up'
+                                    ? `${device.label} öffnen – zum Bestätigen erneut tippen`
+                                    : `${device.label} öffnen`
+                            }
                             stopPropagation
                         >
                             <ArrowToTopIcon size={20} />
                         </HapticButton>
                         <HapticButton
-                            className="row-btn nodrag aura-widget-action"
-                            onPress={handleClose}
+                            className={`row-btn nodrag aura-widget-action${armed === 'down' ? ' is-armed' : ''}`}
+                            onPress={handleDownPress}
                             disabled={!connected}
-                            title="Schließen"
-                            label={`${device.label} schließen`}
+                            title={armed === 'down' ? 'Schließen bestätigen' : 'Schließen'}
+                            label={
+                                armed === 'down'
+                                    ? `${device.label} schließen – zum Bestätigen erneut tippen`
+                                    : `${device.label} schließen`
+                            }
                             stopPropagation
                         >
                             <ArrowToBottomIcon size={20} />
