@@ -63,11 +63,17 @@
 
 .row-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--btn-gap);
   flex-shrink: 0;
-  --btn-h: 30px;
+  /* Hoeher (30 -> 36 px) und enger zusammen (8 -> 6 px), auf Saschas Wunsch
+     02.09.2026: der gelbe Fahrbetrieb-Balken (.row-btn-stop, Breite =
+     2 x --btn-w + --btn-gap) wirkte bei 76 x 30 px (Verhaeltnis 2,53:1) zu
+     lang und schmal. Jetzt 74 x 36 px (Verhaeltnis ~2,06:1) - passt in die
+     52 px hohe Zeile (52 - 36 = 16 px Luft), noch nicht am Geraet
+     bestaetigt. */
+  --btn-h: 36px;
   --btn-w: 34px;
-  --btn-gap: 8px;
+  --btn-gap: 6px;
 }
 
 .row-actions .row-btn {
@@ -88,7 +94,11 @@
      --app-bg (fast Schwarz) stach deshalb sichtbar als dunkler Rahmen
      gegen die hellere Karte ab, obwohl er "unsichtbar" gemeint war. */
   border: 1.5px solid var(--widget-bg);
-  background: color-mix(in srgb, var(--accent) 8%, var(--app-bg));
+  /* --app-bg (fast Schwarz) ersetzt durch --text-secondary (Wunsch
+     Sascha, 02.09.2026): gleicher Grund wie beim Rand oben - die Taste
+     sitzt auf der helleren Karte (--widget-bg), ein Farbmix gegen
+     Fast-Schwarz wirkte dagegen zu dunkel. */
+  background: color-mix(in srgb, var(--accent) 8%, var(--text-secondary));
   color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
@@ -124,16 +134,20 @@
 }
 
 /* Tippschutz: bewaffnete Taste zeigt eine schrumpfende Kuchengrafik als
-   Countdown bis zum automatischen Entwaffnen. --pie-pct wird direkt vom
-   rAF-Treiber in ShutterRow.tsx am DOM-Knoten gesetzt, nicht ueber React-
-   State - deshalb hier keine Transition auf --pie-pct und kein @property. */
+   Countdown bis zum automatischen Entwaffnen. Diese Regel liefert nur den
+   Startzustand (100 %) fuer den allerersten Frame; ab dem ersten rAF-Tick
+   ueberschreibt ShutterRow.tsx `background-image` direkt auf der Taste mit
+   dem jeweiligen Prozentwert als Literal (Korrektur 02.09.2026, Runde 3 -
+   ein reiner --pie-pct-Custom-Property-Lookup wurde in Safari nicht
+   zuverlaessig neu gemalt, siehe Kommentar im rAF-Treiber). --pie-fill bleibt
+   hier stehen, weil beide Stellen ihn per var() referenzieren. */
 .row-actions .row-btn.is-armed {
   --pie-fill: color-mix(in srgb, var(--accent) 55%, var(--widget-bg));
   /* Leerer Sektor --widget-bg statt --app-bg (Korrektur 02.09.2026,
      Gerätetest, gleicher Grund wie beim Rand oben): die "abgelaufene"
      Haelfte soll in die tatsaechliche Karte (--widget-bg) uebergehen,
      nicht als zu dunkler Fleck dagegen stehen. */
-  background: conic-gradient(var(--pie-fill) var(--pie-pct, 100%), var(--widget-bg) 0);
+  background: conic-gradient(var(--pie-fill) 100%, var(--widget-bg) 0);
   color: var(--text-primary);
 }
 
@@ -144,7 +158,9 @@
      alten 48x44-px-Tasten und war nach der Verkleinerung auf 34x30 px
      falsch: 2 x 34 + 8 = 76 px, der alte Faktor ergab nur 70,9 px -
      sichtbar schmaler als die beiden Tasten zusammen. Korrektur
-     02.09.2026, Gerätetest). */
+     02.09.2026, Gerätetest. Masse seither per --btn-h/--btn-w/--btn-gap
+     oben in .row-actions ein zweites Mal angepasst, Formel unveraendert -
+     aktuell 74 x 36 px statt 76 x 30 px). */
   width: calc(var(--btn-w) * 2 + var(--btn-gap));
   background-color: var(--accent-yellow);
   color: var(--stop-fg, #1c1917);
