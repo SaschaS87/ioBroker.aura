@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Square } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Square, RadioOff } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
+import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useShutterDevice, usePendingStore } from '../shutterrooms/useShutterDevice';
 import { useYellowForeground } from '../shutterrooms/useYellowForeground';
 import { HapticButton } from '../shutterrooms/HapticButton';
+import { radioDpsFromPosDp, isRadioOffline } from '../shutterrooms/tahomaRadio';
 import { WindowIcon, RoofWindowIcon, RaffstoreIcon } from '../../icons/ShutterTypeIcons';
 import { ArrowToTopIcon, ArrowToBottomIcon } from '../../icons/ShutterActionIcons';
 import type { ShutterFloorDeviceDef } from './types';
@@ -95,6 +97,15 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     const state = useShutterDevice(device);
     const { markPending, clearPending } = usePendingStore();
     const stopFgColor = useYellowForeground();
+
+    // Funk-Ausfall-Zeichen (Offene-Punkte-Eintrag "Zeichen fuer kein
+    // Funkkontakt in der Zeilenliste", umgesetzt 02.09.2026 - Saschas Wahl:
+    // Variante A, durchgestrichenes Funksymbol unten rechts am Typ-Icon).
+    // Nur der Status-Datenpunkt wird gebraucht, RSSI/Discrete bleiben dem
+    // Popup und der Signalstaerke-Box vorbehalten.
+    const radioDps = useMemo(() => radioDpsFromPosDp(device.posDp), [device.posDp]);
+    const { state: radioStatusState } = useDatapoint(radioDps?.statusDp ?? '');
+    const radioOffline = isRadioOffline(radioStatusState?.val);
 
     // Tippschutz: 'up'/'down' waehrend die jeweilige Taste bewaffnet ist,
     // sonst null. Erst der zweite Tipp innerhalb ARM_MS loest die Fahrt aus.
@@ -199,6 +210,22 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, []);
 
+    // Testweise NUR am Gaeste-WC (Chat vom 02.09.2026, Saschas Wunsch): ein
+    // normaler <button onClick> statt HapticButton, ganz ohne Tippschutz -
+    // Gegenprobe zum Standard-Aura-Schalter (SwitchWidget.tsx), der auch ein
+    // normaler <button> ist. Hintergrund: HapticButton legt einen echten,
+    // nur unsichtbaren iOS-Systemschalter (<input type="checkbox" switch>)
+    // ueber die Taste, um das spuerbare Klicken zu bekommen - aber ein
+    // echter Schalter kippt bei jeder Beruehrung, auch waehrend man vorbeizieht
+    // (kein Teil der Scroll-vs-Tipp-Erkennung des Browsers wie bei einem
+    // <button>). Das war vermutlich die Ursache fuer die Fehltipps beim
+    // Vorbeiscrollen, die den Tippschutz (Feature 15) noetig gemacht haben.
+    // Test: reagiert die Taste beim Vorbeiscrollen jetzt NICHT mehr, aber bei
+    // bewusstem Tippen weiterhin sofort? Noch nicht am iPhone bestaetigt -
+    // siehe [[Offene Punkte]]. Nach Bestaetigung: auf alle Geraete ausweiten
+    // und Feature 15 (armed/PieCountdown) komplett entfernen.
+    const isPlainButtonProbe = device.key === 'Gäste_WC';
+
     const handleRowClick = () => {
         onOpenSheet(device);
     };
@@ -236,6 +263,13 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                 Stopp-Taste rechts ist bereits bernstein. */}
             <div className="row-icon">
                 <TypeIcon size={18} closedFrac={closedFrac} isMoving={busy} />
+                {/* Funk-Ausfall: durchgestrichenes Funksymbol unten rechts am
+                    Typ-Icon, 45 % Deckkraft (Variante A, siehe Offene Punkte). */}
+                {radioOffline && (
+                    <span className="row-icon-radio-badge" aria-hidden="true">
+                        <RadioOff size={11} strokeWidth={2} />
+                    </span>
+                )}
             </div>
 
             {/* Einzeilig, nur Name (01.09.2026, nach Namenslaengen-Test): der
@@ -260,6 +294,39 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                             <Square size={16} fill="currentColor" />
                         </HapticButton>
                     </div>
+                ) : isPlainButtonProbe ? (
+                    <>
+                        <button
+                            type="button"
+                            className="row-btn row-btn-plain nodrag aura-widget-action"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpen();
+                            }}
+                            disabled={!connected}
+                            title="Öffnen"
+                            aria-label={`${device.label} öffnen`}
+                        >
+                            <span className="row-btn-icon">
+                                <ArrowToTopIcon size={20} />
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            className="row-btn row-btn-plain nodrag aura-widget-action"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleClose();
+                            }}
+                            disabled={!connected}
+                            title="Schließen"
+                            aria-label={`${device.label} schließen`}
+                        >
+                            <span className="row-btn-icon">
+                                <ArrowToBottomIcon size={20} />
+                            </span>
+                        </button>
+                    </>
                 ) : (
                     <>
                         <HapticButton

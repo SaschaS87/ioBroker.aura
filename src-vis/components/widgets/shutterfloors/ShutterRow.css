@@ -30,6 +30,7 @@
 }
 
 .row-icon {
+  position: relative;
   flex-shrink: 0;
   width: 24px;
   height: 24px;
@@ -39,6 +40,21 @@
   /* Angeglichen an den Rollladen-Viz auf dem Karten-Tab (ShutterViz.css),
      der schon immer in --text-secondary zeichnet. */
   color: var(--text-secondary);
+}
+
+/* Funk-Ausfall-Zeichen (Offene Punkte, umgesetzt 02.09.2026, Variante A):
+   durchgestrichenes Funksymbol unten rechts am Typ-Icon, 45 % Deckkraft -
+   bewusst gedaempft, die laute rote Warnung lebt schon im Popup
+   (ShutterSheet.tsx .sheet-radio.is-offline). pointer-events: none, damit
+   das Badge den Zeilen-Klick (oeffnet das Sheet) nicht abfaengt. */
+.row-icon-radio-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: flex;
+  color: var(--accent-red);
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* Einzeilig, nur Name (01.09.2026, nach Namenslaengen-Test): kein Status-Text
@@ -137,6 +153,23 @@
 
 .row-actions .row-btn.is-disabled {
   opacity: 0.4;
+}
+
+/* Testweise NUR am Gaeste-WC (02.09.2026, siehe ShutterRow.tsx,
+   isPlainButtonProbe): Pfeile ohne Kachel-Optik, wie vor Feature 15 - passt
+   zum normalen <button> ohne Tippschutz. Erbt Masse/Transition/touch-action
+   weiter von .row-btn, ueberschreibt nur die Kachel-Optik. Nutzt das native
+   :disabled statt der .is-disabled-Klasse, weil der Testknopf kein
+   HapticButton ist. */
+.row-actions .row-btn-plain {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+}
+
+.row-actions .row-btn-plain:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Tippschutz: bewaffnete Taste zeigt eine schrumpfende Kuchengrafik als
