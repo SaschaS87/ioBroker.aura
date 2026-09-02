@@ -1,8 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Square } from 'lucide-react';
 import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import { useIoBroker } from '../../../hooks/useIoBroker';
+import { useDatapoint } from '../../../hooks/useDatapoint';
+import { useT } from '../../../i18n';
+import type { TranslationKey } from '../../../i18n';
 import { useShutterDevice, usePendingStore, slatPendingKey } from './useShutterDevice';
 import { ShutterViz } from './ShutterViz';
 import { SlatSlider } from './SlatSlider';
@@ -11,6 +14,7 @@ import { tapFeedback } from './haptics';
 import { useSheetDismiss } from '../useSheetDismiss';
 import { useDragValue, SNAP_POS, KNOB_PAD } from './useDragValue';
 import { useYellowForeground } from './useYellowForeground';
+import { radioDpsFromPosDp, radioLevel, isRadioOffline, RADIO_COLOR, clockTime } from './tahomaRadio';
 import type { ShutterDeviceDef } from './types';
 import './ShutterSheet.css';
 
@@ -48,10 +52,25 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const state = useShutterDevice(device);
     const { markPending, clearPending, showToast } = usePendingStore();
     const stopFgColor = useYellowForeground();
+    const t = useT();
     const [positionDraft, setPositionDraft] = useState<number | null>(null);
     const [slatDraft, setSlatDraft] = useState<number | null>(null);
     const [localSlatIsDragging, setLocalSlatIsDragging] = useState(false);
     const sheetRef = useRef<HTMLDivElement>(null);
+
+    // Funkzeile: drei feste Hook-Aufrufe (kein Hook in einer Schleife). Kann
+    // radioDpsFromPosDp() nichts ableiten, bekommt useDatapoint '' und
+    // abonniert dann nichts (siehe useDatapoint.ts).
+    const radioDps = useMemo(() => radioDpsFromPosDp(device.posDp), [device.posDp]);
+    const { state: radioStatusState } = useDatapoint(radioDps?.statusDp ?? '');
+    const { state: radioRssiState } = useDatapoint(radioDps?.rssiDp ?? '');
+    const { state: radioDiscreteState } = useDatapoint(radioDps?.discreteDp ?? '');
+    const radioOffline = isRadioOffline(radioStatusState?.val);
+    const radioLevelVal = radioLevel(radioDiscreteState?.val);
+    const radioRssi = typeof radioRssiState?.val === 'number' ? radioRssiState.val : null;
+    // Normalfall: ts = wann zuletzt durchgezaehlt. Ausfall: lc = seit wann.
+    const radioCheckedTs = radioStatusState?.ts ?? 0;
+    const radioSinceTs = radioStatusState?.lc ?? 0;
 
     // Eine Rechnung, nicht zwei: Fenster-, Regler- und Tastenbreite zentralisiert
     const VIZ_W_PLAIN = 170;   // Fenster ohne Lamelle
@@ -238,7 +257,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                             <div
                                 className={`block-value ${positionIsDragging ? 'live' : ''} ${
                                     !travel && positionDraft === null && state.isEstimate ? 'is-estimate' : ''
-                                }`}
+                                } ${radioOffline ? 'is-stale' : ''}`}
                             >
                                 {state.isUnknown && positionDraft === null ? (
                                     '−'
@@ -252,7 +271,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                             </div>
                             <div className="block-word">{getPositionWord()}</div>
                             <div
-                                className="shutter-viz-wrapper"
+                                className={`shutter-viz-wrapper ${radioOffline ? 'is-stale' : ''}`}
                                 {...positionDragHandlers}
                             >
                                 <ShutterViz
@@ -326,6 +345,32 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
 
                     {/* Nicht verbunden Hinweis */}
                     {!connected && <div className="sheet-notice">TaHoma-Box nicht erreichbar</div>}
+
+                    {/* Funkzeile (Feature 16, 02.09.2026). Absolute Uhrzeit, Abo
+                        genuegt - bewusst KEIN 10-s-Takt wie in RoomClimateDetails,
+                        dessen Fusszeile eine RELATIVE Zeit ("vor 5 Minuten") zeigt.
+                        Kein Hinweisbalken (.sheet-notice) fuer den Funkausfall -
+                        ausdrueckliche Vorgabe Saschas vom 02.09.2026. */}
+                    <div className={`sheet-radio ${radioOffline ? 'is-offline' : ''}`}>
+                        {radioOffline ? (
+                            <>
+                                {t('shuttersheet.radio.offline')}
+                                {radioSinceTs > 0 &&
+                                    ` · ${t('shuttersheet.radio.since', { time: clockTime(radioSinceTs) })}`}
+                            </>
+                        ) : (
+                            <>
+                                {radioLevelVal && (
+                                    <span style={{ color: RADIO_COLOR[radioLevelVal] }}>
+                                        {t(`shuttersheet.radio.${radioLevelVal}` as TranslationKey)}
+                                    </span>
+                                )}
+                                {radioRssi !== null && ` (${radioRssi})`}
+                                {radioCheckedTs > 0 &&
+                                    ` · ${t('shuttersheet.radio.checked', { time: clockTime(radioCheckedTs) })}`}
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>,

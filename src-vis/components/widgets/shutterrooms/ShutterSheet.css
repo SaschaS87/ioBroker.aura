@@ -318,3 +318,30 @@
 .block-value.is-estimate {
   opacity: 0.6;
 }
+
+/* Funkzeile (Feature 16, 02.09.2026). Feste Hoehe ist der Kern der
+   Hoehen-Zusage: ob leer, Normalfall oder Ausfall - die Zeile belegt immer
+   denselben Platz, das Sheet springt nicht in der Hoehe. */
+.sheet-radio {
+  margin: 6px 16px 0;
+  font-size: 8px;
+  line-height: 1.15;
+  height: 1.15em;          /* feste Höhe – auch wenn kein Text da ist */
+  text-align: right;
+  white-space: nowrap;     /* darf NIE umbrechen */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-radio.is-offline {
+  color: var(--accent-red);
+  opacity: 0.9;            /* Rot bei 0,5 ist auf dunklem Grund kaum lesbar */
+}
+
+/* Verblassen bei Funkausfall: nur Position und Fenstergrafik, nicht die
+   Lamelle. isUnknown bleibt bewusst unangetastet (siehe ShutterSheet.tsx) -
+   der letzte bekannte Stand bleibt sichtbar, nur blasser. */
+.block-value.is-stale { opacity: 0.6; }        /* wie .is-estimate */
+.shutter-viz-wrapper.is-stale { opacity: 0.4; } /* wie .viz-unknown */

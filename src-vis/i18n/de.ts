@@ -1459,6 +1459,14 @@ export const de = {
     'shutterrooms.noRooms': 'Keine Räume konfiguriert',
     'shutterrooms.notConnected': 'TaHoma-Box nicht erreichbar',
 
+    // ── ShutterSheet Funkzeile ─────────────────────────────────────────────────────
+    'shuttersheet.radio.good': 'Funk gut',
+    'shuttersheet.radio.normal': 'Funk normal',
+    'shuttersheet.radio.low': 'Funk schwach',
+    'shuttersheet.radio.checked': 'geprüft {time} Uhr',
+    'shuttersheet.radio.offline': 'Kein Funkkontakt – Anzeige veraltet',
+    'shuttersheet.radio.since': 'seit {time} Uhr',
+
     // ── ShutterFloors Widget Messages ─────────────────────────────────────────────
     'shutterfloors.unknown': 'unbekannt',
     'shutterfloors.open': 'Offen',
@@ -1466,6 +1474,17 @@ export const de = {
     'shutterfloors.stopped': 'Gestoppt',
     'shutterfloors.commandSent': 'Befehl gesendet',
     'shutterfloors.noFloors': 'Keine Etagen konfiguriert',
+
+    // ── SignalStrengthBox (Signalstärke-Aufklappbox) ──────────────────────────────
+    'signalbox.title': 'Signalstärke',
+    'signalbox.weakest': 'schwächste {value}',
+    'signalbox.offlineCount': '{count} ohne Funkkontakt',
+    'signalbox.unchangedSince': 'unverändert seit {age}',
+    'signalbox.offlineRow': 'kein Funkkontakt',
+    'signalbox.remeasure': 'Neu messen',
+    'signalbox.remeasuring': 'Messung angefordert …',
+    'signalbox.lastCount': 'Zuletzt durchgezählt: {time} Uhr',
+    'signalbox.hint': 'Ändert sich nichts am Funk, bleibt die Uhrzeit stehen.',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',

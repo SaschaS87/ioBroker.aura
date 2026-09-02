@@ -1456,6 +1456,14 @@ export const en: Record<TranslationKey, string> = {
     'shutterrooms.noRooms': 'No rooms configured',
     'shutterrooms.notConnected': 'TaHoma box not reachable',
 
+    // ── ShutterSheet radio row ────────────────────────────────────────────────────
+    'shuttersheet.radio.good': 'Signal good',
+    'shuttersheet.radio.normal': 'Signal normal',
+    'shuttersheet.radio.low': 'Signal weak',
+    'shuttersheet.radio.checked': 'checked {time}',
+    'shuttersheet.radio.offline': 'No radio contact – display outdated',
+    'shuttersheet.radio.since': 'since {time}',
+
     // ── ShutterFloors Widget Messages ─────────────────────────────────────────────
     'shutterfloors.unknown': 'unknown',
     'shutterfloors.open': 'Open',
@@ -1463,6 +1471,17 @@ export const en: Record<TranslationKey, string> = {
     'shutterfloors.stopped': 'Stopped',
     'shutterfloors.commandSent': 'Command sent',
     'shutterfloors.noFloors': 'No floors configured',
+
+    // ── SignalStrengthBox (signal strength expandable box) ────────────────────────
+    'signalbox.title': 'Signal strength',
+    'signalbox.weakest': 'weakest {value}',
+    'signalbox.offlineCount': '{count} without radio contact',
+    'signalbox.unchangedSince': 'unchanged for {age}',
+    'signalbox.offlineRow': 'no radio contact',
+    'signalbox.remeasure': 'Measure again',
+    'signalbox.remeasuring': 'Measurement requested …',
+    'signalbox.lastCount': 'Last roll call: {time}',
+    'signalbox.hint': 'If nothing about the signal changes, the time stays put.',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',

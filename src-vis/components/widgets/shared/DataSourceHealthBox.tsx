@@ -58,7 +58,7 @@ function allWatchedDpIds(sources: HealthSourceDef[]): string[] {
 
 // Short "vor X"/"seit X" fragment (not a full sentence — formatLastChange's
 // i18n strings don't fit this compact row layout).
-function formatAgeShort(ts: number): string {
+export function formatAgeShort(ts: number): string {
     const min = Math.round((Date.now() - ts) / 60000);
     if (min < 1) return 'gerade eben';
     if (min < 60) return `${min} Min.`;

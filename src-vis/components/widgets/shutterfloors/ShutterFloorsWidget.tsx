@@ -5,6 +5,7 @@ import { PendingContext, PENDING_MAX_AGE_MS } from '../shutterrooms/useShutterDe
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { ShutterSheet } from '../shutterrooms/ShutterSheet';
 import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
+import { SignalStrengthBox } from '../shared/SignalStrengthBox';
 import { FloorHeader } from './FloorHeader';
 import { ShutterRow } from './ShutterRow';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
@@ -19,6 +20,9 @@ interface ShutterFloorsOptions {
     aliveDp?: string;
     instanceLabel?: string;
     showFooter?: boolean;
+    /** Signalstaerke-Aufklappbox (Feature 16). Default sichtbar - kein Eintrag
+     *  in aura.0.config.dashboard noetig, bis Sascha sie abschalten will. */
+    showSignalBox?: boolean;
 }
 
 export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
@@ -29,7 +33,9 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         aliveDp = '',
         instanceLabel = 'tahoma.1',
         showFooter = false,
+        showSignalBox,
     } = options;
+    const signalBoxVisible = showSignalBox !== false;
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -151,6 +157,22 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         return m ? m[1] : undefined;
     }, [aliveDp]);
 
+    // updateDp fuer den "Neu messen"-Knopf der SignalStrengthBox: dieselbe
+    // Instanz wie restartAdapterId, per derselben Regex aus aliveDp gezogen,
+    // nur als *.update statt *.alive. Laesst sich nichts ableiten, gibt es
+    // keinen Knopf - kein neuer Konfigurationseintrag noetig.
+    const updateDp = useMemo(() => {
+        const m = aliveDp.match(/^system\.adapter\.([a-z0-9_-]+\.\d+)\.alive$/i);
+        return m ? `${m[1]}.update` : undefined;
+    }, [aliveDp]);
+
+    // Geraeteliste fuer die SignalStrengthBox: alle Antriebe aller Etagen,
+    // flach. posDp liefert tahomaRadio.ts die drei Funk-Datenpunkte.
+    const signalDevices = useMemo(
+        () => floors.flatMap((f) => f.devices).map((d) => ({ key: d.key, label: d.label, posDp: d.posDp })),
+        [floors],
+    );
+
     // Fuer die aufklappbare Status-Box: reicht ein reines Alterskriterium
     // nicht, weil connectionDp seinen letzten Wert behaelt und weiter "true"
     // meldet, wenn der Adapter laengst beendet ist (siehe Kommentar oben zu
@@ -223,6 +245,14 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                     Instanz auch im Normalfall, mit Neustart-Knopf im
                     Stoerfall. `showFooter` stand schon in der Konfiguration. */}
                 {showFooter && <DataSourceHealthBox sources={healthSources} />}
+
+                {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
+                    TaHoma-Funk-States gebuendelt statt einer Zeile pro Sheet. */}
+                {signalBoxVisible && (
+                    <div style={{ marginTop: showFooter ? 8 : 0 }}>
+                        <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
+                    </div>
+                )}
 
                 {/* Sheet-Overlay */}
                 {sheetDevice && (
