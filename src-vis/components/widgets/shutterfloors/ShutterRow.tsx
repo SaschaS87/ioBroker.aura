@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Square } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useShutterDevice, usePendingStore } from '../shutterrooms/useShutterDevice';
@@ -13,6 +13,76 @@ import './ShutterRow.css';
 // zweite (innerhalb dieser Frist) loest die Fahrt aus. Mit Sascha im
 // Artefakt festgelegt, am iPhone bestaetigt (Feature 15, 02.09.2026).
 const ARM_MS = 2500;
+
+// Kreisradius der Kuchengrafik in SVG-Einheiten (viewBox 0 0 34 36, passend
+// zu --btn-w/--btn-h) und daraus die Kreislinienlaenge fuer stroke-dasharray.
+const PIE_R = 7.5;
+const PIE_CIRCUMFERENCE = 2 * Math.PI * PIE_R;
+
+/**
+ * Kuchengrafik-Countdown, vierter Anlauf gegen den Randschnipsel-Bug
+ * (Feature 15, 02.09.2026). Die ersten drei Versuche - reiner
+ * --pie-pct-Lookup im conic-gradient, erzwungener Layout-Read per
+ * offsetHeight, dann direktes Ueberschreiben von background-image jeden
+ * rAF-Frame mit Literalwert - haben den Bug am iPhone alle NICHT behoben.
+ * Saschas Beschreibung (02.09.2026, Geraetetest): mal fehlt direkt zu
+ * Beginn ein Stueck unten links, mal bleibt gegen Ende ein Kruemel unten
+ * rechts stehen. Das wechselt je nach Tastendruck die Stelle - typisch fuer
+ * ein Kompositions-/Teilrepaint-Problem beim wiederholten JS-Schreiben
+ * eines Hintergrundbilds, nicht fuer einen Fehler in der Prozentrechnung.
+ *
+ * Deshalb komplett anderer Mechanismus: kein rAF/JS mehr, das pro Frame
+ * irgendetwas neu malt. Stattdessen ein <circle> mit sehr dicker Kontur
+ * (stroke-width = Radius, wirkt dadurch wie eine Kreisflaeche statt eines
+ * Rings) und ein ganz gewoehnlicher CSS-transition auf stroke-dashoffset.
+ * JS setzt den Zielwert genau EIN Mal - einen Frame nach dem Einhaengen
+ * (doppeltes rAF: der Browser muss den Startzustand einmal gemalt haben,
+ * sonst springt er direkt zum Ziel statt zu animieren). Die eigentlichen
+ * 60 Bilder/Sekunde uebernimmt danach die Animations-Engine des Browsers -
+ * die ist fuer CSS-transitions in Safari gut getestet, anders als
+ * wiederholtes JS-Schreiben von background-image.
+ *
+ * Weiterhin nur eine Hypothese, noch nicht am Geraet bestaetigt.
+ */
+const PieCountdown: React.FC<{ armMs: number; onDone: () => void }> = ({ armMs, onDone }) => {
+    const [shrinking, setShrinking] = useState(false);
+
+    useEffect(() => {
+        let raf2: number | undefined;
+        const raf1 = requestAnimationFrame(() => {
+            raf2 = requestAnimationFrame(() => setShrinking(true));
+        });
+        const timeout = setTimeout(onDone, armMs);
+        return () => {
+            cancelAnimationFrame(raf1);
+            if (raf2 !== undefined) cancelAnimationFrame(raf2);
+            clearTimeout(timeout);
+        };
+    }, [armMs, onDone]);
+
+    return (
+        <svg className="row-pie" viewBox="0 0 34 36" aria-hidden="true">
+            <circle
+                className="row-pie-circle"
+                cx="17"
+                cy="18"
+                r={PIE_R}
+                // Rotation als SVG-Attribut statt CSS-transform: rotiert
+                // exakt um den Kreismittelpunkt (17, 18), ohne sich auf
+                // transform-origin-Defaults fuer SVG zu verlassen, die
+                // zwischen Browsern unterschiedlich ausfallen koennen.
+                transform="rotate(-90 17 18)"
+                style={
+                    {
+                        strokeDasharray: PIE_CIRCUMFERENCE,
+                        strokeDashoffset: shrinking ? PIE_CIRCUMFERENCE : 0,
+                        transitionDuration: shrinking ? `${armMs}ms` : '0ms',
+                    } as React.CSSProperties
+                }
+            />
+        </svg>
+    );
+};
 
 interface ShutterRowProps {
     device: ShutterFloorDeviceDef;
@@ -29,7 +99,6 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     // Tippschutz: 'up'/'down' waehrend die jeweilige Taste bewaffnet ist,
     // sonst null. Erst der zweite Tipp innerhalb ARM_MS loest die Fahrt aus.
     const [armed, setArmed] = useState<'up' | 'down' | null>(null);
-    const actionsRef = useRef<HTMLDivElement>(null);
 
     // Berechne geschlossenen Anteil für Statustext
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
@@ -107,55 +176,12 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         }
     };
 
-    // rAF-Treiber fuer die Kuchengrafik: schreibt das Gradient-Bild direkt am
-    // DOM-Knoten der bewaffneten Taste (nicht ueber React-State), damit es
-    // nicht jeden Frame rendert. Laeuft nur, solange eine Taste bewaffnet ist.
-    //
-    // Zweiter Anlauf (Feature 15, 02.09.2026, Geraetetest Runde 3): der erste
-    // Versuch (nur --pie-pct per setProperty setzen + erzwungener Layout-Read
-    // per offsetHeight) hat den Randschnipsel auf dem iPhone NICHT behoben -
-    // am PC (Chrome) lief dieselbe Fassung sauber durch, nur Safari zeigte
-    // weiter ein haengenbleibendes Segment. offsetHeight erzwingt Layout,
-    // nicht Paint - das war also die falsche Absicherung fuer ein reines
-    // Hintergrundbild-Problem. Bekanntes WebKit-Verhalten: eine Custom
-    // Property, die nur INNERHALB eines conic-gradient() referenziert wird
-    // (hier zusaetzlich per Vererbung vom Eltern-Element .row-actions auf die
-    // Taste, siehe ShutterRow.css), wird nicht zuverlaessig bei jedem
-    // setProperty()-Aufruf neu gemalt. Deshalb jetzt: kompletter
-    // background-image-String direkt auf der bewaffneten Taste selbst, mit
-    // dem Prozentwert als Literal statt als Custom-Property-Referenz - das
-    // aendert die Style-Deklaration selbst statt sich auf einen Lookup zu
-    // verlassen. --pie-fill bleibt ueber CSS bezogen (aendert sich waehrend
-    // der Animation nicht, nur der Prozentwert tut das). Weiterhin nur eine
-    // Vermutung, noch nicht am Geraet bestaetigt.
-    useEffect(() => {
-        if (armed === null) return;
-        const el = actionsRef.current;
-        if (!el) return;
-
-        const start = performance.now();
-
-        let raf: number;
-        const tick = () => {
-            const pct = Math.max(0, 100 - ((performance.now() - start) / ARM_MS) * 100);
-            const btn = el.querySelector<HTMLElement>('.row-btn.is-armed');
-            if (btn) {
-                btn.style.backgroundImage = `conic-gradient(var(--pie-fill) ${pct}%, var(--widget-bg) 0)`;
-            }
-            if (pct <= 0) {
-                setArmed(null);
-                return;
-            }
-            raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-
-        return () => {
-            cancelAnimationFrame(raf);
-            const btn = el.querySelector<HTMLElement>('.row-btn.is-armed');
-            if (btn) btn.style.removeProperty('background-image');
-        };
-    }, [armed]);
+    // Stabile Referenz fuer PieCountdown.onDone: setArmed selbst ist von
+    // React garantiert referenzstabil, useCallback macht handleArmTimeout es
+    // ebenfalls - sonst wuerde ein Re-Render aus anderem Grund (z.B.
+    // connected-Prop) waehrend eine Taste bewaffnet ist den Countdown-Effekt
+    // in PieCountdown unnoetig neu starten.
+    const handleArmTimeout = useCallback(() => setArmed(null), []);
 
     // Entwaffnen, sobald die Zeile in Fahrt geht - eine bewaffnete Taste
     // waehrend der Fahrt waere irrefuehrend.
@@ -220,7 +246,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
             <div className="row-name">{device.label}</div>
 
             {/* Zwei oder eine Taste */}
-            <div className="row-actions" ref={actionsRef}>
+            <div className="row-actions">
                 {busy ? (
                     <div style={{ '--stop-fg': stopFgColor } as React.CSSProperties}>
                         <HapticButton
@@ -248,7 +274,10 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                             }
                             stopPropagation
                         >
-                            <ArrowToTopIcon size={20} />
+                            {armed === 'up' && <PieCountdown armMs={ARM_MS} onDone={handleArmTimeout} />}
+                            <span className="row-btn-icon">
+                                <ArrowToTopIcon size={20} />
+                            </span>
                         </HapticButton>
                         <HapticButton
                             className={`row-btn nodrag aura-widget-action${armed === 'down' ? ' is-armed' : ''}`}
@@ -262,7 +291,10 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                             }
                             stopPropagation
                         >
-                            <ArrowToBottomIcon size={20} />
+                            {armed === 'down' && <PieCountdown armMs={ARM_MS} onDone={handleArmTimeout} />}
+                            <span className="row-btn-icon">
+                                <ArrowToBottomIcon size={20} />
+                            </span>
                         </HapticButton>
                     </>
                 )}

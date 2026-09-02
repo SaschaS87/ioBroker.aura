@@ -110,6 +110,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Eigener Stapelkontext (02.09.2026, Runde 4): haelt die Kuchengrafik
+     (.row-pie), das Icon (.row-btn-icon) und den unsichtbaren Haptik-
+     Schalter (.haptic-btn-switch) in vorhersagbarer z-Reihenfolge
+     zusammen, statt dass eines davon ueber static-Vorfahren-Elemente
+     hinweg unkontrolliert nach oben "durchsickert". */
+  isolation: isolate;
 }
 
 /* Nur auf Geraeten mit echtem Zeiger aktiv: auf iOS bleibt :hover nach dem
@@ -134,21 +140,62 @@
 }
 
 /* Tippschutz: bewaffnete Taste zeigt eine schrumpfende Kuchengrafik als
-   Countdown bis zum automatischen Entwaffnen. Diese Regel liefert nur den
-   Startzustand (100 %) fuer den allerersten Frame; ab dem ersten rAF-Tick
-   ueberschreibt ShutterRow.tsx `background-image` direkt auf der Taste mit
-   dem jeweiligen Prozentwert als Literal (Korrektur 02.09.2026, Runde 3 -
-   ein reiner --pie-pct-Custom-Property-Lookup wurde in Safari nicht
-   zuverlaessig neu gemalt, siehe Kommentar im rAF-Treiber). --pie-fill bleibt
-   hier stehen, weil beide Stellen ihn per var() referenzieren. */
-.row-actions .row-btn.is-armed {
-  --pie-fill: color-mix(in srgb, var(--accent) 55%, var(--widget-bg));
-  /* Leerer Sektor --widget-bg statt --app-bg (Korrektur 02.09.2026,
-     Gerätetest, gleicher Grund wie beim Rand oben): die "abgelaufene"
-     Haelfte soll in die tatsaechliche Karte (--widget-bg) uebergehen,
-     nicht als zu dunkler Fleck dagegen stehen. */
-  background: conic-gradient(var(--pie-fill) 100%, var(--widget-bg) 0);
-  color: var(--text-primary);
+   Countdown bis zum automatischen Entwaffnen. Vierter Anlauf (02.09.2026) -
+   die drei vorherigen (Custom-Property-Lookup im conic-gradient, erzwungener
+   Layout-Read, direktes background-image-Ueberschreiben per rAF) haben den
+   Randschnipsel-Bug am iPhone alle NICHT behoben, siehe ausfuehrliche
+   Begruendung beim PieCountdown-Kommentar in ShutterRow.tsx. Die Taste
+   selbst braucht jetzt kein eigenes Aussehen mehr fuer "bewaffnet" - das
+   uebernimmt allein das SVG-Overlay (.row-pie) weiter unten, das nur
+   waehrend des Countdowns ueberhaupt im DOM steht. .is-armed bleibt als
+   Klasse erhalten (Titel/Aria-Label haengen weiter am armed-State in
+   ShutterRow.tsx), traegt hier aber keine eigene Regel mehr. */
+
+/* SVG-Overlay der Kuchengrafik: liegt UNTER dem Icon (.row-btn-icon), aber
+   ueber dem normalen Tastenhintergrund. Positioniert sich relativ zur Taste
+   selbst (.row-btn hat position: relative aus HapticButton.css), nicht zum
+   umgebenden aria-hidden-Span - der bliebe sonst auf Icon-Groesse
+   geschrumpft. pointer-events: none, damit der unsichtbare Haptik-Schalter
+   (.haptic-btn-switch) weiterhin jede Beruehrung bekommt. */
+.row-pie {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.row-pie-circle {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 55%, var(--widget-bg));
+  stroke-width: 15;
+  /* Nur die Eigenschaft/Timing-Funktion steht fest in CSS - Startwert,
+     Zielwert und Dauer setzt ShutterRow.tsx als Inline-Style-Literale (kein
+     var()-Lookup auf ein sich aenderndes Custom Property, siehe Begruendung
+     im TSX-Kommentar). */
+  transition-property: stroke-dashoffset;
+  transition-timing-function: linear;
+}
+
+/* Icon der Taste: braucht einen eigenen Stapelkontext-Platz (position:
+   relative), sonst wuerde das absolut positionierte .row-pie es trotz
+   spaeterer DOM-Position ueberdecken - ein nicht positioniertes Element malt
+   in der CSS-Stapelreihenfolge grundsaetzlich VOR jedem positionierten,
+   unabhaengig von der Reihenfolge im Markup. */
+.row-btn-icon {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Haptik-Schalter (siehe HapticButton.tsx) muss ueber Icon und Kuchengrafik
+   liegen, sonst faengt eines der beiden die Beruehrung ab, bevor sie den
+   echten Schalter erreicht - der Trick vom 12.08.2026 haengt genau daran. */
+.row-actions .row-btn .haptic-btn-switch {
+  z-index: 3;
 }
 
 .row-actions .row-btn-stop {
