@@ -296,7 +296,24 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                                     <span style={{ fontSize: 11, color: judgementColor(r.level), width: 42 }}>
                                         {r.level ? JUDGEMENT_LABEL[r.level] : ''}
                                     </span>
-                                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                    <span
+                                        style={{
+                                            // Feste Breite noetig: sonst verschiebt eine laengere/kuerzere
+                                            // Zeitangabe ("gerade eben" vs. "3 Tage") die Startposition
+                                            // von Balken/Zahl/Urteil in jeder Zeile - genau der Effekt, den
+                                            // Sascha bei 100 % gemeldet hat. Breite reicht fuer den
+                                            // laengsten Fall ("unveraendert seit gerade eben"), ellipsis
+                                            // nur als Sicherheitsnetz.
+                                            width: 190,
+                                            flexShrink: 0,
+                                            textAlign: 'right',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            fontSize: 11,
+                                            color: 'var(--text-secondary)',
+                                        }}
+                                    >
                                         {t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
                                     </span>
                                 </>
@@ -304,35 +321,33 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                         </div>
                     ))}
 
-                    {updateDp && (
-                        <button
-                            onClick={handleRemeasure}
-                            disabled={remeasuring}
-                            className="inline-flex items-center"
-                            style={{
-                                marginTop: 6,
-                                padding: '6px 12px',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: '#fff',
-                                background: remeasuring ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
-                                border: 'none',
-                                borderRadius: 6,
-                                cursor: remeasuring ? 'default' : 'pointer',
-                            }}
-                        >
-                            {remeasuring ? t('signalbox.remeasuring') : t('signalbox.remeasure')}
-                        </button>
-                    )}
-
-                    {lastCountTs > 0 && (
-                        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {t('signalbox.lastCount', { time: clockTime(lastCountTs) })}
+                    {/* Neu-messen-Knopf neben statt ueber den zwei Textzeilen - spart
+                        eine Zeile Hoehe (Saschas Wunsch vom 02.09.2026). */}
+                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {updateDp && (
+                            <button
+                                onClick={handleRemeasure}
+                                disabled={remeasuring}
+                                className="inline-flex items-center"
+                                style={{
+                                    flexShrink: 0,
+                                    padding: '6px 12px',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    background: remeasuring ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: remeasuring ? 'default' : 'pointer',
+                                }}
+                            >
+                                {remeasuring ? t('signalbox.remeasuring') : t('signalbox.remeasure')}
+                            </button>
+                        )}
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                            {lastCountTs > 0 && <div>{t('signalbox.lastCount', { time: clockTime(lastCountTs) })}</div>}
+                            <div>{t('signalbox.hint')}</div>
                         </div>
-                    )}
-
-                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-secondary)' }}>
-                        {t('signalbox.hint')}
                     </div>
                 </div>
             )}

@@ -323,7 +323,7 @@
    Hoehen-Zusage: ob leer, Normalfall oder Ausfall - die Zeile belegt immer
    denselben Platz, das Sheet springt nicht in der Hoehe. */
 .sheet-radio {
-  margin: 6px 16px 0;
+  margin: 14px 16px 0;
   font-size: 8px;
   line-height: 1.15;
   height: 1.15em;          /* feste Höhe – auch wenn kein Text da ist */
