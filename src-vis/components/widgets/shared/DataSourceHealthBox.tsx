@@ -212,6 +212,18 @@ export function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] })
                 border: '1px solid var(--widget-border)',
                 borderRadius: 'var(--widget-radius)',
                 overflow: 'hidden',
+                // Als direktes Flex-Kind (z.B. im Rollläden-Tab, .shutter-floors-widget
+                // ist flex-column mit fester Kartenhoehe) bekommt ein Element mit
+                // overflow:hidden per Spezifikation eine automatische Mindesthoehe von
+                // 0 - die Box durfte sich also bis auf wenige Pixel zusammenquetschen
+                // lassen, wenn der Etageninhalt mehr Platz brauchte als die Karte hoch
+                // war (auf grossen Bildschirmen, mit genug sichtbaren Geraeten, sichtbar
+                // als duenner Strich statt der Kopfzeile). Von Sascha am 03.09.2026
+                // gemeldet. flexShrink: 0 haelt die Box auf ihrer Inhaltshoehe, genau
+                // wie es der SignalStrengthBox-Wrapper (overflow: visible) schon von
+                // selbst tut - die Seite scrollt dann einfach etwas weiter, statt die
+                // Kopfzeile zu verschlucken.
+                flexShrink: 0,
             }}
         >
             <button

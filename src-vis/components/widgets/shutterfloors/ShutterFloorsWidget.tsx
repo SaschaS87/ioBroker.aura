@@ -146,7 +146,19 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // selbst aus.
     const connOk = !connectionDp || connState.state?.val === true;
     const aliveOk = !aliveDp || aliveState.state?.val === true;
-    const connected = connOk && aliveOk;
+    // Bevor die erste echte Antwort da ist, liefert useDatapoint `state: null`
+    // (auch mit Cache-Vorbefuellung, wenn der jeweilige State beim allerersten
+    // Aufruf dieser Session noch nie gelesen wurde – z.B. nach jedem Reload
+    // oder beim ersten Sprung auf diesen Tab). connOk/aliveOk werten das
+    // faelschlich als "false" statt als "laedt noch", der Banner blitzte
+    // dadurch bei jedem Refresh/Tab-Wechsel kurz auf, obwohl der Adapter lief.
+    // Von Sascha am 03.09.2026 gemeldet. Gleiches Loaded-Gating wie in
+    // DataSourceHealthBox (siehe deren Bugfix-Abschnitt in der Doku): banner
+    // erst zeigen, wenn beide Datenpunkte tatsaechlich geantwortet haben.
+    const connLoaded = !connectionDp || connState.state !== null;
+    const aliveLoaded = !aliveDp || aliveState.state !== null;
+    const loaded = connLoaded && aliveLoaded;
+    const connected = !loaded || (connOk && aliveOk);
 
     // Instanz-Id fuer den Neustart-Knopf aus aliveDp ableiten (z.B.
     // "system.adapter.tahoma.1.alive" -> "tahoma.1"), statt sie hart zu
