@@ -1483,8 +1483,8 @@ export const de = {
     'signalbox.offlineRow': 'kein Funkkontakt',
     'signalbox.remeasure': 'Neu messen',
     'signalbox.remeasuring': 'Messung angefordert …',
-    'signalbox.lastCount': 'Zuletzt durchgezählt: {time} Uhr',
-    'signalbox.hint': 'Ändert sich nichts am Funk, bleibt die Uhrzeit stehen.',
+    'signalbox.lastCount': 'Letzte Änderung eines Online-Status: {time} Uhr',
+    'signalbox.hint': 'Ändert sich bei keinem Gerät der Online-Status, bleibt die Uhrzeit stehen.',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',

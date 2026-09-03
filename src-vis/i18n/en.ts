@@ -1480,8 +1480,8 @@ export const en: Record<TranslationKey, string> = {
     'signalbox.offlineRow': 'no radio contact',
     'signalbox.remeasure': 'Measure again',
     'signalbox.remeasuring': 'Measurement requested …',
-    'signalbox.lastCount': 'Last roll call: {time}',
-    'signalbox.hint': 'If nothing about the signal changes, the time stays put.',
+    'signalbox.lastCount': 'Last online-status change: {time}',
+    'signalbox.hint': 'If no device\'s online status changes, the time stays put.',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',
