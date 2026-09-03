@@ -253,11 +253,33 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                             className="flex items-center"
                             style={{ gap: 8, padding: '6px 0', fontSize: 12 }}
                         >
-                            <span style={{ flex: 1, color: 'var(--text-primary)' }}>{r.label}</span>
+                            {/* Name-Spalte: flex: 1 gibt ihr den Rest, minWidth: 0 hebt
+                                Flexboxens Default-Mindestbreite (auto = eigene Wortbreite)
+                                auf - erst dadurch darf sie unter ihren Inhalt schrumpfen und
+                                abschneiden statt die Zeile zu sprengen. Korrektur 03.09.2026:
+                                vorher gab es dafuer keinen Platz, ein einzelnes langes Wort
+                                ohne Leerstelle ("Speisekammer") drueckte sich seinen Raum,
+                                wodurch Balken/Zahl/Urteil in jeder Zeile an anderer Stelle
+                                standen - der Bug, den Sascha am Screenshot gezeigt hat. */}
+                            <span
+                                title={r.label}
+                                style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    color: 'var(--text-primary)',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}
+                            >
+                                {r.label}
+                            </span>
                             {r.offline ? (
                                 <>
-                                    <span style={{ color: 'var(--accent-red)' }}>{t('signalbox.offlineRow')}</span>
-                                    <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                                    <span style={{ color: 'var(--accent-red)', flexShrink: 0 }}>
+                                        {t('signalbox.offlineRow')}
+                                    </span>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: 11, flexShrink: 0 }}>
                                         {t('shuttersheet.radio.since', { time: clockTime(r.sinceTs) })}
                                     </span>
                                 </>
@@ -283,9 +305,14 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                                             }}
                                         />
                                     </span>
+                                    {/* Zahl/Urteil/Zeit: alle drei jetzt mit flexShrink: 0 (fehlte
+                                        vorher bei Zahl und Urteil) - ohne das schrumpften sie
+                                        unterschiedlich stark je nachdem, wie viel Platz die
+                                        Namens-Spalte in genau dieser Zeile beanspruchte. */}
                                     <span
                                         style={{
-                                            width: 30,
+                                            width: 22,
+                                            flexShrink: 0,
                                             textAlign: 'right',
                                             fontVariantNumeric: 'tabular-nums',
                                             color: 'var(--text-primary)',
@@ -293,18 +320,28 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                                     >
                                         {r.rssi !== null ? r.rssi : '–'}
                                     </span>
-                                    <span style={{ fontSize: 11, color: judgementColor(r.level), width: 42 }}>
+                                    <span
+                                        style={{
+                                            fontSize: 11,
+                                            color: judgementColor(r.level),
+                                            width: 46,
+                                            flexShrink: 0,
+                                        }}
+                                    >
                                         {r.level ? JUDGEMENT_LABEL[r.level] : ''}
                                     </span>
                                     <span
+                                        title={t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
                                         style={{
-                                            // Feste Breite noetig: sonst verschiebt eine laengere/kuerzere
-                                            // Zeitangabe ("gerade eben" vs. "3 Tage") die Startposition
-                                            // von Balken/Zahl/Urteil in jeder Zeile - genau der Effekt, den
-                                            // Sascha bei 100 % gemeldet hat. Breite reicht fuer den
-                                            // laengsten Fall ("unveraendert seit gerade eben"), ellipsis
-                                            // nur als Sicherheitsnetz.
-                                            width: 190,
+                                            // Nur noch der Alterswert, ohne "unveraendert seit"
+                                            // (Korrektur 03.09.2026): der volle Satz braucht 143px
+                                            // im laengsten Fall ("gerade eben") - zusammen mit den
+                                            // anderen vier Spalten blieb dafuer auf dem iPhone (334px
+                                            // Zeilenbreite) schlicht kein Platz fuer die Namens-Spalte
+                                            // mehr. Der volle Satz steht weiter als title-Tooltip zur
+                                            // Verfuegung. Breite 66px deckt den laengsten Fall
+                                            // ("gerade eben", 62px) mit etwas Luft.
+                                            width: 66,
                                             flexShrink: 0,
                                             textAlign: 'right',
                                             whiteSpace: 'nowrap',
@@ -314,7 +351,7 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                                             color: 'var(--text-secondary)',
                                         }}
                                     >
-                                        {t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
+                                        {formatAgeShort(r.unchangedTs)}
                                     </span>
                                 </>
                             )}
