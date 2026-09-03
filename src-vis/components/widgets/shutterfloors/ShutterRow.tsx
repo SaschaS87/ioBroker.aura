@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Square, RadioOff } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useDatapoint } from '../../../hooks/useDatapoint';
@@ -11,92 +11,43 @@ import { ArrowToTopIcon, ArrowToBottomIcon } from '../../icons/ShutterActionIcon
 import type { ShutterFloorDeviceDef } from './types';
 import './ShutterRow.css';
 
-// Wartezeit des Tippschutzes: erster Tipp bewaffnet die Taste, erst der
-// zweite (innerhalb dieser Frist) loest die Fahrt aus. Mit Sascha im
-// Artefakt festgelegt, am iPhone bestaetigt (Feature 15, 02.09.2026).
-const ARM_MS = 2500;
-
-// Kreisradius der Kuchengrafik in SVG-Einheiten (viewBox 0 0 34 36, passend
-// zu --btn-w/--btn-h) und daraus die Kreislinienlaenge fuer stroke-dasharray.
-const PIE_R = 7.5;
-const PIE_CIRCUMFERENCE = 2 * Math.PI * PIE_R;
-
-/**
- * Kuchengrafik-Countdown, vierter Anlauf gegen den Randschnipsel-Bug
- * (Feature 15, 02.09.2026). Die ersten drei Versuche - reiner
- * --pie-pct-Lookup im conic-gradient, erzwungener Layout-Read per
- * offsetHeight, dann direktes Ueberschreiben von background-image jeden
- * rAF-Frame mit Literalwert - haben den Bug am iPhone alle NICHT behoben.
- * Saschas Beschreibung (02.09.2026, Geraetetest): mal fehlt direkt zu
- * Beginn ein Stueck unten links, mal bleibt gegen Ende ein Kruemel unten
- * rechts stehen. Das wechselt je nach Tastendruck die Stelle - typisch fuer
- * ein Kompositions-/Teilrepaint-Problem beim wiederholten JS-Schreiben
- * eines Hintergrundbilds, nicht fuer einen Fehler in der Prozentrechnung.
- *
- * Deshalb komplett anderer Mechanismus: kein rAF/JS mehr, das pro Frame
- * irgendetwas neu malt. Stattdessen ein <circle> mit sehr dicker Kontur
- * (stroke-width = Radius, wirkt dadurch wie eine Kreisflaeche statt eines
- * Rings) und ein ganz gewoehnlicher CSS-transition auf stroke-dashoffset.
- * JS setzt den Zielwert genau EIN Mal - einen Frame nach dem Einhaengen
- * (doppeltes rAF: der Browser muss den Startzustand einmal gemalt haben,
- * sonst springt er direkt zum Ziel statt zu animieren). Die eigentlichen
- * 60 Bilder/Sekunde uebernimmt danach die Animations-Engine des Browsers -
- * die ist fuer CSS-transitions in Safari gut getestet, anders als
- * wiederholtes JS-Schreiben von background-image.
- *
- * Weiterhin nur eine Hypothese, noch nicht am Geraet bestaetigt.
- */
-const PieCountdown: React.FC<{ armMs: number; onDone: () => void }> = ({ armMs, onDone }) => {
-    const [shrinking, setShrinking] = useState(false);
-
-    useEffect(() => {
-        let raf2: number | undefined;
-        const raf1 = requestAnimationFrame(() => {
-            raf2 = requestAnimationFrame(() => setShrinking(true));
-        });
-        const timeout = setTimeout(onDone, armMs);
-        return () => {
-            cancelAnimationFrame(raf1);
-            if (raf2 !== undefined) cancelAnimationFrame(raf2);
-            clearTimeout(timeout);
-        };
-    }, [armMs, onDone]);
-
-    return (
-        <svg className="row-pie" viewBox="0 0 34 36" aria-hidden="true">
-            <circle
-                className="row-pie-circle"
-                cx="17"
-                cy="18"
-                r={PIE_R}
-                // Rotation als SVG-Attribut statt CSS-transform: rotiert
-                // exakt um den Kreismittelpunkt (17, 18), ohne sich auf
-                // transform-origin-Defaults fuer SVG zu verlassen, die
-                // zwischen Browsern unterschiedlich ausfallen koennen.
-                transform="rotate(-90 17 18)"
-                style={
-                    {
-                        strokeDasharray: PIE_CIRCUMFERENCE,
-                        strokeDashoffset: shrinking ? PIE_CIRCUMFERENCE : 0,
-                        transitionDuration: shrinking ? `${armMs}ms` : '0ms',
-                    } as React.CSSProperties
-                }
-            />
-        </svg>
-    );
-};
-
 interface ShutterRowProps {
     device: ShutterFloorDeviceDef;
     connected: boolean;
     onOpenSheet: (device: ShutterFloorDeviceDef) => void;
 }
 
+// Stopp-Fenster gegen Flackern und Nachhaengen (Feature 17, Ziel C).
+// Der Adapter tahoma.1 laeuft im Polling-Modus: system.adapter.tahoma.1,
+// common.dataSource: "poll", native.pollinterval: 5000. core:MovingState wird
+// nur alle ~5,0 s auf einem festen globalen Raster aktualisiert, nicht an den
+// Tastendruck gekoppelt.
+// Gemessen am 03.09.2026 an Wohnz_gross (Kommandos befristet historisiert,
+// danach wieder auf enabled: false): Stopp 07:27:41.917 -> Poll bestaetigt
+// "steht" 07:27:47.184 = 5,27 s Verzug (Worst Case dieser Messreihe); zweiter
+// Fall 07:27:57.517 -> 07:28:02.19 = 4,67 s. Poll-Zeitpunkte lagen 5,00-5,03 s
+// auseinander.
+// Daraus: 6000 ms = ein Poll-Intervall plus Marge, deckt den gemessenen Worst
+// Case von 5,27 s mit ~0,7 s Reserve ab.
+// Verweis auf PENDING_MAX_AGE_MS = 45000 in useShutterDevice.ts: Das
+// Stopp-Fenster liegt bewusst weit darunter, kann mit der
+// Auftrags-Altersgrenze nicht kollidieren.
+const STOP_IGNORE_MOVING_MS = 6000;
+
 export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpenSheet }) => {
     const { setState } = useIoBroker();
     const state = useShutterDevice(device);
     const { markPending, clearPending } = usePendingStore();
     const stopFgColor = useYellowForeground();
+
+    // Merker fuer das Stopp-Fenster (Feature 17, Ziel C). Bewusst useState,
+    // nicht useRef: Ein useRef loest kein Neuzeichnen aus. Laeuft nach dem
+    // Fensterende noch eine echte Fremdfahrt (Wandschalter), muesste die
+    // Zeile beim Ablauf des Fensters von selbst wieder auf busy umschalten -
+    // ohne Neuzeichnen bliebe die Stopp-Taste unsichtbar, bis zufaellig eine
+    // andere Datenpunktmeldung eintrifft. Ob der Adapter bei unveraendertem
+    // Poll-Wert ueberhaupt erneut ein stateChange sendet, ist nicht belegt.
+    const [stoppedAt, setStoppedAt] = useState<number | null>(null);
 
     // Funk-Ausfall-Zeichen (Offene-Punkte-Eintrag "Zeichen fuer kein
     // Funkkontakt in der Zeilenliste", umgesetzt 02.09.2026 - Saschas Wahl:
@@ -107,16 +58,35 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
     const { state: radioStatusState } = useDatapoint(radioDps?.statusDp ?? '');
     const radioOffline = isRadioOffline(radioStatusState?.val);
 
-    // Tippschutz: 'up'/'down' waehrend die jeweilige Taste bewaffnet ist,
-    // sonst null. Erst der zweite Tipp innerhalb ARM_MS loest die Fahrt aus.
-    const [armed, setArmed] = useState<'up' | 'down' | null>(null);
-
     // Berechne geschlossenen Anteil für Statustext
     const closedFrac = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
 
+    // Stopp-Fenster aktiv? Dieselbe Lehre wie bei PENDING_MAX_AGE_MS
+    // (useShutterDevice.ts): iOS friert Timer ein, sobald die App in den
+    // Hintergrund wandert. Ein Fenster, das nur per setTimeout endet, bliebe
+    // nach Rueckkehr aus dem Hintergrund unbegrenzt offen und wuerde echte
+    // Bewegungsmeldungen dauerhaft schlucken. Der Zeitstempelvergleich beim
+    // Rendern ist die massgebliche Pruefung, der Timer weiter unten sorgt nur
+    // fuer das Neuzeichnen.
+    const inStopWindow = stoppedAt !== null && Date.now() - stoppedAt < STOP_IGNORE_MOVING_MS;
+
     // Bewegungs-Zustand: läuft, solange die Box Bewegung meldet ODER ein von
-    // hier abgeschickter Befehl noch nicht am Ziel angekommen ist
-    const busy = state.isMoving || state.isActing;
+    // hier abgeschickter Befehl noch nicht am Ziel angekommen ist.
+    // state.isActing steht bewusst ausserhalb der Fenster-Bedingung: Ein
+    // bewusster neuer Auf/Zu-Tipp ruft markPending() synchron auf und setzt
+    // damit sofort isActing = true - die Stopp-Taste erscheint sofort wieder,
+    // unabhaengig davon, ob das Stopp-Fenster noch laeuft. Das Fenster
+    // daempft ausschliesslich das rohe, um bis zu ein Poll-Intervall
+    // verspaetete isMoving, niemals ein selbst ausgeloestes Fahrsignal.
+    //
+    // Wahrheitstabelle:
+    // isActing | isMoving | inStopWindow | alt   | neu
+    // false    | false    | -            | false | false
+    // false    | true     | false        | true  | true
+    // false    | true     | true         | true  | false  <- einziger Unterschied
+    // true     | -        | -            | true  | true
+    // "neu" ist nie true, wo "alt" false war.
+    const busy = state.isActing || (state.isMoving && !inStopWindow);
 
     // Statuszeile-Text
     let statusText = '';
@@ -150,12 +120,32 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.upDp, true);
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
+        // Stopp-Fenster sofort verwerfen: Solange der Auftrag laeuft, traegt
+        // isActing die Anzeige. Der Auftrag endet aber vorzeitig, sobald die
+        // Box die Zielposition im Toleranzband ±3 quittiert
+        // (useShutterDevice.ts) - bei einer kurzen Fahrt kann das noch
+        // innerhalb der 6 Sekunden passieren. Danach traegt allein isMoving.
+        // Ein noch offenes Stopp-Fenster wuerde die Anzeige in diesem Moment
+        // faelschlich abschalten. Deshalb wird das Fenster bei jedem
+        // bewussten Auf/Zu-Tipp sofort verworfen.
+        setStoppedAt(null);
     };
 
     const handleStop = () => {
         if (!device.stopDp) return;
         setState(device.stopDp, true);
         clearPending(device.key);
+        // Stopp-Fenster setzen (Feature 17, Ziel C). Deckt zwei Symptome mit
+        // einem Mechanismus ab:
+        // "Haengt nach": isActing war schon sofort weg, isMoving stand bis
+        // zum naechsten Poll-Tick noch auf true (gemessen 4,67-5,27 s). Das
+        // Fenster blendet diesen Rest aus.
+        // "Flackern": Wurde Stopp gedrueckt, bevor der erste Poll die Fahrt
+        // ueberhaupt als true bestaetigt hatte, fielen isActing und isMoving
+        // gleichzeitig weg, der naechste Poll holte die kurze reale Fahrt
+        // nach, der uebernaechste meldete false. Das Fenster deckt diese
+        // Nachzuegler ab.
+        setStoppedAt(Date.now());
     };
 
     const handleClose = () => {
@@ -165,66 +155,23 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.downDp, true);
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
+        // Stopp-Fenster sofort verwerfen - Begruendung siehe handleOpen.
+        setStoppedAt(null);
     };
 
-    // Tippschutz-Zwischenschicht: erster Tipp bewaffnet nur, zweiter Tipp
-    // (bei bereits bewaffneter Taste) loest die eigentliche Fahrt aus.
-    const handleUpPress = () => {
-        if (armed === 'up') {
-            setArmed(null);
-            handleOpen();
-        } else {
-            setArmed('up');
-        }
-    };
-
-    const handleDownPress = () => {
-        if (armed === 'down') {
-            setArmed(null);
-            handleClose();
-        } else {
-            setArmed('down');
-        }
-    };
-
-    // Stabile Referenz fuer PieCountdown.onDone: setArmed selbst ist von
-    // React garantiert referenzstabil, useCallback macht handleArmTimeout es
-    // ebenfalls - sonst wuerde ein Re-Render aus anderem Grund (z.B.
-    // connected-Prop) waehrend eine Taste bewaffnet ist den Countdown-Effekt
-    // in PieCountdown unnoetig neu starten.
-    const handleArmTimeout = useCallback(() => setArmed(null), []);
-
-    // Entwaffnen, sobald die Zeile in Fahrt geht - eine bewaffnete Taste
-    // waehrend der Fahrt waere irrefuehrend.
+    // Der Timer beendet das Stopp-Fenster nicht fachlich - das tut der
+    // Zeitstempelvergleich in inStopWindow weiter oben. Er sorgt nur dafuer,
+    // dass die Zeile beim Fensterende einmal neu zeichnet.
     useEffect(() => {
-        if (busy) setArmed(null);
-    }, [busy]);
-
-    // Entwaffnen beim Wegschalten der App - eine noch bewaffnete Taste beim
-    // Zurueckkehren waere eine Ueberraschung.
-    useEffect(() => {
-        const handleVisibilityChange = () => {
-            if (document.hidden) setArmed(null);
-        };
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, []);
-
-    // Testweise NUR am Gaeste-WC (Chat vom 02.09.2026, Saschas Wunsch): ein
-    // normaler <button onClick> statt HapticButton, ganz ohne Tippschutz -
-    // Gegenprobe zum Standard-Aura-Schalter (SwitchWidget.tsx), der auch ein
-    // normaler <button> ist. Hintergrund: HapticButton legt einen echten,
-    // nur unsichtbaren iOS-Systemschalter (<input type="checkbox" switch>)
-    // ueber die Taste, um das spuerbare Klicken zu bekommen - aber ein
-    // echter Schalter kippt bei jeder Beruehrung, auch waehrend man vorbeizieht
-    // (kein Teil der Scroll-vs-Tipp-Erkennung des Browsers wie bei einem
-    // <button>). Das war vermutlich die Ursache fuer die Fehltipps beim
-    // Vorbeiscrollen, die den Tippschutz (Feature 15) noetig gemacht haben.
-    // Test: reagiert die Taste beim Vorbeiscrollen jetzt NICHT mehr, aber bei
-    // bewusstem Tippen weiterhin sofort? Noch nicht am iPhone bestaetigt -
-    // siehe [[Offene Punkte]]. Nach Bestaetigung: auf alle Geraete ausweiten
-    // und Feature 15 (armed/PieCountdown) komplett entfernen.
-    const isPlainButtonProbe = device.key === 'Gäste_WC';
+        if (stoppedAt === null) return;
+        const rest = STOP_IGNORE_MOVING_MS - (Date.now() - stoppedAt);
+        if (rest <= 0) {
+            setStoppedAt(null);
+            return;
+        }
+        const t = window.setTimeout(() => setStoppedAt(null), rest);
+        return () => window.clearTimeout(t);
+    }, [stoppedAt]);
 
     const handleRowClick = () => {
         onOpenSheet(device);
@@ -294,7 +241,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                             <Square size={16} fill="currentColor" />
                         </HapticButton>
                     </div>
-                ) : isPlainButtonProbe ? (
+                ) : (
                     <>
                         <button
                             type="button"
@@ -326,43 +273,6 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
                                 <ArrowToBottomIcon size={20} />
                             </span>
                         </button>
-                    </>
-                ) : (
-                    <>
-                        <HapticButton
-                            className={`row-btn nodrag aura-widget-action${armed === 'up' ? ' is-armed' : ''}`}
-                            onPress={handleUpPress}
-                            disabled={!connected}
-                            title={armed === 'up' ? 'Öffnen bestätigen' : 'Öffnen'}
-                            label={
-                                armed === 'up'
-                                    ? `${device.label} öffnen – zum Bestätigen erneut tippen`
-                                    : `${device.label} öffnen`
-                            }
-                            stopPropagation
-                        >
-                            {armed === 'up' && <PieCountdown armMs={ARM_MS} onDone={handleArmTimeout} />}
-                            <span className="row-btn-icon">
-                                <ArrowToTopIcon size={20} />
-                            </span>
-                        </HapticButton>
-                        <HapticButton
-                            className={`row-btn nodrag aura-widget-action${armed === 'down' ? ' is-armed' : ''}`}
-                            onPress={handleDownPress}
-                            disabled={!connected}
-                            title={armed === 'down' ? 'Schließen bestätigen' : 'Schließen'}
-                            label={
-                                armed === 'down'
-                                    ? `${device.label} schließen – zum Bestätigen erneut tippen`
-                                    : `${device.label} schließen`
-                            }
-                            stopPropagation
-                        >
-                            {armed === 'down' && <PieCountdown armMs={ARM_MS} onDone={handleArmTimeout} />}
-                            <span className="row-btn-icon">
-                                <ArrowToBottomIcon size={20} />
-                            </span>
-                        </HapticButton>
                     </>
                 )}
             </div>
