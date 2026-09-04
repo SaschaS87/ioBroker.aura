@@ -423,6 +423,21 @@ iframe {
 .aura-tab-scroll--mobile::-webkit-scrollbar {
     display: none;
 }
+/* Restored 04.09.2026. ScrollRow.tsx renders this thumb, but the rule was lost
+   while resolving the index.css conflict of the 0.53.3 merge. Without
+   `position: absolute` the div is no longer taken out of the flow: it becomes a
+   normal flex item next to the tab row and ate 175 of 375 px on a phone, so the
+   tab strip was cut off after "Garten" and looked like tabs were missing.
+   Measured against the deployed 0.21.13, which does not render the element at
+   all. Identical to upstream (origin/main, src-vis/index.css). */
+.aura-tab-scroll-ind {
+    position: absolute;
+    bottom: 3px;
+    height: 3px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--accent, #888) 60%, transparent);
+    pointer-events: none;
+}
 
 /* Hide-scrollbar utility — used by the carousel widget when options.hideScrollbar is set */
 .aura-no-scrollbar {
