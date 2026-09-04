@@ -16,6 +16,9 @@ examples/
 CLAUDE_CODE_BRIEFING.md
 compose.yml
 
+# Ausgabe von tools/screenshots/*.mjs (Playwright-Screenshots zur Abnahme)
+/scratchpad-screenshots/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -26,3 +29,9 @@ Thumbs.db
 
 .eslintcache
 .vite-dev.log
+
+# Logo-Werkstatt: Backups und Zustandsdatei bleiben lokal
+/branding/
+
+# Deploy-Paket, entsteht bei jedem Ausrollen neu
+/aura-www.tar.gz

@@ -1,0 +1,347 @@
+.shutter-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  animation: backdrop-in 280ms ease-out;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Korrektur vom 12.08.2026 hier bewusst umgedreht (Rollläden-Umbau,
+   01.09.2026): Damals war max-height auf 92% des Backdrops gestellt, weil
+   88vh mit dem ganzen Bildschirm rechnete, waehrend Backdrop UND Widget
+   deckungsgleich die ganze Tab-Flaeche gross waren (fillTab-Overlay) - 92%
+   ergab in diesem Sonderfall zufaellig wieder ~92% des Bildschirms.
+
+   Jetzt ist shutterfloors/shutterrooms ein normales, mitwachsendes Widget.
+   Der Backdrop ist ueber position: fixed; inset: 0 wieder an den Bildschirm
+   gebunden, nicht mehr an die (potenziell viel hoehere) Widget-Kachel. Ein
+   Prozentwert wuerde also wieder auf die Kachel zeigen, wenn das Widget
+   jemals in einem absolut positionierten Vorfahren steckt - dvh bezieht sich
+   direkt auf den sichtbaren Bildschirmausschnitt und ist damit die robustere
+   Wahl fuer "faellt niemals aus dem Fenster". */
+.shutter-sheet {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--app-bg);
+  border-radius: 16px 16px 0 0;
+  max-height: 92dvh;
+  width: 100%;
+  max-width: 600px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Sicherheitsabstand + 20px Reserve: Der reine safe-area-Wert setzt die
+     Prozent-Knoepfe exakt auf die Kante, das fasst sich zu knapp an. */
+  padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
+  box-sizing: border-box;
+  animation: sheet-in 280ms ease-out;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Griff + Kopfzeile bilden die Ziehflaeche. touch-action: none haelt den
+   Browser davon ab, die Abwaertsgeste vorher als Scrollen zu deuten. */
+.sheet-drag {
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sheet-drag:active {
+  cursor: grabbing;
+}
+
+.sheet-grip {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.grip-handle {
+  width: 36px;
+  height: 4px;
+  background-color: var(--app-border);
+  border-radius: 2px;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.sheet-header-title {
+  flex: 1;
+}
+
+.sheet-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.sheet-subtitle {
+  margin: 2px 0 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 0;
+}
+
+/* Zwei Instrumente nebeneinander: Position + Lamelle */
+.sheet-instruments {
+  display: flex;
+  gap: var(--instr-gap, 16px);
+  padding: 18px 16px 6px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* Feste Spaltenbreite - die Spalte ist so breit wie ihr INSTRUMENT (Fenster
+   bzw. Lamellenregler), nie so breit wie ihre Beschriftung. Ohne das bestimmte
+   das laengste Wort die Breite: aus "geschlossen" (64 px) wurde "halb offen"
+   (54 px), die Spalte schrumpfte, und weil die Reihe zentriert ist, wanderte
+   das ganze Fenster mit. Am 27.08.2026 von Sascha am Raffstore gemeldet.
+   Die Woerter ragen jetzt sichtbar ueber ihre Spalte hinaus - sie stehen
+   mittig ueber ihrem Instrument und stossen dabei an nichts an. */
+.instrument {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: var(--col-w, auto);
+  flex: 0 0 auto;
+}
+
+.instrument > .block-title,
+.instrument > .block-value,
+.instrument > .block-word {
+  width: 100%;
+  /* Mittig per Flexbox, nicht per text-align: ein Wort, das breiter ist als
+     seine Spalte, haengt bei text-align nur nach rechts ueber. Flex zentriert
+     es auch dann, wenn es an beiden Seiten hinausragt. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.block-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.block-value {
+  /* Fallstrick 2: feste Höhe UND nowrap – die Zeile darf unter keinen
+     Umständen umbrechen oder die Kopfzeile wachsen lassen. */
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Eine Groesse fuer alle Zustaende - Ruhe, Fahrt und Lamelle. Frueher
+     sprang die Zahl von 26 auf 20 px, sobald eine Fahrt lief; Sascha wollte
+     am 27.08.2026 durchgaengig die kleinere Groesse. */
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+
+.block-value.live {
+  color: var(--accent);
+}
+
+/* Lamelle in Fahrt: die Zahl ist das ZIEL, nicht der Ist-Wert - bernstein
+   wie der Zielwert des Fensters. */
+.block-value.is-target {
+  color: var(--accent-yellow);
+}
+
+.block-ziel {
+  margin-left: 8px;
+  color: var(--accent-yellow);
+  font-weight: 600;
+}
+
+/* Fallstrick 2: feste Hoehe ist Pflicht, auch wenn kein Wort da ist. */
+.block-word {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.2;
+  height: 1.2em;
+  white-space: nowrap;
+}
+
+.shutter-viz-wrapper {
+  touch-action: none;
+}
+
+.sheet-confirm-container {
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px 0;
+}
+
+.sheet-confirm {
+  width: var(--btn-w, 170px);
+  max-width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  border: 1px solid var(--app-border);
+  background-color: var(--accent);
+  color: white;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.09s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.sheet-confirm:hover:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+}
+
+.sheet-confirm:active:not(.is-disabled) {
+  background-color: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  transform: scale(0.94);
+}
+
+.sheet-confirm.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sheet-confirm-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sheet-confirm-stop {
+  background-color: var(--accent-yellow);
+  border-color: var(--accent-yellow);
+  color: var(--stop-fg, #1c1917);
+}
+
+.sheet-confirm-stop:active:not(.is-disabled) {
+  background-color: color-mix(in srgb, var(--accent-yellow) 82%, #000);
+  border-color: color-mix(in srgb, var(--accent-yellow) 82%, #000);
+  color: var(--stop-fg, #1c1917);
+}
+
+.sheet-notice {
+  padding: 8px 12px;
+  background-color: color-mix(in srgb, var(--accent-red) 16%, transparent);
+  color: var(--accent-red);
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: center;
+  margin: 12px 16px 0;
+}
+
+@media (max-width: 480px) {
+  .shutter-sheet {
+    max-width: 100%;
+  }
+
+  .sheet-header {
+    padding: 10px 12px;
+  }
+
+  /* Auf dem Handy stehen die zwei Instrumente NICHT untereinander,
+     sondern immer noch nebeneinander (150 + 16 + 44 = 210 px in 375 px). */
+  /* .sheet-instruments bleibt wie oben – keine Aenderung! */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shutter-sheet,
+  .shutter-sheet-backdrop {
+    animation: none;
+  }
+
+  .sheet-confirm:active:not(.is-disabled) {
+    transform: none;
+  }
+}
+
+/* Zahl ohne Quittung der Box: gedaempft, dazu "nicht bestaetigt" darunter. */
+.block-value.is-estimate {
+  opacity: 0.6;
+}
+
+/* Funkzeile (Feature 16, 02.09.2026). Feste Hoehe ist der Kern der
+   Hoehen-Zusage: ob leer, Normalfall oder Ausfall - die Zeile belegt immer
+   denselben Platz, das Sheet springt nicht in der Hoehe. */
+.sheet-radio {
+  margin: 14px 16px 0;
+  font-size: 8px;
+  line-height: 1.15;
+  height: 1.15em;          /* feste Höhe – auch wenn kein Text da ist */
+  text-align: right;
+  white-space: nowrap;     /* darf NIE umbrechen */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-radio.is-offline {
+  color: var(--accent-red);
+  opacity: 0.9;            /* Rot bei 0,5 ist auf dunklem Grund kaum lesbar */
+}
+
+/* Verblassen bei Funkausfall: nur Position und Fenstergrafik, nicht die
+   Lamelle. isUnknown bleibt bewusst unangetastet (siehe ShutterSheet.tsx) -
+   der letzte bekannte Stand bleibt sichtbar, nur blasser. */
+.block-value.is-stale { opacity: 0.6; }        /* wie .is-estimate */
+.shutter-viz-wrapper.is-stale { opacity: 0.4; } /* wie .viz-unknown */

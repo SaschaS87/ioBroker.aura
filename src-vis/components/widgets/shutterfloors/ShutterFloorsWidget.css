@@ -1,0 +1,85 @@
+.shutter-floors-widget {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Kein eigener Sicherheitsabstand unten mehr (Rollläden-Umbau, 01.09.2026):
+   als normales Widget liegt der Inhalt im .aura-scroll-Container, der schon
+   4rem Puffer traegt (index.html) und sich bei sichtbarer Fussleiste zusaetzlich
+   um calc(var(--tab-footer-h) + env(safe-area-inset-bottom)) verkuerzt
+   (index.css) – ein zweiter Zuschlag hier waere doppelt. */
+.floors-scroll {
+  /* 7px statt 10px: gleicht die erste Etagenzeile auf die Starthoehe des
+     ersten Abschnittstitels auf Wohnklima ab (HeaderWidget "minimal") –
+     dort betraegt der Abstand vom Tab-Inhalt bis zum Titeltext 15px
+     (8px Aussenrand + 7px Zentrierung in der Titelzeile), hier war es
+     wegen der zusaetzlichen 10px Innenabstand vorher 18px. Nachgemessen
+     01.09.2026 (Runde 7) in der lokalen Dev-Vorschau. */
+  padding-top: 7px;
+  padding-bottom: 10px;
+}
+
+/* 18px vor jedem Etagentitel: gleicher Wert wie der Abstand vor einem
+   Bereichstitel auf Wohnklima (dort per Custom-CSS als margin-top auf dem
+   Zeilen-Wrapper gesetzt). Nachgemessen 01.09.2026 (Runde 7). */
+.floor-section {
+  margin-bottom: 18px;
+}
+
+.floor-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Kein eigener Abstand mehr zwischen Etagentitel und Geraeteliste (0 statt
+   6px) – Wohnklima-Stil: der Titel sitzt direkt auf der darunterliegenden
+   Karte, der sichtbare Luftraum kommt allein aus der Titelzeile selbst, nicht
+   aus einem zusaetzlichen Rand. Der verbleibende kleine Abstand kommt aus dem
+   padding-bottom von .floor-header (siehe FloorHeader.css bzw. die
+   Custom-CSS-Regel fuer dieses Widget im Admin). Angeglichen 01.09.2026
+   (Runde 7) auf Saschas Wunsch: vorher wirkten Abstand vor und nach dem Titel
+   gleich gross, anders als bei Wohnklima. */
+.floor-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Warnstreifen, wenn die Tahoma-Instanz nicht erreichbar ist. Sitzt oben im
+   Widget, damit der Grund vor dem Tastendruck sichtbar ist – bis 30.08.2026
+   sah der Tab bei abgeschaltetem Adapter voellig normal aus. */
+.conn-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  margin: 8px 0 2px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--accent-red, #ef4444) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-red, #ef4444) 40%, transparent);
+}
+
+.conn-banner-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-red, #ef4444);
+}
+
+.conn-banner-text {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+

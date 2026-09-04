@@ -1,0 +1,6 @@
+{
+  "_hinweis": "Ausrichtung des Motivs im Homescreen-Symbol. groesse = Prozent der Kachelflaeche, x/y = Verschiebung in Prozent der Kantenlaenge. Aendern ueber \"npm run logo\" oder npm run logo:build -- --ziele app --force --app-groesse 80 --app-x 0 --app-y -3",
+  "groesse": 95,
+  "x": 3,
+  "y": 3
+}

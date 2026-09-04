@@ -1,0 +1,216 @@
+[
+  {
+    "name": "Wohnzimmer",
+    "facade": "SO",
+    "devices": [
+      {
+        "key": "Wohnz_gross",
+        "label": "Fenster groß",
+        "posDp": "tahoma.1.devices.Wohnz_gross.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Wohnz_gross.commands.up",
+        "downDp": "tahoma.1.devices.Wohnz_gross.commands.down",
+        "stopDp": "tahoma.1.devices.Wohnz_gross.commands.stop",
+        "activityDp": "tahoma.1.devices.Wohnz_gross.states.core:MovingState",
+        "invertPosition": true
+      },
+      {
+        "key": "Wohnz_klein",
+        "label": "Fenster klein",
+        "posDp": "tahoma.1.devices.Wohnz_klein.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Wohnz_klein.commands.up",
+        "downDp": "tahoma.1.devices.Wohnz_klein.commands.down",
+        "stopDp": "tahoma.1.devices.Wohnz_klein.commands.stop",
+        "activityDp": "tahoma.1.devices.Wohnz_klein.states.core:MovingState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Esszimmer",
+    "facade": "SO · SW",
+    "devices": [
+      {
+        "key": "Raffstore_(Nachbar)",
+        "label": "Raffstore Nachbar-Seite",
+        "facade": "SO",
+        "badge": "raffstore",
+        "posDp": "tahoma.1.devices.Raffstore_(Nachbar).states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Raffstore_(Nachbar).commands.up",
+        "downDp": "tahoma.1.devices.Raffstore_(Nachbar).commands.down",
+        "stopDp": "tahoma.1.devices.Raffstore_(Nachbar).commands.stop",
+        "activityDp": "tahoma.1.devices.Raffstore_(Nachbar).states.core:MovingState",
+        "slatDp": "tahoma.1.devices.Raffstore_(Nachbar).states.core:SlateOrientationState",
+        "invertPosition": true
+      },
+      {
+        "key": "Raffstore_(Garten)",
+        "label": "Raffstore Garten-Seite",
+        "facade": "SW",
+        "badge": "raffstore",
+        "posDp": "tahoma.1.devices.Raffstore_(Garten).states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Raffstore_(Garten).commands.up",
+        "downDp": "tahoma.1.devices.Raffstore_(Garten).commands.down",
+        "stopDp": "tahoma.1.devices.Raffstore_(Garten).commands.stop",
+        "activityDp": "tahoma.1.devices.Raffstore_(Garten).states.core:MovingState",
+        "slatDp": "tahoma.1.devices.Raffstore_(Garten).states.core:SlateOrientationState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Elternzimmer",
+    "facade": "SO",
+    "devices": [
+      {
+        "key": "Eltern_links",
+        "label": "Fenster links",
+        "posDp": "tahoma.1.devices.Eltern_links.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Eltern_links.commands.up",
+        "downDp": "tahoma.1.devices.Eltern_links.commands.down",
+        "stopDp": "tahoma.1.devices.Eltern_links.commands.stop",
+        "activityDp": "tahoma.1.devices.Eltern_links.states.core:MovingState",
+        "invertPosition": true
+      },
+      {
+        "key": "Eltern_rechts",
+        "label": "Fenster rechts",
+        "posDp": "tahoma.1.devices.Eltern_rechts.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Eltern_rechts.commands.up",
+        "downDp": "tahoma.1.devices.Eltern_rechts.commands.down",
+        "stopDp": "tahoma.1.devices.Eltern_rechts.commands.stop",
+        "activityDp": "tahoma.1.devices.Eltern_rechts.states.core:MovingState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Küche",
+    "facade": "SW",
+    "devices": [
+      {
+        "key": "Küchenfenster",
+        "label": "Küchenfenster",
+        "posDp": "tahoma.1.devices.Küchenfenster.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Küchenfenster.commands.up",
+        "downDp": "tahoma.1.devices.Küchenfenster.commands.down",
+        "stopDp": "tahoma.1.devices.Küchenfenster.commands.stop",
+        "activityDp": "tahoma.1.devices.Küchenfenster.states.core:MovingState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Bad · Eltern-Suite",
+    "facade": "SW",
+    "devices": [
+      {
+        "key": "Bad",
+        "label": "Fenster",
+        "posDp": "tahoma.1.devices.Bad.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Bad.commands.up",
+        "downDp": "tahoma.1.devices.Bad.commands.down",
+        "stopDp": "tahoma.1.devices.Bad.commands.stop",
+        "activityDp": "tahoma.1.devices.Bad.states.core:MovingState",
+        "invertPosition": true
+      },
+      {
+        "key": "Bad_Dachfenster",
+        "label": "Dachfenster",
+        "badge": "dachfenster",
+        "posDp": "tahoma.1.devices.Bad_Dachfenster.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Bad_Dachfenster.commands.up",
+        "downDp": "tahoma.1.devices.Bad_Dachfenster.commands.down",
+        "stopDp": "tahoma.1.devices.Bad_Dachfenster.commands.stop",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Gäste-WC",
+    "facade": "NW",
+    "devices": [
+      {
+        "key": "Gäste_WC",
+        "label": "Fenster",
+        "posDp": "tahoma.1.devices.Gäste_WC.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Gäste_WC.commands.up",
+        "downDp": "tahoma.1.devices.Gäste_WC.commands.down",
+        "stopDp": "tahoma.1.devices.Gäste_WC.commands.stop",
+        "activityDp": "tahoma.1.devices.Gäste_WC.states.core:MovingState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Speisekammer",
+    "facade": "NW",
+    "devices": [
+      {
+        "key": "SPK",
+        "label": "Fenster",
+        "posDp": "tahoma.1.devices.SPK.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.SPK.commands.up",
+        "downDp": "tahoma.1.devices.SPK.commands.down",
+        "stopDp": "tahoma.1.devices.SPK.commands.stop",
+        "activityDp": "tahoma.1.devices.SPK.states.core:MovingState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Kinderzimmer",
+    "facade": "NW",
+    "devices": [
+      {
+        "key": "Kinderzimmer",
+        "label": "Zimmer 1",
+        "posDp": "tahoma.1.devices.Kinderzimmer.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Kinderzimmer.commands.up",
+        "downDp": "tahoma.1.devices.Kinderzimmer.commands.down",
+        "stopDp": "tahoma.1.devices.Kinderzimmer.commands.stop",
+        "activityDp": "tahoma.1.devices.Kinderzimmer.states.core:MovingState",
+        "invertPosition": true
+      },
+      {
+        "key": "Kinderzimmer_2",
+        "label": "Zimmer 2",
+        "posDp": "tahoma.1.devices.Kinderzimmer_2.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Kinderzimmer_2.commands.up",
+        "downDp": "tahoma.1.devices.Kinderzimmer_2.commands.down",
+        "stopDp": "tahoma.1.devices.Kinderzimmer_2.commands.stop",
+        "activityDp": "tahoma.1.devices.Kinderzimmer_2.states.core:MovingState",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Ankleide",
+    "facade": "NO",
+    "devices": [
+      {
+        "key": "Ankleide",
+        "label": "Fenster",
+        "posDp": "tahoma.1.devices.Ankleide.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Ankleide.commands.up",
+        "downDp": "tahoma.1.devices.Ankleide.commands.down",
+        "stopDp": "tahoma.1.devices.Ankleide.commands.stop",
+        "invertPosition": true
+      }
+    ]
+  },
+  {
+    "name": "Treppenaufgang",
+    "facade": "NO",
+    "devices": [
+      {
+        "key": "Flur_DG",
+        "label": "Fenster",
+        "posDp": "tahoma.1.devices.Flur_DG.states.core:ClosureState",
+        "upDp": "tahoma.1.devices.Flur_DG.commands.up",
+        "downDp": "tahoma.1.devices.Flur_DG.commands.down",
+        "stopDp": "tahoma.1.devices.Flur_DG.commands.stop",
+        "invertPosition": true
+      }
+    ]
+  }
+]

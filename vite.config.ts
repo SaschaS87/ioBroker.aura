@@ -201,11 +201,20 @@ function ioBrokerDevPlugin(): Plugin {
   };
 }
 
-// VITE_BASE is set to '/aura/' by the build:adapter script
-const base = process.env.VITE_BASE ?? '/';
-
-export default defineConfig({
-  base,
+// Asset base path. Aura is served over two different roots at the same time:
+//
+//   • its own adapter server on port 8095  → root      ("/")
+//   • the copy under the web adapter       → subfolder ("/aura/"), which is
+//     what ioBroker.Pro tunnels for remote access
+//
+// A fixed base can only satisfy one of them — with '/' the /aura/ copy asks
+// for /assets/… and gets 404s (white screen). './' makes Vite emit paths
+// relative to the document and, for lazily loaded chunks, relative to the
+// module URL (import.meta.url), so both roots work from one build. Safe here
+// because the app uses createHashRouter: the URL path never changes, only the
+// hash. The dev server always serves from the root, so it keeps '/'.
+export default defineConfig(({ command }) => ({
+  base: process.env.VITE_BASE ?? (command === 'build' ? './' : '/'),
   plugins: [react(), ioBrokerDevPlugin()],
   server: {
     host: '0.0.0.0',
@@ -249,4 +258,4 @@ export default defineConfig({
     // already ~700 KB — splitting more aggressively would just churn requests.
     chunkSizeWarningLimit: 900,
   },
-});
+}));

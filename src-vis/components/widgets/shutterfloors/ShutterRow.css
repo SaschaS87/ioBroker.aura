@@ -1,0 +1,255 @@
+.shutter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background-color: var(--app-bg);
+  border-bottom: 1px solid var(--app-border);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.shutter-row:hover {
+  background-color: var(--widget-bg-hover, var(--widget-bg));
+}
+
+.shutter-row:active {
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--app-bg));
+}
+
+.shutter-row:last-child {
+  border-bottom: none;
+}
+
+.shutter-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.row-icon {
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Angeglichen an den Rollladen-Viz auf dem Karten-Tab (ShutterViz.css),
+     der schon immer in --text-secondary zeichnet. */
+  color: var(--text-secondary);
+}
+
+/* Funk-Ausfall-Zeichen (Offene Punkte, umgesetzt 02.09.2026, Variante A):
+   durchgestrichenes Funksymbol unten rechts am Typ-Icon, 45 % Deckkraft -
+   bewusst gedaempft, die laute rote Warnung lebt schon im Popup
+   (ShutterSheet.tsx .sheet-radio.is-offline). pointer-events: none, damit
+   das Badge den Zeilen-Klick (oeffnet das Sheet) nicht abfaengt. */
+.row-icon-radio-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: flex;
+  color: var(--accent-red);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Einzeilig, nur Name (01.09.2026, nach Namenslaengen-Test): kein Status-Text
+   mehr daneben - der Fuellstand zeigt sich allein im Icon. Schriftgroesse
+   1:1 von Wohnklima uebernommen, nicht neu erfunden: die dortigen Raumnamen
+   (RoomClimateWidget.tsx, cardStyle-Zweig) laufen in der Praxis mit
+   `fontSize: 14, fontWeight: 400` - nachgemessen per getComputedStyle im
+   laufenden Dev-Server, NICHT der ungenutzte `nameFontSize`-Default (17) aus
+   dem anderen, dort gar nicht aktiven Zweig. Passt bei den laengsten
+   Geraetenamen ("Raffstore Nachbar" u.ae.) auf iPhone- wie auf
+   Galaxy-Breite vollstaendig - nachgemessen in der lokalen Dev-Vorschau. */
+.row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: flex;
+  gap: var(--btn-gap);
+  flex-shrink: 0;
+  /* Hoeher (30 -> 36 px) und enger zusammen (8 -> 6 px), auf Saschas Wunsch
+     02.09.2026: der gelbe Fahrbetrieb-Balken (.row-btn-stop, Breite =
+     2 x --btn-w + --btn-gap) wirkte bei 76 x 30 px (Verhaeltnis 2,53:1) zu
+     lang und schmal. Jetzt 74 x 36 px (Verhaeltnis ~2,06:1) - passt in die
+     52 px hohe Zeile (52 - 36 = 16 px Luft), noch nicht am Geraet
+     bestaetigt. */
+  --btn-h: 36px;
+  --btn-w: 34px;
+  --btn-gap: 6px;
+}
+
+.row-actions .row-btn {
+  width: var(--btn-w);
+  height: var(--btn-h);
+  padding: 0;
+  /* Pflicht, weil im Projekt kein globales box-sizing: border-box gilt -
+     sonst wuerde der Rand unten die 34x30 px auf 37x33 px aufblasen. */
+  box-sizing: border-box;
+  /* Deckender Rand statt transparent (Feature 15, 02.09.2026, seither
+     beibehalten).
+     Farbe --widget-bg statt --app-bg (Korrektur 02.09.2026, Gerätetest):
+     die Zeile selbst ist per Sammelkarten-Custom-CSS
+     (aura.0.config.app-config, .aura-widget-wr2-01 .shutter-row)
+     transparent geschaltet, die sichtbare Karte dahinter ist
+     .floor-devices mit background: var(--widget-bg). Ein Rand in
+     --app-bg (fast Schwarz) stach deshalb sichtbar als dunkler Rahmen
+     gegen die hellere Karte ab, obwohl er "unsichtbar" gemeint war. */
+  border: 1.5px solid var(--widget-bg);
+  /* --app-bg (fast Schwarz) ersetzt durch --text-secondary (Wunsch
+     Sascha, 02.09.2026): gleicher Grund wie beim Rand oben - die Taste
+     sitzt auf der helleren Karte (--widget-bg), ein Farbmix gegen
+     Fast-Schwarz wirkte dagegen zu dunkel. */
+  background: color-mix(in srgb, var(--accent) 8%, var(--text-secondary));
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  /* border-color bewusst NICHT in der Liste: eine transitionierte
+     border-color blieb im Test reproduzierbar haengen (Feature 15). */
+  transition: background-color 0.15s, color 0.15s, transform 0.09s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Eigener Stapelkontext (02.09.2026, Runde 4): haelt das Icon
+     (.row-btn-icon) und den unsichtbaren Haptik-Schalter
+     (.haptic-btn-switch) in vorhersagbarer z-Reihenfolge zusammen, statt
+     dass eines davon ueber static-Vorfahren-Elemente hinweg unkontrolliert
+     nach oben "durchsickert". */
+  isolation: isolate;
+}
+
+/* Nur auf Geraeten mit echtem Zeiger aktiv: auf iOS bleibt :hover nach dem
+   Antippen sonst haengen (Element hat einen Klick-Handler ueber
+   stopPropagation), bis irgendwo anders hingetippt wird - sichtbar als
+   Taste in falscher Farbe nach dem Ablauf des Tippschutz-Countdowns
+   (Feature 15, Korrektur 02.09.2026, Gerätetest). */
+@media (hover: hover) and (pointer: fine) {
+  .row-actions .row-btn:hover:not(.is-disabled) {
+    background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+}
+
+/* :not(.is-disabled, .row-btn-plain) statt zweier getrennter :not() (03.09.2026):
+   Ein zusaetzliches, separates `:not(.row-btn-plain)` wuerde die Spezifitaet
+   dieser Regel von (0,4,0) auf (0,5,0) heben - damit haette sie die eigene,
+   spezifischere Stopp-Tasten-Regel weiter unten (.row-btn-stop:active,
+   ebenfalls (0,4,0), gewinnt bisher nur durch spaetere Position im Text)
+   ueberstimmt und die Stopp-Taste waere beim Antippen faelschlich blau statt
+   bernstein geworden. Die kombinierte Not-Liste zaehlt dagegen nur EINMAL
+   (Selectors Level 4: Spezifitaet von :not() = Maximum der Argumente, nicht
+   Summe) - Spezifitaet bleibt bei (0,4,0), die Kaskaden-Reihenfolge mit der
+   Stopp-Tasten-Regel bleibt unveraendert wie vor dieser Aenderung. */
+.row-actions .row-btn:active:not(.is-disabled, .row-btn-plain) {
+  background-color: var(--accent);
+  color: white;
+  transform: scale(0.94);
+}
+
+.row-actions .row-btn.is-disabled {
+  opacity: 0.4;
+}
+
+/* Plain-Button ohne Kachel-Optik (seit 03.09.2026 Normalfall fuer beide
+   Auf/Zu-Tasten, vorher nur testweise am Gaeste-WC): ein normaler <button>
+   statt HapticButton/Tippschutz. Grund: HapticButton legt einen echten, nur
+   unsichtbaren iOS-Systemschalter (<input type="checkbox" switch>) ueber die
+   Taste fuer das spuerbare Klicken - aber ein echter Schalter kippt bei
+   jeder Beruehrung, auch waehrend man vorbeizieht (kein Teil der
+   Scroll-vs-Tipp-Erkennung des Browsers wie bei einem <button>). Das war die
+   Ursache fuer Fehltipps beim Vorbeiscrollen, die Feature 15 (Tippschutz)
+   noetig gemacht hatten - mit dem echten <button> entfaellt das Problem an
+   der Wurzel, der Tippschutz kann komplett weg. Erbt Masse/Transition/
+   touch-action weiter von .row-btn, ueberschreibt nur die Kachel-Optik.
+   Nutzt das native :disabled statt der .is-disabled-Klasse, weil dieser
+   Knopf kein HapticButton ist. */
+.row-actions .row-btn-plain {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+}
+
+.row-actions .row-btn-plain:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Beruehrungs-Rueckmeldung fuer den Plain-Button (03.09.2026): KEIN
+   Farbwechsel/keine Kachel-Verkleinerung wie bei .row-btn oben - genau das
+   sorgte fuer ein stoerendes "blaues Aufblitzen" beim einfachen Antippen.
+   Stattdessen nur eine dezente Vergroesserung des Symbols, wie beim
+   Standard-Aura-Schalter im Icon-Modus (SwitchWidget.tsx, iconControlButton:
+   hover:scale-110) - derselbe Faktor 1.10, nicht neu erfunden. Taste selbst
+   bleibt transparent, Farbe bleibt --text-secondary. */
+.row-actions .row-btn-plain:active:not(:disabled) .row-btn-icon {
+  transform: scale(1.1);
+}
+
+/* Icon der Taste: eigener Stapelkontext-Platz (position: relative), damit
+   es zuverlaessig ueber dem Tastenhintergrund liegt und nicht von anderen
+   positionierten Geschwistern (z.B. dem Haptik-Schalter) verdeckt wird.
+   transition nur auf transform (03.09.2026, fuer die Plain-Button-
+   Beruehrungsrueckmeldung oben) - betrifft ausschliesslich die beiden
+   Plain-Button-Icons, die Stopp-Taste rendert ihr Symbol ohne diesen Span. */
+.row-btn-icon {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s;
+}
+
+/* Haptik-Schalter (siehe HapticButton.tsx) muss ueber dem Icon liegen,
+   sonst faengt es die Beruehrung ab, bevor sie den echten Schalter
+   erreicht - der Trick vom 12.08.2026 haengt genau daran. */
+.row-actions .row-btn .haptic-btn-switch {
+  z-index: 3;
+}
+
+.row-actions .row-btn-stop {
+  height: var(--btn-h);
+  /* Exakt die Breite der zwei Auf/Zu-Tasten plus der Luecke dazwischen -
+     nicht mehr der feste Faktor 2,3636 aus Feature 14 (der galt fuer die
+     alten 48x44-px-Tasten und war nach der Verkleinerung auf 34x30 px
+     falsch: 2 x 34 + 8 = 76 px, der alte Faktor ergab nur 70,9 px -
+     sichtbar schmaler als die beiden Tasten zusammen. Korrektur
+     02.09.2026, Gerätetest. Masse seither per --btn-h/--btn-w/--btn-gap
+     oben in .row-actions ein zweites Mal angepasst, Formel unveraendert -
+     aktuell 74 x 36 px statt 76 x 30 px). */
+  width: calc(var(--btn-w) * 2 + var(--btn-gap));
+  background-color: var(--accent-yellow);
+  color: var(--stop-fg, #1c1917);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .row-actions .row-btn-stop:hover:not(.is-disabled) {
+    background-color: var(--accent-yellow);
+    color: var(--stop-fg, #1c1917);
+  }
+}
+
+.row-actions .row-btn-stop:active:not(.is-disabled) {
+  background-color: color-mix(in srgb, var(--accent-yellow) 82%, #000);
+  color: var(--stop-fg, #1c1917);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-actions .haptic-btn:active:not(.is-disabled) {
+    transform: none;
+  }
+}

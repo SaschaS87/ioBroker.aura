@@ -1,0 +1,100 @@
+.shutter-viz {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Grundfarbe der Lamellen. Bernstein setzt .viz-moving darauf, sonst grau. */
+  color: var(--text-secondary);
+}
+
+.shutter-viz.viz-small {
+  width: 34px;
+  height: 44px;
+}
+
+.shutter-viz.viz-large {
+  width: 88px;
+  height: 112px;
+}
+
+.shutter-viz.viz-control {
+  width: var(--viz-w);
+  height: var(--viz-h);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+
+.shutter-viz.viz-unknown svg {
+  opacity: 0.4;
+}
+
+.shutter-viz svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Fahrt ────────────────────────────────────────────────────────────────
+   Waehrend die TaHoma-Box MovingState=true meldet, wandern die Lamellen in
+   Fahrtrichtung und der Behang faerbt sich bernstein. Die Kante folgt der
+   gemeldeten Position: liefert die Box Zwischenwerte, gleitet sie mit; kommt
+   nur der Endwert, gleitet sie am Schluss dorthin. Es wird also nichts
+   geschaetzt, nur weich dargestellt.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.viz-fill-clip {
+  transition: height 900ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.shutter-viz.viz-dragging .viz-fill-clip {
+  transition: none;
+}
+
+.shutter-viz.viz-moving {
+  color: var(--accent-yellow);
+}
+
+.viz-frame {
+  transition: stroke 250ms ease;
+}
+
+/* Verschoben wird um GENAU eine Lamellen-Periode, dadurch ist der Lauf
+   nahtlos. Die Periode haengt seit dem 31.08.2026 an der Fenstergroesse
+   (eine Lamelle = 5 % Fahrweg), steht also nicht mehr fest – ShutterViz.tsx
+   reicht sie als --viz-p herein. */
+@keyframes viz-slats-down {
+  from { transform: translateY(calc(var(--viz-p, 8) * -1px)); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes viz-slats-up {
+  from { transform: translateY(0); }
+  to   { transform: translateY(calc(var(--viz-p, 8) * -1px)); }
+}
+
+.viz-dir-down .viz-slats {
+  animation: viz-slats-down 700ms linear infinite;
+}
+
+.viz-dir-up .viz-slats {
+  animation: viz-slats-up 700ms linear infinite;
+}
+
+/* Bewegung ohne bekannte Richtung (z.B. am Wandschalter ausgeloest):
+   ruhiges Pulsieren statt Wandern. */
+.viz-moving:not(.viz-dir-up):not(.viz-dir-down) .viz-slats {
+  animation: viz-slats-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes viz-slats-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-fill-clip {
+    transition: none;
+  }
+
+  .viz-slats {
+    animation: none !important;
+  }
+}
