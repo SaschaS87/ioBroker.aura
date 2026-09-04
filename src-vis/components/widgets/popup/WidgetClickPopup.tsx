@@ -13,10 +13,15 @@ import {
 } from '../../../store/popupConfigStore';
 import { buildPopupSubMap, popupMainDp, subAll } from '../../../utils/popupPlaceholders';
 import { DynamicTitle } from '../DynamicTitle';
+import { useDatapoint } from '../../../hooks/useDatapoint';
+import { useGlobalSettingsStore } from '../../../store/globalSettingsStore';
+import { formatNum } from '../../../utils/formatValue';
+import { TEMP_COLOR_CSS } from '../../../themes';
 import { DimmerPopupBody } from './DimmerPopupBody';
 import { SwitchPopupBody } from './SwitchPopupBody';
 import { ShutterPopupBody } from './ShutterPopupBody';
 import { MediaplayerPopupBody } from './MediaplayerPopupBody';
+import { RoomtemperaturePopupBody } from './RoomtemperaturePopupBody';
 import { ImagePopupBody } from './ImagePopupBody';
 import { IframePopupBody } from './IframePopupBody';
 import { JsonPopupBody } from './JsonPopupBody';
@@ -24,6 +29,35 @@ import { HtmlPopupBody } from './HtmlPopupBody';
 import { WidgetEmbedBody } from './WidgetEmbedBody';
 import { DeviceDpsBody } from './DeviceDpsBody';
 import { TabEmbedBody } from './TabEmbedBody';
+
+interface PopupHeaderTempProps {
+    action: ClickAction;
+    widget: WidgetConfig;
+}
+
+function PopupHeaderTemp({ action, widget }: PopupHeaderTempProps) {
+    // Only render for roomtemperature popups with the option enabled
+    if (action.kind !== 'popup-roomtemperature' || widget.options?.detailsHeaderValue !== true) {
+        return null;
+    }
+
+    const dp = action.temperatureDp || widget.datapoint;
+    const { value: rawTemp } = useDatapoint(dp);
+    const temp = typeof rawTemp === 'number' ? rawTemp : null;
+    const { defaultDecimals } = useGlobalSettingsStore();
+    const decimals = (widget.options?.decimals as number) ?? defaultDecimals;
+    const unit = (widget.options?.unit as string) ?? '°C';
+
+    // No numeric value: don't render anything
+    if (temp === null) return null;
+
+    return (
+        <span className="ml-2 font-semibold text-sm" style={{ color: TEMP_COLOR_CSS }}>
+            {formatNum(temp, decimals)}
+            {unit}
+        </span>
+    );
+}
 
 function normalizeAction(action: ClickAction): ClickAction {
     switch (action.kind) {
@@ -74,8 +108,12 @@ function getTitle(widget: WidgetConfig, action: ClickAction, titleOverride?: str
             return 'Schalter';
         case 'popup-shutter':
             return 'Rolladen';
+        case 'popup-shutterfine':
+            return 'Rollladen-Feinregler';
         case 'popup-mediaplayer':
             return 'Mediaplayer';
+        case 'popup-roomtemperature':
+            return 'Raumklima';
         case 'popup-image':
             return 'Bild';
         case 'popup-iframe':
@@ -179,8 +217,12 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                 return <SwitchPopupBody widget={widget} />;
             case 'popup-shutter':
                 return <ShutterPopupBody widget={widget} />;
+            case 'popup-shutterfine':
+                return <ShutterPopupBody widget={widget} />;
             case 'popup-mediaplayer':
                 return <MediaplayerPopupBody widget={widget} />;
+            case 'popup-roomtemperature':
+                return <RoomtemperaturePopupBody widget={widget} action={action as Extract<ClickAction, { kind: 'popup-roomtemperature' }>} />;
             case 'popup-image':
                 return <ImagePopupBody action={action} />;
             case 'popup-iframe':
@@ -246,6 +288,7 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                         <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
                             <DynamicTitle text={title} />
                         </span>
+                        <PopupHeaderTemp action={action} widget={widget} />
                     </div>
                 )}
 

@@ -49,6 +49,9 @@ import { StatusOverviewWidget } from './StatusOverviewWidget';
 import { MirrorWidget } from './MirrorWidget';
 import { MessagesWidget } from './MessagesWidget';
 import { MenuWidget } from './MenuWidget';
+import { RainStationWidget } from './RainStationWidget';
+import { RainDailyWidget } from './RainDailyWidget';
+import { RoomClimateWidget } from './RoomClimateWidget';
 
 // Chart widgets are heavy (recharts ~380 KB, echarts ~1.1 MB) — lazy-loaded so
 // dashboards without charts skip the cost. Consumers must render these inside
@@ -66,6 +69,20 @@ const EChartsPresetWidget = lazyWithReload(() =>
 const MapWidget = lazyWithReload(() => import('./MapWidget').then((m) => ({ default: m.MapWidget })));
 // LoadTimesWidget pulls in recharts — lazy-load it like the other chart widgets.
 const LoadTimesWidget = lazyWithReload(() => import('./LoadTimesWidget').then((m) => ({ default: m.LoadTimesWidget })));
+// HeatingWidget will pull in echarts for its detail chart later — lazy from the start.
+const HeatingWidget = lazyWithReload(() => import('./HeatingWidget').then((m) => ({ default: m.HeatingWidget })));
+// WeatherForecastStripWidget pulls in echarts for its detail chart.
+const WeatherForecastStripWidget = lazyWithReload(() =>
+    import('./WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
+);
+// ShutterRoomsWidget is a specialized widget for TaHoma roller shutters, grouped by room.
+const ShutterRoomsWidget = lazyWithReload(() =>
+    import('./shutterrooms/ShutterRoomsWidget').then((m) => ({ default: m.ShutterRoomsWidget })),
+);
+// ShutterFloorsWidget is a specialized widget for TaHoma roller shutters, grouped by floor.
+const ShutterFloorsWidget = lazyWithReload(() =>
+    import('./shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
+);
 
 export function getWidgetMap() {
     return {
@@ -124,6 +141,13 @@ export function getWidgetMap() {
         mirror: MirrorWidget,
         messages: MessagesWidget,
         menu: MenuWidget,
+        shutterrooms: ShutterRoomsWidget,
+        shutterfloors: ShutterFloorsWidget,
+        roomclimate: RoomClimateWidget,
+        rainstation: RainStationWidget,
+        raindaily: RainDailyWidget,
+        heating: HeatingWidget,
+        weatherforecaststrip: WeatherForecastStripWidget,
         // `satisfies` makes a missing widget type a build error instead of a
         // "Unbekannter Widget-Typ" notice in mirrors, popups and tab embeds.
     } as const satisfies Record<WidgetType, unknown>;

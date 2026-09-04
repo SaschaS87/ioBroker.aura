@@ -54,6 +54,8 @@ export type WidgetType =
     | 'fill'
     | 'trash'
     | 'shutter'
+    | 'shutterrooms'
+    | 'shutterfloors'
     | 'jsontable'
     | 'windowcontact'
     | 'binarysensor'
@@ -69,6 +71,11 @@ export type WidgetType =
     | 'button'
     | 'climate'
     | 'aircontrol'
+    | 'roomclimate'
+    | 'rainstation'
+    | 'raindaily'
+    | 'heating'
+    | 'weatherforecaststrip'
     | 'universal'
     | 'enum'
     | 'light'
@@ -383,7 +390,9 @@ export type ClickAction =
     | { kind: 'popup-thermostat'; setpointDp?: string; modeDp?: string }
     | { kind: 'popup-switch' }
     | { kind: 'popup-shutter' }
+    | { kind: 'popup-shutterfine' }
     | { kind: 'popup-mediaplayer' }
+    | { kind: 'popup-roomtemperature'; temperatureDp?: string; humidityDp?: string; historyInstance?: string }
     | { kind: 'popup-image'; url?: string; dp?: string; fit?: 'contain' | 'cover' }
     | {
           kind: 'popup-iframe';

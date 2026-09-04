@@ -35,6 +35,7 @@ import { Dashboard } from './components/layout/Dashboard';
 import { FocusedWidgetContext } from './contexts/FocusedWidgetContext';
 import { TabBar } from './components/layout/TabBar';
 import { LayoutDrawer } from './components/layout/LayoutDrawer';
+import { HeaderLogo } from './components/common/HeaderLogo';
 import { useIframeStore } from './store/iframeStore';
 import { useEffectiveThemeId, useEffectiveCustomVars, useEffectiveSettings } from './hooks/useEffectiveSettings';
 import { useT } from './i18n';
@@ -1233,6 +1234,7 @@ export default function App() {
                                         items={drawerItems}
                                     />
                                 )}
+                                <HeaderLogo />
                                 <h1 className="aura-titel text-xl font-bold tracking-tight truncate">
                                     {effectiveSettings.headerTitle || 'Aura'}
                                 </h1>

@@ -98,6 +98,7 @@ import { StatusOverviewConfig } from '../config/StatusOverviewConfig';
 import { EnergiebilanzConfig } from '../config/EnergiebilanzConfig';
 import { StaticListConfig } from '../config/StaticListConfig';
 import { GroupActionConfig } from '../config/GroupActionConfig';
+import { ShutterRoomsConfig } from '../config/ShutterRoomsConfig';
 import {
     listGroupCandidates,
     groupGroupCandidates,
@@ -137,6 +138,8 @@ import { TrashScheduleConfig } from '../widgets/TrashScheduleWidget';
 // Single source of truth for type → component. WidgetFrame, the mirror widget and the
 // popup/tab embeds all render through this one map, so a new widget type works everywhere.
 import { getWidgetMap } from '../widgets/widgetMap';
+import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
+import type { RainStationDef } from '../widgets/RainStationWidget';
 import { MirrorConfig } from '../config/MirrorConfig';
 import { AirControlConfig } from '../config/AirControlConfig';
 import { WC_PRESETS, WC_PRESET_LABELS } from '../widgets/WindowContactWidget';
@@ -1754,6 +1757,552 @@ function ClimateConfig({
 
             {/* History-Konfiguration */}
             <ChartHistoryConfig config={config} onConfigChange={onConfigChange} />
+        </>
+    );
+}
+
+// ── RoomClimateConfig ─────────────────────────────────────────────────────────
+// Config panel for the collapsible room-climate bar. The temperature dp is the
+// widget's main datapoint; humidity + history instance are editable here so
+// new sensors can be wired up entirely from the admin UI.
+function RoomClimateConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (target: 'climate_humidityDp') => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const { defaultDecimals } = useGlobalSettingsStore();
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Raumklima
+            </p>
+
+            {/* Luftfeuchtigkeit DP */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Luftfeuchtigkeit (optional)
+                </label>
+                <div className="flex gap-1">
+                    <input
+                        type="text"
+                        value={(o.humidityDatapoint as string) ?? ''}
+                        onChange={(e) => set({ humidityDatapoint: e.target.value || undefined })}
+                        placeholder="optional"
+                        className={inputCls}
+                        style={inputStyle}
+                    />
+                    <button
+                        onClick={() => onPickerOpen('climate_humidityDp')}
+                        className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                        style={btnStyle}
+                        title="Aus ioBroker wählen"
+                    >
+                        <Database size={13} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Schriftgrößen */}
+            <div className="flex gap-2 mb-2">
+                <div className="flex-1">
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                        Schrift Name (px)
+                    </label>
+                    <input
+                        type="number"
+                        min={10}
+                        max={28}
+                        value={(o.nameFontSize as number) ?? 17}
+                        onChange={(e) => set({ nameFontSize: Number(e.target.value) || undefined })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={inputStyle}
+                    />
+                </div>
+                <div className="flex-1">
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                        Schrift Wert (px)
+                    </label>
+                    <input
+                        type="number"
+                        min={12}
+                        max={36}
+                        value={(o.valueFontSize as number) ?? 20}
+                        onChange={(e) => set({ valueFontSize: Number(e.target.value) || undefined })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={inputStyle}
+                    />
+                </div>
+            </div>
+
+            {/* Dezimalstellen */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Dezimalstellen
+                </label>
+                <div className="flex gap-1">
+                    <input
+                        type="number"
+                        min={0}
+                        max={4}
+                        disabled={o.decimals === undefined}
+                        value={(o.decimals as number) ?? defaultDecimals}
+                        onChange={(e) => set({ decimals: Number(e.target.value) })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={{
+                            background: 'var(--app-bg)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--app-border)',
+                            opacity: o.decimals === undefined ? 0.5 : 1,
+                        }}
+                    />
+                    <button
+                        onClick={() => set({ decimals: o.decimals === undefined ? defaultDecimals : undefined })}
+                        title={
+                            o.decimals === undefined
+                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
+                                : 'Auf globale Einstellung zurücksetzen'
+                        }
+                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
+                        style={{
+                            background: o.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
+                            color: o.decimals === undefined ? '#fff' : 'var(--text-secondary)',
+                        }}
+                    >
+                        Global
+                    </button>
+                </div>
+            </div>
+
+            {/* Details auf dem Handy: Aufklappen vs. Sheet */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Details auf dem Handy
+                </label>
+                <div className="flex gap-1">
+                    <button
+                        onClick={() => set({ mobileDetails: undefined })}
+                        className="flex-1 px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                        style={{
+                            background: o.mobileDetails === undefined ? 'var(--accent)' : 'var(--app-border)',
+                            color: o.mobileDetails === undefined ? '#fff' : 'var(--text-secondary)',
+                        }}
+                    >
+                        Aufklappen
+                    </button>
+                    <button
+                        onClick={() => set({ mobileDetails: 'sheet' })}
+                        className="flex-1 px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                        style={{
+                            background: o.mobileDetails === 'sheet' ? 'var(--accent)' : 'var(--app-border)',
+                            color: o.mobileDetails === 'sheet' ? '#fff' : 'var(--text-secondary)',
+                        }}
+                    >
+                        Sheet von unten
+                    </button>
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Sheet blendet zusätzlich das Dreieck aus — auch auf breiten Bildschirmen.
+                </p>
+            </div>
+
+            {/* Temperatur in Kopfzeile (Popup/Sheet) */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Temperatur in der Kopfzeile (Popup/Sheet)
+                </label>
+                <button
+                    onClick={() => set({ detailsHeaderValue: !o.detailsHeaderValue })}
+                    className="w-full px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                    style={{
+                        background: o.detailsHeaderValue ? 'var(--accent)' : 'var(--app-border)',
+                        color: o.detailsHeaderValue ? '#fff' : 'var(--text-secondary)',
+                    }}
+                >
+                    {o.detailsHeaderValue ? 'An' : 'Aus'}
+                </button>
+            </div>
+
+            {/* Zuletzt aktualisiert im Popup/Sheet */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Zuletzt aktualisiert im Popup/Sheet
+                </label>
+                <button
+                    onClick={() => set({ detailsLastChange: !o.detailsLastChange })}
+                    className="w-full px-2 py-1.5 rounded text-[11px] font-medium focus:outline-none transition-colors"
+                    style={{
+                        background: o.detailsLastChange ? 'var(--accent)' : 'var(--app-border)',
+                        color: o.detailsLastChange ? '#fff' : 'var(--text-secondary)',
+                    }}
+                >
+                    {o.detailsLastChange ? 'An' : 'Aus'}
+                </button>
+            </div>
+
+            {/* History-Konfiguration (Adapter-Instanz + Zeitraum) */}
+            <ChartHistoryConfig config={config} onConfigChange={onConfigChange} />
+        </>
+    );
+}
+
+// ── RainStationConfig ─────────────────────────────────────────────────────────
+// Config panel for the rain-station switcher card: an editable list of
+// stations, each with a name and four rain datapoints (all picker-backed), so
+// new stations can be wired up entirely from the admin UI.
+const RAIN_DP_FIELDS: { key: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp'; label: string }[] = [
+    { key: 'todayDp', label: 'Heute (Tagessumme)' },
+    { key: 'lastHourDp', label: 'Letzte Stunde' },
+    { key: 'yesterdayDp', label: 'Gestern' },
+    { key: 'currentDp', label: 'Aktuell (Momentanwert)' },
+];
+
+function RainStationConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (idx: number, field: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp') => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const stations = ((o.stations as RainStationDef[]) ?? []).map((s) => ({ ...s }));
+    const setStations = (list: RainStationDef[]) => set({ stations: list });
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Regen-Stationen
+            </p>
+
+            {/* Untertitel */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Untertitel
+                </label>
+                <input
+                    type="text"
+                    value={(o.subtitle as string) ?? 'Netatmo-Station'}
+                    onChange={(e) => set({ subtitle: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                />
+            </div>
+
+            {stations.map((st, i) => (
+                <div
+                    key={i}
+                    className="mb-2 p-2 rounded-lg"
+                    style={{ border: '1px solid var(--app-border)' }}
+                >
+                    <div className="flex gap-1 mb-1.5">
+                        <input
+                            type="text"
+                            value={st.name ?? ''}
+                            placeholder={`Station ${i + 1} – Name`}
+                            onChange={(e) => {
+                                const list = stations.map((s) => ({ ...s }));
+                                list[i].name = e.target.value;
+                                setStations(list);
+                            }}
+                            className={inputCls}
+                            style={inputStyle}
+                        />
+                        <button
+                            onClick={() => setStations(stations.filter((_, k) => k !== i))}
+                            className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                            style={btnStyle}
+                            title="Station entfernen"
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    </div>
+                    {RAIN_DP_FIELDS.map((f) => (
+                        <div key={f.key} className="mb-1.5">
+                            <label className="text-[11px] mb-0.5 block" style={{ color: 'var(--text-secondary)' }}>
+                                {f.label}
+                            </label>
+                            <div className="flex gap-1">
+                                <input
+                                    type="text"
+                                    value={(st[f.key] as string) ?? ''}
+                                    onChange={(e) => {
+                                        const list = stations.map((s) => ({ ...s }));
+                                        list[i][f.key] = e.target.value || undefined;
+                                        setStations(list);
+                                    }}
+                                    className={inputCls}
+                                    style={inputStyle}
+                                />
+                                <button
+                                    onClick={() => onPickerOpen(i, f.key)}
+                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                    style={btnStyle}
+                                    title="Aus ioBroker wählen"
+                                >
+                                    <Database size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ))}
+
+            <button
+                onClick={() => setStations([...stations, {}])}
+                className="w-full text-xs rounded-lg px-2.5 py-2 hover:opacity-80"
+                style={btnStyle}
+            >
+                + Station hinzufügen
+            </button>
+        </>
+    );
+}
+
+// ── RainDailyConfig ───────────────────────────────────────────────────────────
+// Same options.stations shape as the rainstation card (only todayDp is used),
+// so both rain widgets can share one configured station list — plus the history
+// instance the raw rain_today entries are read from.
+
+function RainDailyConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (idx: number) => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const stations = ((o.stations as RainStationDef[]) ?? []).map((s) => ({ ...s }));
+    const setStations = (list: RainStationDef[]) => set({ stations: list });
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Regenmenge pro Tag
+            </p>
+
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    History-Instanz
+                </label>
+                <input
+                    type="text"
+                    value={(o.historyInstance as string) ?? 'influxdb.0'}
+                    onChange={(e) => set({ historyInstance: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                />
+            </div>
+
+            {stations.map((st, i) => (
+                <div key={i} className="mb-2 p-2 rounded-lg" style={{ border: '1px solid var(--app-border)' }}>
+                    <div className="flex gap-1 mb-1.5">
+                        <input
+                            type="text"
+                            value={st.name ?? ''}
+                            placeholder={`Station ${i + 1} – Name`}
+                            onChange={(e) => {
+                                const list = stations.map((s) => ({ ...s }));
+                                list[i].name = e.target.value;
+                                setStations(list);
+                            }}
+                            className={inputCls}
+                            style={inputStyle}
+                        />
+                        <button
+                            onClick={() => setStations(stations.filter((_, k) => k !== i))}
+                            className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                            style={btnStyle}
+                            title="Station entfernen"
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    </div>
+                    <div className="mb-1.5">
+                        <label className="text-[11px] mb-0.5 block" style={{ color: 'var(--text-secondary)' }}>
+                            Tagesmenge (rain_today)
+                        </label>
+                        <div className="flex gap-1">
+                            <input
+                                type="text"
+                                value={st.todayDp ?? ''}
+                                onChange={(e) => {
+                                    const list = stations.map((s) => ({ ...s }));
+                                    list[i].todayDp = e.target.value || undefined;
+                                    setStations(list);
+                                }}
+                                className={inputCls}
+                                style={inputStyle}
+                            />
+                            <button
+                                onClick={() => onPickerOpen(i)}
+                                className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                style={btnStyle}
+                                title="Aus ioBroker wählen"
+                            >
+                                <Database size={13} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            <button
+                onClick={() => setStations([...stations, {}])}
+                className="w-full text-xs rounded-lg px-2.5 py-2 hover:opacity-80"
+                style={btnStyle}
+            >
+                + Station hinzufügen
+            </button>
+        </>
+    );
+}
+
+// ── HeatingConfig ─────────────────────────────────────────────────────────────
+// Config panel for the heating widget (STIEBEL LWZ 304 Trend). Every datapoint
+// the stage-1 widget shows is picker-backed here, so the sensors can be rewired
+// entirely from the admin UI. An empty field falls back to the real LWZ/stiebel
+// default baked into HeatingWidget — the placeholder shows that default so the
+// user always sees which datapoint is actually live.
+//
+// NOTE: this default map mirrors DEFAULT_DP in HeatingWidget.tsx. It is used ONLY
+// for the greyed-out placeholder (cosmetic); the real runtime fallback lives in
+// the widget. Keep the two in sync when datapoints change.
+const HEATING_DEFAULT_DP: Record<string, string> = {
+    heizenDp: 'javascript.0.LWZ.HEIZEN',
+    warmwasserDp: 'javascript.0.LWZ.WARMWASSERAUFBEREITUNG',
+    verdichterDp: 'javascript.0.LWZ.VERDICHTER',
+    pumpeDp: 'javascript.0.LWZ.HEIZKREISPUMPE',
+    abtauenDp: 'javascript.0.LWZ.ABTAUEN_VERDAMPFER',
+    heizstabDp: 'javascript.0.LWZ.ELEKTRISCHE_NACHERWÄRMUNG',
+    vorlaufDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.VORLAUFTEMP',
+    ruecklaufDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.RÜCKLAUFTEMP',
+    spreizungDp: 'javascript.0.LWZ.SPREIZUNG',
+    volumenstromDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.VOLUMENSTROM',
+    aussenDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.AUSSENTEMPERATUR',
+};
+
+// Grouped so the panel reads like the widget: mode switch, process icons, tiles.
+const HEATING_DP_GROUPS: { title: string; fields: { key: string; label: string }[] }[] = [
+    {
+        title: 'Status & Modus',
+        fields: [
+            { key: 'heizenDp', label: 'Heizen aktiv (grün)' },
+            { key: 'warmwasserDp', label: 'Warmwasser aktiv (blau)' },
+            { key: 'verdichterDp', label: 'Verdichter (für „seit X min")' },
+        ],
+    },
+    {
+        title: 'Prozess-Anzeigen',
+        fields: [
+            { key: 'pumpeDp', label: 'Heizkreispumpe' },
+            { key: 'abtauenDp', label: 'Abtauen Verdampfer' },
+            { key: 'heizstabDp', label: 'Elektr. Nacherwärmung (Heizstab)' },
+        ],
+    },
+    {
+        title: 'Messwerte (Kacheln)',
+        fields: [
+            { key: 'vorlaufDp', label: 'Vorlauftemperatur' },
+            { key: 'ruecklaufDp', label: 'Rücklauftemperatur' },
+            { key: 'spreizungDp', label: 'Spreizung' },
+            { key: 'volumenstromDp', label: 'Volumenstrom' },
+            { key: 'aussenDp', label: 'Außentemperatur' },
+        ],
+    },
+];
+
+function HeatingConfig({
+    config,
+    onConfigChange,
+    onPickerOpen,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+    onPickerOpen: (field: string) => void;
+}) {
+    const o = config.options ?? {};
+    const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const btnStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    return (
+        <>
+            <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
+            <p className="text-[11px] font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                Heizung – Datenpunkte
+            </p>
+            <p className="text-[10px] mb-2" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
+                Leer lassen = grau angezeigter Standard-Datenpunkt wird verwendet.
+            </p>
+
+            {HEATING_DP_GROUPS.map((grp) => (
+                <div key={grp.title} className="mb-2">
+                    <div
+                        className="text-[10px] font-semibold uppercase tracking-wider pt-1 mb-1"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
+                        {grp.title}
+                    </div>
+                    {grp.fields.map((f) => (
+                        <div key={f.key} className="mb-1.5">
+                            <label className="text-[11px] mb-0.5 block" style={{ color: 'var(--text-secondary)' }}>
+                                {f.label}
+                            </label>
+                            <div className="flex gap-1">
+                                <input
+                                    type="text"
+                                    value={(o[f.key] as string) ?? ''}
+                                    placeholder={HEATING_DEFAULT_DP[f.key] ?? 'optional'}
+                                    onChange={(e) => set({ [f.key]: e.target.value || undefined })}
+                                    className={inputCls}
+                                    style={inputStyle}
+                                />
+                                <button
+                                    onClick={() => onPickerOpen(f.key)}
+                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                    style={btnStyle}
+                                    title="Aus ioBroker wählen"
+                                >
+                                    <Database size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ))}
         </>
     );
 }
@@ -6252,6 +6801,8 @@ export function WidgetFrame({
         | 'climate_humidityDp'
         | 'climate_targetDp'
         | 'climate_pressureDp'
+        | 'rainstation_dp'
+        | 'heating_dp'
         | 'iframe_urlDp'
         | 'image_dp'
         | 'light_switchDp'
@@ -6289,6 +6840,12 @@ export function WidgetFrame({
         idx: 0,
         field: 'latDp',
     });
+    const [rainStationPicker, setRainStationPicker] = useState<{
+        idx: number;
+        field: 'todayDp' | 'lastHourDp' | 'yesterdayDp' | 'currentDp';
+    }>({ idx: 0, field: 'todayDp' });
+    // Which heating option key the generic 'heating_dp' picker writes back into.
+    const [heatingPickerField, setHeatingPickerField] = useState<string>('heizenDp');
     const [mapQuickViewPicker, setMapQuickViewPicker] = useState<{ idx: number; field: 'jsonDp' | 'latDp' | 'lonDp' }>({
         idx: 0,
         field: 'latDp',
@@ -6787,13 +7344,43 @@ export function WidgetFrame({
         framingType === 'panels' ||
         framingType === 'iframe' ||
         framingType === 'map' ||
-        framingType === 'echartsPreset';
+        framingType === 'echartsPreset' ||
+        // roomclimate pads itself: horizontal = widgetPadding (stays aligned with
+        // other widgets), vertical fixed compact for the slim collapsed bar.
+        framingType === 'roomclimate' ||
+        // heating: no outer frame (transparent) + no frame padding, so the inner
+        // status card and tiles span the full column width — each its own card.
+        framingType === 'heating' ||
+        // weatherforecaststrip: same idea — the strip+detail shell is its own
+        // full-width card.
+        framingType === 'weatherforecaststrip' ||
+        // shutterrooms: no outer frame (transparent) + no frame padding, so the
+        // room list spans the full column width, just like heating.
+        framingType === 'shutterrooms' ||
+        // shutterfloors: no outer frame (transparent) + no frame padding, so the
+        // floor list spans the full column width, just like heating.
+        framingType === 'shutterfloors';
     // Publish the padding that is actually applied, so widget content can align to
     // the card edge instead of assuming the default. Scrolling lists whose rows
     // bleed into this gutter need it to stay inside the card (.aura-bleed-* in
     // index.css) — with a small "Innenabstand der Widgets" a fixed bleed would
     // push the rows and the scrollbar past the card border (#590).
     const padVar = { '--aura-widget-pad': `${isHeader || isNoPad ? 0 : widgetPadding}px` } as React.CSSProperties;
+
+    // Height the Suspense placeholder has to reserve while a lazy widget's chunk
+    // is still downloading. 'h-full' alone is not enough: in the mobile stack the
+    // autoHeight widget types (roomclimate, heating, weatherforecaststrip, …) sit
+    // in a wrapper without a height, so height:100% resolves to 0 and the card
+    // collapses to a 1 px strip — measured on the Wohnklima tab over VPN,
+    // 30.08.2026. Mirror the grid cell formula Dashboard.tsx uses instead, minus
+    // the frame padding the placeholder sits inside.
+    const framePadding = isNoPad ? 0 : widgetPadding;
+    const suspenseRowH = effectiveSettings.gridRowHeight ?? 20;
+    const suspenseGap = effectiveSettings.gridGap ?? 10;
+    const suspenseMinHeight = Math.max(
+        0,
+        config.gridPos.h * suspenseRowH + (config.gridPos.h - 1) * suspenseGap - 2 * framePadding,
+    );
 
     return (
         <div
@@ -6999,7 +7586,12 @@ export function WidgetFrame({
 
             {Widget ? (
                 <Suspense
-                    fallback={<div className="h-full w-full" style={{ background: 'var(--app-bg)', opacity: 0.3 }} />}
+                    fallback={
+                        <div
+                            className="h-full w-full"
+                            style={{ background: 'var(--app-bg)', opacity: 0.3, minHeight: suspenseMinHeight }}
+                        />
+                    }
                 >
                     <ProfiledWidget
                         widgetKey={config.id}
@@ -10145,6 +10737,43 @@ export function WidgetFrame({
                                 onPickerOpen={(t) => setPickerTarget(t)}
                             />
                         )}
+                        {config.type === 'roomclimate' && (
+                            <RoomClimateConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(t) => setPickerTarget(t)}
+                            />
+                        )}
+                        {config.type === 'rainstation' && (
+                            <RainStationConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(idx, field) => {
+                                    setRainStationPicker({ idx, field });
+                                    setPickerTarget('rainstation_dp');
+                                }}
+                            />
+                        )}
+                        {config.type === 'raindaily' && (
+                            <RainDailyConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(idx) => {
+                                    setRainStationPicker({ idx, field: 'todayDp' });
+                                    setPickerTarget('rainstation_dp');
+                                }}
+                            />
+                        )}
+                        {config.type === 'heating' && (
+                            <HeatingConfig
+                                config={config}
+                                onConfigChange={onConfigChange}
+                                onPickerOpen={(field) => {
+                                    setHeatingPickerField(field);
+                                    setPickerTarget('heating_dp');
+                                }}
+                            />
+                        )}
                         {config.type === 'echart' && <EChartConfig config={config} onConfigChange={onConfigChange} />}
                         {config.type === 'mirror' && <MirrorConfig config={config} onConfigChange={onConfigChange} />}
                         {config.type === 'aircontrol' && (
@@ -11811,6 +12440,16 @@ export function WidgetFrame({
                         {/* ── Status overview config ── */}
                         {config.type === 'statusoverview' && (
                             <StatusOverviewConfig config={config} onConfigChange={onConfigChange} />
+                        )}
+
+                        {/* ── ShutterRooms config ── */}
+                        {config.type === 'shutterrooms' && (
+                            <ShutterRoomsConfig
+                                options={config.options ?? {}}
+                                onOptionsChange={(opts) =>
+                                    onConfigChange({ ...config, options: opts })
+                                }
+                            />
                         )}
 
                         {/* ── Static List config ── */}
@@ -18333,7 +18972,9 @@ export function WidgetFrame({
                     currentValue={
                         pickerTarget === 'datapoint' || pickerTarget === 'universal-dp'
                             ? config.datapoint
-                            : pickerTarget === 'map_marker'
+                            : pickerTarget === 'heating_dp'
+                              ? ((config.options?.[heatingPickerField] as string) ?? '')
+                              : pickerTarget === 'map_marker'
                               ? (((config.options?.markers as Array<Record<string, unknown>>)?.[mapMarkerPicker.idx]?.[
                                     mapMarkerPicker.field
                                 ] as string) ?? '')
@@ -18803,6 +19444,14 @@ export function WidgetFrame({
                             onConfigChange({ ...config, options: { ...config.options, wakeUpDp: id } });
                         } else if (pickerTarget === 'camera_urlDp') {
                             onConfigChange({ ...config, options: { ...config.options, streamUrlDp: id } });
+                        } else if (pickerTarget === 'rainstation_dp') {
+                            const list = [...(((config.options?.stations as RainStationDef[]) ?? []).map((s) => ({ ...s })))];
+                            if (list[rainStationPicker.idx]) {
+                                list[rainStationPicker.idx][rainStationPicker.field] = id;
+                                onConfigChange({ ...config, options: { ...config.options, stations: list } });
+                            }
+                        } else if (pickerTarget === 'heating_dp') {
+                            onConfigChange({ ...config, options: { ...config.options, [heatingPickerField]: id } });
                         } else if (pickerTarget === 'climate_humidityDp') {
                             onConfigChange({ ...config, options: { ...config.options, humidityDatapoint: id } });
                         } else if (pickerTarget === 'climate_targetDp') {

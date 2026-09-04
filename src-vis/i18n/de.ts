@@ -621,6 +621,7 @@ export const de = {
     'theme.vars.elArc': 'Bogen',
     'theme.vars.elHeat': 'Heizen',
     'theme.vars.elCool': 'Kühlen',
+    'theme.vars.elTemp': 'Temperaturwert',
     'theme.vars.elActive': 'Aktiv',
     'theme.vars.elOn': 'An',
     'theme.vars.elOff': 'Aus',
@@ -1966,6 +1967,50 @@ export const de = {
     'alarm.cfg.compactMode.hint': 'Mode-Buttons in 2 Spalten statt 4',
     'alarm.cfg.logLines': 'Log-Einträge (max.)',
     'alarm.cfg.sizeScale': 'Globale Skalierung',
+
+    // ── Shutter Widget Messages ───────────────────────────────────────────────────
+    'shutter.notConnected': 'Gerät nicht verbunden',
+
+    // ── ShutterRooms Widget Messages ──────────────────────────────────────────────
+    'shutterrooms.all': 'Alle',
+    'shutterrooms.position': 'Position',
+    'shutterrooms.slatAngle': 'Lamellenwinkel',
+    'shutterrooms.slatFlat': 'Waagerecht',
+    'shutterrooms.slatHalf': 'Halb',
+    'shutterrooms.slatClosed': 'Geschlossen',
+    'shutterrooms.open': 'Öffnen',
+    'shutterrooms.unknown': 'Unbekannt',
+    'shutterrooms.commandSent': 'Befehl gesendet',
+    'shutterrooms.stopped': 'Gestoppt',
+    'shutterrooms.noRooms': 'Keine Räume konfiguriert',
+    'shutterrooms.notConnected': 'TaHoma-Box nicht erreichbar',
+
+    // ── ShutterSheet Funkzeile ─────────────────────────────────────────────────────
+    'shuttersheet.radio.good': 'Funk gut',
+    'shuttersheet.radio.normal': 'Funk normal',
+    'shuttersheet.radio.low': 'Funk schwach',
+    'shuttersheet.radio.checked': 'geprüft {time} Uhr',
+    'shuttersheet.radio.offline': 'Kein Funkkontakt – Anzeige veraltet',
+    'shuttersheet.radio.since': 'seit {time} Uhr',
+
+    // ── ShutterFloors Widget Messages ─────────────────────────────────────────────
+    'shutterfloors.unknown': 'unbekannt',
+    'shutterfloors.open': 'Offen',
+    'shutterfloors.closed': 'Geschlossen',
+    'shutterfloors.stopped': 'Gestoppt',
+    'shutterfloors.commandSent': 'Befehl gesendet',
+    'shutterfloors.noFloors': 'Keine Etagen konfiguriert',
+
+    // ── SignalStrengthBox (Signalstärke-Aufklappbox) ──────────────────────────────
+    'signalbox.title': 'Signalstärke',
+    'signalbox.weakest': 'schwächste {value}',
+    'signalbox.offlineCount': '{count} ohne Funkkontakt',
+    'signalbox.unchangedSince': 'unverändert seit {age}',
+    'signalbox.offlineRow': 'kein Funkkontakt',
+    'signalbox.remeasure': 'Neu messen',
+    'signalbox.remeasuring': 'Messung angefordert …',
+    'signalbox.lastCount': 'Letzte Änderung eines Online-Status: {time} Uhr',
+    'signalbox.hint': 'Ändert sich bei keinem Gerät der Online-Status, bleibt die Uhrzeit stehen.',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Gefühlt {temp}°',

@@ -337,7 +337,22 @@ export function Dashboard({
     // stays mounted in all cases — keepAlive iframes are never unmounted when
     // switching between fill-tab and normal tabs.
     const activeTab = tabs.find((t) => t.id === activeTabId);
-    const fillTabWidget = activeTab?.widgets?.find((w) => (w.options as Record<string, unknown>)?.fillTab);
+    // Nur noch iFrames duerfen fillTab nutzen (Rollläden-Umbau, 01.09.2026):
+    // shutterfloors/shutterrooms sind jetzt normale Widgets, und die Admin-UI
+    // fuer den fillTab-Umschalter existiert ohnehin nur fuer config.type ===
+    // 'iframe' (WidgetFrame.tsx). Verhindert, dass ein Skript oder eine
+    // Altkonfiguration die Shutter-Widgets versehentlich wieder in den
+    // Overlay-Modus schickt. Live-State am 01.09.2026 geprueft: ausser dem
+    // damaligen shutterfloors-Widget trug kein einziges Widget fillTab:true.
+    const fillTabWidget = activeTab?.widgets?.find(
+        (w) => w.type === 'iframe' && (w.options as Record<string, unknown>)?.fillTab,
+    );
+
+    // Shared, empty footer bar at the bottom of every tab. Rendered inside the same
+    // relative wrapper as the fill-tab overlay, so the shutter tab's own footer simply
+    // covers it (overlay z-index 10) without a special case. Hidden in the editor so
+    // the editing canvas keeps its full height.
+    const showTabFooter = !editMode;
 
     // ── mobile: single-column stack ───────────────────────────────────────
     if (containerWidth > 0 && containerWidth < mobileBreakpoint) {
@@ -358,7 +373,7 @@ export function Dashboard({
                             )}
                             <div
                                 ref={containerRefCallback}
-                                className="aura-scroll aura-scroll-touch absolute inset-0 overflow-auto p-2"
+                                className={`aura-scroll aura-scroll-touch absolute inset-0 overflow-auto p-2${showTabFooter ? ' has-tab-footer' : ''}`}
                                 style={{ scrollbarGutter: 'stable both-edges' }}
                             >
                                 {/* Reflow-hidden widgets from all tabs rendered off-screen */}
@@ -413,7 +428,7 @@ export function Dashboard({
                                                 className={`aura-tab aura-tab-${tab.slug}`}
                                                 style={{ display: isActive ? undefined : 'none' }}
                                             >
-                                                {isActive && tabWidgets.length === 0 ? (
+                                                {isActive && tabWidgets.length === 0 && !fillTabWidget ? (
                                                     <div
                                                         className="flex flex-col items-center justify-center flex-1 h-64 space-y-2"
                                                         style={{ color: 'var(--text-secondary)' }}
@@ -453,6 +468,21 @@ export function Dashboard({
                                                             const autoHeight =
                                                                 ew.type === 'group' ||
                                                                 ew.type === 'mediaplayer' ||
+                                                                // roomclimate grows when its inline details
+                                                                // panel expands — the bars below move down.
+                                                                ew.type === 'roomclimate' ||
+                                                                // heating grows with its tiles / accordion content
+                                                                // so it never overflows its grid cell.
+                                                                ew.type === 'heating' ||
+                                                                // weatherforecaststrip: detail panel height changes
+                                                                // when the chart mounts / a different day is picked.
+                                                                ew.type === 'weatherforecaststrip' ||
+                                                                // shutterrooms grows with its room/device list so the
+                                                                // tab scrolls as a whole instead of the widget itself.
+                                                                ew.type === 'shutterrooms' ||
+                                                                // shutterfloors grows with its floor/device list so the
+                                                                // tab scrolls as a whole instead of the widget itself.
+                                                                ew.type === 'shutterfloors' ||
                                                                 (ew.type === 'weather' &&
                                                                     wl !== 'custom' &&
                                                                     wl !== 'minimal' &&
@@ -494,6 +524,7 @@ export function Dashboard({
                                         );
                                     })}
                             </div>
+                            {showTabFooter && <div className="tab-footer-bar" aria-hidden="true" />}
                             {coarsePointer && !hideGridScrollbar && (
                                 <TouchScrollbar target={scrollEl} revision={`${activeTabId}|${containerWidth}`} />
                             )}
@@ -524,7 +555,7 @@ export function Dashboard({
                     )}
                     <div
                         ref={containerRefCallback}
-                        className="aura-scroll aura-scroll-touch absolute inset-0 overflow-auto p-2 sm:p-4"
+                        className={`aura-scroll aura-scroll-touch absolute inset-0 overflow-auto p-2 sm:p-4${showTabFooter ? ' has-tab-footer' : ''}`}
                         style={{
                             scrollbarGutter: 'stable both-edges',
                             ...(effectiveRglWidth > containerWidth ? { overflowX: 'auto' } : {}),
@@ -786,7 +817,7 @@ export function Dashboard({
                                                 return { ...w, gridPos: { x: pos.x, y: pos.y, w: pos.w, h } };
                                             });
 
-                                        if (isActive && tabGridWidgets.length === 0) {
+                                        if (isActive && tabGridWidgets.length === 0 && !fillTabWidget) {
                                             return (
                                                 <div
                                                     key={tab.id}
@@ -881,6 +912,7 @@ export function Dashboard({
                             </>
                         )}
                     </div>
+                    {showTabFooter && <div className="tab-footer-bar" aria-hidden="true" />}
                     {coarsePointer && !hideGridScrollbar && (
                         <TouchScrollbar
                             target={scrollEl}

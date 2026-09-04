@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, Square } from 'lucide-react';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useIoBroker } from '../../../hooks/useIoBroker';
@@ -17,8 +17,8 @@ export function ShutterPopupBody({ widget }: Props) {
     const actualPositionDp = opts.actualPositionDp as string | undefined;
     const tiltDp = opts.tiltDp as string | undefined;
     const actualTiltDp = opts.actualTiltDp as string | undefined;
-    const { value, setValue } = useDatapoint(widget.datapoint);
-    const { value: actualVal } = useDatapoint(actualPositionDp ?? '');
+    const { value, setValue, state } = useDatapoint(widget.datapoint);
+    const { value: actualVal, state: actualState } = useDatapoint(actualPositionDp ?? '');
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
     const { value: tiltVal } = useDatapoint(tiltDp ?? '');
     const { value: actualTiltVal } = useDatapoint(actualTiltDp ?? '');
@@ -26,7 +26,18 @@ export function ShutterPopupBody({ widget }: Props) {
 
     // Separate read-only status DP (if set) shows the real position, not the target
     const posValue = actualPositionDp && typeof actualVal === 'number' ? actualVal : value;
-    const rawPos = typeof posValue === 'number' ? Math.round(posValue) : 0;
+    // Only an ACKNOWLEDGED value is a real position. A write echoes back with ack:false
+    // long before the blind has actually moved, and showing that target as the current
+    // position let the graphic run ahead of the hardware. Remember the last acknowledged
+    // reading; until one has arrived the position is genuinely unknown and is shown as
+    // "–" rather than as a confident 0 %.
+    const posState = actualPositionDp ? actualState : state;
+    const [ackedPos, setAckedPos] = useState<number | null>(null);
+    useEffect(() => {
+        if (posState?.ack === true && typeof posState.val === 'number') setAckedPos(Math.round(posState.val));
+    }, [posState?.val, posState?.ack]);
+    const isPositionUnknown = ackedPos === null;
+    const rawPos = ackedPos ?? (typeof posValue === 'number' ? Math.round(posValue) : 0);
     const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
     const isMoving = activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
@@ -139,8 +150,11 @@ export function ShutterPopupBody({ widget }: Props) {
             <div className="w-full max-w-xs space-y-2">
                 <div className="flex justify-between text-sm">
                     <span style={{ color: 'var(--text-secondary)' }}>Position</span>
-                    <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                        {showClosedPercent ? 100 - shownPos : shownPos}%
+                    <span
+                        className="font-semibold tabular-nums"
+                        style={{ color: 'var(--text-primary)', opacity: isPositionUnknown ? 0.5 : 1 }}
+                    >
+                        {isPositionUnknown ? '–' : `${showClosedPercent ? 100 - shownPos : shownPos}%`}
                     </span>
                 </div>
                 <input

@@ -126,6 +126,14 @@ export interface EChartSeriesConfig {
     decimals?: number;
     /** Thousands separator of this series' numbers, unset = follow the chart-wide setting. */
     numberFormat?: NumberFormat;
+    /**
+     * Override the automatic aggregation bucket. `0` forces RAW data (no bucketing) — right for
+     * sparse, minute-resolution helpers whose sharp ramps get flattened by the default 15-min/1-h
+     * buckets. A positive value sets the bucket size in ms.
+     */
+    historyStepMs?: number;
+    /** Max points to fetch (default 1000). Raise for raw high-density fetches. */
+    historyMaxCount?: number;
 }
 
 /** A series' raw number as it should be displayed — see `valueFactor` / `valueOffset`. */
@@ -885,6 +893,11 @@ export function useMultiSeriesData(
 ): Map<string, SeriesDataResult> {
     const [resultsMap, setResultsMap] = useState<Map<string, SeriesDataResult>>(new Map());
     const mountedRef = useRef(true);
+    // Fetch generation — bumped on every (re)fetch pass. Responses carry the
+    // generation they were issued under and are dropped if a newer pass has
+    // started since: rapid range/day switching fires overlapping getHistory
+    // calls, and a late stale response must not override the newest selection.
+    const fetchGenRef = useRef(0);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -914,6 +927,8 @@ export function useMultiSeriesData(
             s.jsonAxisPath,
             s.valueFactor,
             s.valueOffset,
+            s.historyStepMs,
+            s.historyMaxCount,
         ]),
     );
 
@@ -932,6 +947,8 @@ export function useMultiSeriesData(
     // Fetch history for all series
     useEffect(() => {
         if (!connected || series.length === 0) return;
+        const gen = ++fetchGenRef.current;
+        const isStale = () => !mountedRef.current || gen !== fetchGenRef.current;
 
         // Mark all as loading
         setResultsMap((prev) => {
@@ -957,7 +974,7 @@ export function useMultiSeriesData(
             if (s.source === 'json') {
                 // JSON series: the datapoint value IS the whole dataset — no history query.
                 const applyJson = (state: ioBrokerState | null) => {
-                    if (!mountedRef.current) return;
+                    if (isStale()) return;
                     const points = parseJsonSeries(state?.val, s);
                     const bounds = parseJsonAxisBounds(state?.val, s);
                     lastRawRef.current.set(
@@ -991,7 +1008,7 @@ export function useMultiSeriesData(
                 // comparison-mode bars (and timeseries first point) render immediately.
                 const cached = getStateFromCache(s.datapointId);
                 const seedFromState = (state: ioBrokerState | null) => {
-                    if (!mountedRef.current) return;
+                    if (isStale()) return;
                     const val = typeof state?.val === 'number' ? seriesValue(s, state.val as number) : null;
                     setResultsMap((prev) => {
                         const next = new Map(prev);
@@ -1033,13 +1050,22 @@ export function useMultiSeriesData(
                 const wantRaw = s.aggregate === 'none';
                 const isDelta = s.aggregate === 'delta';
                 const bucket = resolveDeltaBucket(s.deltaBucket, rangeMs);
+                // Per-series bucket override: 0 → raw (no bucketing), >0 → explicit bucket in ms.
+                // Sparse, minute-resolution helpers have their sharp ramps flattened by the default
+                // 15-min/1-h buckets. Not applied to a `delta` series, whose step is dictated by the
+                // calendar bucket it differences over.
+                const stepOverride = typeof s.historyStepMs === 'number';
                 const step = isDelta
                     ? deltaFetchStep(bucket, rangeMs)
-                    : wantRaw
-                      ? undefined
-                      : hasAbsWindow || isTotal || range === 'custom'
-                        ? getStepForMs(rangeMs)
-                        : RANGE_STEP[range];
+                    : stepOverride
+                      ? (s.historyStepMs as number) > 0
+                          ? (s.historyStepMs as number)
+                          : undefined
+                      : wantRaw
+                        ? undefined
+                        : hasAbsWindow || isTotal || range === 'custom'
+                          ? getStepForMs(rangeMs)
+                          : RANGE_STEP[range];
                 // Delta needs one bucket of run-up before the window: the first visible bar is the
                 // difference against the reading the counter had when the window opened. A `total`
                 // window has nothing before it — bucketDeltas then differences the first bucket
@@ -1067,10 +1093,11 @@ export function useMultiSeriesData(
                             : step
                               ? (s.aggregate ?? 'average')
                               : 'none',
-                    count: isDelta ? deltaFetchCount(step as number, rangeMs) : 1000,
+                    // Per-series cap: a raw high-density fetch needs more than the default 1000.
+                    count: isDelta ? deltaFetchCount(step as number, rangeMs) : (s.historyMaxCount ?? 1000),
                 })
                     .then((entries: HistoryEntry[]) => {
-                        if (!mountedRef.current) return;
+                        if (isStale()) return;
                         let data: [number, number][] = entries
                             .filter(
                                 (e): e is { ts: number; val: number; ack?: boolean; q?: number } =>
@@ -1150,7 +1177,7 @@ export function useMultiSeriesData(
                         // live state; when it differs from the held tail, extend the line to it so the
                         // curve drops to reality instead of running flat.
                         const finish = (state: ioBrokerState | null) => {
-                            if (!mountedRef.current) return;
+                            if (isStale()) return;
                             const liveVal = typeof state?.val === 'number' ? seriesValue(s, state.val as number) : null;
                             let outData = data;
                             if (liveVal !== null && data.length > 0 && data[data.length - 1][1] !== liveVal) {
@@ -1172,7 +1199,7 @@ export function useMultiSeriesData(
                         else finish(null);
                     })
                     .catch(() => {
-                        if (!mountedRef.current) return;
+                        if (isStale()) return;
                         setResultsMap((prev) => {
                             const next = new Map(prev);
                             const existing = next.get(s.id);
@@ -1191,7 +1218,7 @@ export function useMultiSeriesData(
                 // back to the floor, which simply yields an empty chart — same as any other window
                 // without records.
                 probeHistoryStart(s.datapointId, instance, now).then((first) => {
-                    if (!mountedRef.current) return;
+                    if (isStale()) return;
                     const start = first ?? now - TOTAL_FLOOR_MS;
                     fetchWindow(start, now, now - start);
                 });

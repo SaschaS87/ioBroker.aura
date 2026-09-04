@@ -47,6 +47,18 @@ let socket: IoBrokerSocket | null = null;
 const subscribers = new Map<string, Set<(state: ioBrokerState) => void>>();
 const connectionListeners = new Set<(connected: boolean) => void>();
 
+// Guards the resume-from-background bounce (see bounceSocketDebounced below).
+// Several independent "we just resumed" signals (visibilitychange, focus,
+// pageshow, the drift watchdog) can fire within a second or two of each other
+// for a single real resume. Without this, each one tore the socket down and
+// rebuilt it again — fine for a tab with a handful of subscriptions (it
+// finishes re-subscribing before the next trigger lands), but Wetter's ~120
+// datapoints take long enough that a second bounce reliably arrived mid-
+// resubscribe and cancelled it, leaving Wetter perpetually stuck while
+// smaller tabs completed cleanly. Stays true until the new socket actually
+// finishes reconnecting (handleConnected clears it), not just a fixed delay.
+let resumeBounceInFlight = false;
+
 // Perf: time from (re)connect to the first live stateChange — a proxy for how
 // quickly the dashboard receives usable data. Reported once per connection.
 let connectPerfMark = 0;
@@ -185,8 +197,19 @@ export function setOptimisticEcho(enabled: boolean): void {
 // NOTE: a plain space is legal in ioBroker IDs (common in hand-created
 // 0_userdata.0.* objects, e.g. "...Pool.PoolPumpe Switch"), so it must NOT
 // be filtered — only the URL/query characters that break the socket are.
+// NOTE: ':' USED TO BE FILTERED HERE AND MUST NOT BE. It is a normal
+// character in ioBroker IDs — the whole tahoma adapter uses it for every
+// single state (tahoma.1.devices.SPK.states.core:ClosureState), and so do
+// others. The consequence was severe and silent: subscribe() refused all of
+// them, so the Rollläden tab never received a single live update. Values
+// still appeared on load (prefetchStates fetches them once via getState),
+// which is exactly why it looked like it worked — the numbers were simply
+// frozen at page-load time and drifted further from reality with every
+// movement. Verified against the live server on 12.08.2026: subscribing to
+// an ID containing ':' returns an ack WITHOUT error and delivers
+// stateChange events normally. URLs stay excluded via '/'.
 function isValidStateId(id: unknown): id is string {
-    return typeof id === 'string' && id.length > 0 && !/[/?&=:]/.test(id);
+    return typeof id === 'string' && id.length > 0 && !/[/?&=]/.test(id);
 }
 
 /** Fetch multiple state IDs in parallel and warm the cache. Returns when all have resolved (or 4 s timeout). */
@@ -506,6 +529,83 @@ function createSocket(url: string): IoBrokerSocket {
 export function getSocket(): IoBrokerSocket {
     if (!socket) socket = createSocket(currentUrl);
     return socket;
+}
+
+// iOS (and some Android WebViews) fully suspend JS execution for a backgrounded
+// tab/home-screen PWA — the underlying transport dies silently while frozen,
+// with no chance for the socket library to ever run its own 'disconnect'
+// handler. On resume the socket object can keep self-reporting `connected:
+// true` (its last known state from before the freeze) while actually being a
+// zombie — emits go nowhere, callbacks never fire, and every widget keeps
+// showing values from right before the app was backgrounded.
+//
+// Confirmed on a real device: relying on 'visibilitychange' alone (the first
+// attempt here) is NOT enough — for an iOS "Add to Home Screen" standalone
+// web app, that event frequently does not fire at all when returning from the
+// app switcher (a known WebKit gap, not something we can fix from here). Any
+// fix relying solely on that event will silently fail on exactly the devices
+// that need it most.
+//
+// So: don't depend on any single "we just resumed" event. A timer-drift
+// watchdog sidesteps the whole problem — it doesn't need iOS to tell us
+// anything. A setInterval callback simply does not run while JS is frozen;
+// the moment execution resumes (for ANY reason), the overdue tick fires
+// immediately, and comparing the actual elapsed time to the expected interval
+// reveals the freeze directly. 'visibilitychange', 'focus' and 'pageshow' are
+// kept as fast-path extras (they do work on some devices/iOS versions), and a
+// short cooldown stops several signals firing at once from bouncing the
+// socket repeatedly in a burst.
+function bounceSocketDebounced(): void {
+    // Already mid-bounce (waiting for the new socket to finish reconnecting
+    // and re-subscribing everything) — a second trigger right now would only
+    // cancel that in-progress resubscribe burst, which is exactly the bug this
+    // guard exists to prevent. handleConnected() clears the flag once the
+    // full subscriber list has been re-sent, not after a fixed delay, so this
+    // can never get stuck open on a slow (but successful) reconnect.
+    if (resumeBounceInFlight) return;
+    resumeBounceInFlight = true;
+    bounceSocket();
+    // Safety net: if the new socket never manages to connect at all (genuinely
+    // offline, not just mid-reconnect), handleConnected() never runs and the
+    // flag would otherwise stay stuck true forever, permanently blocking any
+    // future resume bounce even once connectivity comes back. Force it open
+    // again after a generous timeout — harmless no-op if already cleared.
+    setTimeout(() => {
+        resumeBounceInFlight = false;
+    }, 20000);
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    // Interval was 15000 (45s threshold) until 31.08.2026. Too coarse: Sascha
+    // closed both Elternzimmer shutters via the TaHoma app/wall switch, briefly
+    // switching away from Aura and back within well under 45s. That's plenty
+    // of time for iOS to suspend the standalone PWA and zombie the socket, but
+    // the resulting freeze never crossed the old threshold — so the watchdog
+    // never fired, 'visibilitychange' didn't fire either (the known iOS gap,
+    // see bounceSocketDebounced() above), and the shutter row was stuck on its
+    // pre-freeze value (9+ minutes later, until the next full reload) even
+    // though the header still showed "Verbunden". A shorter tick and threshold
+    // catches brief app-switches too, at the cost of a few more watchdog checks
+    // per minute — negligible next to a resubscribe burst.
+    const WATCHDOG_INTERVAL_MS = 5000;
+    let lastTick = Date.now();
+    setInterval(() => {
+        const now = Date.now();
+        const drift = now - lastTick;
+        lastTick = now;
+        // Expected drift per tick is ~0; a huge overshoot means the timer (and
+        // everything else) was frozen for that long, not that the event loop
+        // is merely busy — only a real suspend produces multi-x drift like this.
+        if (drift > WATCHDOG_INTERVAL_MS * 3) bounceSocketDebounced();
+    }, WATCHDOG_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') bounceSocketDebounced();
+    });
+    window.addEventListener('focus', () => bounceSocketDebounced());
+    window.addEventListener('pageshow', (e) => {
+        if ((e as PageTransitionEvent).persisted) bounceSocketDebounced();
+    });
 }
 
 function bounceSocket(): void {

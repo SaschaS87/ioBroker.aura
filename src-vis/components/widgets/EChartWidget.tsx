@@ -1,5 +1,5 @@
 import ReactECharts from 'echarts-for-react';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { BarChart2, CalendarDays, ChevronLeft, ChevronRight, Loader } from 'lucide-react';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import { useResolvedColors } from '../../hooks/useResolvedColors';
@@ -402,6 +402,39 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
         return (r?.data.length ?? 0) > 0 || (r?.points?.length ?? 0) > 0;
     });
 
+    // Track which series the user hid via the legend, so the axes can tell
+    // "no VISIBLE data" apart from "no data at all" (a hidden series with data
+    // must not count — ECharts scales axes over visible series only). Initial
+    // state comes from echartJsonExtra's legend.selected (used to start with a
+    // subset of stations visible).
+    const [legendHidden, setLegendHidden] = useState<Record<string, boolean>>(() => {
+        try {
+            const extra = echartJsonExtra ? (JSON.parse(echartJsonExtra) as Record<string, unknown>) : {};
+            const selected = ((extra.legend as Record<string, unknown> | undefined)?.selected ?? {}) as Record<
+                string,
+                boolean
+            >;
+            const hidden: Record<string, boolean> = {};
+            for (const [name, sel] of Object.entries(selected)) if (sel === false) hidden[name] = true;
+            return hidden;
+        } catch {
+            return {};
+        }
+    });
+    const onChartEvents = useMemo(
+        () => ({
+            legendselectchanged: (p: { selected: Record<string, boolean> }) => {
+                const hidden: Record<string, boolean> = {};
+                for (const [name, sel] of Object.entries(p.selected ?? {})) if (sel === false) hidden[name] = true;
+                setLegendHidden(hidden);
+            },
+        }),
+        [],
+    );
+    const visibleHasData = echartSeries.some(
+        (s) => !legendHidden[s.name] && (seriesDataMap.get(s.id)?.data.length ?? 0) > 0,
+    );
+
     // In the popup editor the series datapoints are {{placeholders}} that can't resolve,
     // so there is no real data. Render representative sample curves instead of "Keine Daten".
     const isPreview =
@@ -565,8 +598,11 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
         axisTick: { show: echartShowYAxis },
         axisLine: { show: echartShowYAxis, lineStyle: { color: onCanvasLine } },
         splitLine: { show: showGridOn(0), lineStyle: { color: onCanvasGrid } },
-        ...(leftMin !== undefined ? { min: leftMin } : {}),
-        ...(leftMax !== undefined ? { max: leftMax } : {}),
+        // With every series switched off in the legend there is no data range left, and a
+        // `scale` axis then renders NO labels at all. Fall back to a plain 0..1 in that case
+        // only; as soon as anything is visible the axis stays fully automatic.
+        ...(leftMin !== undefined ? { min: leftMin } : visibleHasData ? {} : { min: 0 }),
+        ...(leftMax !== undefined ? { max: leftMax } : visibleHasData ? {} : { max: 1 }),
     };
 
     const rightAxis: Record<string, unknown> = hasRightAxis
@@ -1240,6 +1276,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             max: dayWindow ? dayWindow.end : rollingAxisMax,
         },
         yAxis: [leftAxis, rightAxis],
+        dataZoom: [{ type: 'inside', zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
         series: seriesList,
     };
 
@@ -1331,6 +1368,20 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
     const dayNavControls =
         dayNav && hasHistory ? (
             <div className="flex items-center gap-1 shrink-0">
+                {/* Date label sits LEFT of the buttons: it grows into the free space,
+                    so the three buttons keep their position when it (dis)appears. */}
+                {dayWindow && (
+                    <span
+                        className="text-[10px] font-medium mr-1 whitespace-nowrap"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
+                        {new Date(dayWindow.start).toLocaleDateString('de-DE', {
+                            weekday: 'short',
+                            day: '2-digit',
+                            month: '2-digit',
+                        })}
+                    </span>
+                )}
                 <button
                     className="nodrag px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity"
                     style={navBtnStyle(false)}
@@ -1486,8 +1537,10 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
                 )}
                 {hasSize && effHasData && (
                     <ReactECharts
+                        key={`${activeRange}-${activeCustomVal}-${activeCustomUnit}-${dayOffset}`}
                         ref={chartRef}
                         option={merged}
+                        onEvents={onChartEvents}
                         style={{ width: '100%', height: '100%' }}
                         opts={{ renderer: 'canvas' }}
                     />

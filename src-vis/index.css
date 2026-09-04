@@ -396,26 +396,32 @@ iframe {
     margin-bottom: -14px;
 }
 
-/* Tab-bar horizontal scroll indicator ───────────────────────────────────────
+/* Seitliches Wischen fuer die App eigenen Scroll-Container ─────────────────
+   index.html sperrt touch-action auf html/body auf pan-y (vertikal), damit
+   ein Wisch am Bildschirmrand nicht mehr als Browser-Zurueck/Vor gedeutet
+   wird. Widgets, die bewusst seitlich scrollen (Tableiste, Wetterstreifen,
+   Regen-Nowcast, Chart-Navigation, ...) und dafuer Tailwinds overflow-x-auto
+   nutzen, brauchen pan-x lokal zurueck - sonst blockiert die Sperre vom
+   Elternelement auch ihr eigenes seitliches Scrollen. Widgets mit reinem
+   Inline-Style statt dieser Klasse (Karussell, Chips, JSON-Tabelle) tragen
+   touchAction direkt in ihrem style-Objekt.
+   ─────────────────────────────────────────────────────────────────────────── */
+.overflow-x-auto {
+    touch-action: pan-x pan-y;
+}
+
+/* Tab-bar horizontal scroll ───────────────────────────────────────────────
    On touch devices the native overlay scrollbar auto-hides and flickers on
    some browsers, and it sits at the very bottom padding edge where it reads
    like a rendering glitch rather than a "there are more tabs" hint. On mobile
-   we hide it (class toggled from JS) and render a static, non-animated thumb
-   (.aura-tab-scroll-ind) that tracks scroll position and sits just under the
-   tabs — deliberate, higher up, and never blinking. */
+   we hide it (class toggled from JS) — the row still scrolls via touch, just
+   without the scrollbar chrome. A custom position-thumb used to replace it
+   here; removed 13.08.2026, see TabBar.tsx (TabScrollRow). */
 .aura-tab-scroll--mobile {
     scrollbar-width: none;
 }
 .aura-tab-scroll--mobile::-webkit-scrollbar {
     display: none;
-}
-.aura-tab-scroll-ind {
-    position: absolute;
-    bottom: 3px;
-    height: 3px;
-    border-radius: 99px;
-    background: color-mix(in srgb, var(--accent, #888) 60%, transparent);
-    pointer-events: none;
 }
 
 /* Hide-scrollbar utility — used by the carousel widget when options.hideScrollbar is set */
@@ -657,4 +663,41 @@ input[type='range']::-moz-range-thumb {
 .aura-msg-html :where(img) {
     max-width: 100%;
     height: auto;
+}
+
+/* ── Shared tab footer bar ───────────────────────────────────────────────────
+   A slim, empty bar pinned to the bottom of every normal tab so all tabs end
+   the same way as the shutter tab, whose own footer sits in exactly that spot.
+   The height lives in a variable because the shutter widget's footer reuses it.
+
+   iOS home-screen note: the app is deliberately taller than its window
+   (html/body run on calc(100dvh + env(safe-area-inset-bottom)), see index.html),
+   so anything pinned to bottom:0 has its last ~34px below the visible edge.
+   The bar therefore carries that inset as padding: its background still runs to
+   the physical edge, its content does not. On desktop env(...) is 0.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+    --tab-footer-h: 38px;
+}
+
+.tab-footer-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--tab-footer-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    box-sizing: border-box;
+    border-top: 1px solid var(--app-border);
+    background: var(--app-bg);
+    pointer-events: none;
+}
+
+/* Keeps the scroll viewport clear of the bar. A separate class (not a Tailwind
+   inset utility) on purpose: the container must KEEP its `inset-0` class, because
+   index.html targets `.aura-page .aura-scroll.inset-0` for the 4rem bottom padding
+   that makes the last widget row reachable on iOS. Two classes beat `.inset-0`
+   on specificity, so only `bottom` is overridden. */
+.aura-scroll.has-tab-footer {
+    bottom: calc(var(--tab-footer-h) + env(safe-area-inset-bottom));
 }

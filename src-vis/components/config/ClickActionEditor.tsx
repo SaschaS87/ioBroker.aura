@@ -69,7 +69,16 @@ const MODE_GROUPS: { label: string; modes: ClickAction['kind'][] }[] = [
     },
     {
         label: 'Popup',
-        modes: ['popup-view', 'popup-dps', 'popup-image', 'popup-iframe', 'popup-json', 'popup-html', 'popup-widget'],
+        modes: [
+            'popup-view',
+            'popup-dps',
+            'popup-image',
+            'popup-iframe',
+            'popup-json',
+            'popup-html',
+            'popup-widget',
+            'popup-shutterfine',
+        ],
     },
     {
         label: 'Navigation',
@@ -104,6 +113,8 @@ function modeLabel(kind: ClickAction['kind']): string {
             return 'Popup: Widget-Inhalt';
         case 'popup-dps':
             return 'Popup: Alle Datenpunkte des Geräts';
+        case 'popup-shutterfine':
+            return 'Popup: Rollladen-Feinregler';
         case 'link-tab':
             return 'Sprung: Tab';
         case 'link-external':
@@ -121,7 +132,10 @@ function modeLabel(kind: ClickAction['kind']): string {
             return 'Popup: Rolladen';
         case 'popup-mediaplayer':
             return 'Popup: Mediaplayer';
+        case 'popup-roomtemperature':
+            return 'Popup: Raumklima';
     }
+    return '';
 }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -212,6 +226,9 @@ export function ClickActionEditor({ config, onConfigChange, popupOnly, hidePopup
                 break;
             case 'popup-dps':
                 setAction({ kind: 'popup-dps', scope: 'parent' });
+                break;
+            case 'popup-shutterfine':
+                setAction({ kind: 'popup-shutterfine' });
                 break;
             case 'link-tab': {
                 const firstLayout = layouts[0];

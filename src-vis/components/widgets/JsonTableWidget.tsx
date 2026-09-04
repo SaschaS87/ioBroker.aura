@@ -479,7 +479,14 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
             )}
 
             {/* Table */}
-            <div className={autoHeight ? 'overflow-x-auto min-w-0' : 'flex-1 overflow-auto min-h-0 min-w-0'}>
+            {/* touchAction: seitenweite touch-action-Sperre (index.html, Swipe-Back-Fix)
+                lokal wieder aufheben - die Tabelle scrollt bewusst seitlich. Inline statt
+                ueber .overflow-x-auto in index.css, weil der else-Zweig overflow-auto nutzt
+                (von der Klassen-Regel nicht erfasst). */}
+            <div
+                className={autoHeight ? 'overflow-x-auto min-w-0' : 'flex-1 overflow-auto min-h-0 min-w-0'}
+                style={{ touchAction: 'pan-x pan-y' }}
+            >
                 <table className="border-collapse" style={{ fontSize: fs, width: '100%', tableLayout: 'auto' }}>
                     {showHeader && columns.length > 0 && (
                         <thead>

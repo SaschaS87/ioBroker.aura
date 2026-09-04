@@ -620,6 +620,7 @@ export const en: Record<TranslationKey, string> = {
     'theme.vars.elArc': 'Arc',
     'theme.vars.elHeat': 'Heat',
     'theme.vars.elCool': 'Cool',
+    'theme.vars.elTemp': 'Temperature value',
     'theme.vars.elActive': 'Active',
     'theme.vars.elOn': 'On',
     'theme.vars.elOff': 'Off',
@@ -1959,6 +1960,50 @@ export const en: Record<TranslationKey, string> = {
     'alarm.cfg.compactMode.hint': 'Mode buttons in 2 columns instead of 4',
     'alarm.cfg.logLines': 'Log entries (max.)',
     'alarm.cfg.sizeScale': 'Global scale',
+
+    // ── Shutter Widget Messages ───────────────────────────────────────────────────
+    'shutter.notConnected': 'Device not connected',
+
+    // ── ShutterRooms Widget Messages ──────────────────────────────────────────────
+    'shutterrooms.all': 'All',
+    'shutterrooms.position': 'Position',
+    'shutterrooms.slatAngle': 'Slat angle',
+    'shutterrooms.slatFlat': 'Flat',
+    'shutterrooms.slatHalf': 'Half',
+    'shutterrooms.slatClosed': 'Closed',
+    'shutterrooms.open': 'Open',
+    'shutterrooms.unknown': 'Unknown',
+    'shutterrooms.commandSent': 'Command sent',
+    'shutterrooms.stopped': 'Stopped',
+    'shutterrooms.noRooms': 'No rooms configured',
+    'shutterrooms.notConnected': 'TaHoma box not reachable',
+
+    // ── ShutterSheet radio row ────────────────────────────────────────────────────
+    'shuttersheet.radio.good': 'Signal good',
+    'shuttersheet.radio.normal': 'Signal normal',
+    'shuttersheet.radio.low': 'Signal weak',
+    'shuttersheet.radio.checked': 'checked {time}',
+    'shuttersheet.radio.offline': 'No radio contact – display outdated',
+    'shuttersheet.radio.since': 'since {time}',
+
+    // ── ShutterFloors Widget Messages ─────────────────────────────────────────────
+    'shutterfloors.unknown': 'unknown',
+    'shutterfloors.open': 'Open',
+    'shutterfloors.closed': 'Closed',
+    'shutterfloors.stopped': 'Stopped',
+    'shutterfloors.commandSent': 'Command sent',
+    'shutterfloors.noFloors': 'No floors configured',
+
+    // ── SignalStrengthBox (signal strength expandable box) ────────────────────────
+    'signalbox.title': 'Signal strength',
+    'signalbox.weakest': 'weakest {value}',
+    'signalbox.offlineCount': '{count} without radio contact',
+    'signalbox.unchangedSince': 'unchanged for {age}',
+    'signalbox.offlineRow': 'no radio contact',
+    'signalbox.remeasure': 'Measure again',
+    'signalbox.remeasuring': 'Measurement requested …',
+    'signalbox.lastCount': 'Last online-status change: {time}',
+    'signalbox.hint': 'If no device\'s online status changes, the time stays put.',
 
     // ── Widget Previews ───────────────────────────────────────────────────────────
     'preview.feelsLike': 'Feels like {temp}°',

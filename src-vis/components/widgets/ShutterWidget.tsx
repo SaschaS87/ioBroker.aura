@@ -65,8 +65,8 @@ export function ShutterWidget({ config }: WidgetProps) {
     const actualPositionDp = opts.actualPositionDp as string | undefined;
     const tiltDp = opts.tiltDp as string | undefined;
     const actualTiltDp = opts.actualTiltDp as string | undefined;
-    const { value, setValue } = useDatapoint(config.datapoint);
-    const { value: actualVal } = useDatapoint(actualPositionDp ?? '');
+    const { value, setValue, state } = useDatapoint(config.datapoint);
+    const { value: actualVal, state: actualState } = useDatapoint(actualPositionDp ?? '');
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
     const { value: directionVal } = useDatapoint((opts.directionDp as string) ?? '');
     const { value: tiltVal } = useDatapoint(tiltDp ?? '');
@@ -92,7 +92,18 @@ export function ShutterWidget({ config }: WidgetProps) {
     // Actuators like HmIP-BROLL report the real position on a read-only DP of a
     // different channel than the writable LEVEL – if configured, it wins for display.
     const posValue = actualPositionDp && typeof actualVal === 'number' ? actualVal : value;
-    const rawPos = typeof posValue === 'number' ? Math.round(posValue) : 0;
+    // Only an ACKNOWLEDGED value is a real position. A write echoes back with ack:false
+    // long before the blind has moved, and showing that target as the current position
+    // let the graphic run ahead of the hardware (TaHoma). Remember the last acknowledged
+    // reading; until one has arrived the position is unknown and is shown as "–" rather
+    // than as a confident 0 %.
+    const posState = actualPositionDp ? actualState : state;
+    const [ackedPos, setAckedPos] = useState<number | null>(null);
+    useEffect(() => {
+        if (posState?.ack === true && typeof posState.val === 'number') setAckedPos(Math.round(posState.val));
+    }, [posState?.val, posState?.ack]);
+    const isPositionUnknown = ackedPos === null;
+    const rawPos = ackedPos ?? (typeof posValue === 'number' ? Math.round(posValue) : 0);
     const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
     const displayPos = dragPos ?? pos;
     const shownPos = positionLivePreview ? displayPos : pos;
@@ -263,7 +274,9 @@ export function ShutterWidget({ config }: WidgetProps) {
     const customIconName = opts.icon as string | undefined;
     const CustomIcon = customIconName ? getWidgetIcon(customIconName, Square) : null;
 
-    const statusText = isMoving
+    const statusText = isPositionUnknown
+        ? '–'
+        : isMoving
         ? movingDir === 'up'
             ? '▲ Fährt auf'
             : movingDir === 'down'
