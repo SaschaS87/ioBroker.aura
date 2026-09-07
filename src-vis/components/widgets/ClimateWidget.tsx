@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
-import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis, XAxis, ReferenceLine } from 'recharts';
-import { Thermometer, Droplets, Loader, BarChart2 } from 'lucide-react';
+import { AreaChart, Area, CartesianGrid, ResponsiveContainer, Tooltip, YAxis, XAxis, ReferenceLine } from 'recharts';
+import { Thermometer, Droplets, Gauge, Loader, BarChart2 } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import { useConfigStore } from '../../store/configStore';
@@ -8,8 +8,9 @@ import { useChartHistory, type ChartTimeRange, RANGE_LABELS } from '../../hooks/
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import type { WidgetProps } from '../../types';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { formatNum, type NumberFormat } from '../../utils/formatValue';
 import { formatYTick } from '../../utils/chartFormat';
+import { StatusBadges } from './StatusBadges';
 
 const PRESET_RANGES: ChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d'];
 
@@ -57,13 +58,18 @@ export function ClimateWidget({ config }: WidgetProps) {
     const showActualTemp = o.showActualTemp !== false;
     const showTargetTemp = o.showTargetTemp !== false && !!(o.targetDatapoint as string | undefined);
     const showHumidity = o.showHumidity !== false;
+    const showPressure = o.showPressure !== false && !!(o.pressureDatapoint as string | undefined);
     const showComfort = o.showComfort === true;
     const showChart = o.showChart !== false;
 
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     const decimals = (o.decimals as number) ?? defaultDecimals;
+    const numFmt = (o.numberFormat as NumberFormat | undefined) ?? globalNumFmt;
     const unit = (o.unit as string | undefined) ?? '°C';
     const humidityUnit = (o.humidityUnit as string | undefined) ?? '%';
+    const pressureUnit = (o.pressureUnit as string | undefined) ?? 'hPa';
+    // Pressure is conventionally shown without decimals — independent of the temperature setting.
+    const pressureDecimals = (o.pressureDecimals as number | undefined) ?? 0;
     const lineColor = (o.lineColor as string | undefined) ?? 'var(--accent)';
     const showIcon = o.showIcon !== false;
     const iconSize = (o.iconSize as number) || 20;
@@ -76,23 +82,28 @@ export function ClimateWidget({ config }: WidgetProps) {
     const lockRange = o.lockRange === true;
     const showYAxis = o.showYAxis === true;
     const yAxisCompact = o.yAxisCompact !== false;
+    const showGridLines = o.showGridLines === true;
     const showAverage = o.showAverage === true;
     const showAverageAsValue = o.showAverageAsValue === true;
     const avgColor = (o.avgColor as string | undefined) ?? lineColor;
 
     const TempIcon = getWidgetIcon(o.icon as string | undefined, Thermometer);
     const HumidityIcon = getWidgetIcon(o.humidityIcon as string | undefined, Droplets);
+    const PressureIcon = getWidgetIcon(o.pressureIcon as string | undefined, Gauge);
 
     const targetDpId = (o.targetDatapoint as string | undefined) ?? '';
     const humidityDpId = (o.humidityDatapoint as string | undefined) ?? '';
+    const pressureDpId = (o.pressureDatapoint as string | undefined) ?? '';
 
     const { value: rawActual } = useDatapoint(config.datapoint);
     const { value: rawTarget } = useDatapoint(targetDpId);
     const { value: rawHumidity } = useDatapoint(humidityDpId);
+    const { value: rawPressure } = useDatapoint(pressureDpId);
 
     const actualTemp = typeof rawActual === 'number' ? rawActual : null;
     const targetTemp = typeof rawTarget === 'number' ? rawTarget : null;
     const humidity = typeof rawHumidity === 'number' ? rawHumidity : null;
+    const pressure = typeof rawPressure === 'number' ? rawPressure : null;
 
     const [activeRange, setActiveRange] = useState<ChartTimeRange>(cfgRange);
     const [activeCustomMs, setActiveCustomMs] = useState<number | undefined>(cfgCustomMs);
@@ -183,7 +194,7 @@ export function ClimateWidget({ config }: WidgetProps) {
         ) : null;
 
     return (
-        <div ref={containerRef} className="aura-widget-row flex flex-col h-full gap-1">
+        <div ref={containerRef} className="aura-widget-row flex flex-col h-full gap-1" style={{ position: 'relative' }}>
             {/* Title */}
             {(showTitle || showIcon) && (
                 <div
@@ -216,7 +227,7 @@ export function ClimateWidget({ config }: WidgetProps) {
             )}
 
             {/* Main values */}
-            {(showActualTemp || showHumidity || showTargetTemp) && (
+            {(showActualTemp || showHumidity || showTargetTemp || showPressure) && (
                 <div className="aura-widget-value flex items-end justify-between gap-2">
                     {showActualTemp && (
                         <div className="flex flex-col leading-none">
@@ -224,7 +235,7 @@ export function ClimateWidget({ config }: WidgetProps) {
                                 className="font-black"
                                 style={{ fontSize: Math.round(30 * fontScale), color: 'var(--text-primary)' }}
                             >
-                                {actualTemp !== null ? formatNum(actualTemp, decimals) : '–'}
+                                {actualTemp !== null ? formatNum(actualTemp, decimals, numFmt) : '–'}
                                 <span
                                     className="ml-0.5 font-medium"
                                     style={{ fontSize: Math.round(16 * fontScale), color: 'var(--text-secondary)' }}
@@ -237,7 +248,7 @@ export function ClimateWidget({ config }: WidgetProps) {
                                     className="mt-0.5"
                                     style={{ fontSize: Math.round(11 * fontScale), color: avgColor }}
                                 >
-                                    Ø {formatNum(avg, decimals)} {unit}
+                                    Ø {formatNum(avg, decimals, numFmt)} {unit}
                                 </span>
                             )}
                         </div>
@@ -248,7 +259,7 @@ export function ClimateWidget({ config }: WidgetProps) {
                                 className="text-[11px] px-1.5 py-0.5 rounded-full"
                                 style={{ background: 'var(--app-border)', color: 'var(--text-secondary)' }}
                             >
-                                ↑ {formatNum(targetTemp, decimals)}
+                                ↑ {formatNum(targetTemp, decimals, numFmt)}
                                 {unit}
                             </span>
                         )}
@@ -258,8 +269,17 @@ export function ClimateWidget({ config }: WidgetProps) {
                                 style={{ fontSize: Math.round(14 * fontScale), color: 'var(--text-secondary)' }}
                             >
                                 <HumidityIcon size={Math.round(14 * fontScale)} strokeWidth={1.5} />
-                                {humidity !== null ? formatNum(humidity, decimals) : '–'}
+                                {humidity !== null ? formatNum(humidity, decimals, numFmt) : '–'}
                                 {humidityUnit}
+                            </span>
+                        )}
+                        {showPressure && (
+                            <span
+                                className="flex items-center gap-1 font-medium"
+                                style={{ fontSize: Math.round(13 * fontScale), color: 'var(--text-secondary)' }}
+                            >
+                                <PressureIcon size={Math.round(13 * fontScale)} strokeWidth={1.5} />
+                                {`${pressure !== null ? formatNum(pressure, pressureDecimals, numFmt) : '–'} ${pressureUnit}`}
                             </span>
                         )}
                     </div>
@@ -285,6 +305,9 @@ export function ClimateWidget({ config }: WidgetProps) {
                                             <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
+                                    {showGridLines && (
+                                        <CartesianGrid horizontal vertical={false} stroke="var(--app-border)" />
+                                    )}
                                     <YAxis
                                         domain={['auto', 'auto']}
                                         hide={!showYAxis}
@@ -292,7 +315,7 @@ export function ClimateWidget({ config }: WidgetProps) {
                                         tickLine={false}
                                         axisLine={false}
                                         width={showYAxis ? (yAxisCompact ? 22 : 36) : 0}
-                                        tickFormatter={(v: number) => formatYTick(v, decimals, yAxisCompact)}
+                                        tickFormatter={(v: number) => formatYTick(v, decimals, yAxisCompact, numFmt)}
                                     />
                                     <XAxis
                                         dataKey="t"
@@ -304,7 +327,7 @@ export function ClimateWidget({ config }: WidgetProps) {
                                     <Tooltip
                                         contentStyle={tooltipStyle}
                                         labelFormatter={(label) => formatLabel(Number(label))}
-                                        formatter={(v) => `${formatNum(Number(v), decimals)} ${unit}`}
+                                        formatter={(v) => `${formatNum(Number(v), decimals, numFmt)} ${unit}`}
                                     />
                                     <Area
                                         type="monotone"
@@ -322,7 +345,7 @@ export function ClimateWidget({ config }: WidgetProps) {
                                             strokeDasharray="4 3"
                                             strokeWidth={1.5}
                                             label={{
-                                                value: `Ø ${formatNum(avg, decimals)} ${unit}`,
+                                                value: `Ø ${formatNum(avg, decimals, numFmt)} ${unit}`,
                                                 position: 'insideTopRight',
                                                 fill: avgColor,
                                                 fontSize: 10,
@@ -347,6 +370,8 @@ export function ClimateWidget({ config }: WidgetProps) {
                     )}
                 </div>
             )}
+
+            <StatusBadges config={config} />
         </div>
     );
 }

@@ -2,8 +2,15 @@ import { useState, useEffect } from 'react';
 import { Database } from 'lucide-react';
 import type { WidgetConfig, ClickAction } from '../../types';
 import { useDashboardStore } from '../../store/dashboardStore';
-import { usePopupConfigStore } from '../../store/popupConfigStore';
+import {
+    usePopupConfigStore,
+    MAX_POPUP_TRANSPARENCY,
+    pctOrUndefined,
+    colorOrUndefined,
+} from '../../store/popupConfigStore';
+import { PopupBackgroundField } from '../common/PopupBackgroundField';
 import { DatapointPicker } from './DatapointPicker';
+import { ImagePathHint } from './ImagePathHint';
 import { SANDBOX_PRESETS, type SandboxPreset } from '../../utils/iframeSandbox';
 
 function normalizeAction(action: ClickAction): ClickAction {
@@ -23,18 +30,17 @@ function normalizeAction(action: ClickAction): ClickAction {
     }
 }
 
+/**
+ * Hardcoded fallback action for a widget that has none stored.
+ *
+ * Used to also map dimmer/thermostat/switch/shutter/mediaplayer onto their
+ * built-in popup views. That link was invisible — a widget opened a popup with
+ * nothing configured anywhere — so it was turned into a real, editable entry in
+ * popupConfigStore.typeDefaults (see ensureBuiltins). Installations that had it
+ * keep it; new ones start without a default popup for those types.
+ */
 export function defaultActionForConfig(config: WidgetConfig): ClickAction | null {
     switch (config.type) {
-        case 'dimmer':
-            return { kind: 'popup-view', viewId: 'pv-builtin-dimmer' };
-        case 'thermostat':
-            return { kind: 'popup-view', viewId: 'pv-builtin-thermostat' };
-        case 'switch':
-            return { kind: 'popup-view', viewId: 'pv-builtin-switch' };
-        case 'shutter':
-            return { kind: 'popup-view', viewId: 'pv-builtin-shutter' };
-        case 'mediaplayer':
-            return { kind: 'popup-view', viewId: 'pv-builtin-mediaplayer' };
         case 'slider':
             return { kind: 'popup-widget', widgetId: '' };
         default:
@@ -45,6 +51,15 @@ export function defaultActionForConfig(config: WidgetConfig): ClickAction | null
 interface Props {
     config: WidgetConfig;
     onConfigChange: (c: WidgetConfig) => void;
+    /** Offer only the popup modes — for callers that have no click to navigate away
+     *  from, e.g. the datapoint-driven popup triggers in Admin → Popups. */
+    popupOnly?: boolean;
+    /** Hide the popup title/size/auto-close block. Used by the per-entry row action,
+     *  where those come from the list-wide setting and would be dead controls. */
+    hidePopupOptions?: boolean;
+    /** Drop the "Aus" mode. For callers that already offer switching off one level
+     *  up (the row action modes), where it would be a second way to say the same. */
+    hideNone?: boolean;
 }
 
 const MODE_GROUPS: { label: string; modes: ClickAction['kind'][] }[] = [
@@ -54,7 +69,16 @@ const MODE_GROUPS: { label: string; modes: ClickAction['kind'][] }[] = [
     },
     {
         label: 'Popup',
-        modes: ['popup-view', 'popup-image', 'popup-iframe', 'popup-json', 'popup-html', 'popup-widget', 'popup-shutterfine'],
+        modes: [
+            'popup-view',
+            'popup-dps',
+            'popup-image',
+            'popup-iframe',
+            'popup-json',
+            'popup-html',
+            'popup-widget',
+            'popup-shutterfine',
+        ],
     },
     {
         label: 'Navigation',
@@ -87,6 +111,8 @@ function modeLabel(kind: ClickAction['kind']): string {
             return 'Popup: HTML';
         case 'popup-widget':
             return 'Popup: Widget-Inhalt';
+        case 'popup-dps':
+            return 'Popup: Alle Datenpunkte des Geräts';
         case 'popup-shutterfine':
             return 'Popup: Rollladen-Feinregler';
         case 'link-tab':
@@ -132,7 +158,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
     );
 }
 
-export function ClickActionEditor({ config, onConfigChange }: Props) {
+export function ClickActionEditor({ config, onConfigChange, popupOnly, hidePopupOptions, hideNone }: Props) {
     const o = config.options ?? {};
     const rawStoredAction = o.clickAction as ClickAction | undefined;
     const storedAction = rawStoredAction ? normalizeAction(rawStoredAction) : undefined;
@@ -141,11 +167,14 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
     const popupWidth = o.popupWidth as number | undefined;
     const popupHeight = o.popupHeight as number | undefined;
     const popupAutoCloseSec = o.popupAutoCloseSec as number | undefined;
+    const popupTransparency = o.popupTransparency as number | undefined;
+    const popupBackdropDim = o.popupBackdropDim as number | undefined;
+    const popupBackground = o.popupBackground as string | undefined;
 
     const layouts = useDashboardStore((s) => s.layouts);
 
     const [dpPickerTarget, setDpPickerTarget] = useState<
-        'image-dp' | 'json-dp' | 'html-dp' | 'thermo-setpoint' | 'thermo-mode' | 'view-dp' | null
+        'image-dp' | 'json-dp' | 'html-dp' | 'thermo-setpoint' | 'thermo-mode' | 'view-dp' | 'dps-dp' | null
     >(null);
     const [widgetSearch, setWidgetSearch] = useState('');
 
@@ -195,13 +224,21 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
             case 'popup-widget':
                 setAction({ kind: 'popup-widget' });
                 break;
+            case 'popup-dps':
+                setAction({ kind: 'popup-dps', scope: 'parent' });
+                break;
             case 'popup-shutterfine':
                 setAction({ kind: 'popup-shutterfine' });
                 break;
             case 'link-tab': {
                 const firstLayout = layouts[0];
-                const firstTab = firstLayout?.tabs[0];
-                setAction({ kind: 'link-tab', layoutId: firstLayout?.id ?? '', tabId: firstTab?.id ?? '' });
+                const firstSec = firstLayout?.sections[0];
+                setAction({
+                    kind: 'link-tab',
+                    layoutId: firstLayout?.id ?? '',
+                    sectionId: firstSec?.id,
+                    tabId: firstSec?.tabs[0]?.id ?? '',
+                });
                 break;
             }
             case 'link-external':
@@ -209,11 +246,13 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                 break;
             case 'link-widget': {
                 const firstLayout = layouts[0];
-                const firstTab = firstLayout?.tabs[0];
+                const firstSec = firstLayout?.sections[0];
+                const firstTab = firstSec?.tabs[0];
                 const firstWidget = firstTab?.widgets[0];
                 setAction({
                     kind: 'link-widget',
                     layoutId: firstLayout?.id ?? '',
+                    sectionId: firstSec?.id,
                     tabId: firstTab?.id ?? '',
                     widgetId: firstWidget?.id ?? '',
                 });
@@ -224,33 +263,38 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
 
     const popupViews = usePopupConfigStore((s) => s.views);
     const popupTypeDefaults = usePopupConfigStore((s) => s.typeDefaults);
-    const popupRemovedTypeDefaults = usePopupConfigStore((s) => s.removedBuiltinTypeDefaults);
 
     // Resolution order when no explicit action is stored:
     //   1. Admin-configured type default (dynamic — admin edits propagate live)
-    //   2. Built-in default for known widget types (dimmer, thermostat, …),
-    //      unless the admin explicitly removed that type default in the backend
+    //   2. Hardcoded fallback for the types that still have one (slider)
     //   3. 'none'
-    const typeDefaultRemoved = popupRemovedTypeDefaults.includes(config.type);
     const typeDefaultViewId = !storedAction ? popupTypeDefaults[config.type] : undefined;
+    // An explicit empty type default ('— keine View —') means "no popup" and must
+    // suppress the hardcoded fallback below.
+    const explicitNoView = !storedAction && config.type in popupTypeDefaults && !typeDefaultViewId;
     const builtInDefault =
-        !storedAction && !typeDefaultViewId && !typeDefaultRemoved ? defaultActionForConfig(config) : null;
+        !storedAction && !typeDefaultViewId && !explicitNoView ? defaultActionForConfig(config) : null;
     const action: ClickAction = storedAction ??
         (typeDefaultViewId ? { kind: 'popup-view' as const, viewId: typeDefaultViewId } : null) ??
         builtInDefault ?? { kind: 'none' as const };
     const isTypeDefaultActive = !!typeDefaultViewId;
-    const hasFallback = !!popupTypeDefaults[config.type] || (!typeDefaultRemoved && !!defaultActionForConfig(config));
+    const hasFallback = !!popupTypeDefaults[config.type] || (!explicitNoView && !!defaultActionForConfig(config));
 
     const isPopup = action.kind.startsWith('popup-');
 
     // Layout/Tab/Widget selectors for link modes
     const selLayout = action.kind === 'link-tab' || action.kind === 'link-widget' ? action.layoutId : '';
     const selTab = action.kind === 'link-tab' || action.kind === 'link-widget' ? action.tabId : '';
-    const tabsForLayout = layouts.find((l) => l.id === selLayout)?.tabs ?? [];
-    const widgetsForTab = tabsForLayout.find((t) => t.id === selTab)?.widgets ?? [];
+    const selLayoutObj = layouts.find((l) => l.id === selLayout);
+    const multiSection = (selLayoutObj?.sections.length ?? 0) > 1;
+    // Flatten tabs across sections, remembering each tab's section for the label + sectionId.
+    const tabsForLayout = (selLayoutObj?.sections ?? []).flatMap((sec) =>
+        sec.tabs.map((t) => ({ tab: t, sectionId: sec.id, sectionName: sec.name })),
+    );
+    const widgetsForTab = tabsForLayout.find((x) => x.tab.id === selTab)?.tab.widgets ?? [];
 
     // All widgets across all layouts (for popup-widget)
-    const allWidgets = layouts.flatMap((l) => l.tabs.flatMap((t) => t.widgets));
+    const allWidgets = layouts.flatMap((l) => l.sections.flatMap((s) => s.tabs.flatMap((t) => t.widgets)));
 
     return (
         <div className="space-y-4">
@@ -265,7 +309,12 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                     className={inputCls}
                     style={inputStyle}
                 >
-                    {MODE_GROUPS.map((g) => (
+                    {(popupOnly
+                        ? MODE_GROUPS.filter((g) => g.label === 'Popup')
+                        : hideNone
+                          ? MODE_GROUPS.filter((g) => g.label !== 'Aus')
+                          : MODE_GROUPS
+                    ).map((g) => (
                         <optgroup key={g.label} label={g.label}>
                             {g.modes.map((m) => (
                                 <option key={m} value={m}>
@@ -315,7 +364,7 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                             type="text"
                             value={action.url ?? ''}
                             onChange={(e) => setAction({ ...action, url: e.target.value })}
-                            placeholder="https://… oder leer lassen für Datenpunkt"
+                            placeholder="https://… · /adapter/… · leer lassen für Datenpunkt"
                             className={inputCls}
                             style={inputStyle}
                         />
@@ -345,6 +394,7 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                                 <Database size={13} />
                             </button>
                         </div>
+                        <ImagePathHint className="mt-1.5" />
                     </div>
                     <div>
                         <label className={labelCls} style={labelStyle}>
@@ -674,6 +724,66 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                     );
                 })()}
 
+            {action.kind === 'popup-dps' && (
+                <div className="space-y-3">
+                    <div>
+                        <label className={labelCls} style={labelStyle}>
+                            Umfang
+                        </label>
+                        <select
+                            value={action.scope ?? 'parent'}
+                            onChange={(e) =>
+                                setAction({ ...action, scope: e.target.value as 'parent' | 'channel' | 'device' })
+                            }
+                            className={inputCls}
+                            style={inputStyle}
+                        >
+                            <option value="parent">Gleicher Strang (Elternobjekt)</option>
+                            <option value="channel">Kanal</option>
+                            <option value="device">Ganzes Gerät</option>
+                        </select>
+                        <p
+                            className="text-[10px] mt-1 leading-tight"
+                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                        >
+                            {'„Gleicher Strang“'} funktioniert immer, auch ohne Kanal-/Geräteobjekte (z. B. bei
+                            Aliassen). Kanal und Gerät laufen die Objekt-Hierarchie aufwärts.
+                        </p>
+                    </div>
+                    <Toggle
+                        checked={!!action.relevantOnly}
+                        onChange={(v) => setAction({ ...action, relevantOnly: v || undefined })}
+                        label="Nur relevante Datenpunkte"
+                    />
+                    <div>
+                        <label className={labelCls} style={labelStyle}>
+                            Datenpunkt (leer = Widget-/Zeilen-Datenpunkt)
+                        </label>
+                        <div className="flex gap-1">
+                            <input
+                                type="text"
+                                value={action.dp ?? ''}
+                                onChange={(e) => setAction({ ...action, dp: e.target.value || undefined })}
+                                placeholder={config.datapoint || 'z. B. hm-rpc.0.ABC.1.STATE'}
+                                className={inputCls}
+                                style={{ ...inputStyle, flex: 1 }}
+                            />
+                            <button
+                                onClick={() => setDpPickerTarget('dps-dp')}
+                                className="px-2 rounded-lg"
+                                style={{
+                                    background: 'var(--app-bg)',
+                                    border: '1px solid var(--app-border)',
+                                    color: 'var(--text-secondary)',
+                                }}
+                            >
+                                <Database size={13} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {action.kind === 'popup-view' && (
                 <div>
                     <label className={labelCls} style={labelStyle}>
@@ -744,10 +854,12 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                             value={action.layoutId}
                             onChange={(e) => {
                                 const lay = layouts.find((l) => l.id === e.target.value);
+                                const firstSec = lay?.sections[0];
                                 setAction({
                                     kind: 'link-tab',
                                     layoutId: e.target.value,
-                                    tabId: lay?.tabs[0]?.id ?? '',
+                                    sectionId: firstSec?.id,
+                                    tabId: firstSec?.tabs[0]?.id ?? '',
                                 });
                             }}
                             className={inputCls}
@@ -766,13 +878,16 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                         </label>
                         <select
                             value={action.tabId}
-                            onChange={(e) => setAction({ ...action, tabId: e.target.value })}
+                            onChange={(e) => {
+                                const sel = tabsForLayout.find((x) => x.tab.id === e.target.value);
+                                setAction({ ...action, tabId: e.target.value, sectionId: sel?.sectionId });
+                            }}
                             className={inputCls}
                             style={inputStyle}
                         >
-                            {tabsForLayout.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                    {t.name}
+                            {tabsForLayout.map(({ tab, sectionName }) => (
+                                <option key={tab.id} value={tab.id}>
+                                    {multiSection ? `${sectionName} · ${tab.name}` : tab.name}
                                 </option>
                             ))}
                         </select>
@@ -825,10 +940,12 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                             value={action.layoutId}
                             onChange={(e) => {
                                 const lay = layouts.find((l) => l.id === e.target.value);
-                                const tab = lay?.tabs[0];
+                                const firstSec = lay?.sections[0];
+                                const tab = firstSec?.tabs[0];
                                 setAction({
                                     kind: 'link-widget',
                                     layoutId: e.target.value,
+                                    sectionId: firstSec?.id,
                                     tabId: tab?.id ?? '',
                                     widgetId: tab?.widgets[0]?.id ?? '',
                                 });
@@ -850,15 +967,20 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                         <select
                             value={action.tabId}
                             onChange={(e) => {
-                                const tab = tabsForLayout.find((t) => t.id === e.target.value);
-                                setAction({ ...action, tabId: e.target.value, widgetId: tab?.widgets[0]?.id ?? '' });
+                                const sel = tabsForLayout.find((x) => x.tab.id === e.target.value);
+                                setAction({
+                                    ...action,
+                                    tabId: e.target.value,
+                                    sectionId: sel?.sectionId,
+                                    widgetId: sel?.tab.widgets[0]?.id ?? '',
+                                });
                             }}
                             className={inputCls}
                             style={inputStyle}
                         >
-                            {tabsForLayout.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                    {t.name}
+                            {tabsForLayout.map(({ tab, sectionName }) => (
+                                <option key={tab.id} value={tab.id}>
+                                    {multiSection ? `${sectionName} · ${tab.name}` : tab.name}
                                 </option>
                             ))}
                         </select>
@@ -884,7 +1006,7 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
             )}
 
             {/* ── Popup-wide options (for all popup-* modes) ── */}
-            {isPopup && (
+            {isPopup && !hidePopupOptions && (
                 <div className="space-y-3 pt-2" style={{ borderTop: '1px solid var(--app-border)' }}>
                     <Toggle
                         checked={popupHideTitle}
@@ -904,6 +1026,13 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                                 className={inputCls}
                                 style={inputStyle}
                             />
+                            <p
+                                className="text-[10px] mt-1 leading-tight"
+                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                            >
+                                <span className="font-mono">{'{{parent}}'}</span> u. a. werden ersetzt,{' '}
+                                <span className="font-mono">[[dp.id]]</span> zeigt den Wert eines Datenpunkts.
+                            </p>
                         </div>
                     )}
                     <div className="flex gap-2">
@@ -965,6 +1094,46 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                             style={inputStyle}
                         />
                     </div>
+                    <div className="flex gap-2">
+                        <div className="flex-1">
+                            <label className={labelCls} style={labelStyle}>
+                                Transparenz (%, leer = View/Global)
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={MAX_POPUP_TRANSPARENCY}
+                                step={5}
+                                value={popupTransparency ?? ''}
+                                onChange={(e) => setOpts({ popupTransparency: pctOrUndefined(e.target.value) })}
+                                placeholder="View/Global"
+                                className={inputCls}
+                                style={inputStyle}
+                            />
+                        </div>
+                        <div className="flex-1">
+                            <label className={labelCls} style={labelStyle}>
+                                Hintergrund abdunkeln (%, leer = View/Global)
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={5}
+                                value={popupBackdropDim ?? ''}
+                                onChange={(e) => setOpts({ popupBackdropDim: pctOrUndefined(e.target.value) })}
+                                placeholder="View/Global"
+                                className={inputCls}
+                                style={inputStyle}
+                            />
+                        </div>
+                    </div>
+                    <PopupBackgroundField
+                        label="Hintergrundfarbe (leer = View/Global)"
+                        value={popupBackground}
+                        onChange={(v) => setOpts({ popupBackground: colorOrUndefined(v) })}
+                        inheritLabel="View/Global"
+                    />
                 </div>
             )}
 
@@ -981,6 +1150,7 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                         if (dpPickerTarget === 'thermo-mode')
                             return action.kind === 'popup-thermostat' ? (action.modeDp ?? '') : '';
                         if (dpPickerTarget === 'view-dp') return action.kind === 'popup-view' ? (action.dp ?? '') : '';
+                        if (dpPickerTarget === 'dps-dp') return action.kind === 'popup-dps' ? (action.dp ?? '') : '';
                         return '';
                     })()}
                     onSelect={(id) => {
@@ -995,6 +1165,8 @@ export function ClickActionEditor({ config, onConfigChange }: Props) {
                         if (dpPickerTarget === 'thermo-mode' && action.kind === 'popup-thermostat')
                             setAction({ ...action, modeDp: id });
                         if (dpPickerTarget === 'view-dp' && action.kind === 'popup-view')
+                            setAction({ ...action, dp: id });
+                        if (dpPickerTarget === 'dps-dp' && action.kind === 'popup-dps')
                             setAction({ ...action, dp: id });
                         setDpPickerTarget(null);
                     }}

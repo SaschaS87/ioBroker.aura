@@ -4,8 +4,14 @@ import { Icon } from '@iconify/react';
 import { DatapointPicker } from './DatapointPicker';
 import { JsonPathButton } from './JsonPathButton';
 import { IconPickerModal } from './IconPickerModal';
-import { ClauseRow, ColorField, newClause } from './ConditionEditor';
+import { ClauseRow, ColorField, DpSourceSelect, newClause } from './ConditionEditor';
 import { Badge, badgeDotPx, badgeTextPx } from '../common/Badge';
+import {
+    dropOwnDpToken,
+    normalizeSourceToken,
+    valueSourceOptions,
+    type DpSourceCtx,
+} from '../../utils/conditionSources';
 import type { BadgeDef, BadgeStyle, BadgeCorner, ConditionClause } from '../../types';
 import { useT } from '../../i18n';
 
@@ -31,21 +37,49 @@ export function newBadge(): BadgeDef {
     return { id: `badge-${Date.now()}`, style: 'dot', corner: 'top-right', visibility: 'always' };
 }
 
+// The legacy 'nonzero' mode was just a condition with a truthiness test, so the
+// editor only offers 'always' | 'condition' now. Old badges are shown as the
+// equivalent clause ('active' on the same datapoint) and are rewritten on the
+// first edit; the runtime keeps evaluating unmigrated ones (see useBadges).
+function badgeForEdit(b: BadgeDef): BadgeDef {
+    // '{dp}' is no longer offered separately — an empty field is the main DP.
+    const base = b.dp === undefined ? b : { ...b, dp: dropOwnDpToken(b.dp) };
+    if (base.visibility !== 'nonzero') return base;
+    return {
+        ...base,
+        visibility: 'condition',
+        logic: base.logic ?? 'AND',
+        clauses: [{ datapoint: base.dp ?? '', operator: 'active', value: '' }],
+    };
+}
+
 // ── Single badge rule ─────────────────────────────────────────────────────────
 
 function BadgeRule({
-    badge,
+    badge: rawBadge,
     onChange,
     onDelete,
+    sourceCtx,
 }: {
     badge: BadgeDef;
     onChange: (b: BadgeDef) => void;
     onDelete: () => void;
+    sourceCtx?: DpSourceCtx;
 }) {
+    const badge = badgeForEdit(rawBadge);
     const t = useT();
     const [open, setOpen] = useState(true);
-    const [showPicker, setShowPicker] = useState(false);
+    // Which field the datapoint picker fills: the count value, or a `{id}` binding
+    // appended to the label text.
+    const [pickerFor, setPickerFor] = useState<'dp' | 'label' | null>(null);
     const [showIcon, setShowIcon] = useState(false);
+
+    // Where the badge's count value comes from: a plain datapoint, the widget's
+    // main DP or a list aggregate.
+    const srcOptions = valueSourceOptions(sourceCtx);
+    const hasSources = srcOptions.length > 1;
+    const srcToken = hasSources ? normalizeSourceToken(badge.dp) : '';
+    const srcLabel = srcToken ? t(srcOptions.find((o) => o.value === srcToken)?.labelKey ?? 'cond.srcDatapoint') : '';
 
     const update = (patch: Partial<BadgeDef>) => onChange({ ...badge, ...patch });
 
@@ -57,6 +91,58 @@ function BadgeRule({
     const toggleLogic = () => update({ logic: (badge.logic ?? 'AND') === 'AND' ? 'OR' : 'AND' });
 
     const condVisible = badge.visibility === 'condition';
+    // Only the 'count' style needs a datapoint of its own (the number it shows).
+    // Visibility datapoints live in the clause rows below the visibility select.
+    const valueDp = badge.style === 'count';
+
+    const renderDpField = () => (
+        <div className="flex items-center gap-2">
+            <label className="text-[10px] w-16 shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                {t('badge.datapoint')}
+            </label>
+            <div className="flex gap-0.5 flex-1 min-w-0">
+                {hasSources && (
+                    <DpSourceSelect
+                        value={badge.dp ?? ''}
+                        options={srcOptions}
+                        onChange={(token) => update({ dp: token })}
+                    />
+                )}
+                {srcToken ? (
+                    <span
+                        className={`${cls} flex-1 min-w-0 flex items-center`}
+                        style={{ ...inputStyle, color: 'var(--text-secondary)' }}
+                    >
+                        {srcLabel}
+                    </span>
+                ) : (
+                    <>
+                        <input
+                            type="text"
+                            value={badge.dp ?? ''}
+                            onChange={(e) => update({ dp: e.target.value })}
+                            placeholder={sourceCtx?.ownDp ? t('cond.dpEmptyMain') : t('cond.datapointId')}
+                            className={`${cls} flex-1 font-mono min-w-0`}
+                            style={inputStyle}
+                        />
+                        <button
+                            onClick={() => setPickerFor('dp')}
+                            className="px-1.5 rounded-lg hover:opacity-80 shrink-0"
+                            style={{
+                                background: 'var(--app-bg)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                            title={t('cond.fromIoBroker')}
+                        >
+                            <Database size={11} />
+                        </button>
+                        <JsonPathButton value={badge.dp ?? ''} onChange={(ref) => update({ dp: ref })} size={11} />
+                    </>
+                )}
+            </div>
+        </div>
+    );
 
     return (
         <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--app-border)' }}>
@@ -150,77 +236,67 @@ function BadgeRule({
                     {/* Colour */}
                     <ColorField label={t('badge.color')} value={badge.color} onChange={(v) => update({ color: v })} />
 
-                    {/* Datapoint — drives the count value and/or the 'nonzero' visibility test */}
-                    {(badge.style === 'count' || badge.visibility === 'nonzero') && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-[10px] w-16 shrink-0" style={{ color: 'var(--text-secondary)' }}>
-                                {t('badge.datapoint')}
-                            </label>
-                            <div className="flex gap-0.5 flex-1 min-w-0">
+                    {/* Datapoint of the displayed count value */}
+                    {valueDp && renderDpField()}
+
+                    {/* Label: text + icon */}
+                    {badge.style === 'label' && (
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <label className="text-[10px] w-16 shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('badge.label')}
+                                </label>
                                 <input
                                     type="text"
-                                    value={badge.dp ?? ''}
-                                    onChange={(e) => update({ dp: e.target.value })}
-                                    placeholder={t('cond.datapointId')}
-                                    className={`${cls} flex-1 font-mono min-w-0`}
+                                    value={badge.label ?? ''}
+                                    onChange={(e) => update({ label: e.target.value })}
+                                    placeholder={t('badge.label')}
+                                    className={`${cls} flex-1 min-w-0`}
                                     style={inputStyle}
                                 />
+                                {/* Appends a `{id}` binding instead of replacing the text —
+                                    the unit or a second value usually stays. */}
                                 <button
-                                    onClick={() => setShowPicker(true)}
-                                    className="px-1.5 rounded-lg hover:opacity-80 shrink-0"
+                                    onClick={() => setPickerFor('label')}
+                                    className="px-1.5 h-[30px] rounded-lg hover:opacity-80 shrink-0"
                                     style={{
                                         background: 'var(--app-bg)',
                                         color: 'var(--text-secondary)',
                                         border: '1px solid var(--app-border)',
                                     }}
-                                    title={t('cond.fromIoBroker')}
+                                    title={t('badge.labelInsertDp')}
                                 >
                                     <Database size={11} />
                                 </button>
-                                <JsonPathButton
-                                    value={badge.dp ?? ''}
-                                    onChange={(ref) => update({ dp: ref })}
-                                    size={11}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Label: text + icon */}
-                    {badge.style === 'label' && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-[10px] w-16 shrink-0" style={{ color: 'var(--text-secondary)' }}>
-                                {t('badge.label')}
-                            </label>
-                            <input
-                                type="text"
-                                value={badge.label ?? ''}
-                                onChange={(e) => update({ label: e.target.value })}
-                                placeholder={t('badge.label')}
-                                className={`${cls} flex-1 min-w-0`}
-                                style={inputStyle}
-                            />
-                            <button
-                                onClick={() => setShowIcon(true)}
-                                className="px-1.5 h-[30px] rounded-lg hover:opacity-80 shrink-0 flex items-center gap-1"
-                                style={{
-                                    background: 'var(--app-bg)',
-                                    color: 'var(--text-secondary)',
-                                    border: '1px solid var(--app-border)',
-                                }}
-                                title={t('badge.icon')}
-                            >
-                                {badge.icon ? <Icon icon={badge.icon} width={13} height={13} /> : <Plus size={11} />}
-                            </button>
-                            {badge.icon && (
                                 <button
-                                    onClick={() => update({ icon: undefined })}
-                                    className="shrink-0 hover:opacity-60"
-                                    style={{ color: 'var(--text-secondary)' }}
+                                    onClick={() => setShowIcon(true)}
+                                    className="px-1.5 h-[30px] rounded-lg hover:opacity-80 shrink-0 flex items-center gap-1"
+                                    style={{
+                                        background: 'var(--app-bg)',
+                                        color: 'var(--text-secondary)',
+                                        border: '1px solid var(--app-border)',
+                                    }}
+                                    title={t('badge.icon')}
                                 >
-                                    <Trash2 size={11} />
+                                    {badge.icon ? (
+                                        <Icon icon={badge.icon} width={13} height={13} />
+                                    ) : (
+                                        <Plus size={11} />
+                                    )}
                                 </button>
-                            )}
+                                {badge.icon && (
+                                    <button
+                                        onClick={() => update({ icon: undefined })}
+                                        className="shrink-0 hover:opacity-60"
+                                        style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                        <Trash2 size={11} />
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-[9px] pl-[72px]" style={{ color: 'var(--text-secondary)' }}>
+                                {sourceCtx?.ownDp ? t('badge.labelBindingsOwn') : t('badge.labelBindings')}
+                            </p>
                         </div>
                     )}
 
@@ -237,9 +313,11 @@ function BadgeRule({
                             onChange={(e) =>
                                 update({
                                     visibility: e.target.value as BadgeDef['visibility'],
+                                    // Seed with the former 'nonzero' shortcut: the widget's own
+                                    // datapoint (empty = main DP) has to be active.
                                     clauses:
                                         e.target.value === 'condition' && !clauses.length
-                                            ? [newClause()]
+                                            ? [{ datapoint: '', operator: 'active', value: '' }]
                                             : badge.clauses,
                                 })
                             }
@@ -247,19 +325,18 @@ function BadgeRule({
                             style={inputStyle}
                         >
                             <option value="always">{t('badge.visAlways')}</option>
-                            <option value="nonzero">{t('badge.visNonzero')}</option>
                             <option value="condition">{t('badge.visCondition')}</option>
                         </select>
                     </div>
 
-                    {badge.visibility === 'nonzero' && (
-                        <p className="text-[9px] pl-3" style={{ color: 'var(--text-secondary)' }}>
-                            {t('badge.visNonzeroHint')}
-                        </p>
-                    )}
-
                     {condVisible && (
                         <div className="space-y-1.5 pl-3 border-l-2" style={{ borderColor: 'var(--accent)44' }}>
+                            {/* Groups, tabs and sections have no main DP, so an empty clause
+                                datapoint resolves to nothing there — say so instead of
+                                promising a fallback that cannot happen. */}
+                            <p className="text-[9px]" style={{ color: 'var(--text-secondary)' }}>
+                                {sourceCtx?.ownDp ? t('badge.visConditionHint') : t('badge.visConditionHintNoMain')}
+                            </p>
                             {clauses.map((clause, i) => (
                                 <ClauseRow
                                     key={i}
@@ -269,6 +346,7 @@ function BadgeRule({
                                     onLogicToggle={toggleLogic}
                                     onChange={(c) => updateClause(i, c)}
                                     onDelete={() => deleteClause(i)}
+                                    sourceCtx={sourceCtx}
                                 />
                             ))}
                             <button
@@ -283,11 +361,15 @@ function BadgeRule({
                 </div>
             )}
 
-            {showPicker && (
+            {pickerFor && (
                 <DatapointPicker
-                    currentValue={badge.dp ?? ''}
-                    onSelect={(id) => update({ dp: id })}
-                    onClose={() => setShowPicker(false)}
+                    currentValue={(pickerFor === 'dp' ? badge.dp : badge.label) ?? ''}
+                    onSelect={(id) =>
+                        pickerFor === 'dp'
+                            ? update({ dp: id })
+                            : update({ label: `${badge.label ? `${badge.label} ` : ''}{${id}}` })
+                    }
+                    onClose={() => setPickerFor(null)}
                 />
             )}
             {showIcon && (
@@ -309,10 +391,12 @@ function BadgeRule({
 interface BadgeEditorProps {
     badges: BadgeDef[];
     onChange: (badges: BadgeDef[]) => void;
+    /** Value sources of the owning widget (main DP / list entries). Omitted for tabs/sections. */
+    sourceCtx?: DpSourceCtx;
     style?: React.CSSProperties;
 }
 
-export function BadgeEditor({ badges, onChange, style }: BadgeEditorProps) {
+export function BadgeEditor({ badges, onChange, sourceCtx, style }: BadgeEditorProps) {
     const t = useT();
     const update = (i: number, b: BadgeDef) => onChange(badges.map((x, j) => (j === i ? b : x)));
     const remove = (i: number) => onChange(badges.filter((_, j) => j !== i));
@@ -335,7 +419,13 @@ export function BadgeEditor({ badges, onChange, style }: BadgeEditorProps) {
             )}
 
             {badges.map((b, i) => (
-                <BadgeRule key={b.id} badge={b} onChange={(nb) => update(i, nb)} onDelete={() => remove(i)} />
+                <BadgeRule
+                    key={b.id}
+                    badge={b}
+                    onChange={(nb) => update(i, nb)}
+                    onDelete={() => remove(i)}
+                    sourceCtx={sourceCtx}
+                />
             ))}
 
             <button

@@ -12,6 +12,8 @@ Wählt Datum und/oder Uhrzeit über native Eingabefelder aus und schreibt den We
 
 Optionale Status-Datenpunkte (Batterie, Erreichbarkeit) werden als Badges eingeblendet (Abschnitt **Status-Datenpunkte** im Dialog).
 
+Dieselben Felder gibt es als Darstellung `datepicker` pro Zeile in der [statischen](./liste#darstellung-datumswaehler) und [dynamischen Liste](./dynamische-liste).
+
 ## Layouts
 
 ### Default
@@ -38,7 +40,24 @@ Alle Optionen werden im Editor unter **Widget bearbeiten** gesetzt.
 | --- | --- | --- |
 | `timeOnly` | `false` | nur Uhrzeit, ohne Datum |
 | `showTime` | `false` | zusätzliches Uhrzeit-Feld zum Datum |
-| `outputFormat` | `timestamp_ms` | `timestamp_ms` · `timestamp_s` · `iso` · `date` · `datetime_local` · `de_date` · `de_datetime` · `time_hhmm` · `time_hhmmss` |
+| `inputFormat` | `picker` | `picker` (Datum/Zeit wie oben) · `custom` (Feld laut `inputPattern`) |
+| `inputPattern` | wie `outputPattern` | Muster bei `inputFormat: custom`, z.B. `MM.yyyy` |
+| `outputFormat` | `timestamp_ms` | `timestamp_ms` · `timestamp_s` · `iso` · `date` · `datetime_local` · `de_date` · `de_datetime` · `time_hhmm` · `time_hhmmss` · `custom` |
+| `outputPattern` | `dd.MM.yyyy` | Muster bei `outputFormat: custom` |
+
+Muster-Tokens: `dd` `MM` `yyyy` `yy` `HH` `hh` `mm` `ss`; alles andere bleibt Literal (`KW MM/yyyy`).
+
+Das **Eingabe-Muster** bestimmt, welches Auswahlfeld gerendert wird:
+
+| Muster enthält | Feld |
+| --- | --- |
+| Tag + Monat + Jahr + Zeit | Datum/Zeit-Auswahl |
+| Tag + Monat + Jahr | Kalender |
+| Monat + Jahr (`MM.yyyy`) | Monatswähler |
+| nur Zeit (`HH:mm`) | Uhrzeit |
+| alles andere (`yyyy`, `dd.MM`) | Textfeld, geparst nach Muster (Enter/Verlassen schreibt, ungültig = roter Rahmen) — plus eigene Auswahlliste mit einer Spalte je Muster-Bestandteil |
+
+Nicht genannte Bestandteile behalten ihren gespeicherten Wert — `MM.yyyy` verschiebt nur den Monat, Tag und Uhrzeit bleiben (Tag wird bei kürzeren Monaten gekappt).
 
 ### Anzeige
 

@@ -1,92 +1,35 @@
-import { CheckCircle2, Lock, LockOpen, TriangleAlert, XCircle } from 'lucide-react';
+import type { CheckCircle2 } from 'lucide-react';
+import { Lock, LockOpen } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import type { WidgetProps } from '../../types';
 import { contentPositionClass } from '../../utils/widgetUtils';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
-import { resolveAssetUrl } from '../../utils/assetUrl';
+import { resolveImageSource } from '../../utils/assetUrl';
+import { valueHidden, valueTextOverride } from '../../utils/conditionSet';
 import { StatusBadges } from './StatusBadges';
 import { CustomGridView } from './CustomGridView';
 import { useStatusFields } from '../../hooks/useStatusFields';
+import {
+    type StateCfg,
+    WC_PRESETS,
+    WC_FALLBACK,
+    matchesValues,
+    resolveContactState,
+    getWcCfg,
+} from '../../utils/windowContact';
 
-// ─── types ────────────────────────────────────────────────────────────────────
-
-type ContactState = 'closed' | 'tilted' | 'open';
-
-export type StateCfg = {
-    type: 'icon' | 'base64';
-    icon?: string;
-    color: string;
-    base64?: string;
-    label: string;
-};
-
-// ─── presets ──────────────────────────────────────────────────────────────────
-
-export const WC_PRESETS: Record<string, { closed: string; tilted: string; open: string }> = {
-    hmip: { closed: '0', tilted: '1', open: '2,3,4,5,6,7' },
-    boolean: { closed: 'false,0', tilted: '', open: 'true,1' },
-    boolean_inverted: { closed: 'true,1', tilted: '', open: 'false,0' },
-    '0_7': { closed: '0', tilted: '', open: '7' },
-    string_hmip: { closed: 'closed', tilted: 'tilted', open: 'open' },
-};
-
-export const WC_PRESET_LABELS: Record<string, string> = {
-    hmip: 'HmIP (0=zu, 1=gekippt, 2+=offen)',
-    boolean: 'Boolean (false=zu, true=offen)',
-    boolean_inverted: 'Boolean invertiert (true=zu, false=offen)',
-    '0_7': 'Numerisch 0 / 7',
-    string_hmip: 'String (CLOSED / TILTED / OPEN)',
-    custom: 'Benutzerdefiniert',
-};
-
-// ─── fallbacks ────────────────────────────────────────────────────────────────
-
-export const WC_FALLBACK: Record<ContactState, { Icon: typeof CheckCircle2; color: string; label: string }> = {
-    closed: { Icon: CheckCircle2, color: '#22c55e', label: 'Geschlossen' },
-    tilted: { Icon: TriangleAlert, color: '#f59e0b', label: 'Gekippt' },
-    open: { Icon: XCircle, color: '#ef4444', label: 'Offen' },
-};
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-export function matchesValues(value: unknown, valList: string): boolean {
-    if (!valList.trim()) return false;
-    const str = String(value ?? '')
-        .toLowerCase()
-        .trim();
-    return valList
-        .split(',')
-        .map((v) => v.trim().toLowerCase())
-        .filter(Boolean)
-        .some((v) => v === str);
-}
-
-export function resolveContactState(
-    value: unknown,
-    preset: string,
-    customValues: { closed: string; tilted: string; open: string },
-): ContactState {
-    const mapping = preset === 'custom' ? customValues : (WC_PRESETS[preset] ?? WC_PRESETS.hmip);
-    if (matchesValues(value, mapping.closed)) return 'closed';
-    if (mapping.tilted && matchesValues(value, mapping.tilted)) return 'tilted';
-    if (matchesValues(value, mapping.open)) return 'open';
-    // Backward-compat fallback for existing widgets without statePreset
-    if (value === false || value === 0) return 'closed';
-    if (value === 1) return 'tilted';
-    if (value === true) return 'open';
-    return 'open';
-}
-
-export function getWcCfg(o: Record<string, unknown>, st: ContactState): StateCfg {
-    const fb = WC_FALLBACK[st];
-    return {
-        type: (o[`${st}Type`] as 'icon' | 'base64') ?? 'icon',
-        icon: o[`${st}Icon`] as string | undefined,
-        color: (o[`${st}Color`] as string) || fb.color,
-        base64: o[`${st}Base64`] as string | undefined,
-        label: (o[`${st}Label`] as string) || fb.label,
-    };
-}
+// The window-contact presets/helpers moved to utils/windowContact so the list
+// widgets can reuse them without importing this widget. Re-exported for the
+// existing editor import in WidgetFrame.
+export {
+    type StateCfg,
+    WC_PRESETS,
+    WC_PRESET_LABELS,
+    WC_FALLBACK,
+    matchesValues,
+    resolveContactState,
+    getWcCfg,
+} from '../../utils/windowContact';
 
 // ─── StateDisplay ─────────────────────────────────────────────────────────────
 
@@ -104,7 +47,7 @@ function StateDisplay({
     if (cfg.type === 'base64' && cfg.base64) {
         return (
             <img
-                src={resolveAssetUrl(cfg.base64)}
+                src={resolveImageSource(cfg.base64)}
                 className={className}
                 style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
                 alt=""
@@ -137,6 +80,8 @@ export function WindowContactWidget({ config }: WidgetProps) {
     const iconSize = (o.iconSize as number) || 20;
 
     const cfg = getWcCfg(o, state);
+    // A condition rule may replace the state text ("Anzeige überschreiben").
+    const stateLabel = valueHidden(config) ? '' : (valueTextOverride(config) ?? cfg.label);
     const fb = WC_FALLBACK[state];
 
     // Extra DPs for custom layout – hooks must always run unconditionally
@@ -186,9 +131,9 @@ export function WindowContactWidget({ config }: WidgetProps) {
         return (
             <CustomGridView
                 config={config}
-                value={cfg.label}
+                value={stateLabel}
                 extraFields={{
-                    label: cfg.label,
+                    label: stateLabel,
                     open: state === 'open' ? 'Ja' : 'Nein',
                     tilted: state === 'tilted' ? 'Ja' : 'Nein',
                     closed: state === 'closed' ? 'Ja' : 'Nein',
@@ -229,7 +174,7 @@ export function WindowContactWidget({ config }: WidgetProps) {
                     )}
                     {showLabel && (
                         <p className="aura-widget-value text-xs opacity-80" style={{ color: '#fff' }}>
-                            {cfg.label}
+                            {stateLabel}
                         </p>
                     )}
                 </div>
@@ -260,7 +205,7 @@ export function WindowContactWidget({ config }: WidgetProps) {
                         className="aura-widget-value text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
                         style={{ background: `${cfg.color}22`, color: cfg.color, border: `1px solid ${cfg.color}55` }}
                     >
-                        {cfg.label}
+                        {stateLabel}
                     </span>
                 )}
                 <StatusBadges config={config} />
@@ -278,7 +223,7 @@ export function WindowContactWidget({ config }: WidgetProps) {
                 {showIcon && <StateDisplay cfg={cfg} fallback={fb.Icon} size={iconSize} className="aura-widget-icon" />}
                 {showLabel && (
                     <span className="aura-widget-value text-xl font-bold" style={{ color: cfg.color }}>
-                        {cfg.label}
+                        {stateLabel}
                     </span>
                 )}
                 {showTitle && (
@@ -322,7 +267,7 @@ export function WindowContactWidget({ config }: WidgetProps) {
             )}
             {showLabel && (
                 <span className="aura-widget-value text-base font-semibold" style={{ color: cfg.color }}>
-                    {cfg.label}
+                    {stateLabel}
                 </span>
             )}
             <StatusBadges config={config} />

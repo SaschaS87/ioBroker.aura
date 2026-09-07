@@ -21,13 +21,23 @@ function page(w) {
     return lines.join('\n');
 }
 
-// 1. Per-widget pages.
+// 1. Per-widget pages — BOOTSTRAP ONLY: an existing page is never touched. Every
+// page has been extended by hand since it was generated (option tables, examples,
+// screenshots), and regenerating would replace all of that with the stub below.
+// Pass --force to overwrite anyway.
+const force = process.argv.includes('--force');
 let written = 0;
+let kept = 0;
 for (const w of WIDGETS) {
-    writeFileSync(`${DOCS}/${w.slug}.md`, page(w));
+    const file = `${DOCS}/${w.slug}.md`;
+    if (!force && existsSync(file)) {
+        kept++;
+        continue;
+    }
+    writeFileSync(file, page(w));
     written++;
 }
-console.log(`wrote ${written} widget pages`);
+console.log(`wrote ${written} widget pages, kept ${kept} existing`);
 
 // 2. Overview index, grouped.
 const byGroup = (g) => {
@@ -43,6 +53,20 @@ for (const grp of GROUPS) {
     indexLines.push('');
 }
 indexLines.push('## Konzepte', '', '- [Custom-Layout](./custom-layout) — Widgets mit freier Zellen-Matrix gestalten', '');
+// Hand-written tail of the overview — kept here so regenerating the index does not drop it.
+indexLines.push(
+    '## Datenpunkt-Wert im Widget-Namen',
+    '',
+    'Der Name jedes Widgets löst `[[<dp>]]` zum aktuellen Wert dieses Datenpunkts auf, gemischt mit festem Text:',
+    '',
+    '| Name | zeigt |',
+    '| --- | --- |',
+    '| `Wohnzimmer [[0_userdata.0.Temp]] °C` | `Wohnzimmer 21.5 °C` |',
+    '| `[[0_userdata.0.Status]]` | den Inhalt des Datenpunkts |',
+    '',
+    'Mehrere Tokens pro Name sind erlaubt, JSON-Pfade (`[[dp?battery.soc]]`) ebenfalls; Booleans erscheinen als `AN` / `AUS`. In einer [Popup-View](../einstellungen/popups#platzhalter) kombinierbar mit `{{parent}}`.',
+    '',
+);
 writeFileSync(`${DOCS}/index.md`, indexLines.join('\n'));
 console.log('wrote index.md');
 
@@ -52,6 +76,8 @@ const sidebar = GROUPS.map((grp) => ({
     collapsed: grp.id !== 'control',
     items: byGroup(grp.id).map((it) => ({ text: it.label, link: `/widgets/${it.slug}` })),
 })).filter((g) => g.items.length);
+sidebar.unshift({ text: 'Bildpfade', link: '/widgets/bildpfade' });
+sidebar.unshift({ text: 'Referenz (Primer)', link: '/widgets/referenz' });
 sidebar.unshift({ text: 'Übersicht', link: '/widgets/' });
 sidebar.push({ text: 'Konzepte', items: [{ text: 'Custom-Layout', link: '/widgets/custom-layout' }] });
 writeFileSync('docs/.vitepress/widgetsSidebar.json', JSON.stringify(sidebar, null, 2) + '\n');

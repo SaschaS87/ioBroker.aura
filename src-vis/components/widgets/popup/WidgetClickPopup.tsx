@@ -3,13 +3,21 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { WidgetConfig, ClickAction } from '../../../types';
 import { usePortalTarget } from '../../../contexts/PortalTargetContext';
-import { usePopupConfigStore } from '../../../store/popupConfigStore';
+import {
+    usePopupConfigStore,
+    DEFAULT_POPUP_TRANSPARENCY,
+    MAX_POPUP_TRANSPARENCY,
+    DEFAULT_BACKDROP_DIM,
+    DEFAULT_POPUP_BACKGROUND,
+    DEFAULT_POPUP_BORDER,
+} from '../../../store/popupConfigStore';
+import { buildPopupSubMap, popupMainDp, subAll } from '../../../utils/popupPlaceholders';
+import { DynamicTitle } from '../DynamicTitle';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { useGlobalSettingsStore } from '../../../store/globalSettingsStore';
 import { formatNum } from '../../../utils/formatValue';
 import { TEMP_COLOR_CSS } from '../../../themes';
 import { DimmerPopupBody } from './DimmerPopupBody';
-import { ThermostatPopupBody } from './ThermostatPopupBody';
 import { SwitchPopupBody } from './SwitchPopupBody';
 import { ShutterPopupBody } from './ShutterPopupBody';
 import { MediaplayerPopupBody } from './MediaplayerPopupBody';
@@ -19,6 +27,7 @@ import { IframePopupBody } from './IframePopupBody';
 import { JsonPopupBody } from './JsonPopupBody';
 import { HtmlPopupBody } from './HtmlPopupBody';
 import { WidgetEmbedBody } from './WidgetEmbedBody';
+import { DeviceDpsBody } from './DeviceDpsBody';
 import { TabEmbedBody } from './TabEmbedBody';
 
 interface PopupHeaderTempProps {
@@ -67,14 +76,26 @@ function normalizeAction(action: ClickAction): ClickAction {
     }
 }
 
+/** Percent option → clamped number; non-numeric/undefined falls back to `fallback`. */
+function clampPct(value: number | undefined, max: number, fallback: number): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(max, n));
+}
+
 interface Props {
     widget: WidgetConfig;
     action: ClickAction;
     onClose: () => void;
     allWidgets?: WidgetConfig[];
+    /** Overrides the popup heading — e.g. the carousel item's label so the popup
+     *  shows the element name instead of the (shared) carousel widget name. */
+    titleOverride?: string;
 }
 
-function getTitle(widget: WidgetConfig, action: ClickAction): string {
+function getTitle(widget: WidgetConfig, action: ClickAction, titleOverride?: string): string {
+    // The most-specific caller-supplied heading wins (per-element label).
+    if (titleOverride) return titleOverride;
     const custom = widget.options?.popupTitle as string | undefined;
     if (custom) return custom;
     if (widget.title) return widget.title;
@@ -103,6 +124,8 @@ function getTitle(widget: WidgetConfig, action: ClickAction): string {
             return 'HTML';
         case 'popup-widget':
             return 'Widget';
+        case 'popup-dps':
+            return 'Datenpunkte';
         case 'popup-view':
             return widget.title || '';
         default:
@@ -110,21 +133,47 @@ function getTitle(widget: WidgetConfig, action: ClickAction): string {
     }
 }
 
-export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidgets = [] }: Props) {
+export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidgets = [], titleOverride }: Props) {
     const action = normalizeAction(rawAction);
     // Prefer the frontend container so the popup inherits per-layout scoped CSS vars.
     // Falls back to the portal target (admin context) or document.body.
     const adminTarget = usePortalTarget();
     const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminTarget;
 
-    // Auto-close resolution: action override > popup-view setting > global default.
-    // Tri-state: undefined = inherit next level, 0 = explicit off, >0 = seconds.
-    const actionAutoClose = widget.options?.popupAutoCloseSec as number | undefined;
-    const viewAutoClose = usePopupConfigStore((s) =>
-        action.kind === 'popup-view' ? s.views.find((v) => v.id === action.viewId)?.autoCloseSec : undefined,
+    // Everything below resolves through the same three levels:
+    // click action > popup-view setting > global default; undefined = inherit next level.
+    const view = usePopupConfigStore((s) =>
+        action.kind === 'popup-view' ? s.views.find((v) => v.id === action.viewId) : undefined,
     );
+
+    // Auto-close. Tri-state: undefined = inherit, 0 = explicit off, >0 = seconds.
+    const actionAutoClose = widget.options?.popupAutoCloseSec as number | undefined;
     const globalAutoClose = usePopupConfigStore((s) => s.globalAutoCloseSec);
-    const effectiveAutoCloseSec = actionAutoClose ?? viewAutoClose ?? globalAutoClose ?? 0;
+    const effectiveAutoCloseSec = actionAutoClose ?? view?.autoCloseSec ?? globalAutoClose ?? 0;
+
+    // Appearance, both in percent.
+    const globalTransparency = usePopupConfigStore((s) => s.globalPopupTransparency);
+    const globalBackdropDim = usePopupConfigStore((s) => s.globalBackdropDim);
+    const transparency = clampPct(
+        (widget.options?.popupTransparency as number | undefined) ?? view?.transparency ?? globalTransparency,
+        MAX_POPUP_TRANSPARENCY,
+        DEFAULT_POPUP_TRANSPARENCY,
+    );
+    const backdropDim = clampPct(
+        (widget.options?.popupBackdropDim as number | undefined) ?? view?.backdropDim ?? globalBackdropDim,
+        100,
+        DEFAULT_BACKDROP_DIM,
+    );
+
+    // Surface colour (issue #611): same three levels, then the `--popup-bg` theme
+    // var, then the historical `--app-surface`. A custom colour keeps the popup
+    // distinguishable from the widget cards it contains.
+    const globalBackground = usePopupConfigStore((s) => s.globalPopupBackground);
+    const background =
+        (widget.options?.popupBackground as string | undefined) ??
+        view?.background ??
+        globalBackground ??
+        DEFAULT_POPUP_BACKGROUND;
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -152,7 +201,11 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
 
     const isIframe = action.kind === 'popup-iframe';
     const hideTitle = !!widget.options?.popupHideTitle;
-    const title = getTitle(widget, action);
+    // The heading gets both placeholder layers, exactly like the widgets inside a popup
+    // view: `{{parent}}` & co. resolved here against the popup's main datapoint (for a
+    // list row that is the clicked row), `[[dp]]` resolved live by DynamicTitle below.
+    const mainDp = popupMainDp(widget, action.kind === 'popup-view' ? action.dp : undefined);
+    const title = subAll(getTitle(widget, action, titleOverride), buildPopupSubMap(widget, mainDp));
     const customWidth = widget.options?.popupWidth as number | undefined;
     const customHeight = widget.options?.popupHeight as number | undefined;
 
@@ -160,8 +213,6 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
         switch (action.kind) {
             case 'popup-dimmer':
                 return <DimmerPopupBody widget={widget} />;
-            case 'popup-thermostat':
-                return <ThermostatPopupBody widget={widget} action={action} />;
             case 'popup-switch':
                 return <SwitchPopupBody widget={widget} />;
             case 'popup-shutter':
@@ -182,6 +233,8 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                 return <HtmlPopupBody action={action} />;
             case 'popup-widget':
                 return <WidgetEmbedBody widget={widget} action={action} allWidgets={allWidgets} />;
+            case 'popup-dps':
+                return <DeviceDpsBody widget={widget} action={action} />;
             case 'popup-view':
                 return <TabEmbedBody viewId={action.viewId} triggerWidget={widget} dpOverride={action.dp} />;
             default:
@@ -192,17 +245,21 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
     return createPortal(
         <div
             className="fixed inset-0 flex items-center justify-center z-[300] p-4"
-            style={{ background: 'rgba(0,0,0,0.6)' }}
+            style={{ background: `rgba(0,0,0,${backdropDim / 100})` }}
             onClick={onClose}
         >
             <div
                 className="relative flex flex-col rounded-2xl shadow-2xl overflow-hidden"
                 style={{
-                    background: 'var(--app-surface)',
-                    border: '1px solid var(--app-border)',
+                    background,
+                    border: `1px solid ${DEFAULT_POPUP_BORDER}`,
+                    // Element opacity (not just a translucent surface) so the embedded
+                    // widgets — which paint their own --widget-bg cards — turn see-through
+                    // together with the dialog chrome instead of staying solid.
+                    opacity: transparency > 0 ? 1 - transparency / 100 : undefined,
                     width: isIframe ? undefined : customWidth ? `min(calc(100vw - 16px), ${customWidth}px)` : undefined,
                     maxWidth: isIframe ? undefined : customWidth ? undefined : 'min(calc(100vw - 16px), 600px)',
-                    maxHeight: isIframe ? undefined : customHeight ? `min(85vh, ${customHeight}px)` : '85vh',
+                    maxHeight: isIframe ? undefined : customHeight ? `min(85dvh, ${customHeight}px)` : '85dvh',
                 }}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={armTimer}
@@ -216,7 +273,7 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                     style={{
                         color: 'var(--text-secondary)',
                         background: 'var(--app-bg)',
-                        border: '1px solid var(--app-border)',
+                        border: `1px solid ${DEFAULT_POPUP_BORDER}`,
                     }}
                 >
                     <X size={13} />
@@ -224,9 +281,12 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
 
                 {/* Optional title header */}
                 {!hideTitle && title && (
-                    <div className="shrink-0 px-5 pr-12 py-3" style={{ borderBottom: '1px solid var(--app-border)' }}>
+                    <div
+                        className="shrink-0 px-5 pr-12 py-3"
+                        style={{ borderBottom: `1px solid ${DEFAULT_POPUP_BORDER}` }}
+                    >
                         <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                            {title}
+                            <DynamicTitle text={title} />
                         </span>
                         <PopupHeaderTemp action={action} widget={widget} />
                     </div>

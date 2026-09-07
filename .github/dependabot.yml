@@ -20,6 +20,11 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/react-dom"
         update-types: ["version-update:semver-major"]
+      # react-leaflet v5 requires React 19 (peer: react/react-dom ^19); we are
+      # on React 18 and vitepress' @docsearch/react caps react at <19. Comes
+      # with the React 19 migration, not before.
+      - dependency-name: "react-leaflet"
+        update-types: ["version-update:semver-major"]
       # Vite major bumps (5→6→7→8) are breaking and need a deliberate
       # migration; block them. Minor/patch updates still flow through.
       - dependency-name: "vite"
@@ -28,6 +33,18 @@ updates:
       # vite.config.ts (the package is not type:module because main.js is CJS).
       # Adopting it needs an ESM config migration; block the major for now.
       - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      # zustand v5 sends the production build into a React error #185 render
+      # loop on every route (dev build is fine, so CI does not catch it); we
+      # pinned back to v4 in #368. A retry needs a live profiler session on the
+      # loop, not a dependency bump.
+      - dependency-name: "zustand"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 (the Go port) cannot even be installed here:
+      # @typescript-eslint declares peer typescript ">=4.8.4 <6.1.0" and reaches
+      # us through @iobroker/eslint-config, so `npm ci` dies with ERESOLVE
+      # (#585). Revisit once typescript-eslint supports TS 7.
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"

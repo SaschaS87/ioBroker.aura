@@ -1,5 +1,6 @@
 import { useThemeStore } from '../../../../store/themeStore';
-import { useDashboardStore } from '../../../../store/dashboardStore';
+import { useLayoutSetting } from '../shared/useLayoutSetting';
+import { ResetDefaultsButton } from '../shared/ResetDefaultsButton';
 import { getTheme, ELEMENT_VAR_FALLBACKS, type ThemeVars, type AllVars } from '../../../../themes';
 import { useT } from '../../../../i18n';
 import { ColorPicker } from '../../../../components/common/ColorPicker';
@@ -44,6 +45,7 @@ const VAR_GROUPS: { labelKey: string; keys: (keyof AllVars)[] }[] = [
     { labelKey: 'theme.vars.elBadge', keys: ['--badge-ok', '--badge-warn', '--badge-crit'] },
     { labelKey: 'theme.vars.elLight', keys: ['--light-on', '--light-off'] },
     { labelKey: 'theme.vars.elNav', keys: ['--nav-bg', '--nav-active'] },
+    { labelKey: 'theme.vars.elPopup', keys: ['--popup-bg', '--popup-border'] },
 ];
 
 const VAR_LABEL_KEYS: Partial<Record<keyof AllVars, string>> = {
@@ -104,6 +106,8 @@ const VAR_LABEL_KEYS: Partial<Record<keyof AllVars, string>> = {
     '--light-off': 'theme.vars.elOff',
     '--nav-bg': 'theme.vars.bg',
     '--nav-active': 'theme.vars.elActive',
+    '--popup-bg': 'theme.vars.bg',
+    '--popup-border': 'theme.vars.border',
 };
 
 function isColor(v: string) {
@@ -131,10 +135,8 @@ interface ThemeVarsSectionProps {
 export function ThemeVarsSection({ contextId }: ThemeVarsSectionProps) {
     const t = useT();
     const { themeId, customVars, setCustomVar, resetCustom } = useThemeStore();
-    const layouts = useDashboardStore((s) => s.layouts);
-    const updateLayoutSettings = useDashboardStore((s) => s.updateLayoutSettings);
+    const { ls, setPatch } = useLayoutSetting(contextId);
 
-    const ls = contextId ? layouts.find((l) => l.id === contextId)?.settings : undefined;
     const effectiveThemeId = ls?.themeId ?? themeId;
     const effectiveVars = ls?.customVars ?? customVars;
     const activeTheme = getTheme(effectiveThemeId);
@@ -147,7 +149,7 @@ export function ThemeVarsSection({ contextId }: ThemeVarsSectionProps) {
         if (!contextId) setCustomVar(key, value);
         else {
             const next = { ...effectiveVars, [key]: value };
-            updateLayoutSettings(contextId, { customVars: next });
+            setPatch({ customVars: next });
         }
     }
 
@@ -160,7 +162,7 @@ export function ThemeVarsSection({ contextId }: ThemeVarsSectionProps) {
         } else {
             const next = { ...effectiveVars };
             delete next[key];
-            updateLayoutSettings(contextId, { customVars: Object.keys(next).length ? next : undefined });
+            setPatch({ customVars: Object.keys(next).length ? next : undefined });
         }
     }
 
@@ -169,7 +171,7 @@ export function ThemeVarsSection({ contextId }: ThemeVarsSectionProps) {
             resetCustom();
             return;
         }
-        updateLayoutSettings(contextId, { customVars: undefined });
+        setPatch({ customVars: undefined });
     }
 
     return (
@@ -182,18 +184,7 @@ export function ThemeVarsSection({ contextId }: ThemeVarsSectionProps) {
                     {t('theme.vars.title')}
                 </h2>
                 <div className="flex items-center gap-3 flex-wrap">
-                    <button
-                        onClick={resetAllVars}
-                        disabled={!hasCustomVars}
-                        className="text-xs px-3 py-1.5 rounded-lg hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
-                        style={{
-                            background: 'var(--app-bg)',
-                            color: 'var(--accent-red)',
-                            border: '1px solid var(--app-border)',
-                        }}
-                    >
-                        {t('theme.vars.resetAll')}
-                    </button>
+                    <ResetDefaultsButton onReset={resetAllVars} disabled={!hasCustomVars} scoped={contextId !== null} />
                 </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-5">

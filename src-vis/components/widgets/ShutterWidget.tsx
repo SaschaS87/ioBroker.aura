@@ -1,87 +1,16 @@
-import React, { useRef, useMemo, useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, Square } from 'lucide-react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import { ChevronUp, ChevronDown, Square, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import type { WidgetProps } from '../../types';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { getThresholdColor, type ColorThreshold } from '../../utils/colorThresholds';
 import { StatusBadges } from './StatusBadges';
 import { CustomGridView } from './CustomGridView';
 import { useStatusFields } from '../../hooks/useStatusFields';
-import { useT } from '../../i18n';
-
-// Shutter visual: horizontal slat lines filling from top = how much is closed
-function ShutterViz({
-    closedFrac,
-    accentColor,
-    isMoving,
-    className,
-    style,
-}: {
-    closedFrac: number | null;
-    accentColor: string;
-    isMoving: boolean;
-    className?: string;
-    style?: React.CSSProperties;
-}) {
-    return (
-        <div
-            className={className}
-            style={{
-                background: 'var(--blind-bg, var(--app-bg))',
-                border: '1px solid var(--blind-border, var(--app-border))',
-                borderRadius: '6px',
-                overflow: 'hidden',
-                position: 'relative',
-                opacity: closedFrac === null ? 0.4 : 1,
-                ...style,
-            }}
-        >
-            {/* Neutral state: unknown position */}
-            {closedFrac === null ? (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: '600' }}>–</span>
-                </div>
-            ) : (
-                <>
-                    {/* Slat area fills from top */}
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            height: `${closedFrac * 100}%`,
-                            transition: 'height 0.4s ease',
-                            backgroundImage:
-                                'repeating-linear-gradient(to bottom, transparent 0px, transparent 6px, color-mix(in srgb, var(--text-secondary) 35%, transparent) 6px, color-mix(in srgb, var(--text-secondary) 35%, transparent) 8px)',
-                        }}
-                    />
-                    {/* Edge indicator at the bottom of the blind */}
-                    {closedFrac !== null && closedFrac > 0.01 && closedFrac < 0.99 && (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                left: 0,
-                                right: 0,
-                                top: `${closedFrac * 100}%`,
-                                height: '2px',
-                                background: accentColor,
-                                transition: 'top 0.4s ease, background 0.3s',
-                                boxShadow: `0 0 4px ${accentColor}66`,
-                            }}
-                        />
-                    )}
-                </>
-            )}
-            {/* Pulsing dot when moving */}
-            {isMoving && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: accentColor }} />
-                </div>
-            )}
-        </div>
-    );
-}
+import { ShutterViz } from './ShutterViz';
+import { TILT_SLIDER_WIDTH, TiltButton, TiltPopover, TiltSlider, TiltStepButtons } from './TiltControls';
+import { clampPct, rawToTiltPct, tiltPctToRaw, tiltRange } from '../../utils/shutterTilt';
 
 function BtnRow({
     onUp,
@@ -89,20 +18,19 @@ function BtnRow({
     onDown,
     iconSz = 16,
     vertical = false,
-    disabled = false,
-    disableStop = false,
+    extra,
 }: {
     onUp: () => void;
     onStop: () => void;
     onDown: () => void;
     iconSz?: number;
     vertical?: boolean;
-    disabled?: boolean;
-    disableStop?: boolean;
+    /** Tilt control riding along in the same row/column. */
+    extra?: React.ReactNode;
 }) {
     const pad = Math.max(2, Math.round(iconSz / 4));
     const radius = Math.max(4, Math.round(iconSz / 2));
-    const dirStyle = (dir: 'up' | 'stop' | 'down', isDisabled: boolean): React.CSSProperties => ({
+    const dirStyle = (dir: 'up' | 'stop' | 'down'): React.CSSProperties => ({
         background: `var(--blind-${dir}-bg, var(--app-bg))`,
         color: `var(--blind-${dir}-color, var(--text-secondary))`,
         border: `1px solid var(--blind-${dir}-border, var(--app-border))`,
@@ -111,35 +39,19 @@ function BtnRow({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: isDisabled ? 0.5 : 1,
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
     });
     return (
         <div className={`aura-widget-action flex ${vertical ? 'flex-col' : ''} gap-1`}>
-            <button
-                onClick={onUp}
-                disabled={disabled}
-                className="hover:opacity-80 transition-opacity"
-                style={dirStyle('up', disabled)}
-            >
+            <button onClick={onUp} className="hover:opacity-80 transition-opacity" style={dirStyle('up')}>
                 <ChevronUp size={iconSz} />
             </button>
-            <button
-                onClick={onStop}
-                disabled={disabled || disableStop}
-                className="hover:opacity-80 transition-opacity"
-                style={dirStyle('stop', disabled || disableStop)}
-            >
+            <button onClick={onStop} className="hover:opacity-80 transition-opacity" style={dirStyle('stop')}>
                 <Square size={iconSz} />
             </button>
-            <button
-                onClick={onDown}
-                disabled={disabled}
-                className="hover:opacity-80 transition-opacity"
-                style={dirStyle('down', disabled)}
-            >
+            <button onClick={onDown} className="hover:opacity-80 transition-opacity" style={dirStyle('down')}>
                 <ChevronDown size={iconSz} />
             </button>
+            {extra}
         </div>
     );
 }
@@ -150,119 +62,131 @@ export function ShutterWidget({ config }: WidgetProps) {
     const openDp = opts.openDp as string | undefined;
     const closeDp = opts.closeDp as string | undefined;
     const activityMovingRaw = opts.activityMovingValues as string | undefined;
-    const { state, setValue } = useDatapoint(config.datapoint);
+    const actualPositionDp = opts.actualPositionDp as string | undefined;
+    const tiltDp = opts.tiltDp as string | undefined;
+    const actualTiltDp = opts.actualTiltDp as string | undefined;
+    const { value, setValue, state } = useDatapoint(config.datapoint);
+    const { value: actualVal, state: actualState } = useDatapoint(actualPositionDp ?? '');
     const { value: activityVal } = useDatapoint((opts.activityDp as string) ?? '');
     const { value: directionVal } = useDatapoint((opts.directionDp as string) ?? '');
-    const { value: connectionVal } = useDatapoint((opts.connectionDp as string) ?? '');
+    const { value: tiltVal } = useDatapoint(tiltDp ?? '');
+    const { value: actualTiltVal } = useDatapoint(actualTiltDp ?? '');
     const { setState } = useIoBroker();
     const layout = config.layout ?? 'default';
-    const t = useT();
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // Aufgabe 1: Only use ack:true values for position display
-    // ────────────────────────────────────────────────────────────────────────────
-    const [ackedPos, setAckedPos] = useState<number | null>(null);
-    const [lastKnownAckedPos, setLastKnownAckedPos] = useState<number | null>(null);
-    useEffect(() => {
-        if (state?.ack === true && typeof state.val === 'number') {
-            const rounded = Math.round(state.val);
-            setAckedPos(rounded);
-            setLastKnownAckedPos(rounded);
-        }
-    }, [state?.val, state?.ack]);
-
-    // Normalize position: 0 = closed, 100 = open
-    // Use acked position if available, fallback to last known acked position.
-    // If never acked yet, use null (signals neutral/disabled display)
-    const rawPos = ackedPos !== null ? ackedPos : lastKnownAckedPos;
-    const isPositionUnknown = rawPos === null;
-    const pos = isPositionUnknown ? 0 : ((opts.invertPosition as boolean) ? 100 - rawPos : rawPos);
-    const closedFrac = isPositionUnknown ? null : Math.max(0, Math.min(1, (100 - pos) / 100));
     const showClosedPercent = !!(opts.showClosedPercent as boolean);
-    const displayPct = isPositionUnknown ? -1 : (showClosedPercent ? 100 - pos : pos);
+    const sendOnRelease = opts.sendOnRelease !== false;
+    // Whether the graphic (and the percentage) already follow the regulator while
+    // dragging. Off for the position — that is how the widget always behaved —
+    // and on for the slats, where the point of the vertical slider is that they
+    // move with the finger. The thumb itself always follows, either way.
+    const positionLivePreview = !!(opts.positionLivePreview as boolean);
+    const tiltLivePreview = opts.tiltLivePreview !== false;
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // Aufgabe 2: Derived movement indicator for devices without MovingState
-    // ────────────────────────────────────────────────────────────────────────────
-    const hasActivityDp = typeof opts.activityDp === 'string' && opts.activityDp.length > 0;
-    const [moveTarget, setMoveTarget] = useState<number | null>(null);
-    const [derivedMoving, setDerivedMoving] = useState(false);
-    const moveTimeoutRef = useRef<number | null>(null);
+    const [dragPos, setDragPos] = useState<number | null>(null);
+    const [dragTilt, setDragTilt] = useState<number | null>(null);
+    const [tiltOpen, setTiltOpen] = useState(false);
+    const tiltBtnRef = useRef<HTMLButtonElement>(null);
 
-    // When user writes a position, record it as the move target
+    // Normalize position: 0 = closed, 100 = open.
+    // Actuators like HmIP-BROLL report the real position on a read-only DP of a
+    // different channel than the writable LEVEL – if configured, it wins for display.
+    const posValue = actualPositionDp && typeof actualVal === 'number' ? actualVal : value;
+    // Only an ACKNOWLEDGED value is a real position. A write echoes back with ack:false
+    // long before the blind has moved, and showing that target as the current position
+    // let the graphic run ahead of the hardware (TaHoma). Remember the last acknowledged
+    // reading; until one has arrived the position is unknown and is shown as "–" rather
+    // than as a confident 0 %.
+    const posState = actualPositionDp ? actualState : state;
+    const [ackedPos, setAckedPos] = useState<number | null>(null);
     useEffect(() => {
-        if (moveTarget !== null && ackedPos !== null) {
-            const tolerance = 3; // 3% tolerance
-            const withinTolerance = Math.abs(ackedPos - moveTarget) < tolerance;
-            if (withinTolerance) {
-                setMoveTarget(null);
-                setDerivedMoving(false);
-                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
-            }
-        }
-    }, [moveTarget, ackedPos]);
+        if (posState?.ack === true && typeof posState.val === 'number') setAckedPos(Math.round(posState.val));
+    }, [posState?.val, posState?.ack]);
+    const isPositionUnknown = ackedPos === null;
+    const rawPos = ackedPos ?? (typeof posValue === 'number' ? Math.round(posValue) : 0);
+    const pos = (opts.invertPosition as boolean) ? 100 - rawPos : rawPos;
+    const displayPos = dragPos ?? pos;
+    const shownPos = positionLivePreview ? displayPos : pos;
+    const closedFrac = Math.max(0, Math.min(1, (100 - shownPos) / 100));
+    const displayPct = showClosedPercent ? 100 - shownPos : shownPos;
 
-    // Monitor timeout: after 45 seconds, stop showing derived movement
-    useEffect(() => {
-        if (moveTarget !== null && !hasActivityDp) {
-            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
-            moveTimeoutRef.current = setTimeout(() => {
-                setDerivedMoving(false);
-                setMoveTarget(null);
-            }, 45000);
-        }
-        return () => {
-            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
-        };
-    }, [moveTarget, hasActivityDp]);
+    // ── Slat tilt ─────────────────────────────────────────────────────────────
+    // 0 % = slats closed, 100 % = open; the raw range/inversion lives in options.
+    const tiltRng = tiltRange(opts);
+    const tiltActive = !!tiltDp;
+    const tiltRawValue = actualTiltDp && typeof actualTiltVal === 'number' ? actualTiltVal : tiltVal;
+    const tiltPct = rawToTiltPct(tiltRawValue, tiltRng) ?? 0;
+    const tiltSliderPct = dragTilt ?? tiltPct;
+    const tiltShownPct = tiltLivePreview ? tiltSliderPct : tiltPct;
+    const tiltFrac = tiltActive ? tiltShownPct / 100 : undefined;
+    const tiltStep = (opts.tiltStep as number) || 10;
+    const tiltLabel = (opts.tiltLabel as string) || 'Lamellen';
+    // The compact row is already tight with three buttons — a second percentage
+    // there has to be asked for, everywhere else it comes along by default.
+    const showTiltValue = layout === 'compact' ? opts.showTiltValue === true : opts.showTiltValue !== false;
+    const tiltSliderWidth = (opts.tiltSliderWidth as number) || TILT_SLIDER_WIDTH;
 
-    const isMoving = hasActivityDp
+    const isMoving = activityMovingRaw
         ? activityMovingRaw
-              ? activityMovingRaw
-                    .split(',')
-                    .map((s) => s.trim())
-                    .some((v) => String(activityVal) === v)
-              : activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true'
-        : derivedMoving;
-
+              .split(',')
+              .map((s) => s.trim())
+              .some((v) => String(activityVal) === v)
+        : activityVal === true || activityVal === 1 || activityVal === '1' || activityVal === 'true';
     const movingDir: 'up' | 'down' | null =
         directionVal === 1 || directionVal === '1' ? 'up' : directionVal === 2 || directionVal === '2' ? 'down' : null;
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // Aufgabe 3: Connection status and control disable
-    // ────────────────────────────────────────────────────────────────────────────
-    const isConnected = connectionVal !== false; // Default to true if no connectionDp set
 
     // Save the raw position just before a move command so stop can reference it.
     // This avoids the race where rawPos has already changed to the new target (e.g. 0)
     // by the time the user clicks stop, which would send 0 again (no-op) or the old
     // position back (causing the blind to reverse).
     const preMoveRawRef = useRef(rawPos);
+    // Slat angle wanted across a drive – see reapplyTiltAfterMove below.
+    const preMoveTiltRef = useRef<number | null>(null);
+    const reapplyTilt = !!(opts.reapplyTiltAfterMove as boolean);
+    const hasActivityDp = !!(opts.activityDp as string | undefined);
+    const wasMovingRef = useRef(isMoving);
+    const reapplyTimerRef = useRef<number | undefined>(undefined);
+
+    const writeTiltRaw = (pct: number) => {
+        if (tiltDp) setState(tiltDp, tiltPctToRaw(pct, tiltRng));
+    };
+
+    // Some actuators drive the slats into an end position whenever a new blind
+    // position is written. Opt-in: restore the angle from before the drive once
+    // it has finished – on the falling edge of the activity DP, or after a short
+    // fallback delay when there is none.
+    useEffect(() => {
+        const was = wasMovingRef.current;
+        wasMovingRef.current = isMoving;
+        if (!reapplyTilt || !tiltDp || !hasActivityDp) return;
+        if (was && !isMoving && preMoveTiltRef.current !== null) writeTiltRaw(preMoveTiltRef.current);
+        // Only the moving edge matters here.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isMoving]);
+
+    useEffect(() => () => window.clearTimeout(reapplyTimerRef.current), []);
+
+    /** Remember the wanted slat angle and, without an activity DP, re-send it later. */
+    const keepTiltAcrossMove = () => {
+        if (!tiltActive) return;
+        preMoveTiltRef.current = dragTilt ?? tiltPct;
+        if (!reapplyTilt || hasActivityDp) return;
+        const target = preMoveTiltRef.current;
+        window.clearTimeout(reapplyTimerRef.current);
+        reapplyTimerRef.current = window.setTimeout(() => writeTiltRaw(target), 3000);
+    };
 
     const writePos = (p: number) => {
         preMoveRawRef.current = rawPos; // snapshot before command
+        keepTiltAcrossMove();
         const raw = (opts.invertPosition as boolean) ? 100 - p : p;
-
-        // Aufgabe 2: Set movement target and derived moving flag for acks-false devices
-        if (!hasActivityDp) {
-            setMoveTarget(raw);
-            setDerivedMoving(true);
-        }
-
         setValue(raw);
     };
     const openFully = () => {
         if (controlMode === 'taster' && openDp) {
             preMoveRawRef.current = rawPos;
+            keepTiltAcrossMove();
             setState(openDp, true);
-            // Taster mode: show movement for 45s timeout (no numeric target)
-            if (!hasActivityDp) {
-                setDerivedMoving(true);
-                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
-                moveTimeoutRef.current = setTimeout(() => {
-                    setDerivedMoving(false);
-                }, 45000);
-            }
         } else {
             writePos(100);
         }
@@ -270,36 +194,20 @@ export function ShutterWidget({ config }: WidgetProps) {
     const closeFully = () => {
         if (controlMode === 'taster' && closeDp) {
             preMoveRawRef.current = rawPos;
+            keepTiltAcrossMove();
             setState(closeDp, true);
-            // Taster mode: show movement for 45s timeout (no numeric target)
-            if (!hasActivityDp) {
-                setDerivedMoving(true);
-                if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
-                moveTimeoutRef.current = setTimeout(() => {
-                    setDerivedMoving(false);
-                }, 45000);
-            }
         } else {
             writePos(0);
         }
     };
     const stop = () => {
         const stopDp = opts.stopDp as string | undefined;
-        let commandWasSent = false;
         if (stopDp) {
             setState(stopDp, true);
-            commandWasSent = true;
-        } else if (controlMode !== 'taster' && (rawPos !== null || preMoveRawRef.current !== null)) {
+        } else if (controlMode !== 'taster') {
             // Race-condition-safe fallback: use pre-move snapshot, not current rawPos
-            const stopTarget = isMoving && rawPos !== preMoveRawRef.current ? (rawPos ?? 0) : (preMoveRawRef.current ?? 0);
+            const stopTarget = isMoving && rawPos !== preMoveRawRef.current ? rawPos : preMoveRawRef.current;
             setState(config.datapoint, stopTarget);
-            commandWasSent = true;
-        }
-        // Only clear derived movement indicator if a stop command was actually sent
-        if (commandWasSent) {
-            setDerivedMoving(false);
-            setMoveTarget(null);
-            if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
         }
     };
 
@@ -309,14 +217,8 @@ export function ShutterWidget({ config }: WidgetProps) {
           ? 'var(--blind-color, var(--accent))'
           : 'var(--text-secondary)';
 
-    const thresholds = opts.colorThresholds as Array<[number, string]> | undefined;
-    const thresholdColor = useMemo(() => {
-        if (!thresholds?.length) return undefined;
-        for (const [thresh, color] of thresholds) {
-            if (pos < thresh) return color;
-        }
-        return thresholds[thresholds.length - 1][1];
-    }, [thresholds, pos]);
+    const thresholds = opts.colorThresholds as ColorThreshold[] | undefined;
+    const thresholdColor = useMemo(() => getThresholdColor(pos, thresholds), [thresholds, pos]);
     const valueColor = thresholdColor ?? 'var(--text-primary)';
 
     const showTitle = opts.showTitle !== false;
@@ -325,14 +227,11 @@ export function ShutterWidget({ config }: WidgetProps) {
     const showControls = opts.showControls !== false;
     const showSlider = opts.showSlider !== false;
     const showIcon = opts.showIcon !== false;
-    const sendOnRelease = opts.sendOnRelease !== false;
     const iconSize = (opts.iconSize as number) || 20;
     const valueSize = (opts.valueSize as number) || 20;
     const buttonSize = (opts.buttonSize as number) || 14;
     const sliderHeight = (opts.sliderHeight as number) || 6;
 
-    const [dragPos, setDragPos] = useState<number | null>(null);
-    const displayPos = dragPos ?? pos;
     // Slider mirrors the displayed value: left=low%, right=high%
     // showClosedPercent=off → right=100%open=open; showClosedPercent=on → right=100%closed=closed
     const sliderPos = showClosedPercent ? 100 - displayPos : displayPos;
@@ -351,63 +250,167 @@ export function ShutterWidget({ config }: WidgetProps) {
             setDragPos(null);
         }
     };
+
+    const writeTilt = (pct: number) => {
+        preMoveTiltRef.current = pct;
+        writeTiltRaw(pct);
+    };
+    const handleTiltChange = (v: number) => {
+        if (sendOnRelease) setDragTilt(v);
+        else writeTilt(v);
+    };
+    const handleTiltRelease = () => {
+        if (sendOnRelease && dragTilt !== null) {
+            writeTilt(dragTilt);
+            setDragTilt(null);
+        }
+    };
+    const pickTilt = (v: number) => {
+        setDragTilt(null);
+        writeTilt(clampPct(v));
+    };
+    const stepTilt = (dir: 1 | -1) => pickTilt(Math.round(tiltSliderPct + dir * tiltStep));
+
     const customIconName = opts.icon as string | undefined;
     const CustomIcon = customIconName ? getWidgetIcon(customIconName, Square) : null;
 
     const statusText = isPositionUnknown
         ? '–'
         : isMoving
-          ? movingDir === 'up'
-              ? '▲ Fährt auf'
-              : movingDir === 'down'
-                ? '▼ Fährt zu'
-                : '↕ Fährt...'
-          : pos === 100
-            ? 'Geöffnet'
-            : pos === 0
-              ? 'Geschlossen'
-              : showClosedPercent
-                ? `${100 - pos}% geschlossen`
-                : `${pos}% geöffnet`;
+        ? movingDir === 'up'
+            ? '▲ Fährt auf'
+            : movingDir === 'down'
+              ? '▼ Fährt zu'
+              : '↕ Fährt...'
+        : shownPos === 100
+          ? 'Geöffnet'
+          : shownPos === 0
+            ? 'Geschlossen'
+            : showClosedPercent
+              ? `${100 - shownPos}% geschlossen`
+              : `${shownPos}% geöffnet`;
 
     const slider = (
-        <>
-            <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={sliderPos}
-                onChange={(e) => handleSliderChange(Number(e.target.value))}
-                onMouseUp={handleSliderRelease}
-                onTouchEnd={handleSliderRelease}
-                disabled={!isConnected || isPositionUnknown}
-                style={{
-                    accentColor: 'var(--accent)',
-                    height: sliderHeight,
-                    opacity: (isConnected && !isPositionUnknown) ? 1 : 0.5,
-                    cursor: (isConnected && !isPositionUnknown) ? 'pointer' : 'not-allowed',
-                }}
-                className="aura-widget-action w-full rounded-full appearance-none"
-            />
-            {!isConnected && (
-                <div
-                    className="text-xs mt-1"
-                    style={{
-                        color: 'var(--accent-red, #ef4444)',
-                        textAlign: 'center',
-                    }}
-                >
-                    {t('shutter.notConnected')}
-                </div>
-            )}
-        </>
+        <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={sliderPos}
+            onChange={(e) => handleSliderChange(Number(e.target.value))}
+            onMouseUp={handleSliderRelease}
+            onTouchEnd={handleSliderRelease}
+            style={{ accentColor: 'var(--accent)', height: sliderHeight }}
+            className="aura-widget-action w-full rounded-full appearance-none cursor-pointer"
+        />
     );
+
+    // ── Tilt controls ─────────────────────────────────────────────────────────
+    // Where the slat control lives: inline in the widget or behind a popover
+    // button. Compact/Minimal have no room for a slider, so an inline control
+    // degrades to the step buttons there.
+    const flatLayout = layout === 'compact' || layout === 'minimal';
+    const tiltPlacement = tiltActive
+        ? ((opts.tiltPlacement as string) ?? (flatLayout ? 'popup' : 'inline'))
+        : ('off' as string);
+    const tiltControl =
+        tiltPlacement === 'inline' ? (flatLayout ? 'buttons' : ((opts.tiltControl as string) ?? 'slider-v')) : null;
+
+    const tiltPad = Math.max(2, Math.round(buttonSize / 4));
+    const tiltBtnStyle: React.CSSProperties = {
+        background: 'var(--blind-tilt-bg, var(--blind-stop-bg, var(--app-bg)))',
+        color: 'var(--blind-tilt-color, var(--blind-stop-color, var(--text-secondary)))',
+        border: '1px solid var(--blind-tilt-border, var(--blind-stop-border, var(--app-border)))',
+        padding: tiltPad,
+        borderRadius: Math.max(4, Math.round(buttonSize / 2)),
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+    };
+
+    const tiltSliderEl = (vertical: boolean) => (
+        <TiltSlider
+            vertical={vertical}
+            thickness={vertical ? tiltSliderWidth : sliderHeight}
+            value={tiltSliderPct}
+            onChange={handleTiltChange}
+            onRelease={handleTiltRelease}
+            title={tiltLabel}
+        />
+    );
+
+    /** Tilt control that rides along in a button row: popover button or ± steps. */
+    const tiltAside = (vertical: boolean) =>
+        tiltPlacement === 'popup' ? (
+            <TiltButton
+                btnRef={tiltBtnRef}
+                onToggle={() => setTiltOpen((o) => !o)}
+                iconSz={buttonSize}
+                btnStyle={tiltBtnStyle}
+                label={tiltLabel}
+            />
+        ) : tiltControl === 'buttons' ? (
+            <TiltStepButtons
+                onOpenStep={() => stepTilt(1)}
+                onCloseStep={() => stepTilt(-1)}
+                iconSz={buttonSize}
+                btnStyle={tiltBtnStyle}
+                vertical={vertical}
+                label={tiltLabel}
+            />
+        ) : null;
+
+    // Default layout: step buttons and the popover button share the bottom row
+    // with the position slider. Stacking them onto the up/stop/down column would
+    // make it five buttons tall — in a flat widget that overflows the card and
+    // covers the row below, which then swallows the clicks.
+    const tiltBottom =
+        !flatLayout && (tiltPlacement === 'popup' || tiltControl === 'buttons') ? tiltAside(false) : null;
+
+    const tiltPopover = tiltOpen ? (
+        <TiltPopover
+            anchorRef={tiltBtnRef}
+            onClose={() => setTiltOpen(false)}
+            label={tiltLabel}
+            sliderPct={tiltSliderPct}
+            shownPct={tiltShownPct}
+            closedFrac={closedFrac}
+            accentColor={accentColor}
+            isMoving={isMoving}
+            onChange={handleTiltChange}
+            onRelease={handleTiltRelease}
+            onPick={pickTilt}
+        />
+    ) : null;
+
+    const tiltPctText = `${Math.round(tiltShownPct)}%`;
+
+    // Vertical regulator column of the default layout — left or right of the graphic.
+    const tiltSliderSide = (opts.tiltSliderSide as string) === 'left' ? 'left' : 'right';
+    const tiltColumn =
+        tiltControl === 'slider-v' ? (
+            <div
+                className="aura-widget-tilt flex flex-col items-center gap-1 shrink-0 min-h-0"
+                // Fixed width: "0%" and "100%" must not resize the column,
+                // otherwise the whole row reflows on every value change.
+                style={{ width: Math.max(tiltSliderWidth, 28) }}
+            >
+                <div className="flex-1 min-h-0 flex items-stretch justify-center">{tiltSliderEl(true)}</div>
+                {showTiltValue && (
+                    <span
+                        className="text-[10px] tabular-nums w-full text-center"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
+                        {tiltPctText}
+                    </span>
+                )}
+            </div>
+        ) : null;
 
     const { battery, reach, batteryIcon, reachIcon, statusBadges } = useStatusFields(config);
 
     if (layout === 'custom') {
-        const dirBtnStyle = (dir: 'up' | 'stop' | 'down'): React.CSSProperties => ({
+        const dirBtnStyle = (dir: 'up' | 'stop' | 'down' | 'tilt'): React.CSSProperties => ({
             background: `var(--blind-${dir}-bg, var(--app-bg))`,
             color: `var(--blind-${dir}-color, var(--text-secondary))`,
             border: `1px solid var(--blind-${dir}-border, var(--app-border))`,
@@ -416,70 +419,98 @@ export function ShutterWidget({ config }: WidgetProps) {
             cursor: 'pointer',
         });
         return (
-            <CustomGridView
-                config={config}
-                value={isPositionUnknown ? '–' : `${pos}`}
-                rawValue={isPositionUnknown ? -1 : pos}
-                extraFields={{
-                    position: isPositionUnknown ? '–' : `${displayPct}%`,
-                    status: statusText,
-                    moving: isMoving ? 'Ja' : 'Nein',
-                    battery,
-                    reach,
-                }}
-                extraComponents={{
-                    icon: showIcon ? (
-                        CustomIcon ? (
-                            <CustomIcon
-                                className="aura-widget-icon"
-                                size={iconSize}
-                                style={{ color: accentColor, flexShrink: 0 }}
+            <>
+                <CustomGridView
+                    config={config}
+                    value={`${pos}`}
+                    rawValue={pos}
+                    extraFields={{
+                        position: `${displayPct}%`,
+                        status: statusText,
+                        moving: isMoving ? 'Ja' : 'Nein',
+                        tilt: tiltActive ? tiltPctText : '',
+                        battery,
+                        reach,
+                    }}
+                    extraComponents={{
+                        icon: showIcon ? (
+                            CustomIcon ? (
+                                <CustomIcon
+                                    className="aura-widget-icon"
+                                    size={iconSize}
+                                    style={{ color: accentColor, flexShrink: 0 }}
+                                />
+                            ) : (
+                                <ShutterViz
+                                    closedFrac={closedFrac}
+                                    accentColor={accentColor}
+                                    isMoving={isMoving}
+                                    tiltFrac={tiltFrac}
+                                    className="aura-widget-icon"
+                                    style={{ width: iconSize, height: iconSize, flexShrink: 0 }}
+                                />
+                            )
+                        ) : null,
+                        'btn-up': (
+                            <button className="aura-widget-action nodrag" style={dirBtnStyle('up')} onClick={openFully}>
+                                <ChevronUp size={buttonSize} />
+                            </button>
+                        ),
+                        'btn-stop': (
+                            <button className="aura-widget-action nodrag" style={dirBtnStyle('stop')} onClick={stop}>
+                                <Square size={buttonSize} />
+                            </button>
+                        ),
+                        'btn-down': (
+                            <button
+                                className="aura-widget-action nodrag"
+                                style={dirBtnStyle('down')}
+                                onClick={closeFully}
+                            >
+                                <ChevronDown size={buttonSize} />
+                            </button>
+                        ),
+                        slider,
+                        'tilt-slider-v': tiltActive ? (
+                            <div className="h-full flex items-stretch justify-center">{tiltSliderEl(true)}</div>
+                        ) : null,
+                        'tilt-slider-h': tiltActive ? tiltSliderEl(false) : null,
+                        'btn-tilt': tiltActive ? (
+                            <TiltButton
+                                btnRef={tiltBtnRef}
+                                onToggle={() => setTiltOpen((o) => !o)}
+                                iconSz={buttonSize}
+                                btnStyle={dirBtnStyle('tilt')}
+                                label={tiltLabel}
                             />
-                        ) : (
-                            <ShutterViz
-                                closedFrac={closedFrac}
-                                accentColor={accentColor}
-                                isMoving={isMoving}
-                                className="aura-widget-icon"
-                                style={{ width: iconSize, height: iconSize, flexShrink: 0 }}
-                            />
-                        )
-                    ) : null,
-                    'btn-up': (
-                        <button
-                            className="aura-widget-action nodrag"
-                            style={{ ...dirBtnStyle('up'), opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
-                            onClick={openFully}
-                            disabled={!isConnected}
-                        >
-                            <ChevronUp size={buttonSize} />
-                        </button>
-                    ),
-                    'btn-stop': (
-                        <button
-                            className="aura-widget-action nodrag"
-                            style={{ ...dirBtnStyle('stop'), opacity: (isConnected && !(controlMode === 'taster' && !opts.stopDp)) ? 1 : 0.5, cursor: (isConnected && !(controlMode === 'taster' && !opts.stopDp)) ? 'pointer' : 'not-allowed' }}
-                            onClick={stop}
-                            disabled={!isConnected || (controlMode === 'taster' && !opts.stopDp)}
-                        >
-                            <Square size={buttonSize} />
-                        </button>
-                    ),
-                    'btn-down': (
-                        <button
-                            className="aura-widget-action nodrag"
-                            style={{ ...dirBtnStyle('down'), opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
-                            onClick={closeFully}
-                            disabled={!isConnected}
-                        >
-                            <ChevronDown size={buttonSize} />
-                        </button>
-                    ),
-                    'battery-icon': batteryIcon,
-                    'reach-icon': reachIcon,
-                    'status-badges': statusBadges,
-                }}
-            />
+                        ) : null,
+                        'btn-tilt-open': tiltActive ? (
+                            <button
+                                className="aura-widget-action nodrag"
+                                style={dirBtnStyle('tilt')}
+                                title={`${tiltLabel} öffnen`}
+                                onClick={() => stepTilt(1)}
+                            >
+                                <ChevronsUpDown size={buttonSize} />
+                            </button>
+                        ) : null,
+                        'btn-tilt-close': tiltActive ? (
+                            <button
+                                className="aura-widget-action nodrag"
+                                style={dirBtnStyle('tilt')}
+                                title={`${tiltLabel} schließen`}
+                                onClick={() => stepTilt(-1)}
+                            >
+                                <ChevronsDownUp size={buttonSize} />
+                            </button>
+                        ) : null,
+                        'battery-icon': batteryIcon,
+                        'reach-icon': reachIcon,
+                        'status-badges': statusBadges,
+                    }}
+                />
+                {tiltPopover}
+            </>
         );
     }
 
@@ -499,6 +530,7 @@ export function ShutterWidget({ config }: WidgetProps) {
                             closedFrac={closedFrac}
                             accentColor={accentColor}
                             isMoving={isMoving}
+                            tiltFrac={tiltFrac}
                             className="aura-widget-icon"
                             style={{ width: iconSize, height: iconSize, flexShrink: 0 }}
                         />
@@ -522,14 +554,39 @@ export function ShutterWidget({ config }: WidgetProps) {
                             color: thresholdColor ?? (isMoving ? 'var(--accent-yellow)' : 'var(--text-primary)'),
                             fontSize: valueSize,
                             lineHeight: 1,
-                            opacity: isPositionUnknown ? 0.5 : 1,
                         }}
                     >
-                        {isPositionUnknown ? '–' : `${displayPct}%`}
+                        {displayPct}%
                     </span>
                 )}
-                {showControls && <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} disabled={!isConnected} disableStop={controlMode === 'taster' && !opts.stopDp} />}
+                {tiltActive && showTiltValue && (
+                    <span
+                        className="aura-widget-value shrink-0 tabular-nums text-right"
+                        // "0%" and "100%" reserve the same room so the button row
+                        // does not shift when the angle changes.
+                        style={{
+                            color: 'var(--text-secondary)',
+                            fontSize: Math.max(9, Math.round(valueSize * 0.6)),
+                            minWidth: '4ch',
+                        }}
+                        title={tiltLabel}
+                    >
+                        {tiltPctText}
+                    </span>
+                )}
+                {showControls ? (
+                    <BtnRow
+                        onUp={openFully}
+                        onStop={stop}
+                        onDown={closeFully}
+                        iconSz={buttonSize}
+                        extra={tiltAside(false)}
+                    />
+                ) : (
+                    tiltAside(false)
+                )}
                 <StatusBadges config={config} />
+                {tiltPopover}
             </div>
         );
     }
@@ -563,26 +620,20 @@ export function ShutterWidget({ config }: WidgetProps) {
                 {showControls && (
                     <button
                         onClick={openFully}
-                        disabled={!isConnected}
                         className="aura-widget-action hover:opacity-80 transition-opacity"
-                        style={{ ...minBtnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                        style={minBtnStyle}
                     >
                         <ChevronUp size={buttonSize} />
                     </button>
                 )}
                 {showValue && (
                     <div className="aura-widget-value text-center">
-                        <p className="font-bold leading-none" style={{ color: valueColor, fontSize: valueSize, opacity: isPositionUnknown ? 0.5 : 1 }}>
-                            {isPositionUnknown ? '–' : `${displayPct}%`}
+                        <p className="font-bold leading-none" style={{ color: valueColor, fontSize: valueSize }}>
+                            {displayPct}%
                         </p>
                         {isMoving && (
                             <p className="text-[10px] animate-pulse mt-0.5" style={{ color: 'var(--accent-yellow)' }}>
                                 {movingDir === 'up' ? '▲' : '▼'}
-                            </p>
-                        )}
-                        {!isConnected && (
-                            <p className="text-[10px] mt-0.5" style={{ color: 'var(--accent-red, #ef4444)' }}>
-                                {t('shutter.notConnected')}
                             </p>
                         )}
                     </div>
@@ -591,23 +642,23 @@ export function ShutterWidget({ config }: WidgetProps) {
                     <>
                         <button
                             onClick={stop}
-                            disabled={!isConnected}
                             className="aura-widget-action hover:opacity-80 transition-opacity"
-                            style={{ ...stopBtnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                            style={stopBtnStyle}
                         >
                             <Square size={stopSz} />
                         </button>
                         <button
                             onClick={closeFully}
-                            disabled={!isConnected}
                             className="aura-widget-action hover:opacity-80 transition-opacity"
-                            style={{ ...downBtnStyle, opacity: isConnected ? 1 : 0.5, cursor: isConnected ? 'pointer' : 'not-allowed' }}
+                            style={downBtnStyle}
                         >
                             <ChevronDown size={buttonSize} />
                         </button>
                     </>
                 )}
+                {tiltAside(false)}
                 <StatusBadges config={config} />
+                {tiltPopover}
             </div>
         );
     }
@@ -647,12 +698,20 @@ export function ShutterWidget({ config }: WidgetProps) {
                 </div>
             )}
             <div className="flex gap-2 flex-1 min-h-0">
-                <ShutterViz closedFrac={closedFrac} accentColor={accentColor} isMoving={isMoving} className="flex-1" />
+                {tiltSliderSide === 'left' && tiltColumn}
+                <ShutterViz
+                    closedFrac={closedFrac}
+                    accentColor={accentColor}
+                    isMoving={isMoving}
+                    tiltFrac={tiltFrac}
+                    className="flex-1"
+                />
+                {tiltSliderSide === 'right' && tiltColumn}
                 {showControls && (
-                    <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} vertical disabled={!isConnected} disableStop={controlMode === 'taster' && !opts.stopDp} />
+                    <BtnRow onUp={openFully} onStop={stop} onDown={closeFully} iconSz={buttonSize} vertical />
                 )}
             </div>
-            {(showValue || showSlider) &&
+            {(showValue || showSlider || tiltControl === 'slider-h' || tiltBottom) &&
                 (() => {
                     // Reserve right space on the slider row so the bottom-right StatusBadges don't overlap the slider thumb at 100%.
                     const showBadges = opts.showStatusBadges !== false;
@@ -660,29 +719,52 @@ export function ShutterWidget({ config }: WidgetProps) {
                         ? [opts.batteryDp, opts.unreachDp, opts.lockDp].filter((v) => typeof v === 'string' && v).length
                         : 0;
                     const badgesWidth = badgeCount > 0 ? badgeCount * 18 + (badgeCount - 1) * 2 + 4 : 0;
+                    const hasSlider = showSlider || tiltControl === 'slider-h';
                     return (
-                        <div style={showSlider && badgesWidth > 0 ? { paddingRight: badgesWidth } : undefined}>
+                        <div style={hasSlider && badgesWidth > 0 ? { paddingRight: badgesWidth } : undefined}>
                             {showValue && (
                                 <div className="aura-widget-value flex justify-between items-baseline mb-1">
                                     <span
                                         className="text-[11px]"
-                                        style={{ color: isMoving ? 'var(--accent-yellow)' : 'var(--text-secondary)', opacity: isPositionUnknown ? 0.5 : 1 }}
+                                        style={{ color: isMoving ? 'var(--accent-yellow)' : 'var(--text-secondary)' }}
                                     >
                                         {statusText}
                                     </span>
                                     <span
                                         className="font-bold"
-                                        style={{ color: valueColor, fontSize: valueSize, lineHeight: 1, opacity: isPositionUnknown ? 0.5 : 1 }}
+                                        style={{ color: valueColor, fontSize: valueSize, lineHeight: 1 }}
                                     >
-                                        {isPositionUnknown ? '–' : `${displayPct}%`}
+                                        {displayPct}%
                                     </span>
                                 </div>
                             )}
-                            {showSlider && slider}
+                            {(showSlider || tiltBottom) && (
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 min-w-0">{showSlider ? slider : null}</div>
+                                    {tiltBottom}
+                                </div>
+                            )}
+                            {tiltControl === 'slider-h' && (
+                                <div className="aura-widget-tilt flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                                        {tiltLabel}
+                                    </span>
+                                    {tiltSliderEl(false)}
+                                    {showTiltValue && (
+                                        <span
+                                            className="text-[10px] tabular-nums shrink-0 text-right"
+                                            style={{ color: 'var(--text-secondary)', minWidth: '4ch' }}
+                                        >
+                                            {tiltPctText}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     );
                 })()}
             <StatusBadges config={config} />
+            {tiltPopover}
         </div>
     );
 }

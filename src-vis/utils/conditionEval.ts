@@ -1,8 +1,17 @@
+import { isActiveVal } from './groupTargets';
 import type { WidgetCondition, ConditionClause } from '../types';
 
 // Shared condition-evaluation logic. Used by useConditionStyle (widgets),
 // useTabConditionStyle (tabs) and useBadges (badge visibility) so the operator
 // semantics stay identical across all three.
+
+/**
+ * Token that stands for the element's own value — the widget's main datapoint, a
+ * cell's own DP, a list row's DP. Lives here, in the leaf module, so the pure
+ * evaluation side can be used without pulling in the value-source machinery (which
+ * reaches the settings store through formatValue).
+ */
+export const OWN_DP_TOKEN = '{dp}';
 
 export function evaluateClause(clause: ConditionClause, raw: unknown, values: Map<string, unknown>): boolean {
     const str = String(raw ?? '');
@@ -31,8 +40,17 @@ export function evaluateClause(clause: ConditionClause, raw: unknown, values: Ma
             return raw === true || raw === 1 || str === 'true' || str === '1';
         case 'false':
             return raw === false || raw === 0 || str === 'false' || str === '0';
+        case 'active':
+            return isActiveVal(raw as never);
+        case 'inactive':
+            return !isActiveVal(raw as never);
         case 'contains':
             return str.includes(cmpStr);
+        case 'changed':
+            // Needs the set of just-changed refs, which only evaluateClauseWithSource
+            // receives. Plain callers (badges, cell rules, DP popup triggers) have no
+            // change tracking, so the clause simply never matches there.
+            return false;
         default:
             return false;
     }

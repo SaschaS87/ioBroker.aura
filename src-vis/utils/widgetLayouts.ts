@@ -16,6 +16,7 @@ const NO_CUSTOM = new Set([
     'adapterlogs',
     'loadtimes',
     'alarm',
+    'messages',
 ]);
 
 export function getAvailableLayouts(widgetType: string): WidgetLayout[] {
@@ -30,15 +31,17 @@ export function getAvailableLayouts(widgetType: string): WidgetLayout[] {
             return ['minimal', 'default', 'custom'];
         case 'fill':
             return ['default', 'battery'];
+        case 'trashSchedule':
+            return ['default', 'list', 'compact'];
         case 'gauge':
         case 'climate':
+        case 'aircontrol':
         case 'echartsPreset':
         case 'chips':
         case 'group':
         case 'carousel':
         case 'panels':
         case 'trash':
-        case 'trashSchedule':
         case 'adapterstatus':
         case 'scriptstatus':
         case 'adapterlogs':
@@ -49,6 +52,8 @@ export function getAvailableLayouts(widgetType: string): WidgetLayout[] {
             return ['default'];
         case 'statusoverview':
             return ['default', 'compact', 'card', 'minimal', 'count'];
+        case 'messages':
+            return ['default', 'count'];
         case 'chart':
             return ['default', 'card'];
         case 'mediaplayer':
@@ -58,6 +63,8 @@ export function getAvailableLayouts(widgetType: string): WidgetLayout[] {
             return ['default', 'compact', 'minimal', 'custom'];
         case 'slider':
             return ['default', 'custom'];
+        case 'thermostat':
+            return ['default', 'compact', 'minimal', 'dial', 'custom'];
         case 'enum':
             return ['default', 'compact', 'minimal', 'card', 'custom'];
         case 'evcc':

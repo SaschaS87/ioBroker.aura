@@ -260,6 +260,57 @@
       "lg": 4,
       "xl": 4
     },
+    "_messagesHeader": {
+      "type": "header",
+      "text": {
+        "en": "Message archive",
+        "de": "Meldungs-Archiv"
+      },
+      "size": 2,
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "messageHistorySize": {
+      "type": "number",
+      "label": {
+        "en": "Messages kept",
+        "de": "Gespeicherte Meldungen"
+      },
+      "help": {
+        "en": "How many messages the archive holds before the oldest are dropped. Feeds the Meldungen widget and the unread counter. Range: 1-1000. Default: 100.",
+        "de": "Wie viele Meldungen das Archiv behält, bevor die ältesten wegfallen. Speist das Meldungen-Widget und den Ungelesen-Zähler. Bereich: 1-1000. Standard: 100."
+      },
+      "min": 1,
+      "max": 1000,
+      "default": 100,
+      "xs": 12,
+      "sm": 12,
+      "md": 6,
+      "lg": 4,
+      "xl": 4
+    },
+    "messageRetentionDays": {
+      "type": "number",
+      "label": {
+        "en": "Keep for (days)",
+        "de": "Aufbewahrung (Tage)"
+      },
+      "help": {
+        "en": "Messages older than this are removed from the archive. 0 = keep forever. Default: 30.",
+        "de": "Meldungen, die älter sind, werden aus dem Archiv entfernt. 0 = unbegrenzt aufbewahren. Standard: 30."
+      },
+      "min": 0,
+      "max": 3650,
+      "default": 30,
+      "xs": 12,
+      "sm": 12,
+      "md": 6,
+      "lg": 4,
+      "xl": 4
+    },
     "_perfHeader": {
       "type": "header",
       "text": {
@@ -307,6 +358,286 @@
       "md": 6,
       "lg": 4,
       "xl": 4
+    },
+    "_mcpHeader": {
+      "type": "header",
+      "text": {
+        "en": "AI access (MCP) — BETA",
+        "de": "KI-Zugriff (MCP) — BETA"
+      },
+      "size": 2,
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpBetaNote": {
+      "type": "staticText",
+      "text": {
+        "en": "BETA — an AI assistant can change your dashboard through this endpoint. It can get things wrong: widgets in the wrong place, options that do not do what was intended, a tab overwritten. Every write is backed up to the instance backups (aura.0.backups) first, but check the result. Do not enable this on a system you cannot afford to have disturbed.",
+        "de": "BETA — über diesen Endpunkt kann ein KI-Assistent dein Dashboard verändern. Dabei kann einiges danebengehen: Widgets an der falschen Stelle, Optionen ohne die gewünschte Wirkung, ein überschriebener Tab. Vor jedem Schreibvorgang wird in den Sicherungen der Instanz (aura.0.backups) gesichert — sieh dir das Ergebnis trotzdem an. Nicht auf einem System aktivieren, dessen Störung du dir nicht leisten kannst."
+      },
+      "style": {
+        "color": "#b45309",
+        "fontWeight": "bold"
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpPrereq": {
+      "type": "staticText",
+      "text": {
+        "de": "VORAUSSETZUNG: Zusätzlich muss der ioBroker-MCP eingerichtet sein. Nur er liefert der KI die Datenpunkte — dieser Endpunkt kennt keine. Ohne ihn weiß die KI weder, welche Geräte es gibt, noch in welchem Raum sie stehen, und fängt an, Datenpunkt-IDs zu erfinden. Beide MCPs müssen auf dieselbe ioBroker-Installation zeigen.",
+        "en": "REQUIREMENT: the ioBroker MCP server must be set up as well. It is the only source of datapoints — this endpoint knows none. Without it the AI knows neither which devices exist nor which room they are in, and starts inventing datapoint ids. Both MCP servers must point at the same ioBroker installation."
+      },
+      "style": {
+        "color": "#1d4ed8",
+        "fontWeight": "bold"
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpHowTo0": {
+      "type": "staticText",
+      "text": {
+        "de": "Kurzanleitung",
+        "en": "Quick start"
+      },
+      "style": {
+        "fontWeight": "bold"
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpHowTo1": {
+      "type": "staticText",
+      "text": {
+        "de": "1. Haken bei „MCP-Endpunkt aktivieren“ setzen.",
+        "en": "1. Tick “Enable MCP endpoint”."
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpHowTo2": {
+      "type": "staticText",
+      "text": {
+        "de": "2. Auf „Token erzeugen“ klicken (die Instanz muss dafür laufen). Der Block unten ist dann vollständig — gleich kopieren, nach dem Speichern wird der Token darin durch einen Platzhalter ersetzt.",
+        "en": "2. Click “Generate token” (the instance must be running). The block below is then complete — copy it right away; after saving, the token in it is replaced by a placeholder."
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpHowTo3": {
+      "type": "staticText",
+      "text": {
+        "de": "3. Den erzeugten Block „Client-Konfiguration“ in den KI-Client übernehmen — bei Claude Desktop / Claude Code in den Abschnitt mcpServers.",
+        "en": "3. Copy the “Client configuration” block into your AI client — with Claude Desktop / Claude Code into the mcpServers section."
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpHowTo4": {
+      "type": "staticText",
+      "text": {
+        "de": "4. Den ioBroker-MCP einrichten, falls noch nicht geschehen (siehe Voraussetzung oben).",
+        "en": "4. Set up the ioBroker MCP server if you have not already (see the requirement above)."
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpHowTo5": {
+      "type": "staticText",
+      "text": {
+        "de": "5. Dann einfach sagen, was gebaut werden soll — z. B. „Lege im Tab Wohnzimmer für jedes Licht eine Kachel an und darunter die Raumtemperatur.“",
+        "en": "5. Then just say what you want built — e.g. “Add a tile for every light in the living room tab, with the room temperature below.”"
+      },
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
+    },
+    "mcpEnabled": {
+      "type": "checkbox",
+      "label": {
+        "en": "Enable MCP endpoint",
+        "de": "MCP-Endpunkt aktivieren"
+      },
+      "help": {
+        "en": "Serves POST /mcp so an AI assistant can read the dashboard structure, look up widget options and change tabs. Datapoints come from the ioBroker MCP server, not from here. Off by default; a token is required.",
+        "de": "Stellt POST /mcp bereit, damit ein KI-Assistent die Dashboard-Struktur lesen, Widget-Optionen nachschlagen und Tabs ändern kann. Die Datenpunkte liefert der ioBroker-MCP, nicht dieser Endpunkt. Standardmäßig aus; ein Token ist Pflicht."
+      },
+      "default": false,
+      "xs": 12,
+      "sm": 12,
+      "md": 6,
+      "lg": 4,
+      "xl": 4
+    },
+    "mcpToken": {
+      "type": "password",
+      "label": {
+        "en": "MCP token (required)",
+        "de": "MCP-Token (Pflicht)"
+      },
+      "help": {
+        "en": "Sent by the client as \"Authorization: Bearer <token>\". Without a token the endpoint refuses every request — Aura's server has no authentication of its own. Hidden here only against onlookers; the block below shows it in clear text because that is what has to be copied.",
+        "de": "Der Client sendet ihn als „Authorization: Bearer <Token>\". Ohne Token weist der Endpunkt jede Anfrage ab — Auras Server hat keine eigene Authentifizierung. Hier nur gegen Mitleser verdeckt; der Block unten zeigt ihn im Klartext, weil genau das kopiert werden muss."
+      },
+      "default": "",
+      "repeat": false,
+      "hidden": "!data.mcpEnabled",
+      "xs": 12,
+      "sm": 12,
+      "md": 8,
+      "lg": 8,
+      "xl": 8
+    },
+    "mcpGenerateToken": {
+      "type": "sendTo",
+      "command": "generateMcpToken",
+      "label": {
+        "en": "Generate token",
+        "de": "Token erzeugen"
+      },
+      "variant": "contained",
+      "useNative": true,
+      "help": {
+        "en": "Creates a random 32-character token and fills the field above. The instance must be running.",
+        "de": "Erzeugt einen zufälligen 32-Zeichen-Token und füllt das Feld darüber. Die Instanz muss dafür laufen."
+      },
+      "hidden": "!data.mcpEnabled",
+      "xs": 12,
+      "sm": 12,
+      "md": 4,
+      "lg": 4,
+      "xl": 4
+    },
+    "mcpMode": {
+      "type": "select",
+      "label": {
+        "en": "What the AI may do",
+        "de": "Was die KI darf"
+      },
+      "options": [
+        {
+          "value": "read",
+          "label": {
+            "en": "Read only",
+            "de": "Nur lesen",
+            "ru": "Только чтение",
+            "pt": "Somente leitura",
+            "nl": "Alleen lezen",
+            "fr": "Lecture seule",
+            "it": "Sola lettura",
+            "es": "Solo lectura",
+            "pl": "Tylko odczyt",
+            "uk": "Лише читання",
+            "zh-cn": "仅读取"
+          }
+        },
+        {
+          "value": "write",
+          "label": {
+            "en": "Read and write (create, change)",
+            "de": "Lesen und schreiben (anlegen, ändern)",
+            "ru": "Чтение и запись (создание, изменение)",
+            "pt": "Leitura e escrita (criar, alterar)",
+            "nl": "Lezen en schrijven (aanmaken, wijzigen)",
+            "fr": "Lecture et écriture (créer, modifier)",
+            "it": "Lettura e scrittura (creare, modificare)",
+            "es": "Lectura y escritura (crear, modificar)",
+            "pl": "Odczyt i zapis (tworzenie, zmiana)",
+            "uk": "Читання та запис (створення, зміна)",
+            "zh-cn": "读取和写入（创建、修改）"
+          }
+        },
+        {
+          "value": "rename",
+          "label": {
+            "en": "…and rename",
+            "de": "…und umbenennen",
+            "ru": "…и переименование",
+            "pt": "…e renomear",
+            "nl": "…en hernoemen",
+            "fr": "…et renommer",
+            "it": "…e rinominare",
+            "es": "…y renombrar",
+            "pl": "…i zmiana nazwy",
+            "uk": "…і перейменування",
+            "zh-cn": "……以及重命名"
+          }
+        },
+        {
+          "value": "delete",
+          "label": {
+            "en": "…and delete",
+            "de": "…und löschen",
+            "ru": "…и удаление",
+            "pt": "…e excluir",
+            "nl": "…en verwijderen",
+            "fr": "…et supprimer",
+            "it": "…ed eliminare",
+            "es": "…y eliminar",
+            "pl": "…i usuwanie",
+            "uk": "…і видалення",
+            "zh-cn": "……以及删除"
+          }
+        }
+      ],
+      "help": {
+        "en": "Each step includes the ones before it. Tools above the level are not even offered to the AI. Start with “read only” and raise it once you trust the result — deleting takes the content with it: a tab its widgets, a section its tabs.",
+        "de": "Jede Stufe schließt die vorherigen ein. Werkzeuge oberhalb der Stufe werden der KI gar nicht erst angeboten. Beginne mit „Nur lesen“ und erhöhe erst, wenn dich das Ergebnis überzeugt — Löschen nimmt den Inhalt mit: ein Tab seine Widgets, ein Bereich seine Tabs."
+      },
+      "default": "read",
+      "hidden": "!data.mcpEnabled",
+      "xs": 12,
+      "sm": 12,
+      "md": 6,
+      "lg": 4,
+      "xl": 4
+    },
+    "mcpClientConfig": {
+      "type": "text",
+      "label": {
+        "en": "Client configuration",
+        "de": "Client-Konfiguration"
+      },
+      "help": {
+        "en": "Filled in by “Generate token”, complete and ready to copy — do it now. After saving, the token is replaced by a placeholder here, so it is not readable when this page is opened again; the block then still carries the correct URL and you paste the token from the field above. Treat the complete block like a password.",
+        "de": "Wird von „Token erzeugen“ vollständig befüllt und ist genau dann zum Kopieren gedacht — also gleich übernehmen. Nach dem Speichern steht hier statt des Tokens ein Platzhalter, damit er beim erneuten Öffnen nicht lesbar ist; die URL bleibt korrekt, den Token setzt du dann aus dem Feld darüber ein. Den vollständigen Block wie ein Passwort behandeln."
+      },
+      "minRows": 9,
+      "readOnly": true,
+      "default": "",
+      "hidden": "!data.mcpEnabled",
+      "xs": 12,
+      "sm": 12,
+      "md": 12,
+      "lg": 12,
+      "xl": 12
     }
   }
 }

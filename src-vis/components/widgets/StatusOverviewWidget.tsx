@@ -7,13 +7,13 @@ import {
     Lightbulb,
     WifiOff,
     Siren,
+    RefreshCw,
     type LucideIcon,
 } from 'lucide-react';
 import type { WidgetProps, ioBrokerState } from '../../types';
 import { useIoBroker } from '../../hooks/useIoBroker';
+import { useT } from '../../i18n';
 import { ensureDatapointCache, type DatapointEntry } from '../../hooks/useDatapointList';
-import { useDashboardStore } from '../../store/dashboardStore';
-import { useNavigationStore } from '../../store/navigationStore';
 import { useConfigStore } from '../../store/configStore';
 import { useAutoHeightStore } from '../../store/autoHeightStore';
 import {
@@ -31,12 +31,16 @@ import {
     passesScope,
     evaluateItem,
     compareItems,
+    isStatusLoading,
     CATEGORY_ORDER,
     SEVERITY_COLOR,
     type CategoryKey,
     type StatusItem,
     type StatusOverviewOptions,
 } from '../../utils/statusOverview';
+import { formatItemName, finishItemName, hasLiveToken } from '../../utils/nameFilter';
+import { useDpTokenResolver } from './DynamicTitle';
+import { useRowPopup } from '../../hooks/useRowPopup';
 
 /** Per-category icon + label used in section headers and rows. */
 const CATEGORY_META: Record<CategoryKey, { Icon: LucideIcon; label: string }> = {
@@ -60,45 +64,16 @@ function formatSince(lc: number): string {
 }
 
 /**
- * Format a device label from a per-widget template. Tokens (case-insensitive):
- *   <Raum> room · <Gerät>/<Geraet> device part (before " › ") · <DPName> datapoint leaf ·
- *   <Name> full composed name · <ID> full datapoint id.
- * Empty pattern → the composed name unchanged.
+ * How long the widget waits for the last datapoint values before it shows what it has.
+ * A getState round-trip has no timeout of its own, so a request lost on a dropped socket
+ * would otherwise keep the widget spinning forever.
  */
-function formatItemName(item: StatusItem, pattern?: string): string {
-    if (!pattern) return item.name;
-    const parts = item.name.split(' › ');
-    const device = parts[0] || item.name;
-    const dpName = item.id.split('.').pop() || (parts.length > 1 ? parts[parts.length - 1] : item.name);
-    const out = pattern
-        .replace(/<Raum>/gi, item.room ?? '')
-        .replace(/<Ger(?:ä|ae)t>/gi, device)
-        .replace(/<DPName>/gi, dpName)
-        .replace(/<Name>/gi, item.name)
-        .replace(/<ID>/gi, item.id)
-        .replace(/\s+/g, ' ')
-        .trim();
-    return out || item.name;
-}
+const LOADING_GRACE_MS = 20000;
 
 /** Candidate = a datapoint that structurally belongs to a category; alert state is decided live. */
 interface Candidate {
     dp: DatapointEntry;
     cat: CategoryKey;
-}
-
-/** Finds the first dashboard widget bound to `dpId` and navigates + pulse-highlights it. */
-function jumpToWidgetForDp(dpId: string): void {
-    const layouts = useDashboardStore.getState().layouts;
-    for (const l of layouts) {
-        for (const tab of l.tabs) {
-            const w = tab.widgets.find((wg) => wg.datapoint === dpId);
-            if (w) {
-                useNavigationStore.getState().navigateTo(l.id, tab.id, w.id);
-                return;
-            }
-        }
-    }
 }
 
 export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
@@ -113,11 +88,18 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         [config.options, offlineExtraPatterns, offlineInvert],
     );
     const layout = config.layout ?? 'default';
+    // Row click -> detail popup for that datapoint (issue #524). StatusItem carries no
+    // role, so the resolver looks it up in the datapoint cache this widget already loads.
+    const rowPopup = useRowPopup(config, opts, editMode);
     const hiddenKey = hiddenDevices.join(',');
     const hiddenSet = useMemo(() => new Set(hiddenDevices), [hiddenKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [states, setStates] = useState<Record<string, ioBrokerState | null>>({});
+    // Discovery finished (the datapoint cache is in) — see the loading block below.
+    const [discovered, setDiscovered] = useState(false);
+    // Grace period for the outstanding values expired (LOADING_GRACE_MS).
+    const [settled, setSettled] = useState(false);
     const [batteryInfo, setBatteryInfo] = useState<
         Record<
             string,
@@ -152,6 +134,7 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
     ]);
     useEffect(() => {
         let cancelled = false;
+        setDiscovered(false);
         ensureDatapointCache().then((cache) => {
             if (cancelled) return;
             const hmBatterySerials = collectHmBatterySerials(cache);
@@ -163,6 +146,7 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
                 found.push({ dp, cat });
             }
             setCandidates(found);
+            setDiscovered(true);
         });
         return () => {
             cancelled = true;
@@ -184,6 +168,15 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         return () => unsubs.forEach((u) => u());
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [candidateKey]);
+
+    // Safety valve for the loading state: getState has no timeout of its own, so a
+    // reply lost on a flaky connection would leave the widget spinning for good.
+    useEffect(() => {
+        setSettled(false);
+        if (!discovered) return;
+        const t = setTimeout(() => setSettled(true), LOADING_GRACE_MS);
+        return () => clearTimeout(t);
+    }, [discovered, candidateKey]);
 
     // ── Battery type resolution (device model → library, manual override first) ──
     const batteryCandidates = useMemo(() => candidates.filter((c) => c.cat === 'battery'), [candidates]);
@@ -245,7 +238,8 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
     // ── Evaluate → attention items ─────────────────────────────────────────────
     const sortBy = opts.sortBy ?? 'severity';
     const showAll = opts.valueFilter === 'all';
-    const items = useMemo<StatusItem[]>(() => {
+    const t = useT();
+    const allItems = useMemo<StatusItem[]>(() => {
         const out: StatusItem[] = [];
         for (const c of candidates) {
             const s = states[c.dp.id];
@@ -263,9 +257,45 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         return out;
     }, [candidates, states, opts, sortBy, showAll, batteryInfo, hiddenSet]);
 
+    // ── Row cap ────────────────────────────────────────────────────────────────
+    // The rows of this widget appear at runtime out of the discovered datapoints,
+    // so its height could not be planned at all — on a dashboard that must not
+    // scroll it had to be left out. `maxRows` bounds it; what is cut off is said
+    // out loud by the "+N weitere" row rather than dropped in silence. The alert
+    // count and the all-clear keep looking at ALL items: a chip that counts only
+    // the visible slice would hide exactly the problem it exists to report.
+    const maxRows = Number.isFinite(opts.maxRows) && (opts.maxRows as number) > 0 ? Math.floor(opts.maxRows!) : 0;
+    const items = useMemo(() => (maxRows ? allItems.slice(0, maxRows) : allItems), [allItems, maxRows]);
+    const hiddenCount = allItems.length - items.length;
+    const moreRow =
+        hiddenCount > 0 && opts.showMore !== false ? (
+            <p className="shrink-0 pt-1" style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                {t('calendar.more', { count: hiddenCount })}
+            </p>
+        ) : null;
+
+    // ── Loading ────────────────────────────────────────────────────────────────
+    // Over a slow (external) connection the datapoint discovery and the first value
+    // round-trips take a moment. Until they are in, "Alles in Ordnung" would be a lie —
+    // the widget says it is still loading and shows the verdict only once the data is in.
+    const loadedStates = candidates.reduce((n, c) => (states[c.dp.id] === undefined ? n : n + 1), 0);
+    const loading = isStatusLoading({ discovered, settled, loaded: loadedStates, expected: candidates.length });
+
+    // Label pipeline: name pattern (incl. the `{{parent}}` variables) → live `[[dp]]`
+    // values. The resolver is a hook, so it has to run above the layout branches below —
+    // it collects the raw labels of every item and subscribes to them in one go.
+    const rawLabel = (item: StatusItem) => formatItemName(item, opts.namePattern, opts.nameFilters);
+    const resolveDpTokens = useDpTokenResolver(items.map(rawLabel));
+    const labelFor = (item: StatusItem) => {
+        const raw = rawLabel(item);
+        if (!hasLiveToken(raw)) return raw;
+        // 'Ergebnis' rules were deferred until the value was in — see finishItemName.
+        return finishItemName(resolveDpTokens(raw, item.name), opts.nameFilters, item.name);
+    };
+
     // Alerts drive the chip / all-clear; "all" mode additionally lists healthy devices.
-    const total = items.reduce((n, i) => (i.severity !== 'ok' ? n + 1 : n), 0);
-    const hasCrit = items.some((i) => i.severity === 'crit');
+    const total = allItems.reduce((n, i) => (i.severity !== 'ok' ? n + 1 : n), 0);
+    const hasCrit = allItems.some((i) => i.severity === 'crit');
     // Highlight colour for a device in an attention state (per-category, else per-severity).
     const alertColorFor = (item: StatusItem) =>
         item.severity !== 'ok' ? opts.categoryColors?.[item.category] || item.color : item.color;
@@ -283,11 +313,20 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
 
     const showTitle = opts.showTitle !== false && !!config.title;
     const showCount = opts.showCount !== false;
+    // Horizontal alignment of the content (rows, tiles, pills). Default 'left' keeps
+    // every layout exactly as before; 'center'/'right' mainly matter for the Minimal
+    // layout, where the wrapped pills otherwise always stick to the left edge.
+    const contentAlign = opts.contentAlign ?? 'left';
+    const alignFlex = contentAlign === 'center' ? 'center' : contentAlign === 'right' ? 'flex-end' : 'flex-start';
+    const isAligned = contentAlign !== 'left';
     // Auto-height: size to content (used in the stacked/mobile view). Drops the
     // fixed-box fill (h-full/flex-1/overflow) so the widget grows with its content.
     const autoHeight = opts.autoHeight === true;
     const rootCls = autoHeight ? 'w-full flex flex-col' : 'h-full w-full flex flex-col min-h-0';
-    const scrollCls = autoHeight ? 'overflow-visible' : 'flex-1 min-h-0 overflow-y-auto';
+    // overflow-x-hidden is required, not cosmetic: with only overflow-y set, CSS
+    // promotes the other axis from `visible` to `auto`, so the rows' -mx-1 bleed
+    // (and a wide card minmax) produced a stray horizontal scrollbar.
+    const scrollCls = autoHeight ? 'overflow-visible' : 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden';
 
     // Auto-height: measure the rendered content and publish it so the Dashboard can
     // size the grid item to fit (desktop grid) instead of using the stored height.
@@ -311,17 +350,25 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         },
         [autoHeight, widgetId],
     );
-    useEffect(
-        () => () => {
-            roRef.current?.disconnect();
-            useAutoHeightStore.getState().clear(widgetId);
-        },
-        [widgetId],
-    );
-    const rowClickable = (opts.rowClick ?? 'jump') === 'jump';
-
+    // No unmount effect on top of this: React calls the ref with null when the widget
+    // goes away (disconnect + clear above), and a second clear from an effect cleanup
+    // would wipe a height that the re-attached ref had just reported (StrictMode
+    // double-invoke), which left the grid item at its stored height in dev.
     // ── Attention chip (the one "loud" element) ────────────────────────────────
-    const chip = (
+    // While loading it stays neutral: a green "OK" would claim a verdict the widget
+    // does not have yet. Already known hints are counted, the count can still grow.
+    const chip = loading ? (
+        <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold shrink-0"
+            style={{
+                color: 'var(--text-secondary)',
+                background: 'color-mix(in srgb, var(--text-secondary) 12%, var(--widget-bg, var(--app-surface)))',
+            }}
+        >
+            <RefreshCw size={12} className="animate-spin" />
+            {total > 0 ? `${total} …` : 'Lädt…'}
+        </span>
+    ) : (
         <span
             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold shrink-0 transition-colors"
             style={
@@ -372,20 +419,33 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         const customBg = alertBgFor(item);
         const alert = item.severity !== 'ok';
         const { Icon } = CATEGORY_META[item.category];
-        const sub = [item.room, item.category === 'window' && item.lc ? formatSince(item.lc) : null]
+        const sub = [
+            opts.showRoom !== false ? item.room : null,
+            opts.showSince !== false && item.category === 'window' && item.lc ? formatSince(item.lc) : null,
+        ]
             .filter(Boolean)
             .join(' · ');
+        const rowProps = rowPopup.row(item.id, labelFor(item));
         return (
             <div
-                className={`flex items-center gap-2 py-1 px-1 -mx-1 rounded-md min-w-0 ${rowClickable ? 'cursor-pointer hover:bg-[var(--app-bg)]' : ''}`}
-                style={alert ? { background: customBg ?? `color-mix(in srgb, ${color} 12%, transparent)` } : undefined}
-                onClick={rowClickable ? () => jumpToWidgetForDp(item.id) : undefined}
-                data-widget-interactive={rowClickable ? '' : undefined}
-                title={rowClickable ? 'Zum Gerät springen' : undefined}
+                className="flex items-center gap-2 py-1 px-1 -mx-1 rounded-md min-w-0"
+                style={{
+                    ...(alert
+                        ? { background: customBg ?? `color-mix(in srgb, ${color} 12%, transparent)` }
+                        : undefined),
+                    // Left (default) keeps name and value pushed apart; centring/right-aligning
+                    // only works once the label stops eating the free space (flex-1 below).
+                    justifyContent: alignFlex,
+                    cursor: rowProps ? 'pointer' : undefined,
+                }}
+                {...rowProps}
             >
-                <Icon size={14} style={{ color }} />
-                <span className="flex-1 min-w-0 truncate text-xs" style={{ color: 'var(--text-primary)' }}>
-                    {formatItemName(item, opts.namePattern)}
+                <Icon size={14} className="shrink-0" style={{ color }} />
+                <span
+                    className={`${isAligned ? '' : 'flex-1 '}min-w-0 truncate text-xs`}
+                    style={{ color: 'var(--text-primary)' }}
+                >
+                    {labelFor(item)}
                     {sub && <span className="ml-1 opacity-50">· {sub}</span>}
                 </span>
                 <span className="text-xs font-semibold shrink-0" style={{ color }}>
@@ -416,16 +476,67 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         </div>
     );
 
+    // ── all-clear (the intended normal state) — only when filtering to alerts ────
+    // Defined before the layout branches so every layout can show it instead of an
+    // empty body when there is nothing to report.
+    const allClear = total === 0 && !showAll && !opts.showOkCategories && !loading;
+    const allClearBlock =
+        opts.showAllClear === false ? null : (
+            <div
+                className={`${autoHeight ? 'py-6' : 'flex-1 min-h-0'} flex flex-col items-center justify-center gap-1.5 text-center px-2`}
+            >
+                <ShieldCheck size={22} style={{ color: SEVERITY_COLOR.ok }} />
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {opts.allClearText || 'Alles in Ordnung'}
+                </p>
+                <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                    {enabledCats.map((c) => CATEGORY_META[c].label).join(' · ')} überwacht
+                </p>
+            </div>
+        );
+
+    // Still loading and nothing to show yet: the same slot as the all-clear panel, so
+    // the widget looks busy instead of reporting a verdict it cannot have yet. Hints
+    // that are already in are listed right away (with the spinner in the header).
+    const showLoading = loading && items.length === 0;
+    const loadingBlock = (
+        <div
+            className={`${autoHeight ? 'py-6' : 'flex-1 min-h-0'} flex flex-col items-center justify-center gap-1.5 text-center px-2`}
+        >
+            <RefreshCw size={22} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Daten werden geladen…
+            </p>
+            <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                {discovered ? `${loadedStates} von ${candidates.length} Datenpunkten` : 'Datenpunkte werden gesucht'}
+            </p>
+        </div>
+    );
+
+    // Card and minimal render a bare item container, so an empty one would show
+    // nothing at all — hand those layouts the all-clear (or loading) block instead.
+    if ((showLoading || allClear) && (layout === 'card' || layout === 'minimal')) {
+        return (
+            <div ref={measureRef} className={rootCls}>
+                {header}
+                {showLoading ? loadingBlock : allClearBlock}
+            </div>
+        );
+    }
+
     // ── card layout: grid of tiles (mirrors the static-list card layout) ─────────
     if (layout === 'card') {
         return (
             <div ref={measureRef} className={rootCls}>
                 {header}
+                {rowPopup.node}
                 <div
                     className={scrollCls}
                     style={{
                         display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fill, minmax(${opts.cardMinWidth ?? 96}px, 1fr))`,
+                        // min(…, 100%) so a card minimum wider than the widget shrinks
+                        // instead of overflowing the row horizontally.
+                        gridTemplateColumns: `repeat(auto-fill, minmax(min(${opts.cardMinWidth ?? 96}px, 100%), 1fr))`,
                         gap: 6,
                         alignContent: 'start',
                     }}
@@ -436,27 +547,31 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
                         const alert = item.severity !== 'ok';
                         const { Icon } = CATEGORY_META[item.category];
                         const batteryLabel = batteryLabelFor(item);
+                        const rowProps = rowPopup.row(item.id, labelFor(item));
                         return (
                             <div
                                 key={item.id}
-                                className={`rounded-xl p-2 flex flex-col gap-1 ${rowClickable ? 'cursor-pointer' : ''}`}
+                                className="rounded-xl p-2 flex flex-col gap-1"
                                 style={{
+                                    alignItems: alignFlex,
+                                    textAlign: contentAlign,
                                     background: alert
                                         ? (customBg ??
                                           `color-mix(in srgb, ${color} 14%, var(--widget-bg, var(--app-surface)))`)
                                         : 'var(--app-bg)',
                                     border: `1px solid ${alert ? `color-mix(in srgb, ${color} 40%, transparent)` : 'var(--widget-border)'}`,
+                                    cursor: rowProps ? 'pointer' : undefined,
                                 }}
-                                onClick={rowClickable ? () => jumpToWidgetForDp(item.id) : undefined}
-                                data-widget-interactive={rowClickable ? '' : undefined}
-                                title={rowClickable ? 'Zum Gerät springen' : undefined}
+                                {...rowProps}
                             >
                                 <span
-                                    className="flex items-center gap-1 text-[10px] leading-tight"
+                                    className="flex items-start gap-1 text-[10px] leading-tight"
                                     style={{ color: 'var(--text-secondary)' }}
                                 >
-                                    <Icon size={11} className="shrink-0" style={{ color }} />
-                                    <span className="truncate">{formatItemName(item, opts.namePattern)}</span>
+                                    <Icon size={11} className="shrink-0 mt-px" style={{ color }} />
+                                    {/* Names wrap instead of truncating — a tile is the only place
+                                        the device name appears, so it must stay fully readable. */}
+                                    <span className="min-w-0 break-words">{labelFor(item)}</span>
                                 </span>
                                 <span className="text-sm font-bold leading-none" style={{ color }}>
                                     {item.label}
@@ -470,6 +585,7 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
                         );
                     })}
                 </div>
+                {moreRow}
             </div>
         );
     }
@@ -479,30 +595,36 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
         return (
             <div ref={measureRef} className={rootCls}>
                 {header}
-                <div className={`${scrollCls} flex flex-wrap gap-1.5 content-start`}>
+                {rowPopup.node}
+                <div
+                    className={`${scrollCls} flex flex-wrap gap-1.5 content-start`}
+                    style={{ justifyContent: alignFlex }}
+                >
                     {items.map((item) => {
                         const color = alertColorFor(item);
                         const customBg = alertBgFor(item);
                         const alert = item.severity !== 'ok';
                         const { Icon } = CATEGORY_META[item.category];
                         const batteryLabel = batteryLabelFor(item);
+                        const rowProps = rowPopup.row(item.id, labelFor(item));
                         return (
                             <span
                                 key={item.id}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium ${rowClickable ? 'cursor-pointer hover:opacity-80' : ''}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium max-w-full"
                                 style={{
                                     background: alert
                                         ? (customBg ?? `color-mix(in srgb, ${color} 14%, transparent)`)
                                         : 'var(--app-bg)',
                                     color: alert ? color : 'var(--text-primary)',
                                     border: `1px solid ${alert ? `color-mix(in srgb, ${color} 34%, transparent)` : 'var(--widget-border)'}`,
+                                    cursor: rowProps ? 'pointer' : undefined,
                                 }}
-                                onClick={rowClickable ? () => jumpToWidgetForDp(item.id) : undefined}
-                                data-widget-interactive={rowClickable ? '' : undefined}
-                                title={rowClickable ? 'Zum Gerät springen' : undefined}
+                                {...rowProps}
                             >
                                 <Icon size={11} className="shrink-0" style={{ color }} />
-                                <span className="truncate max-w-[120px]">{formatItemName(item, opts.namePattern)}</span>
+                                {/* Full name, wrapped if needed — the pill grows with its label and
+                                    is capped at the container width (max-w-full above). */}
+                                <span className="min-w-0 break-words">{labelFor(item)}</span>
                                 <span className="font-semibold" style={{ color }}>
                                     {item.label}
                                     {batteryLabel ? ` · ${batteryLabel}` : ''}
@@ -511,29 +633,20 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
                         );
                     })}
                 </div>
+                {moreRow}
             </div>
         );
     }
 
-    // ── all-clear (the intended normal state) — only when filtering to alerts ────
-    const allClear = total === 0 && !showAll && !opts.showOkCategories;
-
     return (
         <div ref={measureRef} className={rootCls}>
             {header}
+            {rowPopup.node}
 
-            {allClear ? (
-                <div
-                    className={`${autoHeight ? 'py-6' : 'flex-1 min-h-0'} flex flex-col items-center justify-center gap-1.5 text-center px-2`}
-                >
-                    <ShieldCheck size={22} style={{ color: SEVERITY_COLOR.ok }} />
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {opts.allClearText || 'Alles in Ordnung'}
-                    </p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        {enabledCats.map((c) => CATEGORY_META[c].label).join(' · ')} überwacht
-                    </p>
-                </div>
+            {showLoading ? (
+                loadingBlock
+            ) : allClear ? (
+                allClearBlock
             ) : (
                 <div className={`${scrollCls} pr-0.5`}>
                     {layout === 'compact'
@@ -546,7 +659,10 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
                               const { Icon, label } = CATEGORY_META[cat];
                               return (
                                   <div key={cat} className="mb-1.5 last:mb-0">
-                                      <div className="flex items-center gap-1.5 mt-1 mb-0.5">
+                                      <div
+                                          className="flex items-center gap-1.5 mt-1 mb-0.5"
+                                          style={{ justifyContent: alignFlex }}
+                                      >
                                           <Icon
                                               size={12}
                                               style={{ color: catAlerts ? SEVERITY_COLOR.warn : SEVERITY_COLOR.ok }}
@@ -576,7 +692,8 @@ export function StatusOverviewWidget({ config, editMode }: WidgetProps) {
                           })}
                 </div>
             )}
-            {editMode && candidates.length === 0 && (
+            {moreRow}
+            {editMode && discovered && candidates.length === 0 && (
                 <p className="text-[10px] mt-1 shrink-0" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
                     Keine passenden Datenpunkte gefunden – Kategorien/Filter prüfen.
                 </p>

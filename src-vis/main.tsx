@@ -8,7 +8,10 @@ import './index.css';
 import App from './App';
 import { ThemeProvider } from './ThemeProvider';
 import { lazyWithReload, installChunkErrorRecovery } from './utils/lazyWithReload';
-import { setScreenshotMode } from './store/persistManager';
+import { setScreenshotMode, isScreenshotMode } from './store/persistManager';
+import { applyCachedThemeMode } from './utils/themeModeCache';
+import { publishScrollbarGutter } from './utils/scrollbarGutter';
+import { FEATURES } from './featureFlags';
 
 // Recharts' ResponsiveContainer logs a "width(-1) and height(-1) of chart should be
 // greater than 0" warning when a chart briefly renders inside a hidden tab (container
@@ -32,6 +35,18 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('shot
     import('./devtools/screenshotApi');
 }
 
+// Paint the DP-driven dark/light mode (aura.0.config.themeMode.frontend) from
+// its per-device cache before React mounts. The DP itself only arrives once the
+// socket has connected, so without this a tablet reloading after the nightly
+// switch rendered the stored daytime theme first and visibly flipped to dark a
+// moment later. The live DP value still overrides this on arrival.
+if (!isScreenshotMode()) applyCachedThemeMode();
+
+// Publish the reserved scrollbar gutter as --aura-sbw before the first paint, so
+// scrollers whose rows bleed past the content box can keep their spacing even on
+// the left and right (see .aura-bleed-* in index.css).
+publishScrollbarGutter();
+
 // Admin pages are large (editors, pickers, echart configurators) and are not
 // needed by the public dashboard route. Lazy-loaded so the frontend bundle
 // stays small for slow mobile/VPN clients.
@@ -47,19 +62,26 @@ const AdminEditor = lazyWithReload(() => import('./pages/admin/AdminEditor').the
 const AdminWidgets = lazyWithReload(() =>
     import('./pages/admin/AdminWidgets').then((m) => ({ default: m.AdminWidgets })),
 );
+const AdminWidgetDesigner = lazyWithReload(() =>
+    import('./pages/admin/AdminWidgetDesigner').then((m) => ({ default: m.AdminWidgetDesigner })),
+);
 const AdminLayouts = lazyWithReload(() =>
     import('./pages/admin/AdminLayouts').then((m) => ({ default: m.AdminLayouts })),
 );
-const AdminFrontend = lazyWithReload(() =>
-    import('./pages/admin/AdminFrontend').then((m) => ({ default: m.AdminFrontend })),
-);
+const AdminDesign = lazyWithReload(() => import('./pages/admin/AdminDesign').then((m) => ({ default: m.AdminDesign })));
 const AdminCssJs = lazyWithReload(() => import('./pages/admin/AdminCssJs').then((m) => ({ default: m.AdminCssJs })));
 const AdminPopups = lazyWithReload(() => import('./pages/admin/AdminPopups').then((m) => ({ default: m.AdminPopups })));
 const PopupViewEditor = lazyWithReload(() =>
     import('./pages/admin/PopupViewEditor').then((m) => ({ default: m.PopupViewEditor })),
 );
+const AdminMessages = lazyWithReload(() =>
+    import('./pages/admin/AdminMessages').then((m) => ({ default: m.AdminMessages })),
+);
 const AdminBatteries = lazyWithReload(() =>
     import('./pages/admin/AdminBatteries').then((m) => ({ default: m.AdminBatteries })),
+);
+const AdminLoadTimes = lazyWithReload(() =>
+    import('./pages/admin/AdminLoadTimes').then((m) => ({ default: m.AdminLoadTimes })),
 );
 
 function lazyRoute(Comp: ComponentType): JSX.Element {
@@ -75,6 +97,8 @@ const router = createHashRouter([
     { path: '/tab/:tabSlug', element: <App /> },
     { path: '/view/:layoutSlug', element: <App /> },
     { path: '/view/:layoutSlug/tab/:tabSlug', element: <App /> },
+    { path: '/view/:layoutSlug/s/:sectionSlug', element: <App /> },
+    { path: '/view/:layoutSlug/s/:sectionSlug/tab/:tabSlug', element: <App /> },
     { path: '/admin/login', element: lazyRoute(AdminLogin) },
     {
         path: '/admin',
@@ -82,14 +106,18 @@ const router = createHashRouter([
         children: [
             { index: true, element: lazyRoute(AdminDashboard) },
             { path: 'editor', element: lazyRoute(AdminEditor) },
-            { path: 'theme', element: <Navigate to="/admin/layouts?tab=theme" replace /> },
+            { path: 'theme', element: <Navigate to="/admin/design?tab=theme" replace /> },
+            ...(FEATURES.widgetDesigner ? [{ path: 'widget-designer', element: lazyRoute(AdminWidgetDesigner) }] : []),
             { path: 'widgets', element: lazyRoute(AdminWidgets) },
             { path: 'layouts', element: lazyRoute(AdminLayouts) },
-            { path: 'frontend', element: lazyRoute(AdminFrontend) },
+            { path: 'design', element: lazyRoute(AdminDesign) },
+            { path: 'frontend', element: <Navigate to="/admin/design?tab=header" replace /> },
             { path: 'css-js', element: lazyRoute(AdminCssJs) },
             { path: 'popups', element: lazyRoute(AdminPopups) },
             { path: 'popups/:viewId', element: lazyRoute(PopupViewEditor) },
+            { path: 'messages', element: lazyRoute(AdminMessages) },
             { path: 'batteries', element: lazyRoute(AdminBatteries) },
+            { path: 'loadtimes', element: lazyRoute(AdminLoadTimes) },
             { path: 'settings', element: lazyRoute(AdminSettings) },
         ],
     },

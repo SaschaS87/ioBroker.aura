@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { registerExternalReader, markDirty, registerPreSaveHook } from './persistManager';
+import { registerExternalReader, markDirty, registerPreSaveHook, withSuppressedDirty } from './persistManager';
 import { useDashboardStore } from './dashboardStore';
 import { usePopupConfigStore } from './popupConfigStore';
 import type { WidgetConfig } from '../types';
@@ -54,12 +54,19 @@ useGroupDefsStore.subscribe(() => markDirty('aura-group-defs'));
  *  aren't blocked forever. */
 export function markGroupDefsHydrated(): void {
     if (!useGroupDefsStore.getState().hydrated) {
-        useGroupDefsStore.setState({ hydrated: true });
+        // Suppressed: flipping the hydrated flag is bookkeeping, not an edit.
+        withSuppressedDirty(() => useGroupDefsStore.setState({ hydrated: true }));
     }
 }
 
 /** Load group-defs from a raw JSON string (Zustand persist format or plain {defs:...}). */
 export function hydrateGroupDefs(raw: string): void {
+    // Suppressed: this is the *inbound* path (ioBroker -> store), the opposite of a
+    // user edit. The subscribe() above cannot tell the two apart on its own.
+    withSuppressedDirty(() => hydrateGroupDefsInner(raw));
+}
+
+function hydrateGroupDefsInner(raw: string): void {
     try {
         const parsed = JSON.parse(raw) as Record<string, unknown>;
         // Support both Zustand persist format { state: { defs } } and plain { defs }
@@ -80,36 +87,8 @@ export function newGroupDefId(): string {
     return `gd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-/** Deep-clone a group def entry (and nested group defs) into new def IDs. */
-export function cloneGroupDef(sourceDefId: string): string {
-    const children = useGroupDefsStore.getState().defs[sourceDefId] ?? [];
-    const id = newGroupDefId();
-    useGroupDefsStore.getState().setDef(id, cloneChildren(children));
-    return id;
-}
-
-function cloneChildren(children: WidgetConfig[]): WidgetConfig[] {
-    return children.map((child) => {
-        if ((child.type === 'group' || child.type === 'panels') && child.options?.defId) {
-            return { ...child, options: { ...child.options, defId: cloneGroupDef(child.options.defId as string) } };
-        }
-        // Timer children: regenerate event ids and drop stateBaseId so the clone
-        // doesn't share the events array / event ids with the original (mirrors
-        // the top-level copyConfig handling in WidgetFrame).
-        if (child.type === 'timer' && child.options) {
-            const o = child.options as Record<string, unknown>;
-            const rawEvents = (o.events as Array<Record<string, unknown>> | undefined) ?? [];
-            const events = rawEvents.map((e) => ({
-                ...e,
-                id: `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            }));
-            const nextOpts = { ...o, events } as Record<string, unknown>;
-            delete nextOpts.stateBaseId;
-            return { ...child, options: nextOpts };
-        }
-        return child;
-    });
-}
+// cloneGroupDef / widget copying live in utils/widgetCopy.ts — copies need fresh
+// widget ids too, and that pass has to know the whole copied set (#606).
 
 /** Collect all defIds reachable from a widget list (recursively follows nested groups). */
 function collectDefIds(widgets: WidgetConfig[], defs: Record<string, WidgetConfig[]>, out: Set<string>): void {
@@ -141,7 +120,9 @@ export function gcGroupDefs(): void {
 
     const referenced = new Set<string>();
     for (const l of layouts) {
-        for (const tab of l.tabs) collectDefIds(tab.widgets, defs, referenced);
+        for (const sec of l.sections) {
+            for (const tab of sec.tabs) collectDefIds(tab.widgets, defs, referenced);
+        }
     }
     for (const v of views) collectDefIds(v.widgets, defs, referenced);
 

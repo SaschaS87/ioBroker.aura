@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useConfigSync } from '../../hooks/useConfigSync';
 import { version as appVersion } from '../../../package.json';
+import { FEATURES } from '../../featureFlags';
 import { PortalTargetContext, PortalThemeContext } from '../../contexts/PortalTargetContext';
 import { Navigate, Outlet, NavLink } from 'react-router-dom';
 import {
@@ -12,16 +13,19 @@ import {
     Undo2,
     Layers,
     Layers2,
+    Palette,
     Sun,
     Moon,
     ExternalLink,
     Menu,
     X,
     AppWindow,
+    BellRing,
     BookOpen,
     Code2,
-    MonitorSmartphone,
     AlertTriangle,
+    Activity,
+    Shapes,
 } from 'lucide-react';
 import { useAuthStore, logout } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
@@ -41,6 +45,7 @@ import { useConfigStore } from '../../store/configStore';
 import { usePopupConfigStore } from '../../store/popupConfigStore';
 import { loadConfigFromIoBroker, applyRaw } from '../../utils/configLoader';
 import { markGroupDefsHydrated } from '../../store/groupDefsStore';
+import { markWidgetPresetsHydrated } from '../../store/widgetPresetsStore';
 import { useAdminPrefsStore } from '../../store/adminPrefsStore';
 import { useIoBroker, getObjectDirect, subscribeStateDirect, setStateDirect } from '../../hooks/useIoBroker';
 import { renameAllTimers } from '../../utils/publishTimerConfig';
@@ -67,7 +72,9 @@ function useSaveState() {
         try {
             saveAll();
             saveToIoBroker();
-            const widgets = useDashboardStore.getState().layouts.flatMap((l) => l.tabs.flatMap((t) => t.widgets));
+            const widgets = useDashboardStore
+                .getState()
+                .layouts.flatMap((l) => l.sections.flatMap((s) => s.tabs.flatMap((t) => t.widgets)));
             renameAllTimers(widgets);
         } catch {
             setSaveError('Speichern fehlgeschlagen: localStorage-Speicher voll');
@@ -96,12 +103,18 @@ function useFrontendUrl(): string {
     return useDashboardStore((s) => {
         const layout = s.layouts.find((l) => l.id === s.activeLayoutId) ?? s.layouts[0];
         const isFirst = s.layouts[0]?.id === layout.id;
-        const activeTab = layout.tabs.find((t) => t.id === layout.activeTabId) ?? layout.tabs[0];
-        const tabSlug = activeTab?.slug ?? activeTab?.id ?? '';
-        if (isFirst) {
-            return tabSlug && layout.tabs.length > 1 ? `#/tab/${tabSlug}` : '#/';
-        }
-        return tabSlug && layout.tabs.length > 1 ? `#/view/${layout.slug}/tab/${tabSlug}` : `#/view/${layout.slug}`;
+        // Mirror the frontend's default-open resolution: default section, then that
+        // section's default tab — so the link reflects the configured defaults, not
+        // whichever section/tab happens to be active in the editor.
+        const section = layout.sections.find((x) => x.id === layout.defaultSectionId) ?? layout.sections[0];
+        const defaultTab = section.tabs.find((t) => t.id === section.defaultTabId) ?? section.tabs[0];
+        const tabSlug = defaultTab?.slug ?? defaultTab?.id ?? '';
+        const multiSection = layout.sections.length > 1;
+        const manyTabs = section.tabs.length > 1;
+        // Base path to the layout/section.
+        const base = multiSection ? `#/view/${layout.slug}/s/${section.slug}` : isFirst ? '#' : `#/view/${layout.slug}`;
+        if (tabSlug && manyTabs) return base === '#' ? `#/tab/${tabSlug}` : `${base}/tab/${tabSlug}`;
+        return base === '#' ? '#/' : base;
     });
 }
 
@@ -177,6 +190,7 @@ export function AdminLayout() {
         loadConfigFromIoBroker(true).then((remoteHasData) => {
             adminConfigLoadedRef.current = true;
             markGroupDefsHydrated(); // unblock group-defs saves even if remote was empty
+            markWidgetPresetsHydrated();
             const localHasData = [
                 'aura-dashboard',
                 'aura-theme',
@@ -196,8 +210,11 @@ export function AdminLayout() {
             } else if (remoteHasData && localHasData) {
                 // Both have data – flush any cross-session unsaved edits (_dirty flag
                 // survivors). saveToIoBroker writes only dirty keys, so if there are
-                // none this is a cheap no-op.
-                saveToIoBroker({ backup: false });
+                // none this is a cheap no-op — and then no backup is written either.
+                // When it does write it overwrites the remote copy with this device's
+                // carried-over one, which is exactly the save that must show up in
+                // Settings → Backups instead of happening invisibly.
+                saveToIoBroker();
             }
         });
     }, [connected]);
@@ -277,12 +294,17 @@ export function AdminLayout() {
 
     const NAV = [
         { to: '/admin', label: t('admin.nav.overview'), icon: LayoutDashboard, end: true },
+        { to: '/admin/layouts', label: t('admin.nav.layouts'), icon: Layers2 },
         { to: '/admin/editor', label: t('admin.nav.editor'), icon: PenSquare },
         { to: '/admin/popups', label: t('admin.nav.popups'), icon: AppWindow },
+        { to: '/admin/messages', label: t('admin.nav.messages'), icon: BellRing },
+        ...(FEATURES.widgetDesigner
+            ? [{ to: '/admin/widget-designer', label: t('admin.nav.widgetDesigner'), icon: Shapes }]
+            : []),
         { to: '/admin/widgets', label: t('admin.nav.widgets'), icon: Layers },
-        { to: '/admin/layouts', label: t('admin.nav.layouts'), icon: Layers2 },
-        { to: '/admin/frontend', label: t('admin.nav.frontend'), icon: MonitorSmartphone },
+        { to: '/admin/design', label: t('admin.nav.design'), icon: Palette },
         { to: '/admin/css-js', label: t('admin.nav.cssjs'), icon: Code2 },
+        { to: '/admin/loadtimes', label: t('admin.nav.loadtimes'), icon: Activity },
         { to: '/admin/settings', label: t('admin.nav.settings'), icon: Settings },
     ];
 

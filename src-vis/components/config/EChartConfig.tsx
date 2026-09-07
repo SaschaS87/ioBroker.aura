@@ -1,56 +1,159 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, Database, Plus, Trash2, ChevronUp } from 'lucide-react';
+import { ChevronDown, Database, Trash2 } from 'lucide-react';
 import type { WidgetConfig } from '../../types';
 import { DatapointPicker } from './DatapointPicker';
-import { getObjectDirect } from '../../hooks/useIoBroker';
-import { detectHistoryAdapters, RANGE_LABELS, type DetectedAdapter } from '../../hooks/useChartHistory';
-import type { EChartSeriesConfig, EChartTimeRange } from '../../hooks/useMultiSeriesData';
-import { useT, t } from '../../i18n';
+import type { NumberFormat } from '../../utils/formatValue';
+import { getObjectDirect, getStateDirect } from '../../hooks/useIoBroker';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { ColorPicker } from '../common/ColorPicker';
+import { detectHistoryAdapters, RANGE_LABELS } from '../../hooks/useChartHistory';
+import {
+    detectJsonKeys,
+    parseJsonAxisBounds,
+    parseTimeLabel,
+    resolveJsonArray,
+    suggestJsonArrayPaths,
+    type EChartSeriesConfig,
+    type EChartTimeRange,
+} from '../../hooks/useMultiSeriesData';
+import { useT } from '../../i18n';
+import { DatapointManagerField } from './list/DatapointManagerField';
+import type { ManagedEntry } from './list/EntryListItem';
+import { ChartModePanel, type EChartMode } from './chart/ChartModePanel';
+import { ChartFormatPanel } from './chart/ChartFormatPanel';
+import { ChartSeriesDetail } from './chart/ChartSeriesDetail';
+import { ChartValuesPanel } from './chart/ChartValuesPanel';
+import { CHART_TYPES, inputCls, inputStyle, type JsonProbe, type SeriesAdapterState } from './chart/chartShared';
 
 interface EChartConfigProps {
     config: WidgetConfig;
     onConfigChange: (c: WidgetConfig) => void;
 }
 
-const CHART_RANGES: EChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d', 'custom'];
-
-const CHART_TYPES: { id: EChartSeriesConfig['chartType']; label: () => string }[] = [
-    { id: 'line', label: () => t('echart.line') },
-    { id: 'area', label: () => t('echart.area') },
-    { id: 'bar', label: () => t('echart.bar') },
-    { id: 'scatter', label: () => t('echart.scatter') },
-];
+const CHART_RANGES: EChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d', '1y', 'total', 'custom'];
 
 function generateId(): string {
     return Math.random().toString(36).slice(2, 9);
 }
 
-const inputCls = 'w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none';
-const inputStyle = {
-    background: 'var(--app-bg)',
-    color: 'var(--text-primary)',
-    border: '1px solid var(--app-border)',
-};
-
-interface SeriesAdapterState {
-    adapters: DetectedAdapter[];
-    checking: boolean;
+/**
+ * One y-axis bound (min or max). Three sources, in the order they win at runtime: a datapoint that
+ * delivers the bound live, the payload's own min/max block in JSON mode, the fixed number typed in
+ * here (issue #550). `dataMin`/`dataMax` leave the bound to the data.
+ *
+ * A picked datapoint replaces the number field instead of sitting beside it — it overrules the
+ * number anyway, and showing both invites the reading that they are added up.
+ */
+function AxisBoundRow({
+    valueKey,
+    dpKey,
+    autoToken,
+    placeholder,
+    o,
+    setO,
+    onPickDp,
+}: {
+    valueKey: string;
+    dpKey: string;
+    autoToken: 'dataMin' | 'dataMax';
+    placeholder: string;
+    o: Record<string, unknown>;
+    setO: (patch: Record<string, unknown>) => void;
+    onPickDp: () => void;
+}) {
+    const tr = useT();
+    const raw = (o[valueKey] as string | number | undefined) ?? '';
+    const dpId = (o[dpKey] as string | undefined) ?? '';
+    const isAuto = raw === autoToken;
+    return (
+        <div className="flex gap-1.5 items-center">
+            {dpId ? (
+                <div
+                    className="flex-1 min-w-0 flex items-center gap-1 text-[11px] px-2.5 py-2 rounded-lg font-mono"
+                    style={inputStyle}
+                    title={dpId}
+                >
+                    <span className="truncate">{dpId}</span>
+                    <button
+                        onClick={() => setO({ [dpKey]: undefined })}
+                        className="ml-auto shrink-0 hover:opacity-70"
+                        style={{ color: 'var(--text-secondary)' }}
+                        title={tr('echart.boundDpClear')}
+                    >
+                        <Trash2 size={11} />
+                    </button>
+                </div>
+            ) : isAuto ? (
+                <div className="flex-1 text-[11px] px-2.5 py-2 rounded-lg font-mono" style={inputStyle}>
+                    {autoToken}
+                </div>
+            ) : (
+                <input
+                    type="number"
+                    value={String(raw)}
+                    onChange={(e) => setO({ [valueKey]: e.target.value !== '' ? Number(e.target.value) : undefined })}
+                    placeholder={placeholder}
+                    className={`${inputCls} flex-1`}
+                    style={inputStyle}
+                />
+            )}
+            <button
+                onClick={onPickDp}
+                className="px-2 py-1.5 rounded-lg shrink-0 hover:opacity-80"
+                style={{
+                    background: dpId ? 'var(--accent)' : 'var(--app-bg)',
+                    color: dpId ? '#fff' : 'var(--text-secondary)',
+                    border: `1px solid ${dpId ? 'var(--accent)' : 'var(--app-border)'}`,
+                }}
+                title={tr('echart.boundFromDp')}
+            >
+                <Database size={12} />
+            </button>
+            {!dpId && (
+                <button
+                    onClick={() => setO({ [valueKey]: isAuto ? undefined : autoToken })}
+                    className="text-[10px] px-2 py-1.5 rounded-lg shrink-0"
+                    style={{
+                        background: isAuto ? 'var(--accent)' : 'var(--app-bg)',
+                        color: isAuto ? '#fff' : 'var(--text-secondary)',
+                        border: `1px solid ${isAuto ? 'var(--accent)' : 'var(--app-border)'}`,
+                    }}
+                >
+                    Auto
+                </button>
+            )}
+        </div>
+    );
 }
 
 export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
     const t = useT();
     const o = config.options ?? {};
-    const { defaultDecimals } = useGlobalSettingsStore();
     const series = (o.echartSeries as EChartSeriesConfig[] | undefined) ?? [];
     const echartMode = (o.echartMode as string | undefined) ?? 'timeseries';
     const isComparison = echartMode === 'comparison';
+    const isJson = echartMode === 'json';
+    const jsonTimeAxis = (o.echartJsonTimeAxis as boolean | undefined) ?? false;
     const echartShowLegend = (o.echartShowLegend as boolean | undefined) ?? true;
     const echartShowYAxis = (o.echartShowYAxis as boolean | undefined) ?? true;
+    const echartShowYAxisRight = (o.echartShowYAxisRight as boolean | undefined) ?? true;
+    // The right-axis switch only means something once a series actually sits on that axis.
+    const usesRightAxis = series.some((s) => (s.yAxisIndex ?? 0) === 1);
     const echartShowXAxis = (o.echartShowXAxis as boolean | undefined) ?? true;
     const echartShowGridLines = (o.echartShowGridLines as boolean | undefined) ?? true;
+    const echartAnimation = (o.echartAnimation as boolean | undefined) ?? true;
     const echartShowCurrent = (o.echartShowCurrent as boolean | undefined) ?? true;
+    const echartCurrentFrom = (o.echartCurrentFrom as 'last' | 'first' | undefined) ?? 'last';
+    const echartCurrentAlign = (o.echartCurrentAlign as 'right' | 'left' | undefined) ?? 'right';
+    // Comparison charts have always labelled their bars — keep that as their default (issue #543).
+    const echartShowValues = (o.echartShowValues as boolean | undefined) ?? isComparison;
+    // Share of the stack total at the data point (issue #569) — only offered once something stacks.
+    const echartShowStackPercent = (o.echartShowStackPercent as boolean | undefined) ?? false;
+    const anyStack = series.some((s) => s.stack);
+    // The chart-wide number format each series inherits (issue #600) — already resolved against
+    // the app-wide defaults, so a series row can name what "inherit" gives it.
+    const { defaultDecimals, numberFormat: globalNumberFormat } = useGlobalSettingsStore();
+    const chartDecimals = (o.decimals as number | undefined) ?? defaultDecimals;
+    const chartNumberFormat = (o.numberFormat as NumberFormat | undefined) ?? globalNumberFormat;
     // Single widget-level range (replaces the former per-series ranges). Falls back to the
     // first series' old range so existing widgets keep their configured window after upgrade.
     const echartRange = (o.echartRange as EChartTimeRange | undefined) ?? series[0]?.historyRange ?? '24h';
@@ -63,6 +166,15 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
     // Which presets the frontend range selector offers (default: all).
     const frontendPresets = CHART_RANGES.filter((r) => r !== 'custom');
     const visibleRanges = (o.echartVisibleRanges as EChartTimeRange[] | undefined) ?? frontendPresets;
+    const setO = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    /**
+     * The mode NEVER touches the series. It used to normalise their data sources — every series
+     * to `json` in the JSON mode, back to `history` in the other two — which quietly flattened a
+     * configured chart: a look into another mode and back left a JSON series reading history.
+     * The JSON mode overrides the source where the data is read instead (see `sourceOf` in
+     * EChartWidget), so switching the mode is lossless in every direction.
+     */
+    const setMode = (mode: 'timeseries' | 'comparison' | 'json') => setO({ echartMode: mode });
     const toggleVisibleRange = (r: EChartTimeRange) => {
         const next = visibleRanges.includes(r)
             ? visibleRanges.filter((x) => x !== r)
@@ -71,25 +183,54 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
         setO({ echartVisibleRanges: next });
     };
     const anyHistory = series.some((s) => !!s.historyInstance);
+    /**
+     * The series as rows of the dialog's master list. A series is named by hand, so `label` is
+     * always set and the resolved-name lookup stays empty; its datapoint goes on the second line,
+     * because a list of names alone says nothing about what is plotted.
+     */
+    const managedEntries: ManagedEntry[] = series.map((s) => {
+        const typeLabel = CHART_TYPES.find((ct) => ct.id === s.chartType)?.label() ?? s.chartType;
+        const source = s.source === 'json' || isJson ? t('echart.sourceJson') : null;
+        const dp = s.datapointId || t('echart.noDatapoint');
+        return {
+            id: s.id,
+            label: s.name,
+            color: s.color ?? '#3b82f6',
+            sublabel: [source ?? typeLabel, dp].join(' · '),
+        };
+    });
     const echartLeftUnit = (o.echartLeftUnit as string | undefined) ?? '';
     const echartRightUnit = (o.echartRightUnit as string | undefined) ?? '';
-    const echartLeftMin = (o.echartLeftMin as string | undefined) ?? '';
-    const echartLeftMax = (o.echartLeftMax as string | undefined) ?? '';
-    const echartRightMin = (o.echartRightMin as string | undefined) ?? '';
-    const echartRightMax = (o.echartRightMax as string | undefined) ?? '';
+    const jsonAxisBounds = (o.echartJsonAxisBounds as boolean | undefined) ?? false;
     const echartJsonExtra = (o.echartJsonExtra as string | undefined) ?? '';
 
-    const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [pickerForSeries, setPickerForSeries] = useState<string | null>(null);
+    /** Option key of the axis bound whose datapoint is being picked, e.g. `echartLeftMaxDp`. */
+    const [pickerForBound, setPickerForBound] = useState<string | null>(null);
     const [adapterStates, setAdapterStates] = useState<Record<string, SeriesAdapterState>>({});
     const [jsonOpen, setJsonOpen] = useState(false);
-
-    const setO = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const [jsonProbes, setJsonProbes] = useState<Record<string, JsonProbe>>({});
 
     const setSeries = (next: EChartSeriesConfig[]) => setO({ echartSeries: next });
 
     const updateSeries = (id: string, patch: Partial<EChartSeriesConfig>) => {
         setSeries(series.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    };
+
+    /**
+     * Store a series' value conversion (issue #540). A preset's suggested unit lands on the axis
+     * the series is plotted against — the unit lives on the widget, not on the series, so picking
+     * "W → kW" relabels the axis in one go. Both halves go into a single onConfigChange: series and
+     * unit sit in the same options object, so two separate calls would overwrite each other.
+     */
+    const setSeriesTransform = (
+        id: string,
+        patch: { valueTransform?: string; valueFactor?: number; valueOffset?: number; unit?: string },
+    ) => {
+        const { unit, ...rest } = patch;
+        const next = series.map((s) => (s.id === id ? { ...s, ...rest } : s));
+        const target = series.find((s) => s.id === id);
+        const axisKey = (target?.yAxisIndex ?? 0) === 1 ? 'echartRightUnit' : 'echartLeftUnit';
+        setO(unit ? { echartSeries: next, [axisKey]: unit } : { echartSeries: next });
     };
 
     const addSeries = () => {
@@ -100,29 +241,121 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
             datapointId: '',
             chartType: 'line',
             color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'][series.length % 6],
+            source: isJson ? 'json' : 'history',
             historyRange: '24h',
             smooth: true,
             yAxisIndex: 0,
             lineWidth: 2,
         };
         setSeries([...series, newSeries]);
-        setExpandedId(newId);
     };
 
     const removeSeries = (id: string) => {
         setSeries(series.filter((s) => s.id !== id));
-        if (expandedId === id) setExpandedId(null);
     };
 
-    const moveSeries = (id: string, dir: -1 | 1) => {
-        const idx = series.findIndex((s) => s.id === id);
-        if (idx < 0) return;
+    /** Drag & drop in the dialog's master list: move one series to another position. */
+    const reorderSeries = (from: number, to: number) => {
+        if (from === to || from < 0 || from >= series.length) return;
         const next = [...series];
-        const swap = idx + dir;
-        if (swap < 0 || swap >= next.length) return;
-        [next[idx], next[swap]] = [next[swap], next[idx]];
+        const [moved] = next.splice(from, 1);
+        next.splice(Math.max(0, Math.min(next.length, to)), 0, moved);
         setSeries(next);
     };
+
+    /**
+     * A series got a new datapoint. The cached adapter detection is keyed by series id, so it has
+     * to go — otherwise the new datapoint would keep the old datapoint's history instances.
+     */
+    const changeSeriesDatapoint = (id: string, datapointId: string) => {
+        updateSeries(id, { datapointId });
+        if (!datapointId) return;
+        setAdapterStates((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+    };
+
+    // Read the actual datapoint value of every JSON series to learn its structure: which keys
+    // exist, which ones hold label and value, and whether the labels are timestamps. Without
+    // this the two key fields are pure guesswork for anyone who hasn't read the docs.
+    // Probed per series, not per mode: a timeseries chart may hold JSON series next to history
+    // ones (issue #595), so the source flag decides — with the JSON mode forcing it on.
+    const jsonSeries = series.filter((s) => isJson || s.source === 'json');
+    const jsonProbeKey = jsonSeries
+        .map((s) => `${s.id}:${s.datapointId}:${s.jsonPath ?? ''}:${s.jsonAxisPath ?? ''}`)
+        .join(',');
+    useEffect(() => {
+        for (const s of jsonSeries) {
+            if (!s.datapointId || s.datapointId.includes('{{')) continue;
+            getStateDirect(s.datapointId)
+                .then((state) => {
+                    const arr = resolveJsonArray(state?.val, s.jsonPath);
+                    if (!arr) {
+                        setJsonProbes((prev) => ({
+                            ...prev,
+                            [s.id]: {
+                                done: true,
+                                invalid: true,
+                                // Say where the arrays actually are instead of only that this
+                                // path holds none (issue #550).
+                                arrayPaths: suggestJsonArrayPaths(state?.val),
+                                keys: [],
+                                entries: 0,
+                                timeLike: false,
+                            },
+                        }));
+                        return;
+                    }
+                    const first = arr.find((i) => !!i && typeof i === 'object' && !Array.isArray(i)) as
+                        | Record<string, unknown>
+                        | undefined;
+                    const keys = first ? Object.keys(first) : [];
+                    const detected = first ? detectJsonKeys(first) : {};
+                    const labelKey = s.jsonLabelKey || detected.labelKey;
+                    const valueKey = s.jsonValueKey || detected.valueKey;
+                    // Sample the first entries rather than all of them — enough to tell a
+                    // timestamp column from a text one without walking a 1000-point array.
+                    const sample = arr.slice(0, 10).filter((i) => !!i && typeof i === 'object') as Record<
+                        string,
+                        unknown
+                    >[];
+                    const labels = labelKey ? sample.map((i) => String(i[labelKey] ?? '')) : [];
+                    const timeLike = labels.length > 0 && labels.every((l) => parseTimeLabel(l) !== null);
+                    setJsonProbes((prev) => ({
+                        ...prev,
+                        [s.id]: {
+                            done: true,
+                            keys,
+                            labelKey,
+                            valueKey,
+                            sampleLabel: labelKey && first ? String(first[labelKey] ?? '') : undefined,
+                            sampleValue: valueKey && first ? String(first[valueKey] ?? '') : undefined,
+                            bounds: parseJsonAxisBounds(state?.val, s),
+                            entries: arr.length,
+                            timeLike,
+                        },
+                    }));
+                })
+                .catch(() => {
+                    setJsonProbes((prev) => ({
+                        ...prev,
+                        [s.id]: { done: true, invalid: true, keys: [], entries: 0, timeLike: false },
+                    }));
+                });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jsonProbeKey]);
+
+    // Timestamp labels only make sense on a time axis — switch it on the first time we see them,
+    // unless the user has already made a choice.
+    useEffect(() => {
+        if (!isJson || o.echartJsonTimeAxis !== undefined) return;
+        const probes = series.map((s) => jsonProbes[s.id]).filter((p) => p?.done && !p.invalid);
+        if (probes.length > 0 && probes.every((p) => p.timeLike)) setO({ echartJsonTimeAxis: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isJson, jsonProbes, o.echartJsonTimeAxis]);
 
     // Detect history adapters when datapoint changes
     useEffect(() => {
@@ -130,6 +363,9 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
             // Template datapoints ({{dp}}, {{parent}}.x) can't be resolved to a real object,
             // so adapter detection is skipped — a free-text instance field is shown instead.
             if (!s.datapointId || s.datapointId.includes('{{')) continue;
+            // JSON series read the datapoint value directly — no history adapter involved.
+            // In the JSON mode that goes for every series, whatever its stored source says.
+            if (isJson || s.source === 'json') continue;
             const existing = adapterStates[s.id];
             // Only re-detect if we haven't already
             if (existing) continue;
@@ -174,480 +410,86 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
 
     return (
         <div className="aura-scroll flex flex-col gap-0 overflow-y-auto" style={{ maxHeight: '80vh' }}>
-            {/* ── Mode toggle ─────────────────────────────────────────────────── */}
+            {/* ── Mode + series ───────────────────────────────────────────────────
+                Both live in the "Datenpunkte verwalten" dialog: the series editor alone had
+                grown past a thousand lines and pushed the global settings out of reach. */}
             <div className="mb-3">
-                <label className="text-[11px] mb-1 block font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                    {t('echart.mode')}
-                </label>
-                <div className="flex gap-1">
-                    {(['timeseries', 'comparison'] as const).map((m) => (
-                        <button
-                            key={m}
-                            onClick={() => setO({ echartMode: m })}
-                            className="flex-1 text-[11px] py-1 rounded-md hover:opacity-80 transition-opacity"
-                            style={{
-                                background: echartMode === m ? 'var(--accent)' : 'var(--app-bg)',
-                                color: echartMode === m ? '#fff' : 'var(--text-secondary)',
-                                border: `1px solid ${echartMode === m ? 'var(--accent)' : 'var(--app-border)'}`,
-                            }}
-                        >
-                            {m === 'timeseries' ? t('echart.modeTimeseries') : t('echart.modeComparison')}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* ── Series list ──────────────────────────────────────────────────── */}
-            <div>
-                <div className="flex items-center justify-between mb-2">
-                    <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                        {t('echart.series')}
-                    </p>
-                    <button
-                        onClick={addSeries}
-                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md hover:opacity-80 transition-opacity"
-                        style={{ background: 'var(--accent)', color: '#fff' }}
-                    >
-                        <Plus size={11} />
-                        {t('echart.addSeries')}
-                    </button>
-                </div>
-
-                {series.length === 0 && (
-                    <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        {t('echart.noSeries')}
-                    </p>
-                )}
-
-                <div className="flex flex-col gap-1.5">
-                    {series.map((s, idx) => {
-                        const isExpanded = expandedId === s.id;
-                        const adState = adapterStates[s.id];
-                        const isTpl = (s.datapointId ?? '').includes('{{');
+                <DatapointManagerField
+                    title={t('echart.manageSeries')}
+                    label={t('echart.manageSeries')}
+                    storageKey="aura-echart-dp-modal"
+                    hint={t('echart.manageSeriesHint')}
+                    count={series.length}
+                    entries={managedEntries}
+                    resolvedNames={{}}
+                    entriesTabLabel={t('echart.seriesTab')}
+                    selectHint={t('echart.pickSeries')}
+                    emptyState={t('echart.noSeriesYet')}
+                    addLabel={t('echart.addSeries')}
+                    /* Tab order follows the decisions: the mode decides what a series even is,
+                       the number format is the default every series inherits — both belong in
+                       FRONT of the series, and each in its own tab so nothing pushes the series
+                       list down the dialog (issue #600). */
+                    entriesTabIndex={2}
+                    tabs={[
+                        {
+                            key: 'mode',
+                            label: t('echart.modeTab'),
+                            node: <ChartModePanel mode={echartMode as EChartMode} onChange={setMode} />,
+                        },
+                        {
+                            key: 'format',
+                            label: t('echart.formatTab'),
+                            node: (
+                                <ChartFormatPanel
+                                    decimals={o.decimals as number | undefined}
+                                    numberFormat={o.numberFormat as NumberFormat | undefined}
+                                    onChange={setO}
+                                />
+                            ),
+                        },
+                        {
+                            key: 'values',
+                            label: t('echart.valuesTab'),
+                            node: (
+                                <ChartValuesPanel
+                                    showValues={echartShowValues}
+                                    showStackPercent={echartShowStackPercent}
+                                    anyStack={anyStack}
+                                    onChange={setO}
+                                />
+                            ),
+                        },
+                    ]}
+                    onAdd={addSeries}
+                    onRemove={removeSeries}
+                    onRemoveAll={() => setO({ echartSeries: [] })}
+                    onReorder={reorderSeries}
+                    renderDetail={(id) => {
+                        const s = series.find((x) => x.id === id);
+                        if (!s) return null;
                         return (
-                            <div
-                                key={s.id}
-                                className="rounded-lg overflow-hidden"
-                                style={{ border: '1px solid var(--app-border)' }}
-                            >
-                                {/* Series header row */}
-                                <div
-                                    className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer select-none"
-                                    style={{ background: 'var(--app-bg)' }}
-                                    onClick={() => setExpandedId(isExpanded ? null : s.id)}
-                                >
-                                    {/* Color dot */}
-                                    <span
-                                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                                        style={{ background: s.color ?? '#3b82f6' }}
-                                    />
-                                    <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-primary)' }}>
-                                        {s.name || `Serie ${idx + 1}`}
-                                    </span>
-                                    <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
-                                        {(
-                                            CHART_TYPES.find((ct) => ct.id === s.chartType)?.label ??
-                                            (() => s.chartType)
-                                        )()}
-                                    </span>
-                                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                                        <button
-                                            onClick={() => moveSeries(s.id, -1)}
-                                            disabled={idx === 0}
-                                            className="p-0.5 rounded hover:opacity-80 disabled:opacity-30"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                            title="Nach oben"
-                                        >
-                                            <ChevronUp size={11} />
-                                        </button>
-                                        <button
-                                            onClick={() => moveSeries(s.id, 1)}
-                                            disabled={idx === series.length - 1}
-                                            className="p-0.5 rounded hover:opacity-80 disabled:opacity-30"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                            title="Nach unten"
-                                        >
-                                            <ChevronDown size={11} />
-                                        </button>
-                                        <button
-                                            onClick={() => removeSeries(s.id)}
-                                            className="p-0.5 rounded hover:opacity-80"
-                                            style={{ color: 'var(--accent-red, #ef4444)' }}
-                                            title={t('echart.deleteSeries')}
-                                        >
-                                            <Trash2 size={11} />
-                                        </button>
-                                    </div>
-                                    <ChevronDown
-                                        size={12}
-                                        style={{
-                                            color: 'var(--text-secondary)',
-                                            transform: isExpanded ? 'rotate(180deg)' : 'none',
-                                            transition: 'transform 0.15s',
-                                        }}
-                                    />
-                                </div>
-
-                                {/* Expanded series config */}
-                                {isExpanded && (
-                                    <div
-                                        className="px-2.5 pb-2.5 pt-1.5 flex flex-col gap-2"
-                                        style={{ borderTop: '1px solid var(--app-border)' }}
-                                    >
-                                        {/* Name */}
-                                        <div>
-                                            <label
-                                                className="text-[11px] mb-1 block"
-                                                style={{ color: 'var(--text-secondary)' }}
-                                            >
-                                                {t('echart.name')}
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={s.name}
-                                                onChange={(e) => updateSeries(s.id, { name: e.target.value })}
-                                                className={inputCls}
-                                                style={inputStyle}
-                                            />
-                                        </div>
-
-                                        {/* Datapoint */}
-                                        <div>
-                                            <label
-                                                className="text-[11px] mb-1 block"
-                                                style={{ color: 'var(--text-secondary)' }}
-                                            >
-                                                {t('echart.datapoint')}
-                                            </label>
-                                            <div className="flex gap-1">
-                                                <input
-                                                    type="text"
-                                                    value={s.datapointId}
-                                                    onChange={(e) => {
-                                                        updateSeries(s.id, { datapointId: e.target.value });
-                                                        if (e.target.value) {
-                                                            // Clear cache so effect re-detects
-                                                            setAdapterStates((prev) => {
-                                                                const n = { ...prev };
-                                                                delete n[s.id];
-                                                                return n;
-                                                            });
-                                                        }
-                                                    }}
-                                                    placeholder={t('echart.dpPlaceholder')}
-                                                    className="flex-1 text-xs rounded-lg px-2.5 py-2 font-mono focus:outline-none min-w-0"
-                                                    style={inputStyle}
-                                                />
-                                                <button
-                                                    onClick={() => setPickerForSeries(s.id)}
-                                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
-                                                    style={{
-                                                        background: 'var(--app-bg)',
-                                                        color: 'var(--text-secondary)',
-                                                        border: '1px solid var(--app-border)',
-                                                    }}
-                                                    title={t('echart.fromIoBroker')}
-                                                >
-                                                    <Database size={13} />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Chart type — hidden in comparison mode */}
-                                        {!isComparison && (
-                                            <div>
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    {t('echart.chartType')}
-                                                </label>
-                                                <div className="flex gap-1">
-                                                    {CHART_TYPES.map((ct) => (
-                                                        <button
-                                                            key={ct.id}
-                                                            onClick={() => updateSeries(s.id, { chartType: ct.id })}
-                                                            className="flex-1 text-[11px] py-1 rounded-md hover:opacity-80 transition-opacity"
-                                                            style={{
-                                                                background:
-                                                                    s.chartType === ct.id
-                                                                        ? 'var(--accent)'
-                                                                        : 'var(--app-bg)',
-                                                                color:
-                                                                    s.chartType === ct.id
-                                                                        ? '#fff'
-                                                                        : 'var(--text-secondary)',
-                                                                border: `1px solid ${s.chartType === ct.id ? 'var(--accent)' : 'var(--app-border)'}`,
-                                                            }}
-                                                        >
-                                                            {ct.label()}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Color */}
-                                        <div>
-                                            <label
-                                                className="text-[11px] mb-1 block"
-                                                style={{ color: 'var(--text-secondary)' }}
-                                            >
-                                                {t('echart.color')}
-                                            </label>
-                                            <div className="flex gap-1.5 items-center">
-                                                <ColorPicker
-                                                    value={s.color ?? '#3b82f6'}
-                                                    onChange={(v) => updateSeries(s.id, { color: v })}
-                                                    className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={s.color ?? '#3b82f6'}
-                                                    onChange={(e) => updateSeries(s.id, { color: e.target.value })}
-                                                    className="flex-1 text-xs rounded-lg px-2.5 py-2 font-mono focus:outline-none"
-                                                    style={inputStyle}
-                                                    placeholder="#3b82f6"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Y-Axis, Smooth, LineWidth, History — hidden in comparison mode */}
-                                        {!isComparison && (
-                                            <>
-                                                <div>
-                                                    <label
-                                                        className="text-[11px] mb-1 block"
-                                                        style={{ color: 'var(--text-secondary)' }}
-                                                    >
-                                                        {t('echart.yAxis')}
-                                                    </label>
-                                                    <div className="flex gap-1">
-                                                        {([0, 1] as const).map((yi) => (
-                                                            <button
-                                                                key={yi}
-                                                                onClick={() => updateSeries(s.id, { yAxisIndex: yi })}
-                                                                className="flex-1 text-[11px] py-1 rounded-md hover:opacity-80 transition-opacity"
-                                                                style={{
-                                                                    background:
-                                                                        (s.yAxisIndex ?? 0) === yi
-                                                                            ? 'var(--accent)'
-                                                                            : 'var(--app-bg)',
-                                                                    color:
-                                                                        (s.yAxisIndex ?? 0) === yi
-                                                                            ? '#fff'
-                                                                            : 'var(--text-secondary)',
-                                                                    border: `1px solid ${(s.yAxisIndex ?? 0) === yi ? 'var(--accent)' : 'var(--app-border)'}`,
-                                                                }}
-                                                            >
-                                                                {yi === 0 ? t('echart.yLeft') : t('echart.yRight')}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                {(s.chartType === 'line' || s.chartType === 'area') && (
-                                                    <div className="flex items-center justify-between">
-                                                        <label
-                                                            className="text-[11px]"
-                                                            style={{ color: 'var(--text-secondary)' }}
-                                                        >
-                                                            {t('echart.smooth')}
-                                                        </label>
-                                                        <button
-                                                            onClick={() =>
-                                                                updateSeries(s.id, { smooth: !(s.smooth ?? true) })
-                                                            }
-                                                            className="relative w-9 h-5 rounded-full transition-colors"
-                                                            style={{
-                                                                background:
-                                                                    (s.smooth ?? true)
-                                                                        ? 'var(--accent)'
-                                                                        : 'var(--app-border)',
-                                                            }}
-                                                        >
-                                                            <span
-                                                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
-                                                                style={{ left: (s.smooth ?? true) ? '18px' : '2px' }}
-                                                            />
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                                {(s.chartType === 'line' || s.chartType === 'area') && (
-                                                    <div>
-                                                        <label
-                                                            className="text-[11px] mb-1 block"
-                                                            style={{ color: 'var(--text-secondary)' }}
-                                                        >
-                                                            {t('echart.lineWidth', { value: s.lineWidth ?? 2 })}
-                                                        </label>
-                                                        <input
-                                                            type="range"
-                                                            min={1}
-                                                            max={4}
-                                                            step={1}
-                                                            value={s.lineWidth ?? 2}
-                                                            onChange={(e) =>
-                                                                updateSeries(s.id, {
-                                                                    lineWidth: Number(e.target.value),
-                                                                })
-                                                            }
-                                                            className="w-full accent-[var(--accent)]"
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                <div>
-                                                    <div
-                                                        className="h-px my-1"
-                                                        style={{ background: 'var(--app-border)' }}
-                                                    />
-                                                    <p
-                                                        className="text-[11px] font-semibold mb-1.5"
-                                                        style={{ color: 'var(--text-secondary)' }}
-                                                    >
-                                                        {t('echart.history')}
-                                                    </p>
-                                                    {!s.datapointId && (
-                                                        <p
-                                                            className="text-[11px]"
-                                                            style={{ color: 'var(--text-secondary)' }}
-                                                        >
-                                                            {t('echart.selectDpFirst')}
-                                                        </p>
-                                                    )}
-                                                    {s.datapointId && isTpl && (
-                                                        <div>
-                                                            <label
-                                                                className="text-[11px] mb-1 block"
-                                                                style={{ color: 'var(--text-secondary)' }}
-                                                            >
-                                                                {t('echart.instance')}
-                                                            </label>
-                                                            <input
-                                                                type="text"
-                                                                placeholder="leer = Instanz des auslösenden Widgets"
-                                                                value={s.historyInstance ?? ''}
-                                                                onChange={(e) =>
-                                                                    updateSeries(s.id, {
-                                                                        historyInstance: e.target.value || undefined,
-                                                                    })
-                                                                }
-                                                                className={inputCls}
-                                                                style={inputStyle}
-                                                            />
-                                                            <p
-                                                                className="text-[11px] mt-1"
-                                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                                            >
-                                                                Platzhalter-Datenpunkt – leer lassen, um die
-                                                                Verlaufs-Instanz vom auslösenden Widget zu übernehmen.
-                                                            </p>
-                                                        </div>
-                                                    )}
-                                                    {s.datapointId && !isTpl && adState?.checking && (
-                                                        <p
-                                                            className="text-[11px]"
-                                                            style={{ color: 'var(--text-secondary)' }}
-                                                        >
-                                                            {t('echart.checking')}
-                                                        </p>
-                                                    )}
-                                                    {s.datapointId && !isTpl && !adState?.checking && !adState && (
-                                                        <button
-                                                            onClick={() => refreshAdapters(s.id, s.datapointId)}
-                                                            className="text-[11px] hover:opacity-80"
-                                                            style={{ color: 'var(--accent)' }}
-                                                        >
-                                                            {t('echart.detect')}
-                                                        </button>
-                                                    )}
-                                                    {s.datapointId &&
-                                                        !isTpl &&
-                                                        adState &&
-                                                        !adState.checking &&
-                                                        adState.adapters.length === 0 && (
-                                                            <p
-                                                                className="text-[11px]"
-                                                                style={{ color: 'var(--text-secondary)' }}
-                                                            >
-                                                                {t('echart.noAdapter')}
-                                                            </p>
-                                                        )}
-                                                    {s.datapointId &&
-                                                        !isTpl &&
-                                                        adState &&
-                                                        !adState.checking &&
-                                                        adState.adapters.length > 0 && (
-                                                            <div>
-                                                                <label
-                                                                    className="text-[11px] mb-1 block"
-                                                                    style={{ color: 'var(--text-secondary)' }}
-                                                                >
-                                                                    {t('echart.instance')}
-                                                                </label>
-                                                                <select
-                                                                    value={s.historyInstance ?? ''}
-                                                                    onChange={(e) =>
-                                                                        updateSeries(s.id, {
-                                                                            historyInstance:
-                                                                                e.target.value || undefined,
-                                                                        })
-                                                                    }
-                                                                    className={inputCls}
-                                                                    style={inputStyle}
-                                                                >
-                                                                    <option value="">{t('echart.liveData')}</option>
-                                                                    {adState.adapters.map((a) => (
-                                                                        <option key={a.instance} value={a.instance}>
-                                                                            {a.label}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                        )}
-                                                    {s.datapointId && s.historyInstance && (
-                                                        <div className="mt-1.5">
-                                                            <label
-                                                                className="text-[11px] mb-1 block"
-                                                                style={{ color: 'var(--text-secondary)' }}
-                                                            >
-                                                                Aggregation
-                                                            </label>
-                                                            <select
-                                                                value={s.aggregate ?? 'average'}
-                                                                onChange={(e) =>
-                                                                    updateSeries(s.id, {
-                                                                        aggregate:
-                                                                            e.target.value === 'average'
-                                                                                ? undefined
-                                                                                : (e.target
-                                                                                      .value as EChartSeriesConfig['aggregate']),
-                                                                    })
-                                                                }
-                                                                className={inputCls}
-                                                                style={inputStyle}
-                                                            >
-                                                                <option value="average">Durchschnitt (Standard)</option>
-                                                                <option value="minmax">
-                                                                    Min/Max (echte Extremwerte — z.B. Regenzähler)
-                                                                </option>
-                                                                <option value="max">Maximum</option>
-                                                                <option value="min">Minimum</option>
-                                                                <option value="total">Summe</option>
-                                                            </select>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            <ChartSeriesDetail
+                                s={s}
+                                isComparison={isComparison}
+                                isJson={isJson}
+                                allSeriesJson={series.length > 0 && series.every((x) => isJson || x.source === 'json')}
+                                echartShowValues={echartShowValues}
+                                chartDecimals={chartDecimals}
+                                chartNumberFormat={chartNumberFormat}
+                                jsonTimeAxis={jsonTimeAxis}
+                                jsonAxisBounds={jsonAxisBounds}
+                                probe={jsonProbes[s.id]}
+                                adState={adapterStates[s.id]}
+                                update={(patch) => updateSeries(s.id, patch)}
+                                onTransform={(patch) => setSeriesTransform(s.id, patch)}
+                                onDatapointChange={(dpId) => changeSeriesDatapoint(s.id, dpId)}
+                                onDetect={() => refreshAdapters(s.id, s.datapointId)}
+                                onWidgetOption={setO}
+                            />
                         );
-                    })}
-                </div>
+                    }}
+                />
             </div>
 
             {/* ── Global settings ──────────────────────────────────────────────── */}
@@ -677,7 +519,7 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                 {/* Show Y-axis scale */}
                 <div className="flex items-center justify-between mb-2">
                     <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        Y-Achse anzeigen
+                        {t('echart.showYAxis')}
                     </label>
                     <button
                         onClick={() => setO({ echartShowYAxis: !echartShowYAxis })}
@@ -691,10 +533,29 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                     </button>
                 </div>
 
+                {/* Show right Y-axis scale (only relevant when a series uses it) */}
+                {usesRightAxis && echartShowYAxis && (
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                            {t('echart.showYAxisRight')}
+                        </label>
+                        <button
+                            onClick={() => setO({ echartShowYAxisRight: !echartShowYAxisRight })}
+                            className="relative w-9 h-5 rounded-full transition-colors"
+                            style={{ background: echartShowYAxisRight ? 'var(--accent)' : 'var(--app-border)' }}
+                        >
+                            <span
+                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                style={{ left: echartShowYAxisRight ? '18px' : '2px' }}
+                            />
+                        </button>
+                    </div>
+                )}
+
                 {/* Show X-axis scale */}
                 <div className="flex items-center justify-between mb-2">
                     <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        X-Achse anzeigen
+                        {t('echart.showXAxis')}
                     </label>
                     <button
                         onClick={() => setO({ echartShowXAxis: !echartShowXAxis })}
@@ -711,7 +572,7 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                 {/* Horizontal grid lines */}
                 <div className="flex items-center justify-between mb-2">
                     <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        Horizontale Linien
+                        {t('echart.gridLines')}
                     </label>
                     <button
                         onClick={() => setO({ echartShowGridLines: !echartShowGridLines })}
@@ -725,10 +586,27 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                     </button>
                 </div>
 
+                {/* Animation */}
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                        {t('echart.animation')}
+                    </label>
+                    <button
+                        onClick={() => setO({ echartAnimation: !echartAnimation })}
+                        className="relative w-9 h-5 rounded-full transition-colors"
+                        style={{ background: echartAnimation ? 'var(--accent)' : 'var(--app-border)' }}
+                    >
+                        <span
+                            className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                            style={{ left: echartAnimation ? '18px' : '2px' }}
+                        />
+                    </button>
+                </div>
+
                 {/* Show current value */}
                 <div className="flex items-center justify-between mb-2">
                     <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        Aktuellen Wert anzeigen
+                        {t('echart.showCurrentValue')}
                     </label>
                     <button
                         onClick={() => setO({ echartShowCurrent: !echartShowCurrent })}
@@ -741,6 +619,50 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                         />
                     </button>
                 </div>
+
+                {/* Which point counts as "current", and where the block sits */}
+                {echartShowCurrent && (
+                    <div className="mb-2 pl-2" style={{ borderLeft: '2px solid var(--app-border)' }}>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            {t('echart.currentValueSource')}
+                        </label>
+                        <div className="flex gap-1">
+                            {(['last', 'first'] as const).map((v) => (
+                                <button
+                                    key={v}
+                                    onClick={() => setO({ echartCurrentFrom: v })}
+                                    className="flex-1 text-[11px] py-1 rounded-md hover:opacity-80 transition-opacity"
+                                    style={{
+                                        background: echartCurrentFrom === v ? 'var(--accent)' : 'var(--app-bg)',
+                                        color: echartCurrentFrom === v ? '#fff' : 'var(--text-secondary)',
+                                        border: `1px solid ${echartCurrentFrom === v ? 'var(--accent)' : 'var(--app-border)'}`,
+                                    }}
+                                >
+                                    {v === 'last' ? t('echart.currentValueLast') : t('echart.currentValueFirst')}
+                                </button>
+                            ))}
+                        </div>
+                        <label className="text-[11px] mt-2 mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            {t('echart.currentValueAlign')}
+                        </label>
+                        <div className="flex gap-1">
+                            {(['left', 'right'] as const).map((v) => (
+                                <button
+                                    key={v}
+                                    onClick={() => setO({ echartCurrentAlign: v })}
+                                    className="flex-1 text-[11px] py-1 rounded-md hover:opacity-80 transition-opacity"
+                                    style={{
+                                        background: echartCurrentAlign === v ? 'var(--accent)' : 'var(--app-bg)',
+                                        color: echartCurrentAlign === v ? '#fff' : 'var(--text-secondary)',
+                                        border: `1px solid ${echartCurrentAlign === v ? 'var(--accent)' : 'var(--app-border)'}`,
+                                    }}
+                                >
+                                    {v === 'left' ? t('echart.alignLeft') : t('echart.alignRight')}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Time range — one window shared by all series, frontend-switchable unless locked */}
                 {anyHistory && (
@@ -789,7 +711,7 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                                             border: `1px solid ${echartRangeCustomUnit === u ? 'var(--accent)' : 'var(--app-border)'}`,
                                         }}
                                     >
-                                        {u === 'h' ? 'Std' : 'Tage'}
+                                        {u === 'h' ? t('echart.unitHoursShort') : t('echart.unitDaysShort')}
                                     </button>
                                 ))}
                             </div>
@@ -797,7 +719,7 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                         {!lockRange && (
                             <div className="mt-2">
                                 <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                    Sichtbare Zeitbereiche im Frontend
+                                    {t('echart.visibleRanges')}
                                 </label>
                                 <div className="flex gap-1 flex-wrap">
                                     {frontendPresets.map((r) => {
@@ -829,7 +751,7 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                                 className="rounded"
                             />
                             <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                Zeitraum im Frontend sperren
+                                {t('echart.lockRangeToggle')}
                             </span>
                         </label>
                         <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
@@ -840,50 +762,11 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                                 className="rounded"
                             />
                             <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                Tages-Navigation im Frontend (◀ Heute ▶)
+                                {t('echart.dayNavToggle')}
                             </span>
                         </label>
                     </div>
                 )}
-
-                {/* Decimal places */}
-                <div className="flex items-center justify-between mb-2">
-                    <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                        Dezimalstellen (Tooltip)
-                    </label>
-                    <div className="flex gap-1">
-                        <input
-                            type="number"
-                            min={0}
-                            max={4}
-                            disabled={o.decimals === undefined}
-                            value={(o.decimals as number) ?? defaultDecimals}
-                            onChange={(e) => setO({ decimals: Number(e.target.value) })}
-                            className="w-14 text-center text-xs rounded-lg px-2 py-1 focus:outline-none"
-                            style={{
-                                background: 'var(--app-bg)',
-                                color: 'var(--text-primary)',
-                                border: '1px solid var(--app-border)',
-                                opacity: o.decimals === undefined ? 0.5 : 1,
-                            }}
-                        />
-                        <button
-                            onClick={() => setO({ decimals: o.decimals === undefined ? defaultDecimals : undefined })}
-                            title={
-                                o.decimals === undefined
-                                    ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                    : 'Auf globale Einstellung zurücksetzen'
-                            }
-                            className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                            style={{
-                                background: o.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
-                                color: o.decimals === undefined ? '#fff' : 'var(--text-secondary)',
-                            }}
-                        >
-                            Global
-                        </button>
-                    </div>
-                </div>
 
                 {/* Left Y-Axis */}
                 <div className="mb-2">
@@ -901,72 +784,24 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                         />
                     </div>
                     <div className="flex flex-col gap-1">
-                        <div className="flex gap-1.5 items-center">
-                            {echartLeftMin !== 'dataMin' ? (
-                                <input
-                                    type="number"
-                                    value={echartLeftMin}
-                                    onChange={(e) =>
-                                        setO({
-                                            echartLeftMin: e.target.value !== '' ? Number(e.target.value) : undefined,
-                                        })
-                                    }
-                                    placeholder={t('echart.min')}
-                                    className={`${inputCls} flex-1`}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <div className="flex-1 text-[11px] px-2.5 py-2 rounded-lg font-mono" style={inputStyle}>
-                                    dataMin
-                                </div>
-                            )}
-                            <button
-                                onClick={() =>
-                                    setO({ echartLeftMin: echartLeftMin === 'dataMin' ? undefined : 'dataMin' })
-                                }
-                                className="text-[10px] px-2 py-1.5 rounded-lg shrink-0"
-                                style={{
-                                    background: echartLeftMin === 'dataMin' ? 'var(--accent)' : 'var(--app-bg)',
-                                    color: echartLeftMin === 'dataMin' ? '#fff' : 'var(--text-secondary)',
-                                    border: `1px solid ${echartLeftMin === 'dataMin' ? 'var(--accent)' : 'var(--app-border)'}`,
-                                }}
-                            >
-                                Auto
-                            </button>
-                        </div>
-                        <div className="flex gap-1.5 items-center">
-                            {echartLeftMax !== 'dataMax' ? (
-                                <input
-                                    type="number"
-                                    value={echartLeftMax}
-                                    onChange={(e) =>
-                                        setO({
-                                            echartLeftMax: e.target.value !== '' ? Number(e.target.value) : undefined,
-                                        })
-                                    }
-                                    placeholder={t('echart.max')}
-                                    className={`${inputCls} flex-1`}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <div className="flex-1 text-[11px] px-2.5 py-2 rounded-lg font-mono" style={inputStyle}>
-                                    dataMax
-                                </div>
-                            )}
-                            <button
-                                onClick={() =>
-                                    setO({ echartLeftMax: echartLeftMax === 'dataMax' ? undefined : 'dataMax' })
-                                }
-                                className="text-[10px] px-2 py-1.5 rounded-lg shrink-0"
-                                style={{
-                                    background: echartLeftMax === 'dataMax' ? 'var(--accent)' : 'var(--app-bg)',
-                                    color: echartLeftMax === 'dataMax' ? '#fff' : 'var(--text-secondary)',
-                                    border: `1px solid ${echartLeftMax === 'dataMax' ? 'var(--accent)' : 'var(--app-border)'}`,
-                                }}
-                            >
-                                Auto
-                            </button>
-                        </div>
+                        <AxisBoundRow
+                            valueKey="echartLeftMin"
+                            dpKey="echartLeftMinDp"
+                            autoToken="dataMin"
+                            placeholder={t('echart.min')}
+                            o={o}
+                            setO={setO}
+                            onPickDp={() => setPickerForBound('echartLeftMinDp')}
+                        />
+                        <AxisBoundRow
+                            valueKey="echartLeftMax"
+                            dpKey="echartLeftMaxDp"
+                            autoToken="dataMax"
+                            placeholder={t('echart.max')}
+                            o={o}
+                            setO={setO}
+                            onPickDp={() => setPickerForBound('echartLeftMaxDp')}
+                        />
                     </div>
                 </div>
 
@@ -986,72 +821,24 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
                         />
                     </div>
                     <div className="flex flex-col gap-1">
-                        <div className="flex gap-1.5 items-center">
-                            {echartRightMin !== 'dataMin' ? (
-                                <input
-                                    type="number"
-                                    value={echartRightMin}
-                                    onChange={(e) =>
-                                        setO({
-                                            echartRightMin: e.target.value !== '' ? Number(e.target.value) : undefined,
-                                        })
-                                    }
-                                    placeholder={t('echart.min')}
-                                    className={`${inputCls} flex-1`}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <div className="flex-1 text-[11px] px-2.5 py-2 rounded-lg font-mono" style={inputStyle}>
-                                    dataMin
-                                </div>
-                            )}
-                            <button
-                                onClick={() =>
-                                    setO({ echartRightMin: echartRightMin === 'dataMin' ? undefined : 'dataMin' })
-                                }
-                                className="text-[10px] px-2 py-1.5 rounded-lg shrink-0"
-                                style={{
-                                    background: echartRightMin === 'dataMin' ? 'var(--accent)' : 'var(--app-bg)',
-                                    color: echartRightMin === 'dataMin' ? '#fff' : 'var(--text-secondary)',
-                                    border: `1px solid ${echartRightMin === 'dataMin' ? 'var(--accent)' : 'var(--app-border)'}`,
-                                }}
-                            >
-                                Auto
-                            </button>
-                        </div>
-                        <div className="flex gap-1.5 items-center">
-                            {echartRightMax !== 'dataMax' ? (
-                                <input
-                                    type="number"
-                                    value={echartRightMax}
-                                    onChange={(e) =>
-                                        setO({
-                                            echartRightMax: e.target.value !== '' ? Number(e.target.value) : undefined,
-                                        })
-                                    }
-                                    placeholder={t('echart.max')}
-                                    className={`${inputCls} flex-1`}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <div className="flex-1 text-[11px] px-2.5 py-2 rounded-lg font-mono" style={inputStyle}>
-                                    dataMax
-                                </div>
-                            )}
-                            <button
-                                onClick={() =>
-                                    setO({ echartRightMax: echartRightMax === 'dataMax' ? undefined : 'dataMax' })
-                                }
-                                className="text-[10px] px-2 py-1.5 rounded-lg shrink-0"
-                                style={{
-                                    background: echartRightMax === 'dataMax' ? 'var(--accent)' : 'var(--app-bg)',
-                                    color: echartRightMax === 'dataMax' ? '#fff' : 'var(--text-secondary)',
-                                    border: `1px solid ${echartRightMax === 'dataMax' ? 'var(--accent)' : 'var(--app-border)'}`,
-                                }}
-                            >
-                                Auto
-                            </button>
-                        </div>
+                        <AxisBoundRow
+                            valueKey="echartRightMin"
+                            dpKey="echartRightMinDp"
+                            autoToken="dataMin"
+                            placeholder={t('echart.min')}
+                            o={o}
+                            setO={setO}
+                            onPickDp={() => setPickerForBound('echartRightMinDp')}
+                        />
+                        <AxisBoundRow
+                            valueKey="echartRightMax"
+                            dpKey="echartRightMaxDp"
+                            autoToken="dataMax"
+                            placeholder={t('echart.max')}
+                            o={o}
+                            setO={setO}
+                            onPickDp={() => setPickerForBound('echartRightMaxDp')}
+                        />
                     </div>
                 </div>
             </div>
@@ -1096,20 +883,15 @@ export function EChartConfig({ config, onConfigChange }: EChartConfigProps) {
             </div>
 
             {/* Datapoint Picker Modal */}
-            {pickerForSeries && (
+            {/* Datapoint picker for an axis bound */}
+            {pickerForBound && (
                 <DatapointPicker
-                    currentValue={series.find((s) => s.id === pickerForSeries)?.datapointId ?? ''}
+                    currentValue={(o[pickerForBound] as string | undefined) ?? ''}
                     onSelect={(id) => {
-                        updateSeries(pickerForSeries, { datapointId: id });
-                        // Invalidate adapter cache for this series so effect re-detects
-                        setAdapterStates((prev) => {
-                            const n = { ...prev };
-                            delete n[pickerForSeries];
-                            return n;
-                        });
-                        setPickerForSeries(null);
+                        setO({ [pickerForBound]: id || undefined });
+                        setPickerForBound(null);
                     }}
-                    onClose={() => setPickerForSeries(null)}
+                    onClose={() => setPickerForBound(null)}
                 />
             )}
         </div>

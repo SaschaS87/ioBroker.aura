@@ -7,11 +7,14 @@ Der Adminbereich liegt unter `/#/admin` und konfiguriert das gesamte Dashboard. 
 | [Übersicht](#uebersicht) | Status, Statistiken, Diagnose |
 | [Dashboard-Editor](./editor) | Tabs und Widgets per Drag & Drop bearbeiten |
 | [Popups](./popups) | Popup-Views und Widget-Typ-Standards |
+| [Meldungen](./meldungen) | Informationen, Warnungen und Fehler ins Dashboard einblenden |
 | [Widget-Verwaltung](./widgets) | Alle Widgets eines Layouts suchen und bearbeiten |
-| [Layouts & Theme](./layouts) | Layouts, Theme, Typografie, Grid, Hilfslinien, Tab-Leiste |
+| [Layouts & Theme](./layouts) | Layouts, Theme, Typografie, Grid, Hilfslinien, Tab-Leiste, Werte & Formatierung |
 | [Frontend](./frontend) | Anzeige-Verhalten des Frontends |
 | [CSS & JS](./css-js) | Eigenes CSS/JavaScript einbinden |
 | [Einstellungen](./settings) | Sprache, PIN, Backup, Geräte, Reset |
+
+Die Instanzkonfiguration im ioBroker-Admin ist getrennt davon: [KI-Zugriff (MCP)](./mcp) beschreibt, wie ein KI-Assistent das Dashboard bauen darf.
 
 ## Übersicht
 

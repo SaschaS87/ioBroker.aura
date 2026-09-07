@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WidgetProps } from '../../../types';
-import type { PendingState } from '../shutterrooms/useShutterDevice';
-import { PendingContext, PENDING_MAX_AGE_MS } from '../shutterrooms/useShutterDevice';
+import type { PendingState } from '../shuttershared/useShutterDevice';
+import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
 import { useDatapoint } from '../../../hooks/useDatapoint';
-import { ShutterSheet } from '../shutterrooms/ShutterSheet';
+import { ShutterSheet } from '../shuttershared/ShutterSheet';
 import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
 import { SignalStrengthBox } from '../shared/SignalStrengthBox';
 import { FloorHeader } from './FloorHeader';

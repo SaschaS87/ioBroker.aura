@@ -126,7 +126,7 @@ export function ImportWidgetDialog({
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                     <h2 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
                         {title}
                     </h2>

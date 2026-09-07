@@ -1,11 +1,21 @@
-import { lazy, Suspense, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { X, ChevronDown } from 'lucide-react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { WidgetConfig } from '../../types';
-import type { StatusOverviewOptions, CategoryKey } from '../../utils/statusOverview';
+import {
+    categoryOf,
+    collectHmBatterySerials,
+    passesScope,
+    CATEGORY_ORDER,
+    type StatusOverviewOptions,
+    type CategoryKey,
+} from '../../utils/statusOverview';
+import type { NameSource } from '../../utils/nameFilter';
+import { ensureDatapointCache } from '../../hooks/useDatapointList';
 import { useConfigStore } from '../../store/configStore';
-import { usePortalTarget } from '../../contexts/PortalTargetContext';
 import { ColorPicker } from '../common/ColorPicker';
+import { ConfigModal } from './ConfigModal';
+import { NameDisplayFields } from './NameDisplayFields';
+import { RowClickSection } from './RowClickSection';
 
 // Lazy so the ~battery admin page stays out of the config chunk until opened.
 const AdminBatteries = lazy(() =>
@@ -14,50 +24,18 @@ const AdminBatteries = lazy(() =>
 
 /** Near-fullscreen popup that hosts the battery-type assignment page. */
 function BatteryAssignModal({ onClose }: { onClose: () => void }) {
-    const portalTarget = usePortalTarget();
-    return createPortal(
-        <div
-            className="fixed inset-0 flex items-center justify-center p-3"
-            style={{ zIndex: 10000 }}
-            onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-        >
-            <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.6)' }} />
-            <div
-                className="relative w-full h-full rounded-xl shadow-2xl flex flex-col overflow-hidden"
-                style={{ maxWidth: 1100, maxHeight: '94vh', background: 'var(--app-surface)' }}
+    return (
+        <ConfigModal title="Batterietypen zuordnen" onClose={onClose}>
+            <Suspense
+                fallback={
+                    <div className="p-8 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        Lädt …
+                    </div>
+                }
             >
-                {/* Fixed top bar — the close button stays visible while the content scrolls. */}
-                <div
-                    className="shrink-0 flex items-center justify-end px-3 py-2"
-                    style={{ borderBottom: '1px solid var(--app-border)' }}
-                >
-                    <button
-                        onClick={onClose}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80"
-                        style={{
-                            background: 'var(--app-bg)',
-                            border: '1px solid var(--app-border)',
-                            color: 'var(--text-secondary)',
-                        }}
-                        title="Schließen"
-                    >
-                        <X size={16} />
-                    </button>
-                </div>
-                <div className="flex-1 min-h-0 overflow-auto">
-                    <Suspense
-                        fallback={
-                            <div className="p-8 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                Lädt …
-                            </div>
-                        }
-                    >
-                        <AdminBatteries />
-                    </Suspense>
-                </div>
-            </div>
-        </div>,
-        portalTarget ?? document.body,
+                <AdminBatteries />
+            </Suspense>
+        </ConfigModal>
     );
 }
 
@@ -139,6 +117,56 @@ export function StatusOverviewConfig({ config, onConfigChange }: Props) {
     const offlineExtraPatterns = useConfigStore((s) => s.frontend.offlineExtraPatterns);
     const offlineInvert = useConfigStore((s) => s.frontend.offlineInvert);
     const updateFrontend = useConfigStore((s) => s.updateFrontend);
+
+    // Name-filter preview examples: the widget's own discovery, so the preview shows
+    // datapoints this widget really lists. ensureDatapointCache is module-level (5 min TTL).
+    const [samples, setSamples] = useState<NameSource[]>([]);
+    const [sampleTotal, setSampleTotal] = useState(0);
+    const scopeKey = JSON.stringify([
+        o.catBattery,
+        o.catWindow,
+        o.catLight,
+        o.catUnreach,
+        o.catAlarm,
+        o.includeLowbatBoolean,
+        o.lightRoleScope,
+        o.lightsOnlyFunction,
+        o.filterRooms,
+        o.filterFuncs,
+        o.filterAdapters,
+        o.excludeIds,
+        o.excludeIdPatterns,
+        offlineExtraPatterns,
+        offlineInvert,
+    ]);
+    useEffect(() => {
+        let cancelled = false;
+        const opts: StatusOverviewOptions = { ...o, offlineExtraPatterns, offlineInvert };
+        ensureDatapointCache().then((cache) => {
+            if (cancelled) return;
+            const hm = collectHmBatterySerials(cache);
+            const byCat = new Map<CategoryKey, NameSource[]>();
+            let count = 0;
+            for (const dp of cache) {
+                const cat = categoryOf(dp, opts, hm);
+                if (!cat) continue;
+                if (!passesScope(dp, opts)) continue;
+                count++;
+                const list = byCat.get(cat) ?? [];
+                if (list.length < 2) list.push({ id: dp.id, name: dp.name, room: dp.rooms[0] });
+                byCat.set(cat, list);
+            }
+            // Spread the examples over the active categories instead of showing six batteries.
+            const spread: NameSource[] = [];
+            for (const cat of CATEGORY_ORDER) spread.push(...(byCat.get(cat) ?? []));
+            setSamples(spread.slice(0, 6));
+            setSampleTotal(count);
+        });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scopeKey]);
 
     const lightScope = o.lightRoleScope ?? 'light';
 
@@ -435,6 +463,26 @@ export function StatusOverviewConfig({ config, onConfigChange }: Props) {
                     />
                 </summary>
                 <div className="space-y-2 mt-2">
+                    <div>
+                        <label className={labelCls} style={labelStyle}>
+                            Textausrichtung
+                        </label>
+                        <select
+                            value={o.contentAlign ?? 'left'}
+                            onChange={(e) =>
+                                set({
+                                    contentAlign:
+                                        e.target.value === 'left' ? undefined : (e.target.value as 'center' | 'right'),
+                                })
+                            }
+                            className={inputCls}
+                            style={inputStyle}
+                        >
+                            <option value="left">Linksbündig</option>
+                            <option value="center">Mittig</option>
+                            <option value="right">Rechtsbündig</option>
+                        </select>
+                    </div>
                     {config.layout === 'card' && (
                         <div>
                             <label className={labelCls} style={labelStyle}>
@@ -468,28 +516,58 @@ export function StatusOverviewConfig({ config, onConfigChange }: Props) {
                             <option value="all">Alle gefundenen Geräte</option>
                         </select>
                     </div>
+                    <NameDisplayFields
+                        pattern={o.namePattern}
+                        rules={o.nameFilters}
+                        samples={samples}
+                        sampleTotal={sampleTotal}
+                        onChange={set}
+                    />
                     <div>
                         <label className={labelCls} style={labelStyle}>
-                            Namensmuster (leer = Standard)
+                            Höchstzahl angezeigter Zeilen (0 = alle)
                         </label>
                         <input
-                            type="text"
-                            value={o.namePattern ?? ''}
-                            onChange={(e) => set({ namePattern: e.target.value || undefined })}
-                            placeholder="<Raum> <Gerät>"
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={o.maxRows ?? 0}
+                            onChange={(e) => set({ maxRows: Number(e.target.value) || undefined })}
                             className={inputCls}
                             style={inputStyle}
                         />
                         <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
-                            Platzhalter: &lt;Raum&gt;, &lt;Gerät&gt;, &lt;DPName&gt;, &lt;Name&gt;, &lt;ID&gt;.
-                            Beispiel: {'„<Raum> <Gerät>“'}.
+                            Die Zeilen entstehen erst zur Laufzeit, die Höhe ist damit nicht planbar. Mit einer
+                            Obergrenze passt das Widget verlässlich auf den Bildschirm; die Sortierung entscheidet,
+                            welche Zeilen bleiben.
                         </p>
                     </div>
+                    {!!o.maxRows && (
+                        <Toggle
+                            checked={o.showMore !== false}
+                            onChange={(v) => set({ showMore: v })}
+                            label={'Abgeschnittene Zeilen als „+N weitere“ anzeigen'}
+                        />
+                    )}
                     <Toggle
                         checked={o.showCount !== false}
                         onChange={(v) => set({ showCount: v })}
                         label="Anzahl der Hinweise anzeigen (oben rechts)"
                     />
+                    <Toggle
+                        checked={o.showRoom !== false}
+                        onChange={(v) => set({ showRoom: v })}
+                        label="Raum des Geräts anzeigen"
+                    />
+                    <Toggle
+                        checked={o.showSince !== false}
+                        onChange={(v) => set({ showSince: v })}
+                        label={'Bei Fenster/Türen „seit …“ anzeigen'}
+                    />
+                    <p className="text-[11px]" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
+                        Raum und Öffnungsdauer stehen hinter dem Gerätenamen (nur Layout Standard und Kompakt).
+                    </p>
                     <Toggle
                         checked={!!o.autoHeight}
                         onChange={(v) => set({ autoHeight: v })}
@@ -527,21 +605,34 @@ export function StatusOverviewConfig({ config, onConfigChange }: Props) {
                             Batterien, Lichter, offline), dann OK — innerhalb gleich sortiert nach Name.
                         </p>
                     </div>
-                    <div>
-                        <label className={labelCls} style={labelStyle}>
-                            Text bei {'„Alles in Ordnung“'}
-                        </label>
-                        <input
-                            type="text"
-                            value={o.allClearText ?? ''}
-                            onChange={(e) => set({ allClearText: e.target.value || undefined })}
-                            placeholder="Alles in Ordnung"
-                            className={inputCls}
-                            style={inputStyle}
-                        />
-                    </div>
+                    <Toggle
+                        checked={o.showAllClear !== false}
+                        onChange={(v) => set({ showAllClear: v ? undefined : false })}
+                        label={'Hinweis „Alles in Ordnung“ zeigen'}
+                    />
+                    <p className="text-[11px]" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
+                        Aus: Liegt nichts an, bleibt das Widget leer (nur Titel und Zähler).
+                    </p>
+                    {o.showAllClear !== false && (
+                        <div>
+                            <label className={labelCls} style={labelStyle}>
+                                Text bei {'„Alles in Ordnung“'}
+                            </label>
+                            <input
+                                type="text"
+                                value={o.allClearText ?? ''}
+                                onChange={(e) => set({ allClearText: e.target.value || undefined })}
+                                placeholder="Alles in Ordnung"
+                                className={inputCls}
+                                style={inputStyle}
+                            />
+                        </div>
+                    )}
                 </div>
             </details>
+
+            {/* ── Row click action ── */}
+            <RowClickSection config={config} opts={o} onChange={set} />
         </div>
     );
 }

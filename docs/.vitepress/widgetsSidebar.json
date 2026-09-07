@@ -4,6 +4,14 @@
     "link": "/widgets/"
   },
   {
+    "text": "Referenz (Primer)",
+    "link": "/widgets/referenz"
+  },
+  {
+    "text": "Bildpfade",
+    "link": "/widgets/bildpfade"
+  },
+  {
     "text": "Steuerung & Anzeige",
     "collapsed": false,
     "items": [
@@ -26,6 +34,10 @@
       {
         "text": "Diagramm (erweitert)",
         "link": "/widgets/diagramm-erweitert"
+      },
+      {
+        "text": "Diagramm (Verteilung)",
+        "link": "/widgets/verteilung"
       },
       {
         "text": "Dimmer",
@@ -154,8 +166,16 @@
         "link": "/widgets/kamera"
       },
       {
+        "text": "Karte",
+        "link": "/widgets/karte"
+      },
+      {
         "text": "Karussell",
         "link": "/widgets/karussell"
+      },
+      {
+        "text": "Meldungen",
+        "link": "/widgets/meldungen"
       },
       {
         "text": "Müllabfuhr",
@@ -204,14 +224,26 @@
         "link": "/widgets/gruppe"
       },
       {
+        "text": "Menü",
+        "link": "/widgets/menue"
+      },
+      {
         "text": "Panels",
         "link": "/widgets/panels"
+      },
+      {
+        "text": "Spiegel",
+        "link": "/widgets/spiegel"
       }
     ]
   },
   {
     "text": "Konzepte",
     "items": [
+      {
+        "text": "Bindings & Berechnungen",
+        "link": "/widgets/bindings"
+      },
       {
         "text": "Custom-Layout",
         "link": "/widgets/custom-layout"

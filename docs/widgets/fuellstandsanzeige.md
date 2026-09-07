@@ -9,6 +9,7 @@ Visualisiert einen `number`-Datenpunkt (z. B. Wassertank, Heizöl) als Füllstan
 | Feld | Pflicht | Typ | |
 | --- | --- | --- | --- |
 | `datapoint` | ja | `number` | Füllwert, auf `min`–`max` begrenzt |
+| `minDatapoint` / `maxDatapoint` | nein | `number` | liefern Skala-Min/-Max statt der festen Werte |
 
 ## Layouts
 
@@ -58,6 +59,7 @@ Alle Optionen werden im Editor unter **Widget bearbeiten** gesetzt.
 | --- | --- | --- |
 | `minValue` | `0` | Wert für leeren Stand |
 | `maxValue` | `100` | Wert für vollen Stand |
+| `minDatapoint` / `maxDatapoint` | — | Datenpunkt statt fester Zahl; gewinnt über `minValue`/`maxValue` |
 | `unit` | `%` | Einheit hinter dem Wert |
 | `decimals` | globale Vorgabe | Nachkommastellen |
 
@@ -70,6 +72,12 @@ Bildet nur den Live-Wert in den Anzeigeraum ab; `minValue`/`maxValue` und Zonen 
 | `valueFactor` | `1` | Multiplikator |
 | `valueOffset` | `0` | Summand |
 
+Datenpunkt-Grenzen laufen durch dieselbe Transformation wie der Live-Wert.
+
+::: tip Vorgabe aus ioBroker
+`maxDatapoint` macht die 100-%-Marke pflegbar: Abschlag, Monatsbudget oder Tankgröße stehen in einem Datenpunkt, die Anzeige folgt sofort. Leeres Feld = wieder der feste Wert.
+:::
+
 ### Farbzonen
 
 Färbt die Füllung abhängig vom Wert; ohne Zonen wird `--accent` verwendet.
@@ -78,3 +86,15 @@ Färbt die Füllung abhängig vom Wert; ohne Zonen wird `--accent` verwendet.
 | --- | --- | --- |
 | `colorZones` | `false` | Zonen-Einfärbung aktivieren |
 | `zones` | — | Liste aus `{ max, color }`; Fallback: 33 % `#ef4444`, 66 % `#f59e0b`, Rest `#22c55e` |
+
+### Warnfarbe
+
+Der Füllstand begrenzt auf `maxValue` — voll und übergelaufen sehen gleich aus. Ab der Schwelle färbt sich die Füllung komplett in der Warnfarbe, auch über Farbzonen hinweg.
+
+| Option | Standard | |
+| --- | --- | --- |
+| `overActive` | `false` | Farbwechsel einschalten |
+| `overThreshold` | `100` | % der Skala, ab dem gewechselt wird (100 = `maxValue`) |
+| `overColor` | `#ef4444` | Warnfarbe der Füllung |
+
+Verglichen wird der **ungekappte** Wert, sonst wäre ein Überlauf nicht von „genau voll" zu unterscheiden.

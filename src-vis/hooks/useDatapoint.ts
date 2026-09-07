@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useIoBroker, getStateFromCache } from './useIoBroker';
+import { useIoBroker, getStateFromCache, isStateFresh } from './useIoBroker';
 import type { ioBrokerState } from '../types';
 import { splitDpRef, resolveDpValue } from '../utils/dpRef';
 
@@ -28,29 +28,33 @@ export function useDatapoint(ref: string) {
         }
         if (!connected) return;
 
+        // Adopt whatever the cache holds now: it may have been filled AFTER this
+        // component mounted (the load-time prefetch resolves independently), in which
+        // case the initializer above saw nothing and the fetch below is skipped as
+        // redundant — leaving the widget on its placeholder with a perfectly good
+        // value sitting in the cache.
+        // Always adopt the cached value rather than keeping an existing local one: the
+        // ref can change while mounted, and then the local value belongs to the PREVIOUS
+        // datapoint — it stayed on screen until the new one happened to push a change.
+        // Safe because `cacheState` is written on every live push, so for one and the
+        // same id the cache is never older than the local value.
         const cached = getStateFromCache(id);
-        if (cached) {
-            // Sync the state to the NEW id's cached value. Merely skipping the
-            // fetch (as before) kept showing the previous id's value until the
-            // new datapoint happened to push a change — stale display when a
-            // widget switches its datapoint at runtime.
-            setDatapointState(cached);
-        } else {
-            let cancelled = false;
+        if (cached) setDatapointState(cached);
+
+        // Skip the socket round-trip only when the cached value is backed by a live
+        // subscription (another mounted consumer of the same DP). A cached value with
+        // no subscription behind it may be arbitrarily old — it stopped being updated
+        // the moment the last subscriber went away, which is what left popups showing
+        // the value from their previous open. Checked BEFORE subscribing below, since
+        // subscribing is what marks the ID as maintained.
+        let cancelled = false;
+        if (!isStateFresh(id)) {
             getState(id).then((initialState) => {
                 // Guard against out-of-order responses when the id changes
                 // quickly: a slow answer for an old id must not overwrite the
                 // current one.
                 if (initialState && !cancelled) setDatapointState(initialState);
             });
-            // Live-Updates abonnieren
-            const unsubscribe = subscribe(id, (newState) => {
-                setDatapointState(newState);
-            });
-            return () => {
-                cancelled = true;
-                unsubscribe();
-            };
         }
 
         // Live-Updates abonnieren
@@ -58,7 +62,10 @@ export function useDatapoint(ref: string) {
             setDatapointState(newState);
         });
 
-        return unsubscribe;
+        return () => {
+            cancelled = true;
+            unsubscribe();
+        };
     }, [id, connected, subscribe, getState]);
 
     const setValue = (val: boolean | number | string) => {

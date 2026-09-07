@@ -1,6 +1,5 @@
 import type { StateStorage } from 'zustand/middleware';
 import {
-    setStateDirect,
     setStateDirectAsync,
     writeFileDirect,
     readFileDirect,
@@ -9,6 +8,7 @@ import {
     getStateFromCache,
 } from '../hooks/useIoBroker';
 import { NS } from '../utils/namespace';
+import { MAX_BACKUP_COUNT } from './adminPrefsStore';
 
 // Each localStorage key maps to its own ioBroker state (no more single blob).
 // The {NS} prefix resolves to the running instance namespace (aura.0, aura.1…).
@@ -20,6 +20,7 @@ export const IOBROKER_STATE_MAP: Record<string, string> = {
     'aura-global-settings': `${NS}.config.global-settings`,
     'aura-group-defs': `${NS}.config.group-defs`,
     'aura-popup-config': `${NS}.config.popup-config`,
+    'aura-widget-presets': `${NS}.config.widget-presets`,
 };
 
 export type SyncStoreKey =
@@ -29,7 +30,8 @@ export type SyncStoreKey =
     | 'aura-config'
     | 'aura-global-settings'
     | 'aura-group-defs'
-    | 'aura-popup-config';
+    | 'aura-popup-config'
+    | 'aura-widget-presets';
 const SYNC_STORE_KEYS = Object.keys(IOBROKER_STATE_MAP) as SyncStoreKey[];
 
 // File-based backup storage. Each backup is its own JSON file under the
@@ -44,6 +46,12 @@ const BACKUP_FILE_PREFIX = 'backup-';
 // lands. Gzip shrinks ~960 KB → ~60 KB; base64 keeps it a plain text transfer.
 const BACKUP_FILE_SUFFIX = '.json';
 const BACKUP_FILE_SUFFIX_GZ = '.json.gz';
+// Sidecar next to each backup holding only its _ts/_changed/_details summary
+// (a few hundred bytes). listBackupFiles reads these instead of every full
+// payload — fetching all payloads is what used to cap retention at 20, since a
+// single settings-page visit would otherwise pull one ~60 KB gzip blob per kept
+// backup over the same socket that the config writes share.
+const BACKUP_META_SUFFIX = '.meta.json';
 
 // ── gzip helpers (browser-native CompressionStream, base64 transport) ──────────
 async function gzipToBase64(text: string): Promise<string> {
@@ -103,7 +111,20 @@ function tsToFilename(ts: string): string {
     return `${BACKUP_FILE_PREFIX}${ts.replace(/[:.]/g, '-')}${BACKUP_FILE_SUFFIX_GZ}`;
 }
 
+function tsToMetaFilename(ts: string): string {
+    return `${BACKUP_FILE_PREFIX}${ts.replace(/[:.]/g, '-')}${BACKUP_META_SUFFIX}`;
+}
+
+/** The sidecar belonging to a backup payload filename. */
+function metaFilenameFor(backupFile: string): string {
+    const suffix = backupFile.endsWith(BACKUP_FILE_SUFFIX_GZ) ? BACKUP_FILE_SUFFIX_GZ : BACKUP_FILE_SUFFIX;
+    return `${backupFile.slice(0, -suffix.length)}${BACKUP_META_SUFFIX}`;
+}
+
 export function isBackupFile(name: string): boolean {
+    // A sidecar also starts with the prefix and ends in .json — it is metadata,
+    // never a restorable payload, so it must not show up as its own list entry.
+    if (name.endsWith(BACKUP_META_SUFFIX)) return false;
     return (
         name.startsWith(BACKUP_FILE_PREFIX) &&
         (name.endsWith(BACKUP_FILE_SUFFIX_GZ) || name.endsWith(BACKUP_FILE_SUFFIX))
@@ -140,7 +161,7 @@ export { clearDirtyFlag };
 
 let maxBackups = 5;
 export function configureBackup(opts: { maxBackups: number }): void {
-    maxBackups = Math.max(1, Math.min(20, opts.maxBackups));
+    maxBackups = Math.max(1, Math.min(MAX_BACKUP_COUNT, opts.maxBackups));
 }
 
 // In-session edit tracker. pending = key → new value; originals = key → pre-edit
@@ -184,14 +205,6 @@ export function groupDefsReadyForSave(): boolean {
     return !reader || reader() != null;
 }
 
-/** Mark a key as dirty without buffering a value — used by RAM-only stores
- *  that provide their data via registerExternalReader at save time. */
-export function markDirty(key: string): void {
-    pending.set(key, '\x00'); // sentinel — replaced by externalReader at save time
-    setDirtyFlag(key);
-    notify();
-}
-
 // Navigation-only writes (e.g. activeTabId / activeLayoutId) update localStorage
 // but must NOT mark the key dirty — switching tabs is per-device viewing state,
 // not a config edit the user expects to "save" or "revert".
@@ -215,6 +228,53 @@ export function setScreenshotMode(on: boolean): void {
 }
 export function isScreenshotMode(): boolean {
     return screenshotMode;
+}
+
+/** Mark a key as dirty without buffering a value — used by RAM-only stores
+ *  that provide their data via registerExternalReader at save time.
+ *
+ *  Declared after the two flags above because it reads them: the RAM-only stores
+ *  mark dirty from a plain subscribe(), which cannot tell a user edit from the
+ *  inbound hydration applyRaw performs when pulling from ioBroker. Without the
+ *  guard every boot left aura-group-defs and aura-widget-presets pending, which
+ *  dropped their inbound sync for the rest of the session and made the admin's
+ *  bootstrap save rewrite both keys — burning a backup slot — on every open. */
+export function markDirty(key: string): void {
+    if (suppressDirtyDepth > 0 || screenshotMode) return;
+    pending.set(key, '\x00'); // sentinel — replaced by externalReader at save time
+    setDirtyFlag(key);
+    notify();
+}
+
+// ── Config that lives outside the sync stores ────────────────────────────────
+// A few admin settings are owned by the adapter rather than by a store: the
+// message presentation defaults live in `config.messageDefaults` because the
+// adapter reads the very same datapoint to normalize payloads. Registering such a
+// key here is what puts it under the global save bar — Speichern, Rückgängig,
+// Ctrl+S and auto-save then treat it like any other admin edit, instead of the
+// page writing itself on every keystroke with nothing to show for it.
+export interface ExternalConfigKey {
+    /** Write the current value. Resolve false to keep the key dirty for a retry. */
+    save: () => Promise<boolean>;
+    /** Drop the edit and go back to the last saved value. */
+    revert: () => void;
+}
+const externalKeys = new Map<string, ExternalConfigKey>();
+
+/** Idempotent per key — the editing page re-registers on every mount. */
+export function registerExternalConfigKey(key: string, handlers: ExternalConfigKey): void {
+    externalKeys.set(key, handlers);
+}
+
+/**
+ * Mark an external key edited. RAM-only on purpose, unlike markDirty: the value
+ * itself lives in the page, so a reload drops the edit — a localStorage flag
+ * would outlive it and leave the save bar armed with nothing left to write.
+ */
+export function markExternalDirty(key: string): void {
+    if (screenshotMode) return;
+    pending.set(key, '\x00');
+    notify();
 }
 
 function notify() {
@@ -293,6 +353,11 @@ export function discardPendingKey(key: string): void {
 }
 
 export function revertAll(rehydrateFns: Array<() => void>): void {
+    // External keys restore themselves — their value never went through
+    // localStorage, so the loop below cannot reach it.
+    externalKeys.forEach((handlers, key) => {
+        if (pending.has(key)) handlers.revert();
+    });
     // Restore each pending key to its pre-edit value, if we still have the
     // original (originals is RAM-only; F5 wipes it). Then clear dirty flags.
     originals.forEach((orig, key) => {
@@ -356,10 +421,15 @@ interface TabLite {
     name?: string;
     widgets?: WidgetLite[];
 }
-interface LayoutLite {
+interface SectionLite {
     id?: string;
     name?: string;
     tabs?: TabLite[];
+}
+interface LayoutLite {
+    id?: string;
+    name?: string;
+    sections?: SectionLite[];
 }
 
 type RawChange = { kind: string; label?: string };
@@ -477,6 +547,23 @@ function diffTabs(before: TabLite[], after: TabLite[], out: RawChange[]): void {
     });
 }
 
+function diffSections(before: SectionLite[], after: SectionLite[], out: RawChange[]): void {
+    const beforeById = new Map(before.filter((sec) => sec.id).map((sec) => [sec.id, sec]));
+    const afterById = new Map(after.filter((sec) => sec.id).map((sec) => [sec.id, sec]));
+    after.forEach((sec) => {
+        if (sec.id && !beforeById.has(sec.id)) out.push({ kind: 'section-added', label: sec.name });
+    });
+    before.forEach((sec) => {
+        if (sec.id && !afterById.has(sec.id)) out.push({ kind: 'section-removed', label: sec.name });
+    });
+    after.forEach((sa) => {
+        const sb = sa.id ? beforeById.get(sa.id) : undefined;
+        if (!sb) return;
+        if (sa.name !== sb.name) out.push({ kind: 'section-renamed', label: sa.name });
+        diffTabs(sb.tabs ?? [], sa.tabs ?? [], out);
+    });
+}
+
 function diffDashboard(beforeRaw: string, afterRaw: string): RawChange[] {
     const before = parseLayouts(beforeRaw);
     const after = parseLayouts(afterRaw);
@@ -494,7 +581,7 @@ function diffDashboard(beforeRaw: string, afterRaw: string): RawChange[] {
         const lb = la.id ? beforeById.get(la.id) : undefined;
         if (!lb) return;
         if (la.name !== lb.name) out.push({ kind: 'layout-renamed', label: la.name });
-        diffTabs(lb.tabs ?? [], la.tabs ?? [], out);
+        diffSections(lb.sections ?? [], la.sections ?? [], out);
     });
     return out;
 }
@@ -535,6 +622,12 @@ async function pruneOldBackups(): Promise<number> {
     const toDelete = backupFiles.slice(maxBackups);
     for (const f of toDelete) {
         await deleteFileDirect(BACKUP_NAMESPACE, f.file);
+        // Take the summary sidecar with it — an orphan would linger forever.
+        try {
+            await deleteFileDirect(BACKUP_NAMESPACE, metaFilenameFor(f.file));
+        } catch {
+            /* pre-sidecar backup — nothing to delete */
+        }
     }
     return toDelete.length;
 }
@@ -555,6 +648,21 @@ async function writeBackup(changedKeys: SyncStoreKey[] = [], details: BackupChan
         );
         await writeFileDirect(BACKUP_NAMESPACE, filename, compressed);
         console.info('[aura backup] write acknowledged');
+        // Summary sidecar so listing the backups never has to read the payloads.
+        // Best effort: without it the row simply shows no change list.
+        try {
+            await writeFileDirect(
+                BACKUP_NAMESPACE,
+                tsToMetaFilename(ts),
+                JSON.stringify({
+                    [BACKUP_TS_KEY]: ts,
+                    [BACKUP_CHANGED_KEY]: changedKeys,
+                    [BACKUP_DETAILS_KEY]: details,
+                }),
+            );
+        } catch (err) {
+            console.warn('[aura backup] summary sidecar write failed', err);
+        }
         const pruned = await pruneOldBackups();
         if (pruned > 0) console.info(`[aura backup] pruned ${pruned} old backup file(s) (cap ${maxBackups})`);
     } catch (err) {
@@ -574,13 +682,21 @@ export interface BackupFileEntry {
     details: BackupChangeDetail[];
 }
 
-// Reads each backup's payload to extract its _changed list (cap ≤ 20 small
-// files). Payloads are otherwise fetched on demand in loadBackupPayload.
+// Reads only the small summary sidecar per backup, never the payloads — those
+// are fetched on demand in loadBackupPayload. Backups written before sidecars
+// existed still need their payload read, which is why that fallback is budgeted:
+// the retention limit must not turn one settings-page visit into a hundred
+// parallel multi-megabyte reads on the socket the config writes share.
+const LEGACY_SUMMARY_READ_BUDGET = 20;
 export async function listBackupFiles(): Promise<BackupFileEntry[]> {
     const files = await readDirDirect(BACKUP_NAMESPACE, '');
     const backupFiles = files
         .filter((f) => !f.isDir && isBackupFile(f.file))
         .sort((a, b) => b.file.localeCompare(a.file));
+    const sidecars = new Set(files.filter((f) => !f.isDir && f.file.endsWith(BACKUP_META_SUFFIX)).map((f) => f.file));
+    // Spent newest-first: map() runs every callback up to its first await in
+    // order, so the budget lands on the entries the user is most likely to read.
+    let legacyBudget = LEGACY_SUMMARY_READ_BUDGET;
     return Promise.all(
         backupFiles.map(async (f) => {
             const suffix = f.file.endsWith(BACKUP_FILE_SUFFIX_GZ) ? BACKUP_FILE_SUFFIX_GZ : BACKUP_FILE_SUFFIX;
@@ -590,10 +706,18 @@ export async function listBackupFiles(): Promise<BackupFileEntry[]> {
                 /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/,
                 '$1-$2-$3T$4:$5:$6.$7Z',
             );
+            const metaName = metaFilenameFor(f.file);
+            const useSidecar = sidecars.has(metaName);
+            const legacyAllowed = !useSidecar && legacyBudget > 0;
+            if (legacyAllowed) legacyBudget--;
             let changed: string[] = [];
             let details: BackupChangeDetail[] = [];
             try {
-                const raw = await readBackupText(f.file);
+                const raw = useSidecar
+                    ? await readFileDirect(BACKUP_NAMESPACE, metaName)
+                    : legacyAllowed
+                      ? await readBackupText(f.file)
+                      : null;
                 if (raw) {
                     const parsed = JSON.parse(raw) as Record<string, unknown>;
                     const c = parsed[BACKUP_CHANGED_KEY];
@@ -625,12 +749,53 @@ export async function loadBackupPayload(filename: string): Promise<Record<string
     }
 }
 
+// Write one config state and resolve true only once the ioBroker write is
+// ACK-confirmed (the socket setState callback fired). Resolves false if the ack
+// does not arrive within `timeoutMs` — e.g. the websocket bounced mid-write
+// (issue #496: a large backup writeFile can silently drop the socket). Callers
+// use the result to decide whether the key may be marked clean or must stay
+// dirty for a retry, so a lost write can never be silently reverted.
+async function writeStateConfirmed(id: string, raw: string, timeoutMs = 10000): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+    });
+    try {
+        // ack=true: these are owned config-storage blobs (current values), not
+        // pending commands, so they land acknowledged rather than as an unconfirmed
+        // client write that no adapter ever acks.
+        return await Promise.race([setStateDirectAsync(id, raw, true).then(() => true), timeout]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
 /**
  * Write store(s) to ioBroker. By default only writes keys that are dirty
  * (Fix 3 — avoids cross-browser overwrites from unrelated saves). Pass
  * `all: true` for the initial bootstrap that seeds an empty ioBroker.
+ *
+ * Writes are ACK-confirmed (issue #496): a key's dirty/pending state is cleared
+ * ONLY after ioBroker acknowledges its write. Until then the key stays pending,
+ * so a lost or reordered write (websocket bounce during the backup file-I/O
+ * burst) can't be silently reverted by a reconnect getState — it stays dirty and
+ * the next save/auto-save retries it. The auto-backup runs only after the writes
+ * are confirmed, so its heavy gzip+writeFile+prune I/O can't compete with (and
+ * drop) the config-state write frame on the shared socket.
+ *
+ * `only` narrows the save to the listed keys. The read-only frontend uses it so
+ * an in-place widget edit (timer schedule, auto-list sync) flushes the dashboard
+ * and nothing else — without it such a flush also pushes whatever this browser
+ * happens to hold for theme/groups/popup-config over the admin's config.
+ *
+ * Returns true synchronously once the writes are dispatched; the local stores
+ * already hold the new value, so callers never await it.
  */
-export function saveToIoBroker({ backup = true, all = false }: { backup?: boolean; all?: boolean } = {}): boolean {
+export function saveToIoBroker({
+    backup = true,
+    all = false,
+    only,
+}: { backup?: boolean; all?: boolean; only?: SyncStoreKey[] } = {}): boolean {
     // Screenshot harness active → never write to the real ioBroker instance.
     if (screenshotMode) return false;
     // Refuse to write while group-defs is unhydrated — otherwise this save (and
@@ -647,10 +812,14 @@ export function saveToIoBroker({ backup = true, all = false }: { backup?: boolea
     // up by the targetKeys computation below.
     runPreSaveHooks();
     const now = Date.now();
-    const targetKeys: SyncStoreKey[] = all ? SYNC_STORE_KEYS : SYNC_STORE_KEYS.filter(isPending);
+    const candidates: SyncStoreKey[] = only ? SYNC_STORE_KEYS.filter((k) => only.includes(k)) : SYNC_STORE_KEYS;
+    const targetKeys: SyncStoreKey[] = all ? candidates : candidates.filter(isPending);
 
     const changedKeys: SyncStoreKey[] = [];
     const details: BackupChangeDetail[] = [];
+    // Per-key ack promises (aligned with changedKeys) — resolve true when the
+    // write is confirmed, false when it timed out / the socket dropped.
+    const acks: Array<Promise<boolean>> = [];
     targetKeys.forEach((key) => {
         const raw = getRaw(key);
         if (raw) {
@@ -665,20 +834,58 @@ export function saveToIoBroker({ backup = true, all = false }: { backup?: boolea
                 const cached = getStateFromCache(IOBROKER_STATE_MAP[key])?.val;
                 if (typeof cached === 'string') before = cached;
             }
-            // ack=true: these are owned config-storage blobs (current values), not
-            // pending commands, so they should land acknowledged rather than as an
-            // unconfirmed client write that no adapter ever acks.
-            setStateDirect(IOBROKER_STATE_MAP[key], raw, true);
+            // Arm the echo guard up-front so our own NEW echo is suppressed. The key
+            // stays pending (dirty flag + pending map) until the write is confirmed
+            // below, so the isPending() gate in useConfigSync blocks any inbound
+            // value until then.
             savedAtMap.set(key, { ts: now, value: raw });
-            clearDirtyFlag(key);
             changedKeys.push(key);
             details.push(...summarizeKeyChange(key, before, raw));
+            acks.push(
+                writeStateConfirmed(IOBROKER_STATE_MAP[key], raw).then((ok) => {
+                    if (ok) {
+                        // Confirmed landed → now safe to drop dirty/pending.
+                        clearDirtyFlag(key);
+                        pending.delete(key);
+                    } else {
+                        // Unconfirmed (socket bounce / timeout): keep the key dirty &
+                        // pending so the next save/auto-save retries it and a stale
+                        // server value can't win the isPending() gate (issue #496).
+                        console.warn(`[persistManager] save unconfirmed for ${key} — keeping dirty for retry`);
+                    }
+                    notify();
+                    return ok;
+                }),
+            );
+        } else {
+            pending.delete(key);
         }
-        pending.delete(key);
+    });
+    // Adapter-owned keys ride along with the same save. Kept out of `acks`, which
+    // the backup path indexes against changedKeys — these are not sync stores and
+    // have no place in a config backup.
+    externalKeys.forEach((handlers, key) => {
+        if (!pending.has(key)) return;
+        void Promise.resolve(handlers.save()).then((ok) => {
+            // Same rule as a sync store: only a confirmed write may clear the key,
+            // so a lost one stays dirty and the next save retries it.
+            if (ok) pending.delete(key);
+            else console.warn(`[persistManager] save unconfirmed for ${key} — keeping dirty for retry`);
+            notify();
+        });
     });
     originals.clear();
     notify();
-    if (backup) void writeBackup(changedKeys, details);
+    // Run the backup only AFTER the config writes are confirmed, so the heavy
+    // gzip+writeFile+prune file-I/O burst can't compete with (and drop) the
+    // config-state write frame on the shared websocket (issue #496). Only back up
+    // the keys that actually landed.
+    if (backup) {
+        void Promise.all(acks).then((results) => {
+            const confirmed = changedKeys.filter((_, i) => results[i] !== false);
+            if (confirmed.length > 0) void writeBackup(confirmed, details);
+        });
+    }
     return true;
 }
 
@@ -726,7 +933,13 @@ export const managedStorage: StateStorage = {
             // No-op write (e.g. Zustand re-persisting the same state after rehydrate).
             // While suppressing dirty (navigation write), don't disturb existing pending
             // state — there may be unsaved real edits that must remain pending.
-            if (suppressDirtyDepth === 0) {
+            // Also skip when the key already has a pending edit: a redundant same-value
+            // write in the same synchronous burst (e.g. HeaderSection's reset clearing
+            // many keys where only the first actually changed anything) must not wipe the
+            // genuine pending edit the first write just registered. Real "back to saved"
+            // reverts clear pending explicitly (revertAll / discardPending) before they
+            // rehydrate, so this guard never blocks them.
+            if (suppressDirtyDepth === 0 && !pending.has(name)) {
                 pending.delete(name);
                 originals.delete(name);
                 clearDirtyFlag(name);

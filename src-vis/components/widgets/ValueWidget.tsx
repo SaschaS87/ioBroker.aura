@@ -1,17 +1,27 @@
 import { useMemo } from 'react';
 import { Activity, TrendingUp, Hash } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
+import { useT } from '../../i18n';
 import type { WidgetProps } from '../../types';
 import { contentPositionClass, titlePositionStyle } from '../../utils/widgetUtils';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { getThresholdColor, type ColorThreshold } from '../../utils/colorThresholds';
 import { CustomGridView } from './CustomGridView';
 import { StatusBadges } from './StatusBadges';
 import { useStatusFields } from '../../hooks/useStatusFields';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { formatNum, type NumberFormat } from '../../utils/formatValue';
 import { applyValueTransform } from '../../utils/valueTransform';
+import { formatTimeDisplay, hasTimeDisplay } from '../../utils/timeDisplay';
+import { extractTemplateDpRefs, renderTemplate } from '../../utils/htmlTemplate';
+import { extractJsonPath } from '../../utils/dpRef';
+import { valueTextOverride } from '../../utils/conditionSet';
+import { proxifyHtmlAssets, resolveHtmlAssets } from '../../utils/assetUrl';
+import { useTemplateStates } from '../../hooks/useTemplateValues';
+import { useTemplateSpecials } from '../../hooks/useTemplateSpecials';
 
 export function ValueWidget({ config }: WidgetProps) {
+    const t = useT();
     const { value } = useDatapoint(config.datapoint);
     const unit = config.options?.unit as string | undefined;
     const htmlTemplate = config.options?.htmlTemplate as string | undefined;
@@ -25,40 +35,79 @@ export function ValueWidget({ config }: WidgetProps) {
     const showIcon = o.showIcon !== false;
     const titleAlign = (o.titleAlign as string) ?? 'left';
     const showValue = o.showValue !== false;
-    const showUnit = o.showUnit !== false;
+    // A condition rule may replace the whole value text ("Anzeige überschreiben").
+    // It then *is* the text, so the unit is not appended to it — same reasoning as
+    // the time display, where a unit behind "14:32" would be nonsense.
+    const valueOverride = valueTextOverride(config);
+    const showUnit = o.showUnit !== false && valueOverride === undefined;
     const iconSize = (o.iconSize as number) || 20;
     const valueFontSize = Number(o.valueFontSize) || 0;
     const valueSizeStyle = valueFontSize > 0 ? { fontSize: `${valueFontSize}px`, lineHeight: 1.1 } : undefined;
     const valueSizeCls = valueFontSize > 0 ? '' : 'text-xl';
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     const decimals = (o.decimals as number) ?? defaultDecimals;
+    const numFmt = (o.numberFormat as NumberFormat | undefined) ?? globalNumFmt;
 
     // Display-only transform: rawValue * factor + offset. Datapoint itself is untouched.
     const tValue = applyValueTransform(value, Number(o.valueFactor ?? 1), Number(o.valueOffset ?? 0));
 
-    const displayValue =
-        tValue === null ? '–' : typeof tValue === 'number' ? formatNum(tValue, decimals) : String(tValue);
+    // Time datapoints (epoch s/ms, ISO string, HH:mm) are rendered as time/date when
+    // configured; unreadable values show the placeholder instead of "Invalid Date".
+    const timeFormat = o.valueTimeFormat as string | undefined;
+    const timeStr = hasTimeDisplay(timeFormat)
+        ? (formatTimeDisplay(tValue, timeFormat, t, o.valueTimePattern as string | undefined) ?? '–')
+        : null;
 
-    // Threshold-based color: [[maxExclusive, color], …] sorted ascending.
-    // Applied to the transformed (displayed) value so thresholds are configured in display units.
-    const thresholds = o.colorThresholds as Array<[number, string]> | undefined;
-    const thresholdColor = useMemo(() => {
-        if (!thresholds?.length) return undefined;
-        const num = typeof tValue === 'number' ? tValue : parseFloat(String(tValue));
-        if (isNaN(num)) return undefined;
-        for (const [thresh, color] of thresholds) {
-            if (num < thresh) return color;
-        }
-        return thresholds[thresholds.length - 1][1];
-    }, [thresholds, tValue]);
+    // A condition rule may replace the whole value text ("Anzeige überschreiben").
+    // It wins over formatting and time display, but not over the threshold colour —
+    // colours are a separate effect with their own field.
+    const displayValue =
+        valueOverride ??
+        timeStr ??
+        (tValue === null ? '–' : typeof tValue === 'number' ? formatNum(tValue, decimals, numFmt) : String(tValue));
+
+    // The scale is matched against the transformed (displayed) value, so it is
+    // configured in display units.
+    const thresholds = o.colorThresholds as ColorThreshold[] | undefined;
+    const thresholdColor = useMemo(() => getThresholdColor(tValue, thresholds), [thresholds, tValue]);
 
     const accentColor = thresholdColor ?? 'var(--accent)';
     const valueColor = thresholdColor ?? 'var(--text-primary)';
 
     const { battery, reach, batteryIcon, reachIcon, statusBadges } = useStatusFields(config);
 
+    // Template tokens: {dp} = own value, {color} = current threshold color (so it
+    // can be applied to any element, e.g. an icon), {unit} = configured unit. Any
+    // other {<id>} token is a foreign datapoint, subscribed live below.
+    const extraRefs = useMemo(() => extractTemplateDpRefs(htmlTemplate), [htmlTemplate]);
+    const extraStates = useTemplateStates(extraRefs);
+    const specials = useTemplateSpecials(config);
+    const fmtToken = (v: unknown): string => {
+        if (v === null || v === undefined) return '–';
+        return typeof v === 'number' ? formatNum(v, decimals, numFmt) : String(v);
+    };
     const htmlValueNode = htmlTemplate ? (
-        <div dangerouslySetInnerHTML={{ __html: htmlTemplate.replace(/\{dp\}/g, displayValue) }} />
+        <div
+            dangerouslySetInnerHTML={{
+                __html: resolveHtmlAssets(
+                    proxifyHtmlAssets(
+                        renderTemplate(htmlTemplate, {
+                            vars: { dp: displayValue, color: accentColor, unit: unit ?? '' },
+                            resolve: (ref) => fmtToken(extraStates[ref]?.val),
+                            // `{dp}#soc` — a JSON path into the widget's own value, so an
+                            // object datapoint can feed several spots of one template.
+                            resolveVarPath: (name, path) =>
+                                name === 'dp' ? fmtToken(extractJsonPath(value, path)) : '–',
+                            // Calculations see the untransformed raw values, never the
+                            // display strings — see utils/htmlTemplate.
+                            resolveRaw: (ref, field) => extraStates[ref]?.[field] ?? null,
+                            rawVars: { dp: value ?? null, color: accentColor, unit: unit ?? '', ...specials },
+                            ops: { formatNum: (v, d) => formatNum(v, d, numFmt), decimals, t },
+                        }),
+                    ),
+                ),
+            }}
+        />
     ) : null;
 
     // --- CUSTOM ---

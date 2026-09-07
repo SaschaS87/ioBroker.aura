@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Layers, Loader } from 'lucide-react';
+import { Layers, Loader, ChevronDown } from 'lucide-react';
 import ReactGridLayout from 'react-grid-layout/legacy';
 import type { WidgetProps, WidgetConfig, WidgetType, ioBrokerState } from '../../types';
-import { useConfigStore } from '../../store/configStore';
+import { useAutoHeightStore } from '../../store/autoHeightStore';
+import { useEffectiveSettings } from '../../hooks/useEffectiveSettings';
+import { useActiveLayoutId } from '../../contexts/ActiveLayoutContext';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import {
     groupChildDpIds,
@@ -24,9 +26,12 @@ import { CustomGridView } from './CustomGridView';
 import { getDragBridge, setDragBridge } from '../../utils/dragBridge';
 import { useDashboardMobile } from '../../contexts/DashboardMobileContext';
 import { useGroupDefsStore, newGroupDefId } from '../../store/groupDefsStore';
+import { useGroupCollapseStore } from '../../store/groupCollapseStore';
 import { verticalCompact } from '../../utils/gridCompact';
+import { GROUP_GAP, groupRows } from '../../utils/groupLayout';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { useReflowHiddenIds } from '../../hooks/useConditionStyle';
+import { copyWidget } from '../../utils/widgetCopy';
 
 function mobileSort(children: WidgetConfig[]): WidgetConfig[] {
     return [...children].sort((a, b) => {
@@ -90,24 +95,57 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
     const gridChildren = !editMode ? verticalCompact(children.filter((c) => !reflowHiddenIds.has(c.id))) : children;
     const transparent = !!config.options?.transparent;
     const showTitle = config.options?.showTitle !== false;
+    // autoShrink groups keep their own scroll-based height logic and the classic
+    // p-1 grid inset — the uniform-fill spacing below applies only to normal groups.
+    const autoShrink = !!config.options?.autoShrink;
+
+    // ── Collapse ────────────────────────────────────────────────────────────────
+    // A group with `defaultCollapsed` set is collapsible in the live dashboard:
+    // its header stays, the body folds away, and the outer box shrinks to the
+    // header (see Dashboard height computation). In the editor children must stay
+    // reachable, so collapse never applies there.
+    const defaultCollapsed = !!config.options?.defaultCollapsed;
+    const collapsible = defaultCollapsed && !editMode;
+    const initCollapse = useGroupCollapseStore((s) => s.init);
+    const toggleCollapse = useGroupCollapseStore((s) => s.toggle);
+    const collapsed = useGroupCollapseStore((s) => s.collapsed[config.id] ?? defaultCollapsed);
+    useEffect(() => {
+        if (defaultCollapsed) initCollapse(config.id, true);
+    }, [config.id, defaultCollapsed, initCollapse]);
+    const isCollapsed = collapsible && collapsed;
     const showIcon = config.options?.showIcon !== false;
     const iconSize = (config.options?.iconSize as number | undefined) || 20;
     const WidgetIcon = getWidgetIcon(config.options?.icon as string | undefined, Layers);
-    const cellSize = useConfigStore((s) => s.frontend.gridRowHeight ?? 80);
-    const gridGap = useConfigStore((s) => s.frontend.gridGap ?? 10);
+    // The children's pitch MUST match the one the Dashboard used to size this
+    // group's outer box (groupRows), and that one comes from the *effective*
+    // settings — global → layout → section. Reading the global values here made
+    // the two disagree as soon as a layout/section overrode the grid size (or the
+    // global value was unset, where the old 80px fallback was 4x the real pitch):
+    // the box was sized for one pitch and the children laid out on another, so
+    // the group overflowed and showed its inner scrollbar.
+    const groupSettings = useEffectiveSettings(useActiveLayoutId());
+    const cellSize = groupSettings.gridRowHeight ?? 20;
+    const gridGap = groupSettings.gridGap ?? 10;
     const dashboardIsMobile = useDashboardMobile();
     const [isDragOver, setIsDragOver] = useState(false);
 
     const containerRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(0);
+    const [size, setSize] = useState({ w: 0, h: 0 });
+    const width = size.w;
+    const height = size.h;
 
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
-        const ro = new ResizeObserver(([e]) => setWidth(Math.floor(e.contentRect.width)));
+        const ro = new ResizeObserver(([e]) =>
+            setSize({ w: Math.floor(e.contentRect.width), h: Math.floor(e.contentRect.height) }),
+        );
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
+
+    const headerRef = useRef<HTMLDivElement>(null);
+    const setGroupHeader = useAutoHeightStore((s) => s.setGroupHeader);
 
     // ── Group action control (switch / dimmer / shutter / momentary) ────────────
     const groupSwitchEnabled = !!config.options?.groupSwitch;
@@ -181,6 +219,30 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
     // control shows a placeholder when there are no controllable DPs yet).
     const showMaster = groupSwitchEnabled && (editMode || hasAction);
 
+    // Whether the header row carries any visible content. When it doesn't
+    // (title + icon off, no master switch, not collapsible) the bar exists only
+    // in the editor — as a drag handle for the outer grid and as clearance so
+    // the group's config buttons don't collide with the first child's — so it
+    // must not wear a divider that makes it look like a real header.
+    const hasHeaderContent = (showTitle && !!config.title) || showIcon || showMaster || collapsible;
+
+    // Report the real header height so the outer box (sized in Dashboard via
+    // groupRows) reserves exactly what the bar occupies — icon size, master control
+    // and font scale all change it, so it must be measured instead of guessed at
+    // 36/37px. Being a few px short is what raised the group's inner scrollbar.
+    useEffect(() => {
+        const el = headerRef.current;
+        if (!hasHeaderContent || !el) {
+            setGroupHeader(config.id, 0);
+            return;
+        }
+        const report = () => setGroupHeader(config.id, Math.ceil(el.getBoundingClientRect().height));
+        report();
+        const ro = new ResizeObserver(report);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [config.id, hasHeaderContent, setGroupHeader]);
+
     if (configLayout === 'custom') return <CustomGridView config={config} value="" />;
 
     // Mobile layout: 'stack' (default) drops children into a single column;
@@ -193,14 +255,50 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
     // Column span the children were designed for — used by keepGrid so the grid
     // isn't clamped/reflowed on a narrow phone, just uniformly scaled.
     const designCols = Math.max(2, ...gridChildren.map((c) => c.gridPos.x + c.gridPos.w));
-    const cols = keepGrid
-        ? designCols
-        : !isMobile && width > 0
-          ? Math.max(2, Math.floor((width - gridGap) / (cellSize + gridGap)))
-          : 4;
+    // Column count derived from the group's pixel width assumes the inner pitch
+    // (frontend.gridRowHeight + gridGap) equals the OUTER grid pitch. The outer
+    // grid actually snaps on gridSnapX (not gridRowHeight) and may carry
+    // layout/section setting overrides, so the two pitches can differ. When the
+    // derived count drops below designCols — the span the children were authored
+    // for — every child at x ≥ cols gets clamped into the last column (see the
+    // layout map below), squeezing the whole group. This shows up sharply after
+    // importing a tab authored on a dashboard with different grid settings.
+    // Floor the count at designCols so the authored layout is always reproduced
+    // (and scaled by RGL to the box width) instead of clamped.
+    const measuredCols = width > 0 ? Math.max(2, Math.floor((width - gridGap) / (cellSize + gridGap))) : 4;
+    const cols = keepGrid ? designCols : !isMobile && width > 0 ? Math.max(measuredCols, designCols) : 4;
+    // ── Uniform GROUP_GAP inset + fill ──────────────────────────────────────────
+    // Children sit on the outer grid pitch, so a fixed CSS inset would round the
+    // box up a whole row and leave a gap. Instead the children are scaled to fill
+    // the box (via a derived rowHeight) with GROUP_GAP applied as both the RGL
+    // margin and containerPadding — giving one equal spacing on all four sides AND
+    // between widgets, the same idea keepGrid uses on mobile. autoShrink / mobile
+    // groups keep their own logic.
+    const filled = !autoShrink && !keepGrid && !isMobile;
+    const maxRow = gridChildren.length ? Math.max(...gridChildren.map((c) => c.gridPos.y + c.gridPos.h)) : 0;
+    // Fill-scaling ties EVERY child to one derived rowHeight (box height / maxRow),
+    // so resizing one child changes maxRow → recomputes the shared rowHeight →
+    // visibly rescales the others (issue #500). It is used in BOTH views anyway: the
+    // outer box can only snap to whole outer rows, while the children sit on the
+    // denser GROUP_GAP pitch, so a fixed inner pitch always leaves up to one outer
+    // row of slack at the bottom. In the frontend the fill absorbs it; leaving the
+    // editor on the fixed cellSize pitch made that slack visible as a big gap
+    // between the last child and the group edge, i.e. the editor no longer showed
+    // what the frontend renders. The rescale is bounded by that slack (< 1 row
+    // spread over maxRow rows), and shrinkToFit re-hugs the box on every edit.
+    // Truncated to 1/100 px so the rows can never sum a hair ABOVE the box — the
+    // editor's overflow-auto would answer that with a scrollbar.
+    const fillRowHeight =
+        filled && height > 0 && maxRow > 0
+            ? Math.max(8, Math.floor(((height - (maxRow + 1) * GROUP_GAP) / maxRow) * 100) / 100)
+            : null;
+
     // keepGrid uses square cells (rowHeight = colWidth) so width AND height scale
     // together, faithfully reproducing the desktop arrangement at phone size.
-    const rowHeight = keepGrid && width > 0 ? Math.max(8, Math.floor((width - gridGap * (cols - 1)) / cols)) : cellSize;
+    const rowHeight =
+        keepGrid && width > 0
+            ? Math.max(8, Math.floor((width - gridGap * (cols - 1)) / cols))
+            : (fillRowHeight ?? cellSize);
 
     const setChildren = (next: WidgetConfig[]) => useGroupDefsStore.getState().setDef(defId, next);
 
@@ -210,10 +308,7 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
     const computeH = (next: WidgetConfig[]) => {
         if (next.length === 0) return config.gridPos.h;
         const maxBottom = Math.max(...next.map((c) => c.gridPos.y + c.gridPos.h));
-        const innerH = maxBottom * (cellSize + gridGap) - gridGap;
-        const titleBarH = showTitle && config.title ? 37 : editMode ? 36 : 0;
-        // 10 = p-1 top(4) + bottom(4) + widget border 1px each side(2)
-        return Math.ceil((titleBarH + innerH + 10 + gridGap) / (cellSize + gridGap));
+        return groupRows(maxBottom, hasHeaderContent, showTitle && !!config.title, cellSize, gridGap);
     };
 
     const fitHeightToChildren = (next: WidgetConfig[]) => {
@@ -234,11 +329,7 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
         const maxY = children.reduce((m, c) => Math.max(m, c.gridPos.y + c.gridPos.h), 0);
         const next = verticalCompact([
             ...children,
-            {
-                ...child,
-                id: `child-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                gridPos: { ...child.gridPos, x: 0, y: maxY },
-            },
+            { ...copyWidget(child), gridPos: { ...child.gridPos, x: 0, y: maxY } },
         ]);
         setChildren(next);
         fitHeightToChildren(next);
@@ -313,26 +404,60 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
 
     // ── Title bar (always shown in editMode as outer-grid drag handle) ─────────
     const titleAlign = (config.options?.titleAlign as string | undefined) ?? 'left';
-    const titleBar =
-        (showTitle && config.title) || editMode || showMaster ? (
-            <div
-                className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 min-w-0"
-                style={{
-                    color: 'var(--text-secondary)',
-                    borderBottom: transparent ? 'none' : '1px solid var(--widget-border)',
-                    minHeight: editMode && !(showTitle && config.title) ? '36px' : undefined,
-                }}
-            >
-                {showIcon && <WidgetIcon size={iconSize} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />}
-                {showTitle && config.title && (
-                    <span
-                        className="text-xs font-semibold truncate flex-1 min-w-0"
-                        style={{ textAlign: titleAlign as React.CSSProperties['textAlign'] }}
-                    >
-                        {config.title}
-                    </span>
-                )}
-                {showMaster && (
+    const titleBar = hasHeaderContent ? (
+        <div
+            ref={headerRef}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2.5 min-w-0"
+            style={{
+                color: 'var(--text-secondary)',
+                // When collapsed the body is gone, so drop the header's divider.
+                // Same when the bar is just an empty editor drag strip (no
+                // header content) — a divider would read as a real header.
+                borderBottom:
+                    transparent || isCollapsed || !hasHeaderContent ? 'none' : '1px solid var(--widget-border)',
+                minHeight: editMode && !(showTitle && config.title) ? '36px' : undefined,
+                cursor: collapsible ? 'pointer' : undefined,
+            }}
+            onClick={
+                collapsible
+                    ? (e) => {
+                          // Don't let the toggle bubble to a widget-level click action
+                          // (e.g. "open view") on the group frame.
+                          e.stopPropagation();
+                          toggleCollapse(config.id);
+                      }
+                    : undefined
+            }
+        >
+            {collapsible && (
+                <ChevronDown
+                    size={16}
+                    className="transition-transform shrink-0"
+                    style={{
+                        color: 'var(--text-secondary)',
+                        transform: isCollapsed ? 'rotate(-90deg)' : undefined,
+                    }}
+                />
+            )}
+            {showIcon && (
+                <WidgetIcon
+                    className="aura-widget-icon"
+                    size={iconSize}
+                    style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
+                />
+            )}
+            {showTitle && config.title && (
+                <span
+                    className="aura-widget-title text-xs font-semibold truncate flex-1 min-w-0"
+                    style={{ textAlign: titleAlign as React.CSSProperties['textAlign'] }}
+                >
+                    {config.title}
+                </span>
+            )}
+            {showMaster && (
+                // Wrapper stops master-control clicks from bubbling to the header's
+                // collapse toggle when the group is collapsible.
+                <div className="ml-auto flex min-w-0" onClick={collapsible ? (e) => e.stopPropagation() : undefined}>
                     <GroupActionControl
                         type={groupActionType}
                         cfg={gaCfg}
@@ -344,11 +469,11 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
                         editing={editMode}
                         placeholderHint={t('group.masterPlaceholder')}
                         placeholderLabel={t('group.masterPlaceholderShort')}
-                        className="ml-auto"
                     />
-                )}
-            </div>
-        ) : null;
+                </div>
+            )}
+        </div>
+    ) : null;
 
     const dragHandlers = editMode
         ? {
@@ -379,7 +504,10 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
             // slide) fills it and scrolls internally instead of overflowing. At the
             // top level the mobile-stack wrapper is auto-height, so h-full resolves
             // to content height and the page still scrolls as before.
-            <div className="aura-widget-row relative flex flex-col h-full min-h-0" {...dragHandlers}>
+            <div
+                className={`aura-widget-row relative flex flex-col h-full min-h-0 ${isCollapsed ? 'justify-center' : ''}`}
+                {...dragHandlers}
+            >
                 {isDragOver && (
                     <div
                         className="nodrag pointer-events-none absolute inset-0 z-20 rounded-[inherit] border-2 border-dashed flex items-center justify-center"
@@ -395,29 +523,31 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
                 )}
                 {titleBar}
 
-                <div
-                    className="aura-scroll flex-1 overflow-auto min-h-0 p-1"
-                    style={{ scrollbarGutter: 'stable both-edges' }}
-                >
-                    <div className="flex flex-col gap-1.5">
-                        {sorted.map((child) => (
-                            <div
-                                key={child.id}
-                                style={{ height: child.gridPos.h * cellSize + (child.gridPos.h - 1) * gridGap }}
-                            >
-                                <WidgetFrame
-                                    config={child}
-                                    editMode={false}
-                                    onRemove={onRemove}
-                                    onConfigChange={updateChild}
-                                    onDuplicate={() => duplicateChild(child)}
-                                    inGroup
-                                />
-                            </div>
-                        ))}
+                {!isCollapsed && (
+                    <div
+                        className="aura-scroll flex-1 overflow-auto min-h-0 p-1"
+                        style={{ scrollbarGutter: 'stable both-edges' }}
+                    >
+                        <div className="flex flex-col gap-1.5">
+                            {sorted.map((child) => (
+                                <div
+                                    key={child.id}
+                                    style={{ height: child.gridPos.h * cellSize + (child.gridPos.h - 1) * gridGap }}
+                                >
+                                    <WidgetFrame
+                                        config={child}
+                                        editMode={false}
+                                        onRemove={onRemove}
+                                        onConfigChange={updateChild}
+                                        onDuplicate={() => duplicateChild(child)}
+                                        inGroup
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        {children.length === 0 && <GroupEmptyState loading={isLoading} />}
                     </div>
-                    {children.length === 0 && <GroupEmptyState loading={isLoading} />}
-                </div>
+                )}
                 {offScreenHidden}
             </div>
         );
@@ -431,7 +561,10 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
     });
 
     return (
-        <div className="aura-widget-row relative flex flex-col h-full" {...dragHandlers}>
+        <div
+            className={`aura-widget-row relative flex flex-col h-full ${isCollapsed ? 'justify-center' : ''}`}
+            {...dragHandlers}
+        >
             {isDragOver && (
                 <div
                     className="nodrag pointer-events-none absolute inset-0 z-20 rounded-[inherit] border-2 border-dashed flex items-center justify-center"
@@ -451,7 +584,18 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
           intercept drags meant for the inner grid */}
             <div
                 ref={containerRef}
-                className="flex-1 overflow-auto min-h-0 p-1"
+                // `filled` groups: no CSS padding — the equal margin on all four sides
+                // comes from RGL containerPadding (GROUP_GAP) with the children scaled
+                // to fill, so the box hugs its rows without an extra empty row.
+                // Overflow hidden in BOTH views: the box is derived from the children,
+                // so the grid itself always fits, but a child whose own content needs
+                // more room than its cell (a widget at 1-2 grid rows, or a small row
+                // height) spills past it — WidgetFrame is deliberately overflow-visible
+                // for badges. In the editor that spill used to raise the group's
+                // scrollbar while the frontend clipped it, so the two views disagreed.
+                // autoShrink keeps the classic p-1 inset and its scroll behaviour.
+                className={`flex-1 min-h-0 ${filled ? 'p-0 overflow-hidden' : 'overflow-auto p-1'}`}
+                style={isCollapsed ? { display: 'none' } : undefined}
                 onMouseDown={editMode ? (e) => e.stopPropagation() : undefined}
                 onPointerDown={editMode ? (e) => e.stopPropagation() : undefined}
             >
@@ -507,8 +651,8 @@ export function GroupWidget({ config, editMode, onConfigChange }: WidgetProps) {
                                 shrinkToFit(updated);
                             }
                         }}
-                        margin={[gridGap, gridGap]}
-                        containerPadding={[0, 0]}
+                        margin={filled ? [GROUP_GAP, GROUP_GAP] : [gridGap, gridGap]}
+                        containerPadding={filled ? [GROUP_GAP, GROUP_GAP] : [0, 0]}
                     >
                         {gridChildren.map((child) => (
                             <div key={child.id}>

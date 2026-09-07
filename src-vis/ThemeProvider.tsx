@@ -1,12 +1,17 @@
 import { useEffect } from 'react';
 import { useThemeStore } from './store/themeStore';
 import { useConfigStore } from './store/configStore';
+import { useGlobalThemeId } from './hooks/useEffectiveSettings';
 import { getTheme } from './themes';
+import { BOOT_COLORS_KEY } from './utils/themeModeCache';
+import { bumpThemeEpoch } from './store/themeEpoch';
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const { themeId, customVars } = useThemeStore();
+    const customVars = useThemeStore((s) => s.customVars);
     const fontScale = useConfigStore((s) => s.frontend.fontScale ?? 1);
-    const theme = getTheme(themeId);
+    // Global theme with the dark/light-mode datapoint applied — the saved
+    // themeId itself is never rewritten by the mode (#573).
+    const theme = getTheme(useGlobalThemeId());
 
     useEffect(() => {
         const root = document.documentElement;
@@ -16,6 +21,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         });
         root.style.setProperty('--font-scale', String(fontScale));
         root.classList.toggle('dark', theme.dark);
+        // Match native form-control chrome to the theme (like AdminLayout does).
+        // Without this, dark themes keep color-scheme:light, so a native
+        // <input type=range> gets a WHITE UA background — the semi-transparent
+        // dimmer rail then composites over white and looks far brighter than the
+        // admin backend (which sets color-scheme:dark). Also fixes scrollbars /
+        // selects / date pickers to render dark in dark themes.
+        root.style.colorScheme = theme.dark ? 'dark' : 'light';
+        // Hand the current colours to the pre-React boot splash (inline script in
+        // index.html). Without this the splash is always dark, so a light-theme
+        // device flashes dark → light on every reload.
+        try {
+            const bg = vars['--app-bg'];
+            const fg = vars['--text-secondary'];
+            if (bg && fg) localStorage.setItem(BOOT_COLORS_KEY, `${bg}|${fg}`);
+        } catch {
+            /* quota / private mode */
+        }
+        // The variables are in the DOM now — whoever has to read one in
+        // JavaScript (a canvas colour) can do it from here on (store/themeEpoch).
+        bumpThemeEpoch();
     }, [theme, customVars, fontScale]);
 
     return <>{children}</>;

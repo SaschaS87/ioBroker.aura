@@ -1,17 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Filter, List, Power } from 'lucide-react';
+import { List, Power } from 'lucide-react';
 import { useIoBroker, getObjectViewDirect } from '../../hooks/useIoBroker';
 import { ensureDatapointCache } from '../../hooks/useDatapointList';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
-import type { WidgetProps, ioBrokerState } from '../../types';
+import { formatItemName, finishItemName, hasLiveToken, type NameFilterRule } from '../../utils/nameFilter';
+import type { WidgetProps, ioBrokerState, ElementConditionRule } from '../../types';
+import { useElementConditionStyles, type ElementCondInput } from '../../hooks/useElementConditionStyles';
+import { condAnimation, condTextStyle, partOf, rowHidden, type ElementCondResult } from '../../utils/rowConditions';
 import { resolveName } from './AutoListWidget';
-import { getRoleDisplay, getThresholdColor } from '../../utils/listEntryDisplay';
+import { getRoleDisplay } from '../../utils/listEntryDisplay';
+import { getThresholdColor, type ColorThreshold } from '../../utils/colorThresholds';
 import { CustomGridView } from './CustomGridView';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { useT } from '../../i18n';
+import { usePopupAutoHeight } from '../../contexts/PopupAutoHeightContext';
 import { formatLastChange } from '../../utils/formatLastChange';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { type NumberFormat } from '../../utils/formatValue';
+import { computeListStats, type ListStat } from '../../utils/listStats';
+import { StatLine } from './StatLine';
+import { useDpTokenResolver } from './DynamicTitle';
+import { stripDpTokens } from '../../utils/dpTokens';
 import { publishListCount, unpublishList } from '../../utils/publishWidgetState';
 import {
     listEntryTarget,
@@ -23,15 +32,53 @@ import {
     type GroupActionConfigOpts,
 } from '../../utils/groupTargets';
 import { GroupActionControl } from './GroupActionControl';
+import { useRowPopup } from '../../hooks/useRowPopup';
+import type { RowClickSetting, RowPopupOptions } from '../../utils/rowClickAction';
 import {
     ShutterControl,
     StepperControl,
+    SliderControl,
     PresetButtons,
+    SelectControl,
+    entrySelectLabel,
     MomentaryButton,
+    StateDisplay,
+    ContactDisplay,
+    TimeDisplay,
+    InputControl,
+    DateEntryControl,
+    SwitchControl,
+    entryDateText,
+    formatEntryTime,
+    entryValueText,
+    resolveContactDisplay,
+    matchStateMap,
+    switchEntryActive,
+    switchReadValue,
+    switchStatusDp,
+    entryExtraDps,
+    contactLocked,
+    ContactLockBadge,
+    switchWriteValues,
     NON_TOGGLE_DISPLAY_TYPES,
     type EntryControlConfig,
 } from './entryControls';
+import type { ValueTransformSettings } from '../../utils/valueTransform';
 import { ConfirmOverlay } from './ConfirmOverlay';
+import { EntrySubLine, subCondKey, type EntrySubDp } from './EntrySubLine';
+import { useTemplateValues } from '../../hooks/useTemplateValues';
+import { ListFilterChip } from './ListFilterChip';
+import {
+    buildFilterChoices,
+    filterEmptyText,
+    filterModeLabel,
+    matchesFilterMode,
+    matchesSearch,
+    normalizeFilterMode,
+    type ListFilterOptions,
+    type ListFilterRow,
+} from '../../utils/listFilter';
+import { effectiveSortRules, makeSortComparator, type ListSortOptions } from '../../utils/listSort';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,12 +87,13 @@ export interface StaticListEntry extends EntryControlConfig {
     label?: string;
     unit?: string;
     decimals?: number;
+    numberFormat?: NumberFormat;
     role?: string;
     trueLabel?: string;
     falseLabel?: string;
     writable?: boolean; // false = read-only; undefined/true = writable
     icon?: string;
-    colorThresholds?: [number, string][]; // [[maxExclusive, color], …] ascending
+    colorThresholds?: ColorThreshold[]; // [[maxExclusive, colour], …] in any order
     /** Per-DP text color when on/true/>0. Overrides global activeColor. */
     activeColor?: string;
     /** Per-DP text color when off/false/0. Overrides global inactiveColor. */
@@ -54,38 +102,65 @@ export interface StaticListEntry extends EntryControlConfig {
     activeBg?: string;
     /** Per-DP entry background when off/false/0. Overrides global inactiveBg. */
     inactiveBg?: string;
-    /** Per-DP icon size in px (entry icon + switch icon). Falls back to per-layout default. */
-    iconSize?: number;
     /** Per-DP label font size in px. Falls back to per-layout default. */
     fontSize?: number;
-    /** When switch is shown: 'slide' = toggle (default), 'icon' = clickable power icon. */
-    switchStyle?: 'slide' | 'icon';
-    /** Icon-style switch only: icon shown in the on/true/>0 state. Falls back to Power. */
-    trueIcon?: string;
-    /** Icon-style switch only: icon shown in the off/false/0 state. Falls back to Power. */
-    falseIcon?: string;
     /** Show last-change timestamp under this entry. */
     showLastChange?: boolean;
+    /** Per-row click action. Overrides the list-wide setting; undefined = inherit. */
+    clickAction?: RowClickSetting;
+    /** Heading of this row's popup. Beats options.rowPopupTitle; unset = the row name. */
+    popupTitle?: string;
+    /** Title bar of this row's popup: true = hide, false = show, unset = as the list. */
+    popupHideTitle?: boolean;
+    /**
+     * Extra datapoints shown in a second line below this entry — display only.
+     * Ignored by the badges (minimal) layout, where a row is a single pill.
+     */
+    subDps?: EntrySubDp[];
+    /** Conditional formatting of this row (issue #572). */
+    conditions?: ElementConditionRule[];
+    /**
+     * This row is a separator, not a datapoint: a rule across the full width that opens
+     * a new section. It lives in `entries` like any other row, so it is added, dragged,
+     * moved and deleted with the same handles — the alternative, a flag on the datapoint
+     * below it, would mean switching one entry off and another on just to move a line.
+     * `id` is then synthetic (`divider:<n>`) and carries no ioBroker meaning.
+     */
+    divider?: boolean;
+    /** Heading on the separator. Empty = a plain rule. */
+    dividerLabel?: string;
+    /** Where the heading sits. Default 'left'. */
+    dividerAlign?: 'left' | 'center' | 'right';
+    /** Heading size in px. Default 10. */
+    dividerFontSize?: number;
+    /** Heading colour. Default --text-secondary. */
+    dividerColor?: string;
+    /** Draw the rule(s) next to the heading. Default true; false = heading only. */
+    dividerLine?: boolean;
 }
 
-export interface StaticListOptions extends GroupActionConfigOpts {
+export interface StaticListOptions
+    extends GroupActionConfigOpts, RowPopupOptions, ValueTransformSettings, ListFilterOptions, ListSortOptions {
     entries: StaticListEntry[];
-    /** 'all' = show everything (default), 'active' = only on/> 0, 'inactive' = only off/0 */
-    valueFilter?: 'all' | 'active' | 'inactive';
-    filterActiveLabel?: string;
-    filterInactiveLabel?: string;
+    /**
+     * Filter the frontend starts with: 'all' (default), the built-ins 'active' /
+     * 'inactive', or the id of a filterPresets entry (see utils/listFilter).
+     */
+    valueFilter?: string;
     showId?: boolean;
     showRoom?: boolean;
     showTitle?: boolean;
     showCount?: boolean;
-    sortBy?: 'none' | 'label' | 'value';
-    sortOrder?: 'asc' | 'desc';
-    sortBy2?: 'none' | 'label' | 'value';
-    sortOrder2?: 'asc' | 'desc';
+    /** Entry label template, tokens <Raum> <Gerät> <DPName> <Name> <ID>. Empty = the plain name. */
+    namePattern?: string;
+    /** Text rules applied to the token values before substitution (see utils/nameFilter). */
+    nameFilters?: NameFilterRule[];
     /** Global default label for on/true/>0 state (fallback when entry has no trueLabel). */
     trueText?: string;
     /** Global default label for off/false/0 state (fallback when entry has no falseLabel). */
     falseText?: string;
+    /** Colour scale for numeric values. Per-DP colorThresholds overrides (see utils/colorThresholds). */
+    colorThresholds?: ColorThreshold[];
     /** Global text color when on. Per-DP activeColor overrides. Default: green. */
     activeColor?: string;
     /** Global text color when off. Per-DP inactiveColor overrides. */
@@ -97,10 +172,16 @@ export interface StaticListOptions extends GroupActionConfigOpts {
     /** Publish the filtered count to aura.0.lists.<widgetId>.count */
     publishCount?: boolean;
     /** Backend display filter — independent from frontend valueFilter. Default 'all'. */
-    backendValueFilter?: 'all' | 'active' | 'inactive';
-    /** Show sum of numeric values from visible entries below the title. */
+    backendValueFilter?: string;
+    /** Show an aggregate line of numeric values from visible entries below the title. */
     showSum?: boolean;
-    /** Prefix label for the sum line (default 'Σ'). */
+    /** Which aggregates to show. Default (undefined/empty) = sum only. */
+    sumStats?: ListStat[];
+    /** Per-stat text prefix. Falls back to a default symbol per stat. */
+    statLabels?: Partial<Record<ListStat, string>>;
+    /** Per-stat icon (iconify id / lucide name) rendered before the value. */
+    statIcons?: Partial<Record<ListStat, string>>;
+    /** Legacy prefix label for the sum part (default 'Σ'). Superseded by statLabels.sum. */
     sumLabel?: string;
     /** Text alignment of the sum line. Default 'left' (inherits titleAlign feel). */
     sumAlign?: 'left' | 'center' | 'right';
@@ -114,6 +195,13 @@ export interface StaticListOptions extends GroupActionConfigOpts {
     wrapText?: boolean;
     /** When wrapText is on: minimum % of the row reserved for the label (10..90). Value gets the rest. Default 50. */
     labelMinPercent?: number;
+    /**
+     * Conditional formatting applied to EVERY row (issue #572). Clause datapoints may
+     * use `{{parent}}` / `{{dp}}` / `{{name}}`, resolved per row — that is what makes one
+     * rule work for a whole list. Rules on the entry itself are applied afterwards and
+     * therefore win per field.
+     */
+    rowConditions?: ElementConditionRule[];
     // Group action options (groupSwitch, groupActionType, …) come from GroupActionConfigOpts.
 }
 
@@ -132,50 +220,173 @@ function isActive(val: ioBrokerState['val']): boolean {
     return false;
 }
 
-function compareVals(a: ioBrokerState['val'], b: ioBrokerState['val']): number {
-    if (a === null || a === undefined) return 1;
-    if (b === null || b === undefined) return -1;
-    if (typeof a === 'boolean' && typeof b === 'boolean') return (a ? 1 : 0) - (b ? 1 : 0);
-    if (typeof a === 'number' && typeof b === 'number') return a - b;
-    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+// ── Section breaks ─────────────────────────────────────────────────────────────
+
+/**
+ * Which rendered entries start a new section, and with what heading.
+ *
+ * A break is configured on an entry (`dividerBefore`), never on a position — positions do
+ * not survive drag & drop, and this list is reordered by hand all the time.
+ *
+ * Walked over the CONFIG order while checking against what is actually rendered, so a
+ * break whose own entry is filtered away (value filter, search) moves to the next visible
+ * entry of that section: a heading like "Erdgeschoss" stays as long as the section has a
+ * visible member, and vanishes entirely once it has none — instead of leaving a stray line.
+ */
+/** True for a separator row. Every value-related code path has to skip these. */
+export function isDivider(e: StaticListEntry): boolean {
+    return e?.divider === true;
 }
 
-type FilterMode = 'all' | 'active' | 'inactive';
-const DEFAULT_filterLabels: Record<FilterMode, string> = {
-    all: 'Alle',
-    active: 'Nur aktive',
-    inactive: 'Nur inaktive',
-};
+/** How the separator has to be laid out to span the full width of its container. */
+type BreakVariant = 'stack' | 'grid' | 'wrap';
+
+/**
+ * A separator row.
+ *
+ * The rule frames the heading according to its alignment: left-aligned puts the whole
+ * rule behind the text, centred splits it in two, right-aligned pushes it in front. A
+ * separator without a heading is just the rule, one with the rule switched off just the
+ * heading — and one with neither renders nothing at all.
+ */
+function SectionBreak({ entry, variant, first }: { entry: StaticListEntry; variant: BreakVariant; first: boolean }) {
+    const label = entry.dividerLabel?.trim() || undefined;
+    const align = entry.dividerAlign ?? 'left';
+    const line = entry.dividerLine !== false;
+    if (!label && !line) return null;
+    const rule = <span className="flex-1 h-px min-w-0" style={{ background: 'var(--widget-border)' }} />;
+    const before = line && (align === 'right' || align === 'center');
+    const after = line && (align === 'left' || align === 'center' || !label);
+    return (
+        <div
+            className="aura-section-break flex items-center gap-2 px-3 select-none"
+            style={{
+                // A grid child must be told to span every column; a flex-wrap child needs a
+                // full basis so the badges after it start on a new line.
+                gridColumn: variant === 'grid' ? '1 / -1' : undefined,
+                flexBasis: variant === 'wrap' ? '100%' : undefined,
+                // No air above the very first row - the separator sits under the header.
+                paddingTop: first ? 2 : 10,
+                paddingBottom: label ? 4 : 6,
+                // Without a rule the heading alone has to carry the alignment.
+                justifyContent: line
+                    ? undefined
+                    : align === 'left'
+                      ? 'flex-start'
+                      : align === 'right'
+                        ? 'flex-end'
+                        : 'center',
+            }}
+        >
+            {before && rule}
+            {label && (
+                <span
+                    className="font-semibold uppercase tracking-wide shrink-0 truncate"
+                    style={{
+                        color: entry.dividerColor || 'var(--text-secondary)',
+                        fontSize: entry.dividerFontSize && entry.dividerFontSize > 0 ? entry.dividerFontSize : 10,
+                    }}
+                >
+                    {label}
+                </span>
+            )}
+            {after && rule}
+        </div>
+    );
+}
+
+/**
+ * Sorts the datapoint rows WITHIN each section instead of across the whole list, so an
+ * active sort order and a hand-made grouping can coexist — sorting globally would tear
+ * the sections apart, which is the whole reason they exist.
+ */
+function sortWithinSections(rows: StaticListEntry[], cmp: (a: StaticListEntry, b: StaticListEntry) => number) {
+    const out: StaticListEntry[] = [];
+    let section: StaticListEntry[] = [];
+    const flush = () => {
+        section.sort(cmp);
+        out.push(...section);
+        section = [];
+    };
+    for (const r of rows) {
+        if (isDivider(r)) {
+            flush();
+            out.push(r);
+        } else section.push(r);
+    }
+    flush();
+    return out;
+}
+
+/**
+ * Drops the separators that would render into nothing: one whose section has no visible
+ * row left (its datapoints were filtered away) and a leading bare rule, which would
+ * separate the list from nothing. A leading separator WITH a heading is kept — that is a
+ * section title, and it belongs at the top.
+ */
+function pruneEmptySections(rows: StaticListEntry[]): StaticListEntry[] {
+    return rows.filter((r, i) => {
+        if (!isDivider(r)) return true;
+        const next = rows[i + 1];
+        if (!next || isDivider(next)) return false;
+        return i > 0 || !!r.dividerLabel?.trim();
+    });
+}
 
 // ── Value cell ─────────────────────────────────────────────────────────────────
 
 function EntryValue({
     entry,
     val,
+    statusVal,
+    lockVal,
+    presetsJson,
+    dpStates,
     writable,
     setState,
     globalThresholds,
     decimals,
+    numFmt,
     activeColor,
     inactiveColor,
     trueText,
     falseText,
     wrap,
     valueMaxPct,
+    listTransform,
+    card,
+    cond,
 }: {
     entry: StaticListEntry;
     val: ioBrokerState['val'];
+    /** Live value of the switch display's status datapoint, when one is configured. */
+    statusVal?: ioBrokerState['val'];
+    /** Live value of the contact display's lock datapoint, when one is configured. */
+    lockVal?: ioBrokerState['val'];
+    /** Live value of the preset display's JSON datapoint, when one is configured. */
+    presetsJson?: ioBrokerState['val'];
+    /** Every subscribed datapoint, for the controls that read more than one
+     *  (the shutter's position feedback, slats, activity and lock datapoints). */
+    dpStates?: Record<string, ioBrokerState | null>;
     writable: boolean;
     setState: (id: string, v: boolean | number | string) => void;
-    globalThresholds?: [number, string][];
+    globalThresholds?: ColorThreshold[];
     decimals: number;
+    numFmt?: NumberFormat;
     activeColor: string;
     inactiveColor: string;
     trueText?: string;
     falseText?: string;
     wrap?: boolean;
     valueMaxPct?: number;
+    /** List-wide value conversion / time format; the entry's own settings win. */
+    listTransform?: ValueTransformSettings;
+    /** Card layout: cells are narrow (min 90px), so width-hungry controls fill them. */
+    card?: boolean;
+    /** Conditional formatting for this row's value (issue #572). */
+    cond?: ElementCondResult;
 }) {
+    const t = useT();
     // For text-style value spans: drop shrink-0 + allow wrapping when wrap=true.
     // maxWidth caps the value (default 50%) so the label always keeps a guaranteed
     // share of the row — otherwise flex-basis-0 on the label causes it to collapse
@@ -192,7 +403,18 @@ function EntryValue({
     const on = val === true || val === 1;
     const displayType = entry.displayType ?? 'auto';
     const switchStyle = entry.switchStyle ?? 'slide';
-    const thresholdColor = getThresholdColor(val, entry.colorThresholds ?? globalThresholds);
+    // Display-only conversion: only the text/time branches below use it — the
+    // controls write their value back and must stay on the raw one. Thresholds
+    // follow the shown value, so they are configured in display units.
+    const disp = entryValueText(entry, listTransform, val, decimals, numFmt, t);
+    // A condition beats the colour scale — the scale is the default, the rule is the
+    // exception. Inline weight/style also beat the Tailwind font classes below.
+    const condColor = cond?.color;
+    const condFont = condTextStyle(cond);
+    // An entry without its own scale falls back to the list-wide one; an empty
+    // array counts as "none" so an imported entry cannot block the fallback.
+    const entryThresholds = entry.colorThresholds?.length ? entry.colorThresholds : globalThresholds;
+    const thresholdColor = getThresholdColor(disp.value, entryThresholds);
 
     // Optional confirmation before a switch-like write (like the Switch widget).
     // The pending action is captured and only run once the user confirms.
@@ -214,6 +436,19 @@ function EntryValue({
             onCancel={() => setPendingWrite(null)}
         />
     ) : null;
+
+    // A rule may replace the value outright — "true" becomes "ONLINE". No control is
+    // drawn for it then: the row states a fact instead of offering a switch.
+    if (cond?.hide) return null;
+    if (cond?.text !== undefined)
+        return (
+            <span
+                className={textValueCls}
+                style={{ ...valueMaxStyle, ...condFont, color: condColor ?? 'var(--text-primary)' }}
+            >
+                {cond.text}
+            </span>
+        );
 
     // Reusable: clickable icon as toggle (used when switchStyle === 'icon').
     // The on/off states can each use their own configured icon; both fall back
@@ -242,134 +477,127 @@ function EntryValue({
     };
 
     // Rich control types — rendered by the shared entry-control components.
-    if (displayType === 'shutter') return <ShutterControl entry={entry} val={val} setState={setState} />;
+    if (displayType === 'shutter')
+        return <ShutterControl entry={entry} val={val} setState={setState} dpStates={dpStates} card={card} />;
     if (displayType === 'stepper')
-        return <StepperControl entry={entry} val={val} setState={setState} decimals={decimals} />;
+        return (
+            <StepperControl
+                entry={entry}
+                val={val}
+                setState={setState}
+                decimals={decimals}
+                numFmt={numFmt}
+                // The stepper prints the raw value (it writes it back), so its colour
+                // must be matched against that value, not the converted one.
+                valueColor={getThresholdColor(val, entryThresholds)}
+                cond={cond}
+            />
+        );
     if (displayType === 'buttons')
-        return <PresetButtons entry={entry} val={val} setState={setState} activeColor={activeColor} />;
+        return (
+            <PresetButtons
+                entry={entry}
+                val={val}
+                setState={setState}
+                activeColor={activeColor}
+                presetsJson={presetsJson}
+            />
+        );
+    if (displayType === 'select')
+        return (
+            <SelectControl
+                entry={entry}
+                val={val}
+                setState={setState}
+                card={card}
+                cond={cond}
+                presetsJson={presetsJson}
+            />
+        );
     if (displayType === 'momentary') return <MomentaryButton entry={entry} setState={setState} icon={entry.icon} />;
+    if (displayType === 'states') return <StateDisplay entry={entry} val={val} cond={cond} />;
+    if (displayType === 'contact') return <ContactDisplay entry={entry} val={val} lockVal={lockVal} cond={cond} />;
+    if (displayType === 'time')
+        return (
+            <TimeDisplay
+                entry={entry}
+                val={disp.value}
+                className={textValueCls}
+                style={{ ...valueMaxStyle, ...condFont, color: condColor ?? 'var(--text-primary)' }}
+            />
+        );
+    if (displayType === 'datepicker')
+        return <DateEntryControl entry={entry} val={val} setState={setState} fullWidth={card} cond={cond} />;
+    if (displayType === 'input')
+        return <InputControl entry={entry} val={val} setState={setState} fullWidth={card} cond={cond} />;
 
     // Forced "Nur Wert" — skip role/switch/slider, render text only
     if (displayType === 'value') {
         const active = isActive(val);
-        const displayVal = typeof val === 'number' ? formatNum(val, decimals) : String(val);
         return (
             <span
                 className={textValueCls}
                 style={{
                     ...valueMaxStyle,
-                    color: thresholdColor ?? (active ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                    ...condFont,
+                    color: condColor ?? thresholdColor ?? (active ? 'var(--text-primary)' : 'var(--text-secondary)'),
                 }}
             >
-                {val != null ? `${displayVal}${entry.unit ? ` ${entry.unit}` : ''}` : '–'}
+                {disp.text != null ? `${disp.text}${entry.unit && !disp.isTime ? ` ${entry.unit}` : ''}` : '–'}
             </span>
         );
     }
 
-    // Forced "Slider" — render range 0..100 if writable, else value text with %
-    if (displayType === 'slider') {
-        const num = typeof val === 'number' ? val : val === true ? 100 : 0;
-        if (!writable) {
-            return (
-                <span
-                    className={textValueCls}
-                    style={{ ...valueMaxStyle, color: thresholdColor ?? 'var(--text-primary)' }}
-                >
-                    {Math.round(num)}
-                    {entry.unit ?? '%'}
-                </span>
-            );
-        }
+    // Forced "Slider" — the shared control with the Schieberegler widget's option
+    // set (scale, step, colour, bar look, write on release, read-only).
+    if (displayType === 'slider')
         return (
-            <div className="shrink-0 flex items-center gap-1.5">
-                <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={num}
-                    onChange={(e) => setState(entry.id, Number(e.target.value))}
-                    className="w-20 h-1"
-                    style={{ accentColor: 'var(--accent)' }}
-                />
-                <span
-                    className="text-[10px] w-8 text-right tabular-nums"
-                    style={{ color: thresholdColor ?? 'var(--text-secondary)' }}
-                >
-                    {Math.round(num)}
-                    {entry.unit ?? '%'}
-                </span>
-            </div>
+            <SliderControl
+                entry={entry}
+                val={val}
+                writable={writable}
+                setState={setState}
+                card={card}
+                valueColor={condColor ?? thresholdColor}
+                className={textValueCls}
+                textStyle={{ ...valueMaxStyle, ...condFont }}
+                cond={cond}
+            />
         );
-    }
 
-    // Forced "Schalter" — toggle / labeled pill
-    if (displayType === 'switch') {
-        const forcedOn = on || (typeof val === 'number' && val > 0);
-        const writeToggle = () => {
-            if (isBool) setState(entry.id, !forcedOn);
-            else if (typeof val === 'number') setState(entry.id, forcedOn ? 0 : 1);
-            else setState(entry.id, !forcedOn);
-        };
-        if (switchStyle === 'icon') return renderIconToggle(forcedOn, writeToggle);
-        if (hasLabels) {
-            const fill = forcedOn ? activeColor : inactiveColor;
-            return (
-                <>
-                    <button
-                        ref={confirmAnchorRef}
-                        onClick={writable ? guardWrite(writeToggle) : undefined}
-                        className="shrink-0 text-xs px-2.5 py-0.5 rounded-full font-medium"
-                        style={{
-                            background: `color-mix(in srgb, ${fill} 18%, transparent)`,
-                            color: fill,
-                            cursor: writable ? 'pointer' : 'default',
-                        }}
-                    >
-                        {forcedOn ? trueLabel || 'AN' : falseLabel || 'AUS'}
-                    </button>
-                    {confirmOverlay}
-                </>
-            );
-        }
-        if (!writable) {
-            return (
-                <span
-                    className="shrink-0 relative w-9 h-[18px] rounded-full pointer-events-none"
-                    style={{ background: forcedOn ? activeColor : 'var(--app-border)' }}
-                >
-                    <span
-                        className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white"
-                        style={{ left: forcedOn ? 'calc(100% - 16px)' : '2px' }}
-                    />
-                </span>
-            );
-        }
+    // Forced "Schalter" — the shared control with the Schalter widget's option set
+    // (write values, status DP, condition mode, slide/icon/image; see entryControls).
+    if (displayType === 'switch')
         return (
-            <>
-                <button
-                    ref={confirmAnchorRef}
-                    onClick={guardWrite(writeToggle)}
-                    className="shrink-0 relative w-9 h-[18px] rounded-full transition-colors"
-                    style={{ background: forcedOn ? activeColor : 'var(--app-border)' }}
-                >
-                    <span
-                        className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all"
-                        style={{ left: forcedOn ? 'calc(100% - 16px)' : '2px' }}
-                    />
-                </button>
-                {confirmOverlay}
-            </>
+            <SwitchControl
+                entry={entry}
+                val={val}
+                statusVal={statusVal}
+                writable={writable}
+                setState={setState}
+                activeColor={activeColor}
+                inactiveColor={inactiveColor}
+                trueLabel={trueLabel}
+                falseLabel={falseLabel}
+                card={card}
+                cond={cond}
+            />
         );
-    }
 
     // Role-based display for sensors (window, door, motion, smoke, …)
     if (isBoolLike && !hasLabels) {
         const roleDisplay = getRoleDisplay(entry.role, val);
         if (roleDisplay) {
+            // A rule beats the role's own colour, exactly like it beats the scale.
+            const fill = condColor ?? roleDisplay.color;
             return (
                 <span
                     className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{ background: `${roleDisplay.color}22`, color: roleDisplay.color }}
+                    style={{
+                        background: `color-mix(in srgb, ${fill} 18%, transparent)`,
+                        color: fill,
+                        ...condFont,
+                    }}
                 >
                     {roleDisplay.label}
                 </span>
@@ -382,7 +610,7 @@ function EntryValue({
             return renderIconToggle(on, () => setState(entry.id, isBool ? !on : on ? 0 : 1));
         }
         if (hasLabels) {
-            const fill = on ? activeColor : inactiveColor;
+            const fill = condColor ?? (on ? activeColor : inactiveColor);
             return (
                 <button
                     onClick={writable ? () => setState(entry.id, isBool ? !on : on ? 0 : 1) : undefined}
@@ -391,6 +619,7 @@ function EntryValue({
                         background: `color-mix(in srgb, ${fill} 18%, transparent)`,
                         color: fill,
                         cursor: writable ? 'pointer' : 'default',
+                        ...condFont,
                     }}
                 >
                     {on ? trueLabel || 'AN' : falseLabel || 'AUS'}
@@ -429,7 +658,11 @@ function EntryValue({
             return (
                 <span
                     className={textValueCls}
-                    style={{ ...valueMaxStyle, color: thresholdColor ?? 'var(--text-primary)' }}
+                    style={{
+                        ...valueMaxStyle,
+                        ...condFont,
+                        color: condColor ?? thresholdColor ?? 'var(--text-primary)',
+                    }}
                 >
                     {Math.round(val)}
                     {entry.unit ?? '%'}
@@ -449,7 +682,7 @@ function EntryValue({
                 />
                 <span
                     className="text-[10px] w-8 text-right tabular-nums"
-                    style={{ color: thresholdColor ?? 'var(--text-secondary)' }}
+                    style={{ color: condColor ?? thresholdColor ?? 'var(--text-secondary)', ...condFont }}
                 >
                     {Math.round(val)}
                     {entry.unit ?? '%'}
@@ -459,16 +692,16 @@ function EntryValue({
     }
 
     const active = isActive(val);
-    const displayVal = typeof val === 'number' ? formatNum(val, decimals) : String(val);
     return (
         <span
             className={textValueCls}
             style={{
                 ...valueMaxStyle,
-                color: thresholdColor ?? (active ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                ...condFont,
+                color: condColor ?? thresholdColor ?? (active ? 'var(--text-primary)' : 'var(--text-secondary)'),
             }}
         >
-            {val != null ? `${displayVal}${entry.unit ? ` ${entry.unit}` : ''}` : '–'}
+            {disp.text != null ? `${disp.text}${entry.unit && !disp.isTime ? ` ${entry.unit}` : ''}` : '–'}
         </span>
     );
 }
@@ -477,14 +710,78 @@ function EntryValue({
 
 export function ListWidget({ config, editMode }: WidgetProps) {
     const opts = useMemo(() => (config.options ?? { entries: [] }) as unknown as StaticListOptions, [config.options]);
-    const entries = useMemo<StaticListEntry[]>(() => (opts.entries ?? []).filter((e) => !!e?.id), [opts.entries]);
+    // Inside an auto-height popup-view: render the full list without an inner scrollbar
+    // so the popup grid (and dialog) can grow to fit every row. Off elsewhere.
+    const autoHeight = usePopupAutoHeight();
+    // Two views on the same array: `rows` is what gets rendered (separators included),
+    // `entries` is the datapoints only. Everything value-related — subscriptions, filters,
+    // sorting, statistics, counts, group actions — reads `entries`, so a separator can
+    // never leak into a value calculation.
+    const rows = useMemo<StaticListEntry[]>(() => (opts.entries ?? []).filter((e) => !!e?.id), [opts.entries]);
+    const entries = useMemo<StaticListEntry[]>(() => rows.filter((e) => !isDivider(e)), [rows]);
+    // Row click -> detail popup for that datapoint (issue #524).
+    const rowPopup = useRowPopup(config, opts, editMode);
     const t = useT();
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     const { subscribe, setState, getState } = useIoBroker();
+    // Second-line datapoints live outside the entry subscription below: they take no
+    // part in sorting or the statistics line, so they get their own read-only
+    // subscription (same hook the value widget uses for its template datapoints).
+    // Filter presets and the free-text search DO read them - see utils/listFilter.
+    const subDpRefs = useMemo(
+        () => [...new Set(entries.flatMap((e) => (e.subDps ?? []).map((s) => s?.id).filter(Boolean) as string[]))],
+        [entries],
+    );
+    const subValues = useTemplateValues(subDpRefs);
     const [states, setStates] = useState<Record<string, ioBrokerState | null>>({});
+
+    // ── Conditional formatting (issue #572) ──────────────────────────────────
+    // One hook for the whole list — rows and their second-line datapoints alike.
+    // Per row the list-wide rules come first and the entry's own ones after, so the
+    // entry wins per field simply by being later in the array.
+    const condItems = useMemo<ElementCondInput[]>(() => {
+        const listRules = opts.rowConditions ?? [];
+        const out: ElementCondInput[] = [];
+        for (const e of entries) {
+            const rules = e.conditions?.length ? [...listRules, ...e.conditions] : listRules;
+            // `in`, not a truthy value: a datapoint that answered with null is loaded
+            // too, and the message effect must not read that as "still waiting".
+            if (rules.length)
+                out.push({
+                    key: e.id,
+                    dp: e.id,
+                    value: states[e.id]?.val ?? null,
+                    loaded: e.id in states,
+                    rules,
+                });
+            for (const sub of e.subDps ?? []) {
+                if (!sub?.id || !sub.conditions?.length) continue;
+                out.push({
+                    key: subCondKey(e.id, sub.id),
+                    dp: sub.id,
+                    value: subValues[sub.id] ?? null,
+                    rules: sub.conditions,
+                });
+            }
+        }
+        return out;
+    }, [entries, opts.rowConditions, states, subValues]);
+    const conds = useElementConditionStyles(condItems);
+
+    const subLineFor = (entry: StaticListEntry) =>
+        entry.subDps?.some((s) => !!s?.id) ? (
+            <EntrySubLine
+                subDps={entry.subDps}
+                values={subValues}
+                listTransform={opts}
+                decimals={defaultDecimals}
+                numFmt={globalNumFmt}
+                entryId={entry.id}
+                conds={conds}
+            />
+        ) : null;
     const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
     const [resolvedRooms, setResolvedRooms] = useState<Record<string, string[]>>({});
-    const [showFilter, setShowFilter] = useState(false);
     const [lastChangedTs, setLastChangedTs] = useState(0);
     // Frontend filter is a per-viewer runtime toggle held in local state — it is
     // NOT persisted back to config. The read-only frontend runs useConfigSync with
@@ -492,22 +789,29 @@ export function ListWidget({ config, editMode }: WidgetProps) {
     // would be overwritten on the next sync and reset the filter. Local-only state
     // applies instantly and survives syncs; the effect only adopts the admin-set
     // default on load / when the admin genuinely changes it.
-    const [viewFilter, setViewFilter] = useState<FilterMode>((opts.valueFilter ?? 'all') as FilterMode);
+    const [viewFilter, setViewFilter] = useState<string>(opts.valueFilter ?? 'all');
     useEffect(() => {
-        setViewFilter((opts.valueFilter ?? 'all') as FilterMode);
+        setViewFilter(opts.valueFilter ?? 'all');
     }, [opts.valueFilter]);
+    // Free-text search: same reasoning as the filter mode — per viewer, never persisted.
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Subscribe to all entry states — keyed on entryKey only, no prevKey guard.
     // A prevKey ref survives the StrictMode mount→unmount→remount cycle and would
     // make the remount skip re-subscribing after the unmount cleaned up, leaving
     // the list with zero live subscriptions in dev.
-    const entryKey = entries.map((e) => e.id).join(',');
+    // A switch entry may read its state from a separate status datapoint (Tasmota &
+    // co.) — those ids go into the same states map, so every layout (incl. the badges,
+    // which draw no control of their own) sees the feedback value.
+    const statusIds = [...new Set(entries.flatMap(entryExtraDps))].filter((id) => !entries.some((e) => e.id === id));
+    const entryKey = [...entries.map((e) => e.id), ...statusIds].join(',');
     useEffect(() => {
         if (entries.length === 0) return;
-        entries.forEach((e) => getState(e.id).then((s) => setStates((prev) => ({ ...prev, [e.id]: s }))));
-        const unsubs = entries.map((e) =>
-            subscribe(e.id, (s) => {
-                setStates((prev) => ({ ...prev, [e.id]: s }));
+        const subIds = [...entries.map((e) => e.id), ...statusIds];
+        subIds.forEach((id) => getState(id).then((s) => setStates((prev) => ({ ...prev, [id]: s }))));
+        const unsubs = subIds.map((id) =>
+            subscribe(id, (s) => {
+                setStates((prev) => ({ ...prev, [id]: s }));
                 if (s) setLastChangedTs((prev) => Math.max(prev, s.lc > 0 ? s.lc : s.ts));
             }),
         );
@@ -522,9 +826,10 @@ export function ListWidget({ config, editMode }: WidgetProps) {
         return () => unsubs.forEach((u) => u());
     }, [entryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Resolve rooms for showRoom display
+    // Resolve rooms for showRoom display — and for a <Raum> token in the name pattern.
+    const patternNeedsRoom = /<Raum>/i.test(opts.namePattern ?? '');
     useEffect(() => {
-        if (!opts.showRoom || entries.length === 0) return;
+        if ((!opts.showRoom && !patternNeedsRoom) || entries.length === 0) return;
         getObjectViewDirect('enum', 'enum.rooms.', 'enum.rooms.\u9999').then((result) => {
             const memberRooms = new Map<string, string[]>();
             for (const { value: obj } of result.rows) {
@@ -549,88 +854,137 @@ export function ListWidget({ config, editMode }: WidgetProps) {
             }
             setResolvedRooms(map);
         });
-    }, [opts.showRoom, entryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [opts.showRoom, patternNeedsRoom, entryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const getLabel = (entry: StaticListEntry) =>
+    // Label pipeline: composed name → name pattern (incl. the `{{parent}}` variables) →
+    // live `[[dp]]` values. The last step is a hook, so the raw labels of every entry are
+    // collected first and the resolver subscribes to all referenced datapoints at once.
+    const baseName = (entry: StaticListEntry) =>
         applyDpNameFilter(entry.label || resolvedNames[entry.id] || entry.id.split('.').pop() || entry.id);
+    const rawLabel = (entry: StaticListEntry) =>
+        formatItemName(
+            { id: entry.id, name: baseName(entry), room: resolvedRooms[entry.id]?.[0] },
+            opts.namePattern,
+            opts.nameFilters,
+        );
+    const resolveDpTokens = useDpTokenResolver(entries.map(rawLabel));
+    const getLabel = (entry: StaticListEntry) => {
+        const raw = rawLabel(entry);
+        if (!hasLiveToken(raw)) return raw;
+        const base = baseName(entry);
+        // 'Ergebnis' rules were deferred until the value was in — see finishItemName.
+        return finishItemName(resolveDpTokens(raw, base), opts.nameFilters, base);
+    };
 
     // Value filter (same logic as AutoListWidget) — driven by local state so
     // frontend clicks take effect immediately, not only after the config sync.
-    const valueFilter = viewFilter;
-    const filterLabels: Record<FilterMode, string> = {
-        all: 'Alle',
-        active: opts.filterActiveLabel || DEFAULT_filterLabels.active,
-        inactive: opts.filterInactiveLabel || DEFAULT_filterLabels.inactive,
-    };
+    // The menu holds the built-ins plus the admin's own presets; a mode that no
+    // longer exists (deleted preset) falls back to 'all' instead of hiding all rows.
+    const filterChoices = useMemo(() => buildFilterChoices(opts), [opts]);
+    const valueFilter = normalizeFilterMode(viewFilter, filterChoices);
+
+    // Everything a filter rule / the free-text search may look at for one row: the
+    // main value plus the second line's extra datapoints - which the old three modes
+    // could not reach at all, since they only asked "is the main value truthy?".
+    const filterRow = (entry: StaticListEntry): ListFilterRow => ({
+        id: entry.id,
+        label: getLabel(entry),
+        value: states[entry.id]?.val ?? null,
+        subs: (entry.subDps ?? [])
+            .filter((s) => !!s?.id)
+            .map((s) => ({ id: s.id, label: s.label, value: subValues[s.id] ?? null })),
+    });
 
     // In editMode the Aura admin view honors a separate backendValueFilter so
     // the editor preview can show what users will see (e.g. only active entries).
-    const backendValueFilter = (opts.backendValueFilter ?? 'all') as FilterMode;
-    const effectiveFilter: FilterMode = editMode ? backendValueFilter : valueFilter;
+    const backendValueFilter = opts.backendValueFilter ?? 'all';
+    const effectiveFilter = editMode ? backendValueFilter : valueFilter;
+    // The search is a frontend-only affordance; the editor preview ignores it. A term
+    // typed before the admin hid the field (or the whole chip) is dropped too -
+    // otherwise it would keep filtering with no way left to clear it.
+    const searchReachable = !opts.hideFilterSearch && !opts.hideFilterButton;
+    const effectiveSearch = editMode || !searchReachable ? '' : searchTerm;
 
+    // Rows are keyed `${entry.id}#${index}`, not by the id alone: two rows on the
+    // same datapoint (or two separators, which carry no id of their own) are a
+    // configuration anybody can write, and duplicate keys left React with ghost
+    // rows from the previous configuration on every edit. The order is the
+    // configured one, so the index is stable identity here.
     const visibleEntries = useMemo(() => {
+        // A separator is chrome, not data: it passes every value filter and the search,
+        // and is dropped afterwards only if its section ended up empty.
         let result =
-            effectiveFilter === 'all'
-                ? entries
-                : entries.filter((e) => {
-                      const val = states[e.id]?.val ?? null;
-                      if (val === null) return false;
-                      return effectiveFilter === 'active' ? isActive(val) : !isActive(val);
+            effectiveFilter === 'all' && !effectiveSearch.trim()
+                ? rows
+                : rows.filter((e) => {
+                      if (isDivider(e)) return true;
+                      const row = filterRow(e);
+                      return (
+                          matchesFilterMode(effectiveFilter, opts.filterPresets, row) &&
+                          matchesSearch(row, effectiveSearch)
+                      );
                   });
-        const sortBy = opts.sortBy ?? 'none';
-        const sortOrder = opts.sortOrder ?? 'asc';
-        const sortBy2 = opts.sortBy2 ?? 'none';
-        const sortOrder2 = opts.sortOrder2 ?? 'asc';
-        if (sortBy !== 'none') {
-            const cmpFor = (key: 'label' | 'value', a: StaticListEntry, b: StaticListEntry) =>
-                key === 'label'
-                    ? getLabel(a).localeCompare(getLabel(b), undefined, { numeric: true, sensitivity: 'base' })
-                    : compareVals(states[a.id]?.val ?? null, states[b.id]?.val ?? null);
-            result = [...result].sort((a, b) => {
-                const cmp1 = cmpFor(sortBy, a, b);
-                if (cmp1 !== 0) return sortOrder === 'desc' ? -cmp1 : cmp1;
-                if (sortBy2 !== 'none' && sortBy2 !== sortBy) {
-                    const cmp2 = cmpFor(sortBy2, a, b);
-                    return sortOrder2 === 'desc' ? -cmp2 : cmp2;
-                }
-                return 0;
-            });
+        // The rule chain (or the legacy sortBy pair mapped onto it) — the row it reads
+        // is the one the filters see, built once per entry rather than per comparison.
+        const cmp = makeSortComparator(effectiveSortRules(opts), filterRow, (e) => e.id);
+        if (cmp) result = sortWithinSections(result, cmp);
+        return pruneEmptySections(result);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        rows,
+        states,
+        subValues,
+        effectiveFilter,
+        effectiveSearch,
+        opts.filterPresets,
+        opts.sortRules,
+        opts.sortBy,
+        opts.sortOrder,
+        opts.sortBy2,
+        opts.sortOrder2,
+        resolvedNames,
+    ]);
+
+    // Compact is a two-column grid and styles its cells by index parity. A separator spans
+    // both columns and therefore restarts the grid row, so the column has to be counted
+    // rather than derived from the index - otherwise the cell borders sit on the wrong
+    // side after a separator.
+    const compactCols = useMemo(() => {
+        const cols: number[] = [];
+        let c = 0;
+        for (const e of visibleEntries) {
+            if (isDivider(e)) {
+                cols.push(0);
+                c = 0;
+            } else cols.push(c++ % 2);
         }
-        return result;
-    }, [entries, states, effectiveFilter, opts.sortBy, opts.sortOrder, opts.sortBy2, opts.sortOrder2, resolvedNames]); // eslint-disable-line react-hooks/exhaustive-deps
+        return cols;
+    }, [visibleEntries]);
 
     // Count published to ioBroker state = view-mode count using the frontend valueFilter,
-    // independent from backendValueFilter (which only affects the editor preview).
+    // independent from backendValueFilter (which only affects the editor preview) and
+    // from the free-text search (a per-viewer, transient narrowing).
     const viewCount = useMemo(() => {
         if (valueFilter === 'all') return entries.length;
-        return entries.filter((e) => {
-            const val = states[e.id]?.val ?? null;
-            if (val === null) return false;
-            return valueFilter === 'active' ? isActive(val) : !isActive(val);
-        }).length;
-    }, [entries, states, valueFilter]);
+        return entries.filter((e) => matchesFilterMode(valueFilter, opts.filterPresets, filterRow(e))).length;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entries, states, subValues, valueFilter, opts.filterPresets]);
 
     useEffect(() => {
         if (!opts.publishCount) return;
-        publishListCount(config.id, config.title || 'Statische Liste', viewCount);
-    }, [opts.publishCount, viewCount, config.id, config.title]);
+        // The published name is a plain string — [[dp]] tokens are a display feature.
+        // `config.title` is deliberately NOT a dependency: it only names the object on
+        // the first publish, and a title with a live token would otherwise re-fire this
+        // effect (and rewrite the unchanged count) on every value change.
+        publishListCount(config.id, stripDpTokens(config.title || '') || 'Statische Liste', viewCount);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [opts.publishCount, viewCount, config.id]);
 
-    // Sum of numeric values from visible entries (single shared unit assumed —
-    // first encountered unit wins; entries with non-numeric values are skipped).
-    const sumInfo = useMemo(() => {
-        if (!opts.showSum) return null;
-        let sum = 0;
-        let unit: string | undefined;
-        let count = 0;
-        for (const e of visibleEntries) {
-            const v = states[e.id]?.val;
-            if (typeof v !== 'number' || !isFinite(v)) continue;
-            sum += v;
-            count++;
-            if (unit === undefined && e.unit) unit = e.unit;
-        }
-        return count > 0 ? { sum, unit, count } : null;
-    }, [opts.showSum, visibleEntries, states]);
+    // Aggregate (sum / avg / min / max) of numeric values from visible entries.
+    const sumInfo = useMemo(
+        () => (opts.showSum ? computeListStats(visibleEntries, states, opts) : null),
+        [visibleEntries, states, opts],
+    );
 
     useEffect(() => {
         if (opts.publishCount) return;
@@ -717,21 +1071,28 @@ export function ListWidget({ config, editMode }: WidgetProps) {
             : null;
 
     const layout = config.layout ?? 'default';
+    // 'custom' is no longer offered for lists (utils/widgetLayouts NO_CUSTOM) and is
+    // undocumented - the branch stays so dashboards that stored it keep rendering.
     if (layout === 'custom') return <CustomGridView config={config} value="" />;
 
     const wrap = !!opts.wrapText;
     const labelWrapCls = wrap ? 'break-words [overflow-wrap:anywhere]' : 'truncate';
+    // Auto-height mode drops the fill-and-scroll classes so the list grows naturally.
+    const rootHCls = autoHeight ? '' : 'h-full';
+    const fillCls = autoHeight ? '' : 'aura-scroll flex-1 overflow-auto min-h-0';
+    const fillClsY = autoHeight ? '' : 'aura-scroll flex-1 overflow-y-auto min-h-0';
     const labelMinPct = Math.max(10, Math.min(90, opts.labelMinPercent ?? 50));
     const valueMaxPct = 100 - labelMinPct;
     const labelContainerStyle: React.CSSProperties | undefined = wrap ? { minWidth: `${labelMinPct}%` } : undefined;
 
-    const globalThresholds = o.colorThresholds as [number, string][] | undefined;
+    const globalThresholds = opts.colorThresholds;
     const globalActiveColor = opts.activeColor || 'var(--accent-green)';
     const globalInactiveColor = opts.inactiveColor || 'var(--text-secondary)';
     const globalActiveBg = opts.activeBg;
     const globalInactiveBg = opts.inactiveBg;
     const showDividers = opts.showDividers ?? true;
     const HeaderIcon = getWidgetIcon(o.icon as string | undefined, List);
+    const statsAlign = opts.sumAlign ?? 'left';
 
     // ── Shared header ──────────────────────────────────────────────────────────
     const header =
@@ -748,13 +1109,20 @@ export function ListWidget({ config, editMode }: WidgetProps) {
                             style={{ color: 'var(--text-secondary)' }}
                         />
                     )}
-                    <div className="flex-1 min-w-0">
+                    {/* Title and stats share one line: the title shrinks/truncates, the stats
+                        keep their natural width. sumAlign 'left' parks them right after the
+                        title, 'center'/'right' lets the stats box take the rest of the row. */}
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
                         {showTitle && (
                             <p
-                                className="aura-widget-title text-xs font-semibold truncate"
+                                className="aura-widget-title text-xs font-semibold truncate min-w-0"
                                 style={{
                                     color: 'var(--text-secondary)',
                                     textAlign: titleAlign as React.CSSProperties['textAlign'],
+                                    // A shrink-to-fit box would swallow textAlign, so the
+                                    // title only keeps its natural width while it is left
+                                    // aligned and the stats want to sit right behind it.
+                                    flex: titleAlign === 'left' && statsAlign === 'left' ? '0 1 auto' : '1 1 auto',
                                 }}
                             >
                                 {config.title || 'Statische Liste'}
@@ -767,75 +1135,38 @@ export function ListWidget({ config, editMode }: WidgetProps) {
                             </p>
                         )}
                         {opts.showSum && sumInfo && (
-                            <p
-                                className="tabular-nums truncate"
-                                style={{
-                                    color: 'var(--text-secondary)',
-                                    opacity: 0.75,
-                                    textAlign: (opts.sumAlign ?? 'left') as React.CSSProperties['textAlign'],
-                                    fontSize: `${opts.sumFontSize ?? 10}px`,
-                                }}
+                            <div
+                                className="min-w-0"
+                                style={{ flex: showTitle && statsAlign === 'left' ? '0 1 auto' : '1 1 auto' }}
                             >
-                                {opts.sumLabel ?? 'Σ'} {formatNum(sumInfo.sum, defaultDecimals)}
-                                {sumInfo.unit ? ` ${sumInfo.unit}` : ''}
-                            </p>
+                                <StatLine
+                                    stats={sumInfo}
+                                    selected={opts.sumStats}
+                                    labels={opts.statLabels}
+                                    icons={opts.statIcons}
+                                    sumLabel={opts.sumLabel}
+                                    decimals={defaultDecimals}
+                                    numFmt={globalNumFmt}
+                                    align={statsAlign}
+                                    fontSize={opts.sumFontSize ?? 10}
+                                />
+                            </div>
                         )}
                     </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                     {masterSwitch}
                     {!opts.hideFilterButton && (
-                        <div className="relative shrink-0">
-                            <button
-                                onClick={() => setShowFilter((v) => !v)}
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] hover:opacity-80"
-                                style={{
-                                    background:
-                                        valueFilter !== 'all'
-                                            ? 'color-mix(in srgb, var(--accent) 15%, transparent)'
-                                            : 'transparent',
-                                    color: valueFilter !== 'all' ? 'var(--accent)' : 'var(--text-secondary)',
-                                    border: `1px solid ${valueFilter !== 'all' ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'transparent'}`,
-                                }}
-                                title="Filter"
-                            >
-                                <Filter size={10} />
-                                {valueFilter !== 'all' && <span>{filterLabels[valueFilter]}</span>}
-                            </button>
-                            {showFilter && (
-                                <>
-                                    <div className="fixed inset-0 z-10" onClick={() => setShowFilter(false)} />
-                                    <div
-                                        className="absolute right-0 top-6 rounded-lg shadow-xl z-20 overflow-hidden min-w-[110px]"
-                                        style={{
-                                            background: 'var(--app-surface)',
-                                            border: '1px solid var(--app-border)',
-                                        }}
-                                    >
-                                        {(Object.keys(filterLabels) as FilterMode[]).map((mode) => (
-                                            <button
-                                                key={mode}
-                                                onClick={() => {
-                                                    setViewFilter(mode);
-                                                    setShowFilter(false);
-                                                }}
-                                                className="w-full px-3 py-2 text-xs text-left hover:opacity-80"
-                                                style={{
-                                                    background:
-                                                        valueFilter === mode
-                                                            ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
-                                                            : 'transparent',
-                                                    color:
-                                                        valueFilter === mode ? 'var(--accent)' : 'var(--text-primary)',
-                                                }}
-                                            >
-                                                {filterLabels[mode]}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                        <ListFilterChip
+                            choices={filterChoices}
+                            value={valueFilter}
+                            onChange={setViewFilter}
+                            search={searchTerm}
+                            onSearchChange={setSearchTerm}
+                            showSearch={!opts.hideFilterSearch}
+                            searchPlaceholder={opts.filterSearchPlaceholder}
+                            label={filterModeLabel(valueFilter, filterChoices)}
+                        />
                     )}
                 </div>
             </div>
@@ -846,9 +1177,11 @@ export function ListWidget({ config, editMode }: WidgetProps) {
             <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
                 {entries.length === 0
                     ? `Noch keine Datenpunkte.${editMode ? ' Bearbeiten → Datenpunkt hinzufügen.' : ''}`
-                    : valueFilter === 'active'
-                      ? 'Alle Datenpunkte inaktiv.'
-                      : 'Alle Datenpunkte aktiv.'}
+                    : filterEmptyText(
+                          effectiveFilter,
+                          effectiveSearch,
+                          filterModeLabel(effectiveFilter, filterChoices),
+                      )}
             </p>
         </div>
     );
@@ -856,12 +1189,13 @@ export function ListWidget({ config, editMode }: WidgetProps) {
     // ── KACHELN (card) ─────────────────────────────────────────────────────────
     if (layout === 'card') {
         return (
-            <div className="aura-widget-row relative flex flex-col h-full">
+            <div className={`aura-widget-row relative flex flex-col ${rootHCls}`}>
                 {header}
                 {empty}
+                {rowPopup.node}
                 {visibleEntries.length > 0 && (
                     <div
-                        className="aura-scroll flex-1 overflow-auto min-h-0 p-2"
+                        className={`${fillCls} p-2`}
                         style={{
                             display: 'grid',
                             gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
@@ -869,48 +1203,103 @@ export function ListWidget({ config, editMode }: WidgetProps) {
                             alignContent: 'start',
                         }}
                     >
-                        {visibleEntries.map((entry) => {
+                        {visibleEntries.map((entry, i) => {
+                            // A separator is a row like any other - it just renders as a rule.
+                            if (isDivider(entry))
+                                return (
+                                    <SectionBreak
+                                        key={`${entry.id}#${i}`}
+                                        entry={entry}
+                                        variant="grid"
+                                        first={i === 0}
+                                    />
+                                );
                             const val = states[entry.id]?.val ?? null;
+                            const rc = conds.get(entry.id);
+                            if (rowHidden(rc)) return null;
+                            const cIcon = partOf(rc, 'icon');
+                            const cName = partOf(rc, 'name');
+                            const cValue = partOf(rc, 'value');
                             const label = getLabel(entry);
-                            const EntryIcon = entry.icon ? getWidgetIcon(entry.icon, null!) : null;
+                            const iconName = cIcon.icon ?? entry.icon;
+                            const EntryIcon = iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
                             const eOn = isActive(val);
                             const entryActiveColor = entry.activeColor || globalActiveColor;
                             const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
                             const stateBg =
-                                (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg) ||
+                                (rc?.row?.bg ??
+                                    (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg)) ||
                                 'var(--app-bg)';
-                            const entryIconSize = entry.iconSize ?? 11;
+                            const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? 11;
                             const entryFontSize = entry.fontSize;
                             const lcTs = entry.showLastChange ? states[entry.id]?.lc || states[entry.id]?.ts || 0 : 0;
+                            const rowProps = rowPopup.row(
+                                entry.id,
+                                label,
+                                { role: entry.role },
+                                entry.clickAction,
+                                entry.popupTitle,
+                                entry.popupHideTitle,
+                            );
                             return (
                                 <div
-                                    key={entry.id}
+                                    key={`${entry.id}#${i}`}
                                     className="rounded-xl p-2.5 flex flex-col gap-2 relative"
-                                    style={{ background: stateBg, border: '1px solid var(--widget-border)' }}
+                                    style={{
+                                        background: stateBg,
+                                        animation: condAnimation(rc?.row),
+                                        border: '1px solid var(--widget-border)',
+                                        cursor: rowProps ? 'pointer' : undefined,
+                                    }}
+                                    {...rowProps}
                                 >
                                     <span
                                         className={`flex items-center gap-1 leading-tight ${labelWrapCls}${entryFontSize ? '' : ' text-[10px]'}`}
-                                        style={{ color: 'var(--text-secondary)', fontSize: entryFontSize ?? undefined }}
+                                        style={{
+                                            color: cName.color ?? 'var(--text-secondary)',
+                                            fontSize: cName.fontSize ?? entryFontSize ?? undefined,
+                                            fontWeight: cName.bold ? 700 : undefined,
+                                            fontStyle: cName.italic ? 'italic' : undefined,
+                                            animation: condAnimation(cName),
+                                        }}
                                     >
-                                        {EntryIcon && <EntryIcon size={entryIconSize} className="shrink-0" />}
-                                        {label}
+                                        {EntryIcon && (
+                                            <EntryIcon
+                                                size={entryIconSize}
+                                                className="shrink-0"
+                                                style={{
+                                                    color: cIcon.iconColor ?? cIcon.color ?? 'var(--text-secondary)',
+                                                    animation: condAnimation(cIcon),
+                                                }}
+                                            />
+                                        )}
+                                        {!cName.hide && (cName.text ?? label)}
                                     </span>
                                     <div className="flex items-center justify-center">
                                         <EntryValue
+                                            cond={cValue}
                                             entry={entry}
                                             val={val}
+                                            statusVal={states[switchStatusDp(entry)]?.val}
+                                            lockVal={states[(entry.contactLockDp ?? '').trim()]?.val}
+                                            presetsJson={states[(entry.presetsDp ?? '').trim()]?.val}
+                                            dpStates={states}
                                             writable={entry.writable !== false}
                                             setState={setState}
                                             globalThresholds={globalThresholds}
                                             decimals={entry.decimals ?? defaultDecimals}
+                                            numFmt={entry.numberFormat ?? globalNumFmt}
                                             activeColor={entryActiveColor}
                                             inactiveColor={entryInactiveColor}
                                             trueText={opts.trueText}
                                             falseText={opts.falseText}
                                             wrap={wrap}
                                             valueMaxPct={valueMaxPct}
+                                            listTransform={opts}
+                                            card
                                         />
                                     </div>
+                                    {subLineFor(entry)}
                                     {lcTs > 0 && (
                                         <div
                                             className="aura-last-change text-[9px] truncate text-center"
@@ -935,82 +1324,128 @@ export function ListWidget({ config, editMode }: WidgetProps) {
     // ── KOMPAKT (compact) — 2-column dense list ────────────────────────────────
     if (layout === 'compact') {
         return (
-            <div className="aura-widget-row relative flex flex-col h-full">
+            <div className={`aura-widget-row relative flex flex-col ${rootHCls}`}>
                 {header}
                 {empty}
+                {rowPopup.node}
                 {visibleEntries.length > 0 && (
                     <div
-                        className="aura-scroll flex-1 overflow-auto min-h-0"
+                        className={fillCls}
                         style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', alignContent: 'start' }}
                     >
                         {visibleEntries.map((entry, i) => {
+                            // A separator is a row like any other - it just renders as a rule.
+                            if (isDivider(entry))
+                                return (
+                                    <SectionBreak
+                                        key={`${entry.id}#${i}`}
+                                        entry={entry}
+                                        variant="grid"
+                                        first={i === 0}
+                                    />
+                                );
                             const val = states[entry.id]?.val ?? null;
+                            const rc = conds.get(entry.id);
+                            if (rowHidden(rc)) return null;
+                            const cIcon = partOf(rc, 'icon');
+                            const cName = partOf(rc, 'name');
+                            const cValue = partOf(rc, 'value');
                             const label = getLabel(entry);
-                            const isRight = i % 2 === 1;
-                            const EntryIcon = entry.icon ? getWidgetIcon(entry.icon, null!) : null;
+                            // Counted, not i % 2: a section break spans both columns and
+                            // starts a fresh grid row (see compactCols).
+                            const isRight = compactCols[i] === 1;
+                            const iconName = cIcon.icon ?? entry.icon;
+                            const EntryIcon = iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
                             const eOn = isActive(val);
                             const entryActiveColor = entry.activeColor || globalActiveColor;
                             const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
-                            const stateBg = eOn
-                                ? entry.activeBg || globalActiveBg
-                                : entry.inactiveBg || globalInactiveBg;
-                            const entryIconSize = entry.iconSize ?? 11;
+                            const stateBg =
+                                rc?.row?.bg ??
+                                (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg);
+                            const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? 11;
                             const entryFontSize = entry.fontSize;
                             const lcTs = entry.showLastChange ? states[entry.id]?.lc || states[entry.id]?.ts || 0 : 0;
+                            const rowProps = rowPopup.row(
+                                entry.id,
+                                label,
+                                { role: entry.role },
+                                entry.clickAction,
+                                entry.popupTitle,
+                                entry.popupHideTitle,
+                            );
                             return (
                                 <div
-                                    key={entry.id}
-                                    className="flex items-center gap-1.5 px-2 py-1.5"
+                                    key={`${entry.id}#${i}`}
+                                    className="flex flex-col gap-1 px-2 py-1.5"
                                     style={{
                                         background: stateBg,
+                                        animation: condAnimation(rc?.row),
                                         borderBottom: showDividers ? '1px solid var(--widget-border)' : undefined,
                                         borderLeft:
                                             showDividers && isRight ? '1px solid var(--widget-border)' : undefined,
+                                        cursor: rowProps ? 'pointer' : undefined,
                                     }}
+                                    {...rowProps}
                                 >
-                                    {EntryIcon && (
-                                        <EntryIcon
-                                            size={entryIconSize}
-                                            className="shrink-0"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                        />
-                                    )}
-                                    <div className="flex-1 min-w-0" style={labelContainerStyle}>
-                                        <span
-                                            className={`block ${labelWrapCls}${entryFontSize ? '' : ' text-[11px]'}`}
-                                            style={{
-                                                color: 'var(--text-primary)',
-                                                fontSize: entryFontSize ?? undefined,
-                                            }}
-                                        >
-                                            {label}
-                                        </span>
-                                        {lcTs > 0 && (
-                                            <span
-                                                className="aura-last-change block text-[8px] truncate"
-                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                            >
-                                                {formatLastChange(
-                                                    t as (k: string, v?: Record<string, string | number>) => string,
-                                                    lcTs,
-                                                )}
-                                            </span>
+                                    <div className="flex items-center gap-1.5">
+                                        {EntryIcon && (
+                                            <EntryIcon
+                                                size={entryIconSize}
+                                                className="shrink-0"
+                                                style={{
+                                                    color: cIcon.iconColor ?? cIcon.color ?? 'var(--text-secondary)',
+                                                    animation: condAnimation(cIcon),
+                                                }}
+                                            />
                                         )}
+                                        <div className="flex-1 min-w-0" style={labelContainerStyle}>
+                                            <span
+                                                className={`block ${labelWrapCls}${entryFontSize ? '' : ' text-[11px]'}`}
+                                                style={{
+                                                    color: cName.color ?? 'var(--text-primary)',
+                                                    fontSize: cName.fontSize ?? entryFontSize ?? undefined,
+                                                    fontWeight: cName.bold ? 700 : undefined,
+                                                    fontStyle: cName.italic ? 'italic' : undefined,
+                                                    animation: condAnimation(cName),
+                                                }}
+                                            >
+                                                {!cName.hide && (cName.text ?? label)}
+                                            </span>
+                                            {lcTs > 0 && (
+                                                <span
+                                                    className="aura-last-change block text-[8px] truncate"
+                                                    style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                >
+                                                    {formatLastChange(
+                                                        t as (k: string, v?: Record<string, string | number>) => string,
+                                                        lcTs,
+                                                    )}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <EntryValue
+                                            cond={cValue}
+                                            entry={entry}
+                                            val={val}
+                                            statusVal={states[switchStatusDp(entry)]?.val}
+                                            lockVal={states[(entry.contactLockDp ?? '').trim()]?.val}
+                                            presetsJson={states[(entry.presetsDp ?? '').trim()]?.val}
+                                            dpStates={states}
+                                            writable={entry.writable !== false}
+                                            setState={setState}
+                                            globalThresholds={globalThresholds}
+                                            decimals={entry.decimals ?? defaultDecimals}
+                                            numFmt={entry.numberFormat ?? globalNumFmt}
+                                            activeColor={entryActiveColor}
+                                            inactiveColor={entryInactiveColor}
+                                            trueText={opts.trueText}
+                                            falseText={opts.falseText}
+                                            wrap={wrap}
+                                            valueMaxPct={valueMaxPct}
+                                            listTransform={opts}
+                                        />
                                     </div>
-                                    <EntryValue
-                                        entry={entry}
-                                        val={val}
-                                        writable={entry.writable !== false}
-                                        setState={setState}
-                                        globalThresholds={globalThresholds}
-                                        decimals={entry.decimals ?? defaultDecimals}
-                                        activeColor={entryActiveColor}
-                                        inactiveColor={entryInactiveColor}
-                                        trueText={opts.trueText}
-                                        falseText={opts.falseText}
-                                        wrap={wrap}
-                                        valueMaxPct={valueMaxPct}
-                                    />
+                                    {subLineFor(entry)}
                                 </div>
                             );
                         })}
@@ -1024,13 +1459,29 @@ export function ListWidget({ config, editMode }: WidgetProps) {
     // ── BADGES (minimal) — inline pill per entry ───────────────────────────────
     if (layout === 'minimal') {
         return (
-            <div className="aura-widget-row relative flex flex-col h-full">
+            <div className={`aura-widget-row relative flex flex-col ${rootHCls}`}>
                 {header}
                 {empty}
+                {rowPopup.node}
                 {visibleEntries.length > 0 && (
-                    <div className="aura-scroll flex-1 overflow-auto min-h-0 p-2 flex flex-wrap gap-1.5 content-start">
-                        {visibleEntries.map((entry) => {
+                    <div className={`${fillCls} p-2 flex flex-wrap gap-1.5 content-start`}>
+                        {visibleEntries.map((entry, i) => {
+                            // A separator is a row like any other - it just renders as a rule.
+                            if (isDivider(entry))
+                                return (
+                                    <SectionBreak
+                                        key={`${entry.id}#${i}`}
+                                        entry={entry}
+                                        variant="wrap"
+                                        first={i === 0}
+                                    />
+                                );
                             const val = states[entry.id]?.val ?? null;
+                            const rc = conds.get(entry.id);
+                            if (rowHidden(rc)) return null;
+                            const cIcon = partOf(rc, 'icon');
+                            const cName = partOf(rc, 'name');
+                            const cValue = partOf(rc, 'value');
                             const label = getLabel(entry);
                             const writable = entry.writable !== false;
                             const trueLabel = entry.trueLabel ?? opts.trueText;
@@ -1045,42 +1496,108 @@ export function ListWidget({ config, editMode }: WidgetProps) {
                                 displayType === 'value' ||
                                 displayType === 'slider' ||
                                 NON_TOGGLE_DISPLAY_TYPES.has(displayType);
+                            // Multi-state mapping (window handle etc.): match the value to a
+                            // configured state so the badge shows its label + color.
+                            const stateMatch = displayType === 'states' ? matchStateMap(entry.states, val) : undefined;
+                            // Window/door contact mapping (HmIP/Boolean/… → closed/tilted/open).
+                            const contactMatch =
+                                displayType === 'contact' ? resolveContactDisplay(entry, val) : undefined;
+                            // The contact's lock datapoint rides along as its own small padlock.
+                            const lockState =
+                                displayType === 'contact'
+                                    ? contactLocked(entry, states[(entry.contactLockDp ?? '').trim()]?.val)
+                                    : null;
+                            // Display-only conversion / time format (per DP or list-wide).
+                            const disp = entryValueText(
+                                entry,
+                                opts,
+                                val,
+                                entry.decimals ?? defaultDecimals,
+                                entry.numberFormat ?? globalNumFmt,
+                                t,
+                            );
+                            // Time datapoint rendered as time/date instead of the raw value.
+                            // A datepicker entry has no room for its fields in a badge, so it
+                            // prints the picked value in the format it was written in.
+                            const timeText =
+                                displayType === 'time'
+                                    ? formatEntryTime(entry, disp.value, t)
+                                    : displayType === 'datepicker'
+                                      ? entryDateText(entry, val)
+                                      : null;
+                            // A badge draws no control: a select row prints the label of the
+                            // entry matching its value instead of the raw value.
+                            const selectText =
+                                displayType === 'select'
+                                    ? entrySelectLabel(entry, val, states[(entry.presetsDp ?? '').trim()]?.val)
+                                    : null;
                             const useRoleDisplay = !forceSwitch && !forceValue && isBoolLike && !hasLabels;
                             const roleDisplay = useRoleDisplay ? getRoleDisplay(entry.role, val) : null;
-                            const truthy = on || (typeof val === 'number' && val > 0);
-                            const switchActive = forceSwitch ? truthy : isBoolLike && on;
-                            const valueStr = roleDisplay
-                                ? roleDisplay.label
-                                : forceSwitch || (isBoolLike && hasLabels)
-                                  ? switchActive
-                                      ? trueLabel || 'AN'
-                                      : falseLabel || 'AUS'
-                                  : val != null
-                                    ? `${String(val)}${entry.unit ? `\u202f${entry.unit}` : ''}`
-                                    : '–';
+                            // A badge draws no control, so it evaluates the switch itself —
+                            // through the shared rule, so status DP, write values and the
+                            // condition mode work here exactly as in the other layouts.
+                            const switchStatusVal = states[switchStatusDp(entry)]?.val;
+                            const switchActive = forceSwitch
+                                ? switchEntryActive(entry, switchReadValue(entry, val, switchStatusVal), entry.id)
+                                : isBoolLike && on;
+                            // Untouched entries keep printing the raw value unrounded —
+                            // that is the badge's established look.
+                            const plainText = disp.active ? disp.text : val != null ? String(val) : null;
+                            const valueStr =
+                                timeText ??
+                                selectText ??
+                                (contactMatch
+                                    ? contactMatch.label
+                                    : stateMatch
+                                      ? (stateMatch.label ?? String(stateMatch.value))
+                                      : roleDisplay
+                                        ? roleDisplay.label
+                                        : forceSwitch || (isBoolLike && hasLabels)
+                                          ? switchActive
+                                              ? trueLabel || 'AN'
+                                              : falseLabel || 'AUS'
+                                          : plainText != null
+                                            ? `${plainText}${entry.unit && !disp.isTime ? `\u202f${entry.unit}` : ''}`
+                                            : '–');
                             const threshColor =
                                 !switchActive && !roleDisplay
-                                    ? getThresholdColor(val, entry.colorThresholds ?? globalThresholds)
+                                    ? getThresholdColor(
+                                          disp.value,
+                                          entry.colorThresholds?.length ? entry.colorThresholds : globalThresholds,
+                                      )
                                     : null;
                             const entryActiveColor = entry.activeColor || globalActiveColor;
                             const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
                             const eOn = isActive(val);
-                            const stateBg = eOn
-                                ? entry.activeBg || globalActiveBg
-                                : entry.inactiveBg || globalInactiveBg;
-                            const pillColor =
-                                threshColor ??
-                                (roleDisplay
-                                    ? roleDisplay.color
-                                    : switchActive
-                                      ? entryActiveColor
-                                      : hasLabels
-                                        ? entryInactiveColor
-                                        : null);
-                            const EntryIcon = entry.icon ? getWidgetIcon(entry.icon, null!) : null;
+                            const stateBg =
+                                rc?.row?.bg ??
+                                (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg);
+                            const pillColor = contactMatch
+                                ? contactMatch.color
+                                : stateMatch
+                                  ? (stateMatch.color ?? null)
+                                  : (threshColor ??
+                                    (roleDisplay
+                                        ? roleDisplay.color
+                                        : switchActive
+                                          ? entryActiveColor
+                                          : hasLabels
+                                            ? entryInactiveColor
+                                            : null));
+                            // A rule wins, then the display-type mapping, then the row icon —
+                            // the same order the dynamic list's badge uses.
+                            const EntryIcon = cIcon.hide
+                                ? null
+                                : cIcon.icon
+                                  ? getWidgetIcon(cIcon.icon, null!)
+                                  : contactMatch
+                                    ? getWidgetIcon(contactMatch.icon, null!)
+                                    : (stateMatch?.icon ?? entry.icon)
+                                      ? getWidgetIcon(stateMatch?.icon ?? entry.icon, null!)
+                                      : null;
                             const clickable = writable && !roleDisplay && !forceValue && (forceSwitch || isBoolLike);
 
-                            const entryIconSize = entry.iconSize ?? 11;
+                            const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? 11;
                             const entryFontSize = entry.fontSize;
                             const lcTs = entry.showLastChange ? states[entry.id]?.lc || states[entry.id]?.ts || 0 : 0;
                             const lcText =
@@ -1090,15 +1607,30 @@ export function ListWidget({ config, editMode }: WidgetProps) {
                                           lcTs,
                                       )
                                     : '';
+                            // A badge is the whole row, so toggling and opening a popup would
+                            // collide: automatic mode only takes over badges without a toggle
+                            // of their own (sensors, read-only, numeric). An explicitly
+                            // configured action beats the toggle.
+                            const togglable = clickable && !rowPopup.explicit(entry.clickAction);
+                            const rowProps = togglable
+                                ? undefined
+                                : rowPopup.row(
+                                      entry.id,
+                                      label,
+                                      { role: entry.role },
+                                      entry.clickAction,
+                                      entry.popupTitle,
+                                      entry.popupHideTitle,
+                                  );
                             return (
                                 <button
-                                    key={entry.id}
-                                    onClick={() => {
-                                        if (!clickable) return;
+                                    key={`${entry.id}#${i}`}
+                                    {...rowProps}
+                                    onClick={(e) => {
+                                        if (!togglable) return rowProps?.onClick(e);
                                         if (forceSwitch) {
-                                            if (isBool) setState(entry.id, !truthy);
-                                            else if (typeof val === 'number') setState(entry.id, truthy ? 0 : 1);
-                                            else setState(entry.id, !truthy);
+                                            const w = switchWriteValues(entry, val);
+                                            setState(entry.id, switchActive ? w.off : w.on);
                                         } else if (isBool) setState(entry.id, !on);
                                         else if (isBoolLike) setState(entry.id, on ? 0 : 1);
                                     }}
@@ -1116,25 +1648,52 @@ export function ListWidget({ config, editMode }: WidgetProps) {
                                                 : 'var(--app-bg)'),
                                         color: pillColor ?? 'var(--text-secondary)',
                                         border: `1px solid ${stateBg ? 'transparent' : pillColor ? `color-mix(in srgb, ${pillColor} 34%, transparent)` : 'var(--widget-border)'}`,
-                                        cursor: clickable ? 'pointer' : 'default',
+                                        cursor: togglable || rowProps ? 'pointer' : 'default',
                                         fontSize: entryFontSize ?? undefined,
                                     }}
                                 >
-                                    {EntryIcon && <EntryIcon size={entryIconSize} className="shrink-0 opacity-70" />}
-                                    <span className="opacity-70 truncate" style={{ maxWidth: 80 }}>
-                                        {label}
-                                    </span>
+                                    {lockState !== null && <ContactLockBadge locked={lockState} />}
+                                    {EntryIcon && (
+                                        <EntryIcon
+                                            size={entryIconSize}
+                                            className="shrink-0 opacity-70"
+                                            style={{
+                                                color: cIcon.iconColor ?? cIcon.color,
+                                                animation: condAnimation(cIcon),
+                                            }}
+                                        />
+                                    )}
                                     <span
-                                        className="font-semibold tabular-nums"
+                                        className="opacity-70 truncate"
                                         style={{
-                                            color:
-                                                forceSwitch || isBoolLike || roleDisplay
-                                                    ? 'inherit'
-                                                    : 'var(--text-primary)',
+                                            maxWidth: 80,
+                                            color: cName.color,
+                                            fontSize: cName.fontSize,
+                                            fontWeight: cName.bold ? 700 : undefined,
+                                            fontStyle: cName.italic ? 'italic' : undefined,
+                                            animation: condAnimation(cName),
                                         }}
                                     >
-                                        {valueStr}
+                                        {!cName.hide && (cName.text ?? label)}
                                     </span>
+                                    {!cValue.hide && (
+                                        <span
+                                            className="font-semibold tabular-nums"
+                                            style={{
+                                                color:
+                                                    cValue.color ??
+                                                    (forceSwitch || isBoolLike || roleDisplay
+                                                        ? 'inherit'
+                                                        : 'var(--text-primary)'),
+                                                fontSize: cValue.fontSize,
+                                                fontWeight: cValue.bold ? 700 : undefined,
+                                                fontStyle: cValue.italic ? 'italic' : undefined,
+                                                animation: condAnimation(cValue),
+                                            }}
+                                        >
+                                            {cValue.text ?? valueStr}
+                                        </span>
+                                    )}
                                 </button>
                             );
                         })}
@@ -1147,88 +1706,132 @@ export function ListWidget({ config, editMode }: WidgetProps) {
 
     // ── STANDARD (default) — full-width rows ───────────────────────────────────
     return (
-        <div className="relative flex flex-col h-full">
+        <div className={`relative flex flex-col ${rootHCls}`}>
             {header}
             {empty}
+            {rowPopup.node}
             {visibleEntries.length > 0 && (
-                <div className="aura-scroll flex-1 overflow-y-auto min-h-0">
-                    {visibleEntries.map((entry) => {
+                <div className={fillClsY}>
+                    {visibleEntries.map((entry, i) => {
+                        // A separator is a row like any other - it just renders as a rule.
+                        if (isDivider(entry))
+                            return (
+                                <SectionBreak key={`${entry.id}#${i}`} entry={entry} variant="stack" first={i === 0} />
+                            );
                         const val = states[entry.id]?.val ?? null;
+                        const rc = conds.get(entry.id);
+                        if (rowHidden(rc)) return null;
+                        const cIcon = partOf(rc, 'icon');
+                        const cName = partOf(rc, 'name');
+                        const cValue = partOf(rc, 'value');
                         const label = getLabel(entry);
-                        const EntryIcon = entry.icon ? getWidgetIcon(entry.icon, null!) : null;
+                        const iconName = cIcon.icon ?? entry.icon;
+                        const EntryIcon = iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
                         const eOn = isActive(val);
                         const entryActiveColor = entry.activeColor || globalActiveColor;
                         const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
-                        const stateBg = eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg;
+                        const stateBg =
+                            rc?.row?.bg ??
+                            (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg);
 
-                        const entryIconSize = entry.iconSize ?? 13;
+                        const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? 13;
                         const entryFontSize = entry.fontSize;
                         const lcTs = entry.showLastChange ? states[entry.id]?.lc || states[entry.id]?.ts || 0 : 0;
+                        const rowProps = rowPopup.row(
+                            entry.id,
+                            label,
+                            { role: entry.role },
+                            entry.clickAction,
+                            entry.popupTitle,
+                            entry.popupHideTitle,
+                        );
                         return (
                             <div
-                                key={entry.id}
-                                className={`flex gap-2 px-3 py-2 ${wrap ? 'items-start' : 'items-center'}`}
+                                key={`${entry.id}#${i}`}
+                                className="flex flex-col gap-1 px-3 py-2"
                                 style={{
                                     background: stateBg,
+                                    animation: condAnimation(rc?.row),
                                     borderBottom: showDividers ? '1px solid var(--widget-border)' : undefined,
+                                    cursor: rowProps ? 'pointer' : undefined,
                                 }}
+                                {...rowProps}
                             >
-                                {EntryIcon && (
-                                    <EntryIcon
-                                        size={entryIconSize}
-                                        className="shrink-0 mt-0.5"
-                                        style={{ color: 'var(--text-secondary)' }}
-                                    />
-                                )}
-                                <div className="flex-1 min-w-0" style={labelContainerStyle}>
-                                    <div
-                                        className={`${labelWrapCls}${entryFontSize ? '' : ' text-xs'}`}
-                                        style={{ color: 'var(--text-primary)', fontSize: entryFontSize ?? undefined }}
-                                    >
-                                        {label}
+                                <div className={`flex gap-2 ${wrap ? 'items-start' : 'items-center'}`}>
+                                    {EntryIcon && (
+                                        <EntryIcon
+                                            size={entryIconSize}
+                                            className="shrink-0 mt-0.5"
+                                            style={{
+                                                color: cIcon.iconColor ?? cIcon.color ?? 'var(--text-secondary)',
+                                                animation: condAnimation(cIcon),
+                                            }}
+                                        />
+                                    )}
+                                    <div className="flex-1 min-w-0" style={labelContainerStyle}>
+                                        <div
+                                            className={`${labelWrapCls}${entryFontSize ? '' : ' text-xs'}`}
+                                            style={{
+                                                color: cName.color ?? 'var(--text-primary)',
+                                                fontSize: cName.fontSize ?? entryFontSize ?? undefined,
+                                                fontWeight: cName.bold ? 700 : undefined,
+                                                fontStyle: cName.italic ? 'italic' : undefined,
+                                                animation: condAnimation(cName),
+                                            }}
+                                        >
+                                            {!cName.hide && (cName.text ?? label)}
+                                        </div>
+                                        {opts.showRoom && (resolvedRooms[entry.id]?.join(', ') || null) && (
+                                            <div
+                                                className="text-[10px] truncate"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                {resolvedRooms[entry.id].join(', ')}
+                                            </div>
+                                        )}
+                                        {opts.showId && (
+                                            <div
+                                                className="text-[9px] truncate font-mono"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                {entry.id}
+                                            </div>
+                                        )}
+                                        {lcTs > 0 && (
+                                            <div
+                                                className="aura-last-change text-[9px] truncate"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {formatLastChange(
+                                                    t as (k: string, v?: Record<string, string | number>) => string,
+                                                    lcTs,
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                    {opts.showRoom && (resolvedRooms[entry.id]?.join(', ') || null) && (
-                                        <div
-                                            className="text-[10px] truncate"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                        >
-                                            {resolvedRooms[entry.id].join(', ')}
-                                        </div>
-                                    )}
-                                    {opts.showId && (
-                                        <div
-                                            className="text-[9px] truncate font-mono"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                        >
-                                            {entry.id}
-                                        </div>
-                                    )}
-                                    {lcTs > 0 && (
-                                        <div
-                                            className="aura-last-change text-[9px] truncate"
-                                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                        >
-                                            {formatLastChange(
-                                                t as (k: string, v?: Record<string, string | number>) => string,
-                                                lcTs,
-                                            )}
-                                        </div>
-                                    )}
+                                    <EntryValue
+                                        cond={cValue}
+                                        entry={entry}
+                                        val={val}
+                                        statusVal={states[switchStatusDp(entry)]?.val}
+                                        lockVal={states[(entry.contactLockDp ?? '').trim()]?.val}
+                                        presetsJson={states[(entry.presetsDp ?? '').trim()]?.val}
+                                        dpStates={states}
+                                        writable={entry.writable !== false}
+                                        setState={setState}
+                                        globalThresholds={globalThresholds}
+                                        decimals={entry.decimals ?? defaultDecimals}
+                                        numFmt={entry.numberFormat ?? globalNumFmt}
+                                        activeColor={entryActiveColor}
+                                        inactiveColor={entryInactiveColor}
+                                        trueText={opts.trueText}
+                                        falseText={opts.falseText}
+                                        wrap={wrap}
+                                        valueMaxPct={valueMaxPct}
+                                        listTransform={opts}
+                                    />
                                 </div>
-                                <EntryValue
-                                    entry={entry}
-                                    val={val}
-                                    writable={entry.writable !== false}
-                                    setState={setState}
-                                    globalThresholds={globalThresholds}
-                                    decimals={entry.decimals ?? defaultDecimals}
-                                    activeColor={entryActiveColor}
-                                    inactiveColor={entryInactiveColor}
-                                    trueText={opts.trueText}
-                                    falseText={opts.falseText}
-                                    wrap={wrap}
-                                    valueMaxPct={valueMaxPct}
-                                />
+                                {subLineFor(entry)}
                             </div>
                         );
                     })}

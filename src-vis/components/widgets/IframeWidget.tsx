@@ -5,10 +5,12 @@ import { useDatapoint } from '../../hooks/useDatapoint';
 import type { WidgetProps } from '../../types';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { resolveSandboxAttr, type SandboxPreset } from '../../utils/iframeSandbox';
+import { iframeScrollingAttr, resolveIframeInteractionMode } from '../../utils/iframeInteraction';
+import { useWakeReload } from '../../hooks/useWakeReload';
 
 const LOAD_TIMEOUT_MS = 8000;
 
-export function IframeWidget({ config }: WidgetProps) {
+export function IframeWidget({ config, onNeedsActionButton }: WidgetProps) {
     const opts = config.options ?? {};
     const urlMode = (opts.iframeUrlMode as string) ?? 'static';
     const rawIframeUrlDp = (opts.iframeUrlDp as string) ?? '';
@@ -21,7 +23,8 @@ export function IframeWidget({ config }: WidgetProps) {
     const useProxy = !!(opts.useProxy as boolean);
     const url = useProxy && rawUrl ? `/proxy?url=${encodeURIComponent(rawUrl)}` : rawUrl;
     const keepAlive = (opts.keepAlive as boolean) ?? false;
-    const allowInteraction = !!(opts.allowInteraction ?? true);
+    const reloadOnWake = (opts.reloadOnWake as boolean) ?? false;
+    const interactionMode = resolveIframeInteractionMode(opts);
     const refreshSeconds = (opts.refreshInterval as number) ?? 0;
     const sandboxEnabled = (opts.sandbox as boolean) ?? false;
     const sandboxPreset = opts.sandboxPreset as SandboxPreset | undefined;
@@ -40,6 +43,10 @@ export function IframeWidget({ config }: WidgetProps) {
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const setFullscreen = useIframeStore((s) => s.setFullscreen);
+    // An embedded player torn down while the display slept only restarts on a
+    // fresh load (issue #526). Deliberately overrides keepAlive — a frame kept
+    // alive across a standby is exactly the one that never recovers.
+    const wakeNonce = useWakeReload(reloadOnWake && !!url);
 
     // Reset load state whenever URL or tick changes
     useEffect(() => {
@@ -52,7 +59,7 @@ export function IframeWidget({ config }: WidgetProps) {
         return () => {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
-    }, [url, tick]);
+    }, [url, tick, wakeNonce]);
 
     useEffect(() => {
         if (intervalRef.current) clearInterval(intervalRef.current);
@@ -62,6 +69,13 @@ export function IframeWidget({ config }: WidgetProps) {
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
     }, [url, refreshSeconds, keepAlive]);
+
+    // In `content` mode the embedded page swallows every click, so the frame's own
+    // click action needs a host-side button — WidgetFrame renders it on this signal.
+    // `action` has its own blocker overlay (below) and `contentOnly` opts out.
+    useEffect(() => {
+        onNeedsActionButton?.(!!url && interactionMode === 'content');
+    }, [onNeedsActionButton, url, interactionMode]);
 
     // Clear fullscreen when widget unmounts (e.g. tab switch)
     useEffect(
@@ -107,7 +121,7 @@ export function IframeWidget({ config }: WidgetProps) {
         );
     }
 
-    const iframeKey = keepAlive ? `ka-${url}` : `${url}-${tick}`;
+    const iframeKey = keepAlive ? `ka-${url}-w${wakeNonce}` : `${url}-${tick}-w${wakeNonce}`;
 
     const sandboxAttr = resolveSandboxAttr(sandboxPreset, sandboxCustom, sandboxEnabled ? 'extended' : 'off');
 
@@ -145,14 +159,15 @@ export function IframeWidget({ config }: WidgetProps) {
                     sandbox={sandboxAttr}
                     allow="autoplay; fullscreen; picture-in-picture; web-share"
                     title={config.title || 'iFrame'}
+                    scrolling={iframeScrollingAttr(interactionMode)}
                     onLoad={() => {
                         setLoaded(true);
                         if (timeoutRef.current) clearTimeout(timeoutRef.current);
                     }}
                     style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                 />
-                {/* Interaction blocker */}
-                {!allowInteraction && (
+                {/* Interaction blocker — also the click path for the frame's action */}
+                {interactionMode === 'action' && (
                     <div className="absolute inset-0 z-[1]" style={{ pointerEvents: 'all', cursor: 'default' }} />
                 )}
                 {/* Fullscreen button – shown on hover */}

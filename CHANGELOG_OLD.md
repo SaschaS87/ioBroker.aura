@@ -1,5 +1,674 @@
 # Changelog (older entries)
 
+## 0.50.8 (2026-08-27)
+- 🌟 **New feature:** Dynamic list - one icon for all rows (icon, size and colour), set in the new "Icon" tab of the datapoint dialog; a per-datapoint icon and conditions still override it
+- Color picker - dragging a colour no longer freezes the UI: the value now reaches the config at most every 120 ms, with the final one always applied
+
+## 0.50.7 (2026-08-27)
+- 🌟 **New feature:** Image - datapoints holding raw SVG markup are now displayed, e.g. the guest WLAN QR code of fb-checkpresence ([#592](https://github.com/hdering/ioBroker.aura/issues/592))
+- Image - optional background colour behind the picture, keeps transparent SVGs such as QR codes readable on dark themes ([#592](https://github.com/hdering/ioBroker.aura/issues/592))
+- 🌟 **New feature:** Mediaplayer - device detection now recognises any adapter that follows the ioBroker media roles (yamaha, denon, volumio, ...), including its volume range, mute and input ([#593](https://github.com/hdering/ioBroker.aura/issues/593))
+- Mediaplayer - play/pause button now reads playback states that are a numbered enum, e.g. a Yamaha receiver reporting 0 = Play ([#593](https://github.com/hdering/ioBroker.aura/issues/593))
+- Static and dynamic list - the Switch display now offers the same options as the Switch widget: own write values per state (e.g. 0/255, ON/OFF), a separate status datapoint for devices that split command and feedback, condition-based on/off evaluation and an icon or image instead of the slide toggle ([#591](https://github.com/hdering/ioBroker.aura/issues/591))
+- 🌟 **New feature:** Dynamic list - the Switch display now also works for string and enum datapoints and gained the switch style, on/off icons, icon size and confirmation prompt the static list already had ([#591](https://github.com/hdering/ioBroker.aura/issues/591))
+- Charts, lists and value display - new "show as negative" option in the value conversion, for figures that are logged as positive but belong below the zero line, such as grid feed-in or battery charging ([#594](https://github.com/hdering/ioBroker.aura/issues/594))
+- Advanced chart - consumption bars (delta aggregation) came out as a row of zeros when a negative display factor was set; the counter is now differenced before the sign is applied ([#594](https://github.com/hdering/ioBroker.aura/issues/594))
+- Advanced chart - the day navigation gained a date field, so a day can be picked directly instead of stepping there one day at a time ([#594](https://github.com/hdering/ioBroker.aura/issues/594))
+- Advanced chart - a bar axis now always includes zero, so bar lengths stay proportional to their values and a series drawn downwards keeps its zero line; pure line charts still fit their own range, and an explicit axis minimum still wins ([#594](https://github.com/hdering/ioBroker.aura/issues/594))
+- Advanced chart - horizontal grid lines were missing when every series was assigned to the right y axis ([#594](https://github.com/hdering/ioBroker.aura/issues/594))
+
+## 0.50.6 (2026-08-26)
+Release v0.50.6
+
+## 0.50.5 (2026-08-26)
+- 🌟 **New feature:** Status overview - rotary handle contacts (HmIP-SRH, HM-Sec-RHS) are now recognised and reported as tilted or open, and the widget shows that data is still loading instead of reporting all-clear before the datapoints are in
+
+## 0.50.4 (2026-08-26)
+- Calendar - entries are no longer cut off on the left edge, keep the same spacing left and right, and follow the configured widget padding; the highlight bar of important events is visible again ([#590](https://github.com/hdering/ioBroker.aura/issues/590))
+- 🌟 **New feature:** Lists - row conditions can now change the icon size, per datapoint and list-wide, in the static and the dynamic list ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+- 🌟 **New feature:** List - the icon size of a row can now be set per datapoint, not only for the switch display ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+
+## 0.50.3 (2026-08-25)
+- 🌟 **New feature:** Frontend design - tab bar and area menu elements can now be reordered with up/down arrows
+
+## 0.50.2 (2026-08-25)
+- 🌟 **New feature:** The installed adapter version is now published as `aura.0.info.version`, so it can be shown anywhere in the frontend
+
+## 0.50.1 (2026-08-25)
+- 🌟 **New feature:** Chart (advanced) - values at the data points can be switched per series, and thinned out to every n-th value ([#584](https://github.com/hdering/ioBroker.aura/issues/584))
+
+## 0.50.0 (2026-08-25)
+- 🌟 **New feature:** Selection field - entries can now be read from a datapoint holding JSON instead of the manual list ([#577](https://github.com/hdering/ioBroker.aura/issues/577))
+- 🌟 **New feature:** Conditions - rules can now override a widget's title, icon, icon size and value text, plus border width, corner radius and opacity ([#96](https://github.com/hdering/ioBroker.aura/issues/96))
+- 🌟 **New feature:** Lists - conditions per row: colour, icon, text and visibility of name, value and icon; clause datapoints may use {{parent}} and are resolved per row ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+- 🌟 **New feature:** Dynamic list - rows can now show an icon in front of the name, set per datapoint together with its size ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+- 🌟 **New feature:** Lists - second line: value-to-text table (true becomes ONLINE) and its own conditions per datapoint ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+- 🌟 **New feature:** Lists - a custom filter can now read the row name and exclude with "does not contain", which the search field cannot do ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+- 🌟 **New feature:** Lists - sorting is now a dialog with a chain of criteria: row name, value or a datapoint of the second line, compared as number, text, active first or an order you type out; rows without a value stay at the end ([#572](https://github.com/hdering/ioBroker.aura/issues/572))
+- 🌟 **New feature:** Universal - conditions are now offered for title, unit, text, field, icon, image and button cells as well
+- 🌟 **New feature:** Conditions - the widget level gained bold/italic and the element level gained pulse/blink, so both offer the same set
+- 🌟 **New feature:** Conditions - the rule dialog now puts the card style and the element blocks side by side instead of stacking them full width
+- 🌟 **New feature:** Conditions - hiding the title now works in a custom layout too
+- 🌟 **New feature:** HTML and value widgets - bindings now work with umlauts and other non-ASCII letters in datapoint ids ([#578](https://github.com/hdering/ioBroker.aura/issues/578))
+- 🌟 **New feature:** Conditions - a rule now configures a widget's title, icon and value each in one place: visibility, text or icon, colour and weight; unset colour fields show an empty swatch and every field previews what the widget shows today
+- 🌟 **New feature:** Conditions - a new effect pulses a ring around the frame instead of dimming the whole card, in a colour of its own, and border width, corner radius and opacity are picked from a list ([#96](https://github.com/hdering/ioBroker.aura/issues/96))
+- 🌟 **New feature:** Conditions - the rule dialog for list rows, second-line datapoints and custom-layout cells now has the same two-column layout as the widget rules, and its visibility switch offers unchanged/adjust/hide
+- 🌟 **New feature:** Lists - the settings sections (display, values & colours, statistics, ...) now start collapsed
+
+## 0.49.2 (2026-08-24)
+- 🌟 **New feature:** Chart (advanced) - new option to switch off the chart animation ([#574](https://github.com/hdering/ioBroker.aura/issues/574))
+
+## 0.49.1 (2026-08-24)
+- Static & dynamic list - title alignment (left/centre/right) now actually moves the header title ([#575](https://github.com/hdering/ioBroker.aura/issues/575))
+- Dynamic list - the frontend filter chip can be hidden, like the static list already could ([#575](https://github.com/hdering/ioBroker.aura/issues/575))
+
+## 0.49.0 (2026-08-24)
+- 🌟 **New feature:** Dynamic list - the custom category filter now names the category in the closed field ("Floors: Upper floor, Attic"), so identically named entries from different categories stay distinguishable ([#568](https://github.com/hdering/ioBroker.aura/issues/568))
+- Frontend design - a theme picked for a whole layout is now applied in the frontend; before that only per-section overrides had any effect ([#573](https://github.com/hdering/ioBroker.aura/issues/573))
+- Frontend design - the header light/dark button and the themeMode.frontend datapoint now switch the *mode* only: a design that already matches the requested brightness is kept, and the configured design is no longer overwritten for good ([#573](https://github.com/hdering/ioBroker.aura/issues/573))
+- Frontend design - the theme presets are greyed out with a hint while "theme follows browser" is on, and the admin says when a light/dark mode datapoint replaces the picked design ([#573](https://github.com/hdering/ioBroker.aura/issues/573))
+- Status overview - the "All clear" message is now shown in the card and minimal layouts too; before that they stayed empty when nothing needed attention, and it can now be switched off entirely
+- 🌟 **New feature:** Calendar - new option "adjust height to content": the widget grows with its entries instead of filling a fixed cell height, like the status overview
+- 🌟 **New feature:** HTML and value widget - placeholders can now calculate: vis-style operation chains {id;round(1)}, named variables {a:id1;b:id2;a * b} and inline {{ ... }} expressions with Math functions, comparisons and filters ([#571](https://github.com/hdering/ioBroker.aura/issues/571))
+- 🌟 **New feature:** HTML and value widget - the .ts / .lc suffixes render a datapoint's update and last-change timestamp, e.g. {id.lc;date(HH:mm)} ([#571](https://github.com/hdering/ioBroker.aura/issues/571))
+
+## 0.48.4 (2026-08-22)
+- Chart (advanced) - consumption/yield bars are now labelled by their own period on the time axis; a yearly bar no longer shows stray day numbers left and right of the year, and the tooltip names the period instead of the second it starts at ([#570](https://github.com/hdering/ioBroker.aura/issues/570))
+- 🌟 **New feature:** Switch widget and custom layout - a switch can take its state from a separate status datapoint, so devices that split command and status (e.g. MQTT/Tasmota plugs with cmnd/stat) show the real state and label while switching still writes to the command datapoint; the switch widget (all layouts) and the switch, status text and status icon cells now also recognise the string "on", stop reading "OFF"/"false"/"0" as on, and can compare the state against any value ([#567](https://github.com/hdering/ioBroker.aura/issues/567))
+
+## 0.48.3 (2026-08-22)
+- 🌟 **New feature:** Custom layout - switch cells in button mode can now carry separate captions, background and text colours for ON / true / 1 and OFF / false / 0
+- 🌟 **New feature:** Dynamic list - the datapoint search can now filter by custom enum categories (e.g. enum.floors); floors that hold rooms resolve down to the datapoints of those rooms, and a category that carries its members directly can be picked as a whole ([#568](https://github.com/hdering/ioBroker.aura/issues/568))
+- 🌟 **New feature:** Advanced chart - new "Show percentage share of the stack" option labels each stacked value with its share of the stack total, alone or in brackets behind the value, and adds it to the tooltip ([#569](https://github.com/hdering/ioBroker.aura/issues/569))
+- 🌟 **New feature:** HTML - the HTML code can now contain live datapoint placeholders: {any.dp.id} for any state, {dp} for the widget's own value datapoint, both with an optional JSON path ({dp}#battery.soc); placeholders are also filled in HTML that comes from a datapoint
+
+## 0.48.2 (2026-08-21)
+- 🌟 **New feature:** List and dynamic list - a row can now be a date picker: the new display type offers the same options as the Date picker widget (native pickers or a token pattern, time only, output format) and writes the picked value to the row's datapoint ([#566](https://github.com/hdering/ioBroker.aura/issues/566))
+- Popups - the built-in popup views (dimmer, thermostat, switch, shutter, media player) are no longer set up in new installations; existing setups keep theirs unchanged, and Admin -> Popups can now remove the ones nothing uses
+- Popups - a widget type default set to "no view" now stays that way after a reload instead of falling back to the built-in popup
+
+## 0.48.1 (2026-08-20)
+- Theme - reloading no longer flashes the previous theme before the datapoint-driven dark/light mode is applied
+
+## 0.48.0 (2026-08-20)
+- Chart (advanced) - y-axis bounds from a JSON datapoint are now found when the payload is wrapped in an array, min/max written the wrong way round are swapped, and the editor shows the accepted JSON shapes plus the paths that hold an array ([#550](https://github.com/hdering/ioBroker.aura/issues/550))
+- Chart (Distribution) - the stacked bar now fills its full height with small readings too; totals below 1 (e.g. 0.01 + 0.04 + 0.02 kWh) used to shrink the bar to a sliver and clip the segment percentages ([#560](https://github.com/hdering/ioBroker.aura/issues/560))
+- Chart (Distribution) - new "consumption/yield (increase)" aggregation for counters: it sums the increase over the period, so day counters that reset to 0 at midnight (sourceanalytix currentDay, PV day yield) add up instead of turning negative under "difference" ([#561](https://github.com/hdering/ioBroker.aura/issues/561))
+- Chart (advanced) - the "consumption/yield (increase)" aggregation showed far too low values for the year and total ranges: a day counter's midnight reset was mistaken for a stray reading, which dropped every day that reached the previous day's level, and ranges over roughly four months were fetched too coarsely to see the daily resets at all ([#562](https://github.com/hdering/ioBroker.aura/issues/562))
+- 🌟 **New feature:** Map - a quick-access chip can now be filled with its colour instead of showing it as a thin border only, switchable per chip ([#563](https://github.com/hdering/ioBroker.aura/issues/563))
+- Popups - popups no longer disappear or fall back to a weeks-old state: loading the built-in popups marked the browser as having unsaved changes, so that browser stopped pulling the current popup configuration and pushed its own outdated copy back over it on the next admin visit
+- Popups - a built-in popup you edited yourself is no longer reset to the shipped version when an update ships a new revision of it; use "Reset" in Admin - Popups to pull the new version on purpose
+- Popups - editing a timer or syncing a dynamic list in the frontend no longer writes that browser's theme, group and popup configuration back to ioBroker along with the dashboard
+- 🌟 **New feature:** Map - the map type can now be switched in the running frontend: optional chips over the map, placed in any corner, offering all or only the selected types ([#564](https://github.com/hdering/ioBroker.aura/issues/564))
+- Settings - the automatic backups no longer fill up with one entry per editor visit: opening the editor rewrote the group and preset data every time, so the older backups worth restoring were pushed out of the list
+- Groups and widget presets changed on another device now reach an already open editor again instead of being ignored until the next save
+- 🌟 **New feature:** Settings - the number of automatic backups to keep now goes up to 100 (was 20) and defaults to 20 instead of 5, so a config problem noticed days later can still be rolled back
+
+## 0.47.14 (2026-08-19)
+- Mirror - every widget type can be mirrored now; the menu widget reported an unknown type
+- Menu - a mirrored menu shows the layout being edited instead of the first one
+- Advanced chart - stacked areas are now filled with the colour you picked instead of a paler mix with the background ([#557](https://github.com/hdering/ioBroker.aura/issues/557))
+- 🌟 **New feature:** Advanced chart - new "Area opacity" option per series sets the fill strength of its area ([#557](https://github.com/hdering/ioBroker.aura/issues/557))
+- 🌟 **New feature:** Chart & Climate - new "Horizontal grid lines" option draws helper lines at the y values, like in the advanced chart ([#558](https://github.com/hdering/ioBroker.aura/issues/558))
+- List - the "+/-" display now colours its value with the configured colour scale ([#559](https://github.com/hdering/ioBroker.aura/issues/559))
+- Value, Dimmer, Shutter, Thermostat & List - colour scales no longer depend on the order the thresholds were entered in ([#559](https://github.com/hdering/ioBroker.aura/issues/559))
+- List - the global colour scale now sits in "Werte & Farben" next to the other list-wide colours ([#559](https://github.com/hdering/ioBroker.aura/issues/559))
+
+## 0.47.13 (2026-08-18)
+Release v0.47.13
+
+## 0.47.12 (2026-08-18)
+- 🌟 **New feature:** Advanced chart - the JSON datapoint may carry a min/max block that scales the Y axis ([#550](https://github.com/hdering/ioBroker.aura/issues/550))
+- Advanced chart - Y axis min and max can be read from datapoints, in every mode ([#550](https://github.com/hdering/ioBroker.aura/issues/550))
+
+## 0.47.11 (2026-08-18)
+- Chart (advanced) - the current value can be taken from the first instead of the last data point, and shown on the left or the right ([#549](https://github.com/hdering/ioBroker.aura/issues/549))
+
+## 0.47.10 (2026-08-18)
+- Advanced chart - the consumption aggregation now also handles counters that reset every day, e.g. a PV day yield ([#545](https://github.com/hdering/ioBroker.aura/issues/545))
+
+## 0.47.9 (2026-08-18)
+- Chart (advanced) - axis labels and the gauge readout now follow the configured decimal places ([#548](https://github.com/hdering/ioBroker.aura/issues/548))
+
+## 0.47.8 (2026-08-18)
+- Date picker - custom patterns without a native field (e.g. `yyyy`, `dd.MM`) now open a picker list of their own instead of only accepting typed input
+- 🌟 **New feature:** Shutter - slat tilt for venetian blinds and external blinds: its own datapoint with value range and inversion, a vertical regulator beside the blind graphic (left or right), step buttons or a popover in the flat layouts, and an option for whether the slats already follow the regulator while dragging ([#547](https://github.com/hdering/ioBroker.aura/issues/547))
+- 🌟 **New feature:** Messages - unanswered messages now survive a page reload: per severity (errors by default) they reappear until someone confirms or closes them on any device
+
+## 0.47.7 (2026-08-17)
+- Messages - editing the presentation defaults under Admin -> Messages now activates the Save button instead of writing every keystroke straight to the instance; Undo restores the stored values
+- 🌟 **New feature:** Messages - the send time can now be shown on the message card: pick the default under Admin -> Messages (clock, or date plus clock), and override it per message with `showTime` / `timeFormat`
+
+## 0.47.6 (2026-08-17)
+- 🌟 **New feature:** Advanced chart - stacked areas are drawn without an outline, so a series sitting at 0 no longer looks like a line; the outline can be switched back on per series, and line width can now be set to 0 ([#541](https://github.com/hdering/ioBroker.aura/issues/541))
+- 🌟 **New feature:** Advanced chart - the right Y axis can be left unlabelled while still scaling its series, and the axis labels now take exactly the width they need instead of a fixed strip, so short labels no longer leave an empty band and long ones are no longer cut off ([#541](https://github.com/hdering/ioBroker.aura/issues/541))
+- Date picker - a "HH:mm" field can now be picked in every browser: it always shows a button, and where the browser has no time picker of its own (Firefox) an hour/minute list opens instead of nothing; applies to the widget, custom layout cells and the timer event editor ([#544](https://github.com/hdering/ioBroker.aura/issues/544))
+
+## 0.47.5 (2026-08-16)
+- 🌟 **New feature:** Advanced chart - new option to show the values at the data points, now available in the JSON and timeseries modes as well ([#543](https://github.com/hdering/ioBroker.aura/issues/543))
+
+## 0.47.4 (2026-08-16)
+- 🌟 **New feature:** Status overview - new "text alignment" setting (left / centered / right) for rows, cards and the Minimal layout's pills
+- 🌟 **New feature:** Chart (simple and advanced) - display-only value conversion, set with the fx button next to the datapoint field: presets like W to kW or Wh to kWh, or a custom factor and offset. The simple chart converts curve, current value, average and axis; the advanced one converts per series and fills in the unit of the axis the series belongs to. The datapoint and its history stay untouched ([#540](https://github.com/hdering/ioBroker.aura/issues/540))
+- 🌟 **New feature:** Chart (advanced) - new "stack" switch per series: stacked series add up instead of overlapping, e.g. battery discharge plus grid draw as bands that together make up the house consumption. Left and right y axis stack separately, a stacked axis starts at zero, and the tooltip adds a total line next to the individual values ([#541](https://github.com/hdering/ioBroker.aura/issues/541))
+- 🌟 **New feature:** Gauge - the value no longer sits under the needle hub, its font size is configurable, and it can be shown as a badge below the arc instead of (or next to) the big number - with its own label, like pointers 2 and 3. Each of the three pointers can now optionally take the colour of the zone its own value falls into ([#539](https://github.com/hdering/ioBroker.aura/issues/539))
+
+## 0.47.3 (2026-08-15)
+- 🌟 **New feature:** Messages - can now be sent with sendTo('aura.0','notify',{...}) as well; the call answers with the assigned id, and notifyAck / notifyDismiss confirm or close a message from a script ([#429](https://github.com/hdering/ioBroker.aura/issues/429))
+- 🌟 **New feature:** Settings - Admin -> Messages now shows ready-to-copy setState and sendTo lines for the message you just built, plus a reference of every message datapoint ([#429](https://github.com/hdering/ioBroker.aura/issues/429))
+
+## 0.47.2 (2026-08-15)
+- Messages - height now sets the card height instead of only capping it, and content taller than the card scrolls rather than being cut off
+
+## 0.47.1 (2026-08-15)
+- 🌟 **New feature:** Messages - title and text now render HTML, so a notice can carry a table, a list or emphasis; scripts and event handlers are stripped
+- 🌟 **New feature:** Messages - new look options: accent bar, fully filled card, outline or no accent, plus custom colours and text alignment
+
+## 0.47.0 (2026-08-14)
+- 🌟 **New feature:** Messages - scripts can raise info, warning and error notices in the dashboard by writing to aura.0.messages.send; they show as toasts in one of nine screen positions, with an optional countdown, forced confirmation, action buttons and a shared history ([#429](https://github.com/hdering/ioBroker.aura/issues/429))
+- 🌟 **New feature:** Messages widget - lists the message history with severity, time-range and unread filters; a click opens the full message
+- 🌟 **New feature:** Settings - new Admin -> Messages page builds the message JSON from a form, sends a test message and manages the history
+- 🌟 **New feature:** Settings - optional message bell in the header showing the number of unconfirmed messages
+- 🌟 **New feature:** Conditions - new effect "send a message", so a widget rule can raise a notice without a script
+- 🌟 **New feature:** Messages - the Test senden button on the Admin page now shows the message right there instead of only on the dashboard
+
+## 0.46.0 (2026-08-14)
+- 🌟 **New feature:** List and dynamic list - name pattern can now read the row label from another datapoint, e.g. `[[{{parent}}.DeviceName]]` ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+- 🌟 **New feature:** List - separators can be added like a datapoint and dragged into place, splitting the list into sections; optional heading with position, font size, colour and rule on/off. Sorting then applies within a section ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+
+## 0.45.0 (2026-08-14)
+- 🌟 **New feature:** Chart (advanced) - new "1 year" and "total" time ranges, selectable in the config and in the frontend range switcher ([#536](https://github.com/hdering/ioBroker.aura/issues/536))
+- 🌟 **New feature:** Chart (advanced) - "total" charts everything the history adapter holds; the window start is detected per series instead of being configured ([#536](https://github.com/hdering/ioBroker.aura/issues/536))
+- 🌟 **New feature:** Chart (advanced) - consumption series accept time unit "Automatic", deriving hour/day/month/year buckets from the active time range, plus a new "Per year" unit ([#536](https://github.com/hdering/ioBroker.aura/issues/536))
+- 🌟 **New feature:** Chart (advanced) - time ranges beyond two months no longer lose data points to the query row limit
+- 🌟 **New feature:** Conditions - new "Reload widget" effect: embedded content (iframe, camera, image) reloads when the rule fires, including widgets inside an open popup ([#537](https://github.com/hdering/ioBroker.aura/issues/537))
+- 🌟 **New feature:** Conditions - new "Has changed" operator matching any new value of a datapoint, so a widget can reload whenever its data source moves ([#537](https://github.com/hdering/ioBroker.aura/issues/537))
+- 🌟 **New feature:** Shutter - optional "actual position" datapoint for actuators whose real position lives on a read-only DP (e.g. HmIP-BROLL channel 3) while commands keep going to the controllable one; auto-detect fills it ([#538](https://github.com/hdering/ioBroker.aura/issues/538))
+
+## 0.44.3 (2026-08-13)
+- 🌟 **New feature:** Camera - info rows and grid tiles can now switch a datapoint too: a toggle (with optional custom on/off values) or a push button writing a fixed value, both with an optional icon and confirmation prompt ([#535](https://github.com/hdering/ioBroker.aura/issues/535))
+
+## 0.44.2 (2026-08-12)
+- fix(status-overview): show full device name in card and minimal layouts
+
+## 0.44.1 (2026-08-12)
+- 🌟 **New feature:** Popups - transparency and backdrop dim are now configurable, globally under Popups and per popup view or click action ([#534](https://github.com/hdering/ioBroker.aura/issues/534))
+- 🌟 **New feature:** Room climate - optional air pressure datapoint, shown next to the humidity with its own icon, unit and decimals ([#531](https://github.com/hdering/ioBroker.aura/issues/531))
+
+## 0.44.0 (2026-08-12)
+- 🌟 **New feature:** The name of every widget, and the popup heading, resolve [[dp.id]] to that datapoint's live value, e.g. "Living room [[0_userdata.0.Temp]] °C"
+- Popup heading now also resolves the {{dp}} / {{parent}} / {{name}} placeholders - for a list row against the clicked row, so one heading serves every row
+- 🌟 **New feature:** Dynamic list - second line with additional datapoints, either per entry or as one template for every row via {{parent}} / {{dp}} / {{name}} placeholders, e.g. {{parent}}.BATTERY
+- 🌟 **New feature:** Dynamic list - template rows whose datapoint a device does not have are left out instead of showing a dash
+- 🌟 **New feature:** List and dynamic list - own display filters instead of just "only active / only inactive": rules with operator and value on the main datapoint, on the extra datapoints of the second line or on both, combined with AND/OR and offered by name in the filter menu
+- 🌟 **New feature:** List and dynamic list - the filter value can be picked from the values the configured datapoints currently hold, and the editor shows live how many entries a filter matches
+- 🌟 **New feature:** List and dynamic list - free-text search in the filter menu, matching the row name, the datapoint id and every value of a row
+
+## 0.43.3 (2026-08-11)
+- 🌟 **New feature:** Custom layout - column widths can now be set to "auto" (as wide as the content) instead of a ratio, so icon/title columns stay in place when the widget is rendered full-width on mobile
+- Static and dynamic list - display-only value conversion (presets such as Wh to kWh, or a custom factor/offset) and time/date formatting, configurable per datapoint or list-wide, just like the value widget
+- Static list, dynamic list and status overview - "row click" now defaults to "off": rows stay inert until a popup or navigation action is picked
+- Manage datapoints - the datapoint id of the selected entry is shown in the same roomy field the value widget uses, instead of a cramped one-line strip; in the dynamic list the full path now wraps instead of being cut off
+- 🌟 **New feature:** Static list - every row can show additional datapoints in a second line, each placed left, centre or right with its own label, icon, unit, decimals, font size and colour; datapoints of the same device are offered as a dropdown
+
+## 0.43.2 (2026-08-11)
+- 🌟 **New feature:** Lists - the row popup title can now be set per datapoint (and its title bar hidden), overriding the list-wide setting ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+- 🌟 **New feature:** Lists - new "Eingabefeld" display type per datapoint, with the same options as the Eingabefeld widget (placeholder, field width, text/number, live or confirmed submit, send button, clear after send, confirmation, text alignment, read-only) ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+
+## 0.43.1 (2026-08-11)
+- iFrame/Camera - embedded pages no longer show a permanent scrollbar on desktop when interaction is set to "click action only" ([#529](https://github.com/hdering/ioBroker.aura/issues/529))
+- Camera - HTML streams now offer the same interaction setting as the iFrame widget (click action / operable content) ([#529](https://github.com/hdering/ioBroker.aura/issues/529))
+- Connected devices - devices that never finished registering (missing navigate and popup datapoints) now complete their object tree automatically on the next connect ([#532](https://github.com/hdering/ioBroker.aura/issues/532))
+- Connected devices - "last seen" is now refreshed on every connect instead of only at first registration ([#532](https://github.com/hdering/ioBroker.aura/issues/532))
+- List / Dynamic list / Status overview - a row click now opens the datapoints of the clicked device by default (same branch, relevant datapoints only); the previous role-based popup is still available as "Automatisch" ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+
+## 0.43.0 (2026-08-10)
+- 🌟 **New feature:** Lists and status overview - clicking a row now opens a detail popup for that datapoint: picked automatically from the datapoint's role, or configured per row (widget popup, jump to another tab, all datapoints of the device). Datapoints moved into a dedicated resizable dialog with the entry list next to a sectioned per-entry editor, the options panel is grouped into collapsible sections, and the datapoint search of the dynamic list now finds alias.0.* datapoints ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+
+## 0.42.7 (2026-08-08)
+- Camera - embedded streams (go2rtc and friends) reload when the device wakes from display standby instead of stopping on a play button; new "Reload after standby" option, on by default ([#526](https://github.com/hdering/ioBroker.aura/issues/526))
+- iFrame - new "Reload after standby" option reloads embedded videos and streams after display standby, overriding "Keep alive" ([#526](https://github.com/hdering/ioBroker.aura/issues/526))
+
+## 0.42.6 (2026-08-08)
+- Popups now show current datapoint values on every open - previously a popup reopened with the values it had shown the last time, until the datapoint changed again ([#528](https://github.com/hdering/ioBroker.aura/issues/528))
+- Widgets no longer stay on their placeholder when a value arrives from the load-time prefetch just after they appear ([#528](https://github.com/hdering/ioBroker.aura/issues/528))
+
+## 0.42.5 (2026-08-08)
+- iFrame - click action stays reachable while the embedded page is operable: a small action button is shown over the widget, and "Allow interaction" became a three-way "Interaction" setting ([#527](https://github.com/hdering/ioBroker.aura/issues/527))
+- General - HTML, eCharts preset and camera widgets with an embedded page now offer the same action button for their click action ([#527](https://github.com/hdering/ioBroker.aura/issues/527))
+
+## 0.42.4 (2026-08-08)
+- A notice now explains when the browser has put the dashboard tab to sleep, including how to exclude the page from tab sleeping in Edge and Chrome ([#528](https://github.com/hdering/ioBroker.aura/issues/528))
+
+## 0.42.3 (2026-08-08)
+- Datapoints no longer stay stale after the browser tab was inactive for a long time - the dashboard now revalidates all values on reconnect and checks the connection when the tab becomes visible again ([#528](https://github.com/hdering/ioBroker.aura/issues/528))
+
+## 0.42.2 (2026-08-07)
+- 🌟 **New feature:** Status overview - room and the "open since ..." duration can each be hidden
+- 🌟 **New feature:** Input field - new command mode: the field clears itself after sending, no longer mirrors the datapoint value across devices, and only sends on Enter / Send button ([#525](https://github.com/hdering/ioBroker.aura/issues/525))
+
+## 0.42.1 (2026-08-07)
+- Popups - datapoint triggers now offer popup actions only; picking a navigation action left an unusable overlay on screen ([#523](https://github.com/hdering/ioBroker.aura/issues/523))
+
+## 0.42.0 (2026-08-05)
+- 🌟 **New feature:** Popups - open a popup from a datapoint condition, with optional auto-reset of the trigger ([#523](https://github.com/hdering/ioBroker.aura/issues/523))
+- 🌟 **New feature:** Popups - scripts can open a popup view via aura.0.popup.open or per client ([#523](https://github.com/hdering/ioBroker.aura/issues/523))
+
+## 0.41.2 (2026-08-05)
+- fix(lint): resolve remaining eslint warnings
+- fix(ui): wrap German typographic quotes in JSX expressions
+
+## 0.41.1 (2026-08-05)
+- Editor - the "Sections:" label now links to Layout settings and opens the current layout expanded
+
+## 0.41.0 (2026-08-05)
+- Section menu - datapoint elements now show their value right away when the menu is opened (mobile hamburger no longer stuck on a placeholder)
+- Status overview - no more stray horizontal scrollbar when there is enough space
+- 🌟 **New feature:** Status overview, static list and dynamic list - new name pattern with name filter: reshape the placeholder texts with plain-language rules (remove/replace text, keep a segment, first/last words, upper/lower case) or regex, with one-click templates and a live preview of real datapoints; the filter dialog can be moved and resized ([#524](https://github.com/hdering/ioBroker.aura/issues/524))
+
+## 0.40.0 (2026-08-03)
+- 🌟 **New feature:** Conditions and badges - an empty datapoint field now falls back to the widget's main datapoint and replaces the separate "main DP" source, new "is active" / "is inactive" operators test a datapoint for > 0, true or non-empty, and a badge's visibility is now configured in one place through conditions
+- 🌟 **New feature:** Conditions and badges - list and dynamic list widgets can match any/all/no list entry or use the entry count, active count, sum, average, min or max
+
+## 0.39.5 (2026-08-03)
+- 🌟 **New feature:** Panels - each widget now gets its own slide selector datapoint under aura.<n>.panels, so buttons, scripts or a select widget can jump straight to a slide; the slide names are published as common.states, swiping writes the value back, and a custom datapoint can be used instead ([#504](https://github.com/hdering/ioBroker.aura/issues/504))
+
+## 0.39.4 (2026-08-02)
+- 🌟 **New feature:** Date picker - output format and input now accept a custom pattern; the input pattern picks the matching field, so MM.yyyy shows a month picker ([#518](https://github.com/hdering/ioBroker.aura/issues/518))
+
+## 0.39.3 (2026-08-02)
+- 🌟 **New feature:** Widget management now lists the widgets of all layouts and sections instead of only the active one, with a layout filter and layout/section shown per widget
+- 🌟 **New feature:** Chart (advanced) - new "Consumption (difference)" aggregation for ever-rising meters (electricity, water, gas): plots consumption per hour, day, week or month instead of the meter reading, with counter resets clamped to zero ([#521](https://github.com/hdering/ioBroker.aura/issues/521))
+
+## 0.39.2 (2026-08-02)
+- 🌟 **New feature:** Settings - popup views and widget type defaults are now sorted alphabetically, with a search box and a sort selector (alphabetical, newest first, oldest first) ([#520](https://github.com/hdering/ioBroker.aura/issues/520))
+
+## 0.39.1 (2026-08-02)
+- 🌟 **New feature:** Frontend Design - new "Values & Formatting" tab (global scope) holding the global decimals and DP name cleanup settings, which moved here from Settings
+- 🌟 **New feature:** Values - new thousands separator for numeric values (off, 1.234,5, 1,234.5, 1 234,5, 1'234.5) with a matching decimal separator; set globally and overridable per widget, cell and list entry
+- 🌟 **New feature:** Widget options - unit, decimals and thousands separator now sit together in one row
+
+## 0.39.0 (2026-08-01)
+- 🌟 **New feature:** Timestamp datapoints can be shown as time, date or both - in the value display, in custom-layout dp cells and per entry of the static and dynamic list
+
+## 0.38.12 (2026-08-01)
+- Image - datapoint values holding an adapter asset path (e.g. /adapter/pirate-weather/icons/...) now render instead of staying blank; same path handling in universal widget cells, JSON table image columns, image popups, state images, switch/window contact images, camera and HTML img tags
+- Every image field now lists the accepted path formats (URL, adapter path, ioBroker file, local file, base64) - see the new "Bildpfade" doc page
+
+## 0.38.11 (2026-08-01)
+- 🌟 **New feature:** Clock - optional source datapoint: formats a time value from a datapoint (ISO timestamp, HH:mm or Unix time) instead of the current time, with a new REL token for relative output ("in 3 h 12 min")
+- evcc - grid power is read again with evcc adapter 0.2.9+ (renamed states status.Grid.Power); optional custom grid power datapoint added
+- JSON table - table header stays readable in light mode when the widget is set to transparent
+- 🌟 **New feature:** Section menu - separate placement for mobile; a docked sidebar no longer forces the tab bar to stay visible with a single tab
+
+## 0.38.10 (2026-07-31)
+- Static list - statistics are shown on the same line as the title instead of a second header row
+- Group - the editor now shows the same spacing as the frontend and never shows an inner scrollbar, at any grid row height or gap: children fill the group box in both views, grid settings, header height and fitted height are resolved identically, and a child too small for its own content is clipped the same way in both views
+- Group - an empty group no longer collapses to a single grid row in the editor: it keeps its configured height and can be resized until the first child is added
+- Group - new groups start wider and taller instead of as a narrow strip; default sizes dialog no longer caps width/height at 12
+- 🌟 **New feature:** Settings - every Design card (theme, CSS variables, typography and spacing, grid and mobile, guidelines and resolution, header, section menu, navigation, tab bar) has a "Reset" button that restores the default values, or removes the layout/section overrides in scoped views
+
+## 0.38.9 (2026-07-31)
+- 🌟 **New feature:** Chart (Advanced) - new JSON mode: chart a JSON datapoint holding label/value entries, no history adapter needed
+- 🌟 **New feature:** Chart (Advanced) - JSON mode can read the label as a timestamp (epoch ms/s or ISO) and draw a real time axis
+- 🌟 **New feature:** Chart (Advanced) - JSON mode detects the label and value fields on its own and offers the datapoint's actual keys for picking
+
+## 0.38.8 (2026-07-30)
+- Calendar - event list scrolls when more entries are shown than fit the cell; max entries raised to 100
+- Calendar - agenda layout aligns all event titles on one edge, whatever the calendar names are; the calendar column width can be set manually
+
+## 0.38.7 (2026-07-30)
+- 🌟 **New feature:** Calendar - calendar sources can now come from an ioBroker ical adapter instance or an iCal URL; no URL is required when adding the widget
+- Calendar - agenda layout shows the full calendar name instead of cutting it off
+
+## 0.38.6 (2026-07-30)
+- Mirror - a mirrored group now shows its full content on mobile instead of only scrolling
+
+## 0.38.5 (2026-07-30)
+- 🌟 **New feature:** @ feat(climate): add UNREACH/LOWBAT status datapoints to Raumklima widget
+- fix(echart): current value follows live state; add raw aggregation
+- @ fix(calendar): expand recurring RRULE events so repeating feeds show up
+- 🌟 **New feature:** feat(trashSchedule): add compact single-line layout
+
+## 0.38.4 (2026-07-29)
+- 🌟 **New feature:** Waste Collection Schedule - new compact layout showing a colored dot, bin name and pickup countdown on one line, each part individually hideable with optional date
+- Calendar - recurring events (RRULE) are now expanded, so calendars built from repeating entries (e.g. waste-collection feeds) no longer appear empty
+- Advanced Chart - the shown current value now follows the live datapoint (drops to 0 when the value does) instead of holding the last logged value, and a new "None (raw data)" aggregation option skips server-side bucket averaging
+- 🌟 **New feature:** Room Climate - now supports the standard status datapoints (battery/UNREACH), auto-detected on insert and shown as badges like other sensor widgets
+
+## 0.38.3 (2026-07-28)
+- 🌟 **New feature:** Universal Widget - image cells can now take their source from a datapoint (URL / path / base64) and be sized in pixels
+
+## 0.38.2 (2026-07-28)
+- Copy/Move widget - target list is now grouped per section, so tabs with the same name (e.g. Dashboard) in different sections are no longer ambiguous
+- Copy/Move widget - the target menu now scrolls when it has more entries than fit on the screen
+- Copy/Move widget - each layout is highlighted in its own colour, and a section's tabs are laid out in up to 5 columns
+
+## 0.38.1 (2026-07-28)
+- Room climate - the show/hide toggles (actual/target temperature, humidity, comfort zone, temperature chart) moved from the generic Display section into the Room climate settings
+- Popup views - with popup height set to auto, a list widget now grows the popup to fit all its rows instead of scrolling inside a fixed box
+- Popup views - a widget placed away from the left edge in the editor is no longer stuck at the right edge of the popup; the used content is now centered
+
+## 0.38.0 (2026-07-28)
+- 🌟 **New feature:** Universal Widget - per-cell conditions: each grid cell can now react to its own or another datapoint and change text color, background, bold/italic, icon or hide itself — configured in a separate popup so only that cell is affected, not the whole widget
+
+## 0.37.3 (2026-07-27)
+- Mirror - picking a source now adopts its size and frame look, and a mirrored group hugs its children exactly like the original, so the mirror matches the source 1:1 from the start
+- Mirror - the editor now marks a mirror widget with a badge showing which widget it reflects
+
+## 0.37.2 (2026-07-27)
+- Mirror - a mirrored group now renders full-bleed like the original instead of shrinking and clipping child badges
+
+## 0.37.1 (2026-07-27)
+- Import - tab/section/layout imports now keep their original size: exports record the source grid geometry and imports rescale widgets (and group children) to your grid, so a tab built on a larger grid no longer imports tiny and squeezed (legacy files without geometry are auto-fitted)
+
+## 0.37.0 (2026-07-26)
+- 🌟 **New feature:** AC Control - new widget to control air conditioners (power, mode, fan speed, vanes, eco) with per-manufacturer profiles and automatic datapoint filling; Mitsubishi (mitsubishi-local-control) supported first
+
+## 0.36.6 (2026-07-26)
+- 🌟 **New feature:** Calendar - multi-day events now show their end date as a range and an optional "ongoing / N days left" badge (configurable: span / badge / both / off)
+
+## 0.36.5 (2026-07-26)
+- Design - resetting per-layout header overrides now activates Save and persists after reload
+
+## 0.36.4 (2026-07-26)
+- Guidelines - horizontal guide line now lines up between the editor and the frontend (it accounts for the header and tab/section bar, so it marks the target device's bottom edge in both)
+
+## 0.36.3 (2026-07-26)
+- Timer - new option to hide the astro symbol so only the resolved time is shown
+- JSON table - per-column prefix and suffix to decorate cell values (e.g. units or currency)
+- Group - transparent groups now stay transparent when opened via the "Popup: widget content" click action
+- Group - resizing a child in the editor no longer rescales the other children (fixed-grid pitch while editing)
+
+## 0.36.2 (2026-07-25)
+- Timer - astro events now show the resolved sunrise/sunset time next to the symbol
+- Timer - all events are now shown in a scrollable list instead of being cut off at 4
+
+## 0.36.1 (2026-07-25)
+- Settings - Grid & Mobile can now hide the draggable dashboard scroll bar on touch devices
+
+## 0.36.0 (2026-07-25)
+- 🌟 **New feature:** Menu - new freely positionable navigation widget: shows the sections or the tabs as a menu, with per-widget de-selection of entries, four layouts (horizontal bar, vertical list, grid, pills) and four active styles
+
+## 0.35.3 (2026-07-25)
+- Universal widget - string datapoints are no longer coerced to numbers when no value factor/offset is set, so values like "0x004" display as-is instead of being parsed as hex
+
+## 0.35.2 (2026-07-25)
+- Popup (widget content) - embedded widget now fills the configured popup width/height instead of collapsing to a narrow box; without an explicit size it uses the widget's own designed size, so groups no longer squeeze their children
+
+## 0.35.1 (2026-07-25)
+- General - widget config changes (e.g. a widget's data point) no longer revert after saving when auto-backups are at their limit
+
+## 0.35.0 (2026-07-25)
+- 🌟 **New feature:** Mirror - new widget type that shows an existing widget live at a second position (no copy; source changes apply instantly)
+
+## 0.34.0 (2026-07-25)
+- 🌟 **New feature:** Editor - a whole tab (with its widgets) can now be moved or copied into another section from the tab settings
+- 🌟 **New feature:** Layouts - a whole section (with its tabs and widgets) can now be moved or copied into another layout via a popup on each section
+
+## 0.33.8 (2026-07-24)
+- Carousel - compact layout settings plus corner radius, global background/text colours, and per-element colours (now also for popup/link items) that override the global ones
+- Carousel - popup opened from an element now shows the element name as its heading instead of the carousel widget name
+
+## 0.33.7 (2026-07-24)
+- Settings - header HTML template field now grows across multiple lines
+
+## 0.33.6 (2026-07-24)
+- General - dashboard now shows a visible, draggable scrollbar on tablets and phones when the content overflows (native touch scrollbars stay hidden until you scroll)
+- Quick-access chips - add an adjustable corner radius (square to pill), global background and text colours, plus per-chip background and text colour overrides
+- Quick-access chips - in the grid (fixed columns) arrangement all chips now share the widest chip's width, and the alignment setting positions the label inside each chip
+
+## 0.33.5 (2026-07-24)
+- Section menu and tab bar now keep their configured center/right alignment on mobile instead of snapping to the left
+- Tab bar and section menu bar now keep their subtle divider line facing the dashboard when placed as a footer
+
+## 0.33.4 (2026-07-23)
+- Group - now wraps its children with one equal spacing on all four sides and between widgets (no empty row below), with or without a title/icon; when title and icon are disabled the editor header strip is gone and the group's move/menu controls appear as a small toolbar on hover
+- Group - an icon-only group (title off, icon on) now shows its icon header in the live view too, matching the editor
+
+## 0.33.3 (2026-07-18)
+- 🌟 **New feature:** EVCC - grid power now reads from the JSON `status.grid` object as well, so it keeps working on adapters that expose resolved/nested nodes instead of a flat gridPower state
+- 🌟 **New feature:** Universal widget - button cells (switch in button mode) can now be sized to full cell width or matched to the widest label so buttons line up evenly regardless of text length
+
+## 0.33.2 (2026-07-16)
+- Distribution chart - configurable frontend time-range selector (1h/6h/24h/7d/30d/custom) with an option to lock the range
+
+## 0.33.1 (2026-07-15)
+- Editor - tab bar now always stays on top in the editor; the footer (bottom) position applies to the frontend only
+- Editor - the section menu is only previewed in the editor when set to "fixed sidebar"; top/bottom bar placement no longer moves the editor preview
+- Tab bar - global clock/datapoint/text items are now inherited by every layout and section (also on single-tab sections); per-scope items are added on top instead of hiding the global ones
+- Tab bar - the datapoint template field now grows with multiple lines and hints that HTML is supported
+- Tab bar - the datapoint item ID can now be chosen via the standard datapoint picker
+
+## 0.33.0 (2026-07-14)
+- 🌟 **New feature:** Static & Dynamic List - the "states" entry display was renamed to a more generic "value mapping"
+- 🌟 **New feature:** Static & Dynamic List - new "window/door contact" entry display reusing the contact widget's value presets (HmIP / boolean / numeric / string / custom) to map values to open / tilted / closed, with editable label, color and icon per state
+
+## 0.32.0 (2026-07-14)
+- 🌟 **New feature:** Editor - docked section menu now collapses on mobile viewports so it no longer eats the editing area
+- 🌟 **New feature:** Editor - editing on a touch device no longer accidentally repositions all widgets (grid drag/resize is disabled on touch-primary devices)
+- 🌟 **New feature:** Section menu - can now be docked as a horizontal bar above or below the dashboard (like the tab bar), with the same height, entry style, font/icon size, alignment and hide-scroll-bar-on-mobile options; placed at the top it sits above the tab bar
+
+## 0.31.4 (2026-07-14)
+- 🌟 **New feature:** General - new read-only states info.activeLayout / info.activeSection / info.activeTab mirror the currently displayed view
+
+## 0.31.3 (2026-07-14)
+- Frontend Design - the section switcher is now consistently called "Section menu" (was "Layout menu"), since it navigates a layout's sections
+
+## 0.31.2 (2026-07-14)
+- Dynamic list - "states" display now shows the configured state label/icon/color instead of the raw value
+
+## 0.31.1 (2026-07-13)
+- 🌟 **New feature:** Status icon, state image and dimmer - active/on state can now be driven by a numeric condition (==, !=, >, >=, <, <=) instead of only boolean values
+- 🌟 **New feature:** Static and dynamic lists - new "States" display maps each value to its own label, icon and color for multi-state sensors (e.g. window handle: closed/tilted/open), auto-filled from the datapoint's common.states
+
+## 0.31.0 (2026-07-13)
+- 🌟 **New feature:** Value & JSON-table widgets - `aura-file:` paths now resolve inside HTML `<img src>`, so images/icons from the ioBroker file system can be embedded the same way everywhere
+- 🌟 **New feature:** JSON-table widget - new per-column width (px), text alignment and line-wrap options, plus an optional max-rows limit and click-to-sort column headers
+
+## 0.30.1 (2026-07-13)
+- 🌟 **New feature:** Section menu - entries can now show markers (badges) and an optional aggregate count of how many widgets across the section's tabs currently have a badge
+
+## 0.30.0 (2026-07-13)
+- 🌟 **New feature:** Layouts - new "Sections" level: each layout can now hold several sections (the left-hand menu), each with its own tabs; export/import works per section, and a per-layout default section is used on open and for idle-return
+- 🌟 **New feature:** Design - settings now cascade global → layout → section: theme, typography, grid, guidelines and tab bar can be overridden per section, and header, layout menu and idle-return per layout
+- 🌟 **New feature:** Design - optional toggles to show the section menu and the tab bar even with a single entry (previously only shown from two)
+- 🌟 **New feature:** Tab bar - can now be positioned at the bottom (footer) instead of the top
+- 🌟 **New feature:** Layout menu - datapoint elements: pick the datapoint via the standard picker, and the template field supports HTML
+
+## 0.25.5 (2026-07-12)
+- Custom layout - wrapped cell text now respects the configured alignment (e.g. centered titles stay centered across both lines)
+- JSON table / Value widget - http:// images now load on HTTPS pages (mobile); they are routed through the proxy instead of being blocked as mixed content
+
+## 0.25.4 (2026-07-12)
+- Fill widget - horizontal battery layout keeps its aspect ratio and no longer stretches to full width on mobile
+
+## 0.25.3 (2026-07-12)
+- Media player - relative cover paths (e.g. Sonos album art) now display without a helper datapoint
+
+## 0.25.2 (2026-07-11)
+- 🌟 **New feature:** Timer - event value has On/Off quick-select buttons (free text still allowed)
+- 🌟 **New feature:** Timer - event list now shows an On/Off pill so you can see whether an event switches the target on or off
+- 🌟 **New feature:** Advanced - widget border color and width are now configurable per widget
+
+## 0.25.1 (2026-07-11)
+- 🌟 **New feature:** Static & dynamic list - the sum line can now also show average, minimum and maximum, each with its own icon and text prefix
+- 🌟 **New feature:** Value display - the HTML template can now reference any other datapoint, e.g. {alias.0.Raeume.Draussen.Suedseite.ACTUAL}, in addition to {dp} for the widget's own value; new {color} (current threshold color, e.g. for an icon) and {unit} placeholders
+
+## 0.25.0 (2026-07-11)
+- Fill widget - horizontal battery layout now fills the whole cell instead of shrinking and leaving empty margins in short/wide widgets
+- Fill widget - bar width/height now previews live while editing instead of only after leaving the field
+- Input widget - add field alignment (left / center / right) to position a fixed-width input field within its cell
+- Layout menu - configurable spacing: gap between the layout list and the element above it, space above/below the menu title, and space above/below each added element (clock / datapoint / text)
+- 🌟 **New feature:** Group widget - add "collapsed by default" option: the group shows only its header and folds its body away until clicked to expand (frontend only)
+
+## 0.24.2 (2026-07-10)
+- Layouts can be hidden from the layout menu (still reachable via their direct URL)
+- Layout menu can be hidden per layout — e.g. lock a wall tablet to a single layout
+
+## 0.24.1 (2026-07-10)
+- refactor(layout-menu): show the menu-title input in a SubGroup like placement
+- refactor(layout-menu): group placement-dependent settings under the placement
+- feat(layout-menu): show settings conditionally per placement
+- refactor(layout-menu): put placement first as a prominent heading
+- refactor(layout-menu): group hamburger size + auto-hide in one bordered box
+
+## 0.24.0 (2026-07-10)
+- 🌟 **New feature:** Layout menu - new "bullet + name" entry style, configurable selected style (colored/underline/filled/pill), font size and icon size
+- 🌟 **New feature:** Layout menu - add custom elements (clock, datapoint, text) positioned above or below the layout list
+
+## 0.23.6 (2026-07-10)
+- Thermostat - quick-select preset buttons now shown directly on the widget (toggleable)
+- Thermostat - color thresholds now apply to the actual temperature instead of the setpoint
+- Value - add status datapoints (battery / reachability) with show-always or alert-only badges
+
+## 0.23.5 (2026-07-10)
+- Media player - relative cover paths (e.g. Sonos current_cover) now resolve automatically, no full-URL datapoint needed
+- Widgets - transparency mode with partial strength now keeps rounded corners in the frontend instead of showing square edges
+- Widgets - enabling transparency mode no longer shifts the widget content outward (padding and border box are preserved)
+
+## 0.23.4 (2026-07-10)
+- Input widget - field width is now adjustable (setting added after Placeholder)
+- Tab bar - the mobile scroll bar under the tabs can now be hidden (Frontend Design → scope → Tab bar)
+- iframe & eCharts widgets - fixed white background in dark mode
+
+## 0.23.3 (2026-07-10)
+- Guidelines - vertical target-width line now marks the device edge correctly with a docked sidebar menu (subtracts the menu width); a floating menu is not subtracted
+- Editor - the docked sidebar layout menu now shows greyed-out in the layout editor preview (with a hint and a link to its setting), so the design area matches the frontend
+
+## 0.23.2 (2026-07-10)
+- Distribution chart - pie and donut now render for datapoints without a history adapter (falls back to the current value)
+- Distribution chart - optionally show each datapoint's icon inside the bar segments and pie/donut slices, next to the percentage
+- Distribution chart - small pie/donut slices can optionally show their percentage on a leader line outside the ring instead of hiding it
+
+## 0.23.1 (2026-07-10)
+- Layout menu - docked sidebar now collapses into the tab bar on mobile and re-docks on wider screens
+
+## 0.23.0 (2026-07-10)
+- 🌟 **New feature:** Admin - appearance settings reorganized into a new "Frontend Design" menu (theme, typography, grid, guidelines and tab bar, global or per layout) with a "Global frame" group for header, layout menu and navigation (auto-return to default tab); the layout menu gained a "docked sidebar" placement (permanent left menu with configurable width, entry height and optional title), the old "Frontend" menu was dissolved, and optimistic updates moved to "Settings"
+
+## 0.22.5 (2026-07-09)
+- Advanced chart - optional day navigation (prev day / today / next day) to browse single calendar days
+- Advanced chart - per-series history aggregation option (average/minmax/max/min/total); minmax keeps true extremes for sparsely logged counters
+- Advanced chart - monotone line smoothing, so flat data runs no longer wobble around their value
+- Advanced chart - choose which time-range presets the frontend selector offers
+- Advanced chart - a range without recorded changes draws a flat line at the current value instead of "no data"
+- Advanced chart - fixed periodic chart flicker when adapters re-write unchanged values
+- Panels - loop now wraps seamlessly onto the first/last slide instead of rewinding across the whole row
+- Settings - new "Colored" tab-bar style that only tints the active tab's text (no underline)
+
+## 0.22.4 (2026-07-09)
+- Status Overview - remove leftover jump-to-device behavior (no more pointer cursor or navigation on row click)
+- Datapoint picker - scene datapoints (scene.0.*) are now selectable and shown by default
+- Popups - choosing "no view" for a widget type default now correctly disables the popup instead of falling back to the built-in one
+- Tab bar - bottom-corner tab badges are no longer hidden behind iframe widgets that fill the tab
+- Dark themes - native controls (dimmer/slider rails, scrollbars, dropdowns) now render dark instead of light, so the dimmer slider rail is no longer brighter in the frontend than in the admin backend
+- Popups - widget visibility conditions now work inside popup/tab views (hide-widget and reflow "move others up"), matching how they behave on the dashboard
+
+## 0.22.3 (2026-07-08)
+- Settings - Connected Devices now show a device-type icon (phone/tablet/desktop), OS/browser, screen resolution and the client ID so each device is easy to identify
+- Settings - optional on-screen badge (toggle in Connected Devices) shows each device its own client ID, so it can be identified without opening the backend
+
+## 0.22.2 (2026-07-08)
+- Settings - Connected Devices now show a device-type icon (phone/tablet/desktop), OS/browser and screen resolution so each client is easy to identify
+- Settings - a client renamed from another device no longer reverts to its generic name on reconnect
+
+## 0.22.1 (2026-07-08)
+- Settings - Connected Devices now show a device-type icon (phone/tablet/desktop), OS/browser and screen resolution so each client is easy to identify
+
+## 0.22.0 (2026-07-08)
+- 🌟 **New feature:** Load times - add a dedicated backend page (Admin -> Ladezeiten) with live metrics, a per-widget breakdown showing each widget's tab with click-through to the editor, network breakdown metrics (TTFB, transfer, DNS, TCP/TLS) plus a backend ping (RTT) to spot high latency (e.g. over VPN), client names from Settings instead of raw ids, a toggleable chart legend, a refresh spinner, and an info popup on which metrics to watch; the old dashboard widget is superseded and hidden from the picker but keeps working
+- Popup views - widgets now show their normal card background instead of always appearing transparent; a widget's own transparency setting is still respected
+
+## 0.21.15 (2026-07-08)
+- 🌟 **New feature:** Switch - control element can now be an image (URL or base64) with separate on/off images, alongside toggle and icon
+- Color picker - typing a hex code (e.g. #ef4) is no longer auto-expanded while you type; the colour still previews live and normalizes on blur
+
+## 0.21.14 (2026-07-08)
+- fix(loadtimes): make view toggle label show the action (Details/Verlauf anzeigen)
+- fix(loadtimes): stop breakdown list bloating over long sessions
+- feat(loadtimes): split widget Name/Type columns + reset button + freshness time
+
+## 0.21.13 (2026-07-07)
+- feat(loadtimes): add refresh button that re-polls the backend
+
+## 0.21.12 (2026-07-07)
+- fix(loadtimes): add "ms" unit label to the chart Y-axis
+- feat(loadtimes): explain Bereit/Render/Summe columns in an info popup
+- feat(loadtimes): widget breakdown as ready|render|sum table with column headers
+- Add Test section to README (#425)
+
+## 0.21.11 (2026-07-07)
+- Settings - fix admin configuration page failing to load (missing i18n property in jsonConfig)
+
+## 0.21.10 (2026-07-07)
+- fix(list): stop frontend value filter from resetting after config sync
+- fix(list): apply frontend value filter instantly via local state
+
+## 0.21.9 (2026-07-07)
+- Static list / Auto list - frontend filter (all / active / inactive) now applies instantly instead of only when the admin config tab is open
+
+## 0.21.8 (2026-07-07)
+- feat(guidelines): drop "hide now" button from resolution hint
+- fix(guidelines): show resolution badge in mobile view too
+
+## 0.21.7 (2026-07-07)
+- 🌟 **New feature:** Clients - store each client's current screen resolution in ioBroker (clients.<id>.info.resolutionWidth / resolutionHeight), updated on connect and on resize
+- 🌟 **New feature:** Settings - the frontend resolution display is now its own block, independent of the guidelines (no longer requires guidelines to be active)
+- Tab bar - fix tabs sticking to the top instead of being vertically centered (regression from the mobile scroll-hint change)
+
+## 0.21.6 (2026-07-07)
+- Fill level - value text now uses the theme text color for readable contrast in light mode (was tinted with the fill/zone color); in the wave and battery layouts the number is split at the fill line so both halves stay legible when the level crosses the middle of the digits
+
+## 0.21.5 (2026-07-07)
+- Tabs - the "more tabs" scroll hint no longer flickers on mobile and sits higher, right under the tabs
+
+## 0.21.4 (2026-07-06)
+- 🌟 **New feature:** Guidelines - show a live badge with the current device screen resolution; enabled by default on fresh installs with a dismissible hint on how to turn it off
+
+## 0.21.3 (2026-07-06)
+- Load times - color-coded good/ok/slow thresholds with reference lines and latest-value badges so numbers are interpretable at a glance
+- Load times - samples are now tagged per client; widget defaults to the current device and can filter/compare individual clients
+- Load times - time range (1h/6h/24h/7d/all) is now switchable live from the widget header, not only in edit mode
+- Load times - new "Details" view attributes slowness per widget (render and ready time) and per backend command, so you can see which one is responsible
+- Settings - add performance-diagnostics switches: record load-time metrics (default on) and optional per-widget timing (default off, higher overhead)
+
+## 0.21.2 (2026-07-06)
+- Chart (Distribution) - "last" values now show the true current value instead of a history bucket average (e.g. 0 was shown as non-zero)
+
+## 0.21.1 (2026-07-06)
+- Zeitschaltuhr - adding or editing events now saves when the widget is used inside a popup
+
+## 0.21.0 (2026-07-06)
+- Energiebilanz - legend position is now a single option (left/right/above/below) shown under "Show legend", instead of a per-bar dropdown
+- Energiebilanz - added a legend text-alignment option (left/center/right)
+- Energiebilanz - legend content can now show the label only
+- Energiebilanz - bar title and total can now be aligned left/center/right
+- 🌟 **New feature:** Energiebilanz - new display style: bars, pie or donut chart (donut shows the total in its center)
+- Energiebilanz - fixed legend labels being cut off in pie/donut view
+- Energiebilanz - renamed to "Diagramm (Verteilung)" and moved into the standard widget group (it works for any part-of-whole data, not just energy)
+- Diagramm (Verteilung) - adjustable bar width (bars) and diagram size (pie/donut)
+
+## 0.20.0 (2026-07-06)
+- 🌟 **New feature:** Export - optionally anonymise datapoints, titles, URLs, coordinates and custom code when exporting a widget, tab, layout or popup
+
+## 0.19.5 (2026-07-06)
+- Layouts - changing the global theme preset now shows the Save button again
+
+## 0.19.4 (2026-07-06)
+- Map - corners are now rounded in the live view too (transparent map widgets used to render square outside the editor)
+
+## 0.19.3 (2026-07-06)
+- Map - opens on a sensible overview and zooms to the marker once its position resolves (no more long wait on a blank zoomed-in patch)
+- Map - keeps following a slowly moving marker instead of staying put on small position changes
+- Datapoint picker - adds a "Show inactive" toggle to reveal states of disabled/uninstalled adapters and orphaned or imported datapoints
+
+## 0.19.2 (2026-07-05)
+- Universal widget - slider cell now offers a decimal-places option (with Global fallback) when the value display is enabled
+
+## 0.19.1 (2026-07-05)
+- Map - now centers reliably on a marker positioned via two lat/lon datapoints instead of staying on the default view
+
 ## 0.19.0 (2026-07-05)
 - 🌟 **New feature:** New "Load times" widget - charts frontend load performance over time (initial load, first paint, socket warm-up, tab switches, long tasks), recorded in the aura backend
 

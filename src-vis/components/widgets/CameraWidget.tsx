@@ -2,9 +2,19 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, BatteryMedium, Thermometer, Shield, Activity, Building2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { resolveImageSource } from '../../utils/assetUrl';
 import type { WidgetProps, ioBrokerState } from '../../types';
 import { setStateDirect, subscribeDpValue } from '../../hooks/useIoBroker';
 import { useDatapoint } from '../../hooks/useDatapoint';
+import { useWakeReload } from '../../hooks/useWakeReload';
+import { useConfirmAction } from '../../hooks/useConfirmAction';
+import { ConfirmOverlay } from './ConfirmOverlay';
+import { MomentaryButton, parseWrite } from './entryControls';
+import {
+    iframeScrollingAttr,
+    resolveIframeInteractionMode,
+    type IframeInteractionMode,
+} from '../../utils/iframeInteraction';
 
 // ── Exported types (used by WidgetFrame config) ───────────────────────────────
 
@@ -16,15 +26,42 @@ export type CameraSlotType =
     | 'battery'
     | 'temperature'
     | 'armed'
-    | 'motion';
+    | 'motion'
+    // ── write types: not a read-only display but a control ────────────────────
+    | 'toggle'
+    | 'button';
 
 export interface CameraSlot {
     type: CameraSlotType;
     label?: string;
     value?: string; // static text for text / manufacturer
     datapoint?: string;
-    trueLabel?: string; // armed / motion true display
-    falseLabel?: string; // armed / motion false display
+    trueLabel?: string; // armed / motion / toggle true display
+    falseLabel?: string; // armed / motion / toggle false display
+    // ── action slots (toggle / button) ────────────────────────────────────────
+    /** Lucide/Iconify icon shown in front of the control. */
+    icon?: string;
+    /** toggle: value written when switching on / off. Default `true` / `false`. */
+    onValue?: string;
+    offValue?: string;
+    /** button: value written on press. Default `true`. */
+    pulseValue?: string;
+    /** button: write `pulseResetValue` again after `pulseDelay` ms (momentary DPs). */
+    pulseReset?: boolean;
+    pulseResetValue?: string;
+    pulseDelay?: number;
+    /** button caption. Default „Auslösen“. */
+    pulseLabel?: string;
+    /** Require a confirmation tap before writing. */
+    confirm?: boolean;
+    confirmText?: string;
+}
+
+/** Slot types that write to their datapoint instead of only displaying it. */
+export const CAMERA_ACTION_SLOT_TYPES: ReadonlySet<string> = new Set(['toggle', 'button']);
+
+export function isCameraActionSlot(slot: CameraSlot): boolean {
+    return CAMERA_ACTION_SLOT_TYPES.has(slot.type);
 }
 
 export type CameraTemplateId = 'stream-left' | 'stream-top' | 'stream-topleft' | 'stream-right' | 'stream-full';
@@ -75,7 +112,7 @@ export const CAMERA_TEMPLATES: Record<CameraTemplateId, TemplateSpec> = {
     },
 };
 
-export const SLOT_TYPE_OPTIONS: { value: CameraSlotType; label: string }[] = [
+export const SLOT_TYPE_OPTIONS: { value: CameraSlotType; label: string; group?: 'action' }[] = [
     { value: 'empty', label: '– Leer –' },
     { value: 'text', label: 'Freitext' },
     { value: 'datapoint', label: 'Datenpunkt' },
@@ -84,6 +121,8 @@ export const SLOT_TYPE_OPTIONS: { value: CameraSlotType; label: string }[] = [
     { value: 'temperature', label: 'Temperatur' },
     { value: 'armed', label: 'Scharf / Alarm' },
     { value: 'motion', label: 'Bewegung erkannt' },
+    { value: 'toggle', label: 'Schalter (DP umschalten)', group: 'action' },
+    { value: 'button', label: 'Taster (Wert schreiben)', group: 'action' },
 ];
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -122,9 +161,119 @@ function fmtSeconds(s: number): string {
     return `${s}s`;
 }
 
+// ── Action slots (toggle / button) ────────────────────────────────────────────
+// Write slots share the list widgets' write-value coercion and momentary button so
+// a camera action behaves exactly like the same control in a list row. Writes are
+// inert in the editor — a click there is meant to select the widget, not to switch
+// a real device.
+
+const noopWrite = () => {};
+
+function slotWriter(slot: CameraSlot, editMode: boolean) {
+    return slot.datapoint && !editMode ? setStateDirect : noopWrite;
+}
+
+/** True when the toggle's configured on-value matches the datapoint's value.
+ *  Without custom write values a plain bool/1/'true' check decides. */
+function slotToggleOn(slot: CameraSlot, value: unknown): boolean {
+    if (slot.onValue) return String(value) === String(parseWrite(slot.onValue, true));
+    return slotBool(value);
+}
+
+function SlotToggle({ slot, value, editMode }: { slot: CameraSlot; value: unknown; editMode: boolean }) {
+    const btnRef = useRef<HTMLButtonElement>(null);
+    const on = slotToggleOn(slot, value);
+    const write = () => {
+        if (!slot.datapoint) return;
+        const next = on ? parseWrite(slot.offValue, false) : parseWrite(slot.onValue, true);
+        slotWriter(slot, editMode)(slot.datapoint, next);
+    };
+    const { run, pending, confirm, cancel } = useConfirmAction(write, !!slot.confirm);
+    const hasLabels = !!(slot.trueLabel || slot.falseLabel);
+    const activeColor = 'var(--accent)';
+
+    return (
+        <>
+            {hasLabels ? (
+                <button
+                    ref={btnRef}
+                    onClick={run}
+                    className="shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium"
+                    style={{
+                        background: on
+                            ? `color-mix(in srgb, ${activeColor} 18%, transparent)`
+                            : 'color-mix(in srgb, var(--text-secondary) 14%, transparent)',
+                        color: on ? activeColor : 'var(--text-secondary)',
+                        border: 'none',
+                        cursor: 'pointer',
+                    }}
+                >
+                    {on ? slot.trueLabel || 'AN' : slot.falseLabel || 'AUS'}
+                </button>
+            ) : (
+                <button
+                    ref={btnRef}
+                    onClick={run}
+                    className="shrink-0 relative w-9 h-[18px] rounded-full transition-colors"
+                    style={{ background: on ? activeColor : 'var(--app-border)', border: 'none', cursor: 'pointer' }}
+                >
+                    <span
+                        className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all"
+                        style={{ left: on ? 'calc(100% - 16px)' : '2px' }}
+                    />
+                </button>
+            )}
+            {pending && (
+                <ConfirmOverlay
+                    popup
+                    anchorRef={btnRef}
+                    text={slot.confirmText}
+                    onConfirm={confirm}
+                    onCancel={cancel}
+                />
+            )}
+        </>
+    );
+}
+
+function SlotButton({ slot, editMode }: { slot: CameraSlot; editMode: boolean }) {
+    return (
+        // No `icon` here on purpose — the row/tile/chip around the control already
+        // renders the slot icon in front of the label.
+        <MomentaryButton
+            entry={{
+                id: slot.datapoint ?? '',
+                pulseValue: slot.pulseValue,
+                pulseReset: slot.pulseReset,
+                pulseResetValue: slot.pulseResetValue,
+                pulseDelay: slot.pulseDelay,
+                pulseLabel: slot.pulseLabel,
+                confirm: slot.confirm,
+                confirmText: slot.confirmText,
+            }}
+            setState={slotWriter(slot, editMode)}
+        />
+    );
+}
+
+function SlotControl({ slot, value, editMode }: { slot: CameraSlot; value: unknown; editMode: boolean }) {
+    if (slot.type === 'button') return <SlotButton slot={slot} editMode={editMode} />;
+    return <SlotToggle slot={slot} value={value} editMode={editMode} />;
+}
+
 // ── InfoCell ──────────────────────────────────────────────────────────────────
 
-function InfoCell({ slot, value, transparent }: { slot: CameraSlot; value: unknown; transparent?: boolean }) {
+function InfoCell({
+    slot,
+    value,
+    transparent,
+    editMode,
+}: {
+    slot: CameraSlot;
+    value: unknown;
+    transparent?: boolean;
+    editMode?: boolean;
+}) {
     if (slot.type === 'empty')
         return <div style={{ background: transparent ? 'transparent' : 'var(--app-bg)', borderRadius: '4px' }} />;
 
@@ -140,6 +289,17 @@ function InfoCell({ slot, value, transparent }: { slot: CameraSlot; value: unkno
             {label}
         </span>
     ) : null;
+
+    if (isCameraActionSlot(slot)) {
+        const SlotIcon = slot.icon ? getWidgetIcon(slot.icon, null) : null;
+        return (
+            <div className={`${base} relative`} style={{ ...bg, ...pri }}>
+                {SlotIcon && <SlotIcon size={13} style={sec} />}
+                {Lbl}
+                <SlotControl slot={slot} value={value} editMode={!!editMode} />
+            </div>
+        );
+    }
 
     switch (slot.type) {
         case 'text':
@@ -209,7 +369,17 @@ function InfoCell({ slot, value, transparent }: { slot: CameraSlot; value: unkno
 
 // ── InfoRow ───────────────────────────────────────────────────────────────────
 
-function InfoRow({ slot, value, transparent }: { slot: CameraSlot; value: unknown; transparent?: boolean }) {
+function InfoRow({
+    slot,
+    value,
+    transparent,
+    editMode,
+}: {
+    slot: CameraSlot;
+    value: unknown;
+    transparent?: boolean;
+    editMode?: boolean;
+}) {
     if (slot.type === 'empty') return null;
 
     const label = slot.label ?? DEFAULT_LABELS[slot.type];
@@ -217,6 +387,29 @@ function InfoRow({ slot, value, transparent }: { slot: CameraSlot; value: unknow
     const bool = slotBool(value);
     const sec: React.CSSProperties = { color: 'var(--text-secondary)' };
     const pri: React.CSSProperties = { color: 'var(--text-primary)' };
+    const rowCls = 'flex items-center gap-1.5 px-2 rounded text-[11px]';
+    const rowSty: React.CSSProperties = {
+        background: transparent ? 'transparent' : 'var(--app-bg)',
+        color: 'var(--text-primary)',
+        minHeight: '26px',
+        flexShrink: 0,
+    };
+
+    if (isCameraActionSlot(slot)) {
+        const SlotIcon = slot.icon ? getWidgetIcon(slot.icon, null) : null;
+        return (
+            <div className={rowCls} style={rowSty}>
+                {SlotIcon && <SlotIcon size={11} style={sec} className="shrink-0" />}
+                {label && (
+                    <span className="shrink-0 text-[10px] truncate" style={sec}>
+                        {label}
+                    </span>
+                )}
+                <span className="flex-1" />
+                <SlotControl slot={slot} value={value} editMode={!!editMode} />
+            </div>
+        );
+    }
 
     let icon: React.ReactNode = null;
     let display: React.ReactNode = '–';
@@ -252,15 +445,7 @@ function InfoRow({ slot, value, transparent }: { slot: CameraSlot; value: unknow
     }
 
     return (
-        <div
-            className="flex items-center gap-1.5 px-2 rounded text-[11px]"
-            style={{
-                background: transparent ? 'transparent' : 'var(--app-bg)',
-                color: 'var(--text-primary)',
-                minHeight: '26px',
-                flexShrink: 0,
-            }}
-        >
+        <div className={rowCls} style={rowSty}>
             {icon && <span className="shrink-0">{icon}</span>}
             {label && (
                 <span className="shrink-0 text-[10px]" style={sec}>
@@ -293,6 +478,10 @@ interface StreamViewProps {
     streamSecondsLeft: number | null;
     onFullscreen?: () => void;
     transparent?: boolean;
+    /** Bumped on wake-up from standby — folded into the element key to force a reload. */
+    wakeNonce: number;
+    /** Only relevant for `.html` streams, which render in an iframe. (issues #527/#529) */
+    interactionMode: IframeInteractionMode;
 }
 
 function StreamView(p: StreamViewProps) {
@@ -336,14 +525,26 @@ function StreamView(p: StreamViewProps) {
     return (
         <div className="relative h-full w-full overflow-hidden">
             {p.mode === 'iframe' ? (
-                <iframe
-                    src={p.streamUrl}
-                    title={p.title || 'Kamera'}
-                    allow="autoplay"
-                    style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                />
+                <>
+                    <iframe
+                        key={`${p.streamUrl}#${p.wakeNonce}`}
+                        src={p.streamUrl}
+                        title={p.title || 'Kamera'}
+                        allow="autoplay; fullscreen; picture-in-picture"
+                        scrolling={iframeScrollingAttr(p.interactionMode)}
+                        style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                    />
+                    {/* Interaction blocker — clicks land on the widget frame and run its
+                        click action instead of disappearing into the stream page. (#527) */}
+                    {p.interactionMode === 'action' && (
+                        <div className="absolute inset-0 z-[1]" style={{ pointerEvents: 'all', cursor: 'default' }} />
+                    )}
+                </>
             ) : (
+                // An MJPEG connection dropped during standby never re-opens on its
+                // own — the src is unchanged, so only a remount re-requests it.
                 <img
+                    key={`${p.imgSrc}#${p.wakeNonce}`}
                     src={p.imgSrc}
                     alt={p.title || 'Kamera'}
                     onError={p.onError}
@@ -412,6 +613,9 @@ function StreamView(p: StreamViewProps) {
                         cursor: 'pointer',
                         color: '#fff',
                         lineHeight: 0,
+                        // Above the `action`-mode interaction blocker, which would
+                        // otherwise swallow the click. (mirrors IframeWidget)
+                        zIndex: 2,
                     }}
                 >
                     <Maximize2 size={13} />
@@ -453,7 +657,9 @@ function FullscreenPortal({ svProps, onClose }: { svProps: StreamViewProps; onCl
                 <X size={22} />
             </button>
             <div className="w-full h-full" onClick={(e) => e.stopPropagation()}>
-                <StreamView {...svProps} onFullscreen={undefined} />
+                {/* Fullscreen has no click action to protect, so the stream page stays
+                    operable here even when the tile blocks interaction. */}
+                <StreamView {...svProps} onFullscreen={undefined} interactionMode="contentOnly" />
             </div>
         </div>,
         document.body,
@@ -557,7 +763,7 @@ function StreamCell({
 
 // ── Main CameraWidget ─────────────────────────────────────────────────────────
 
-export function CameraWidget({ config, editMode }: WidgetProps) {
+export function CameraWidget({ config, editMode, onNeedsActionButton }: WidgetProps) {
     const opts = config.options ?? {};
     const streamUrlMode = (opts.streamUrlMode as string) ?? 'static';
     const rawStreamUrlDp = (opts.streamUrlDp as string) ?? '';
@@ -576,6 +782,7 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
     const _rawWakeUpMode = opts.wakeUpMode as WakeUpMode | undefined;
     const wakeUpMode: WakeUpMode = wakeUpDp ? (_rawWakeUpMode === 'onView' ? 'onView' : 'onClick') : 'auto';
     const streamTimeout = (opts.streamTimeout as number) ?? 60;
+    const reloadOnWake = (opts.reloadOnWake as boolean) ?? true;
     const videoRatio = (opts.videoRatio as number) ?? 60;
     const infoItems = (opts.infoItems as CameraSlot[]) ?? [];
     const cameraTemplate = (opts.cameraTemplate as CameraTemplateId) ?? 'stream-left';
@@ -589,6 +796,20 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
     const transparent = !!opts.transparent;
 
     const mode = detectMode(streamUrl);
+    const interactionMode = resolveIframeInteractionMode(opts);
+
+    // A stream torn down while the display slept only comes back on a fresh load
+    // (issue #526). The editor is exempt — no live stream to save there.
+    const wakeNonce = useWakeReload(reloadOnWake && !editMode && !!streamUrl && mode !== 'rtsp-hint');
+
+    // An .html stream renders in an iframe: clicks stay inside that document and
+    // never reach the frame's click action, so ask for a host-side action button.
+    // The img/rtsp-hint modes are plain host DOM and need nothing. (issue #527)
+    // In `action` mode the whole frame is clickable already, in `contentOnly` the
+    // click action is deliberately inert — neither wants a button.
+    useEffect(() => {
+        onNeedsActionButton?.(mode === 'iframe' && interactionMode === 'content');
+    }, [onNeedsActionButton, mode, interactionMode]);
 
     // ── Stream state ─────────────────────────────────────────────────────────────
     const [imgSrc, setImgSrc] = useState('');
@@ -748,8 +969,11 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
     // ── Image refresh loop ─────────────────────────────────────────────────────────
     const buildSrc = (url: string) => {
         if (!url || mode !== 'img') return url;
-        if (refreshInterval === 0) return url;
-        return url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
+        // Resolve after mode detection so an adapter path / base64 snapshot from a
+        // datapoint loads too, without changing how the mode itself is derived.
+        const resolved = resolveImageSource(url);
+        if (refreshInterval === 0 || resolved.startsWith('data:')) return resolved;
+        return resolved.includes('?') ? `${resolved}&_t=${Date.now()}` : `${resolved}?_t=${Date.now()}`;
     };
 
     useEffect(() => {
@@ -807,6 +1031,8 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
         streamSecondsLeft,
         onFullscreen: editMode ? undefined : () => setFullscreen(true),
         transparent,
+        wakeNonce,
+        interactionMode,
     };
 
     const scProps: StreamCellProps = {
@@ -1016,7 +1242,7 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
                                 className="text-[10px] text-center opacity-40 m-auto"
                                 style={{ color: 'var(--text-secondary)' }}
                             >
-                                Keine Info-Zeilen konfiguriert
+                                Keine Zeilen konfiguriert
                             </p>
                         ) : (
                             infoItems.map((item, i) => (
@@ -1025,6 +1251,7 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
                                     slot={item}
                                     value={item.datapoint ? dpValues[item.datapoint] : undefined}
                                     transparent={transparent}
+                                    editMode={editMode}
                                 />
                             ))
                         )}
@@ -1056,6 +1283,30 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
                             const num = slotNum(val);
                             const bool = slotBool(val);
                             const lbl = slot.label ?? DEFAULT_LABELS[slot.type];
+                            if (isCameraActionSlot(slot)) {
+                                const SlotIcon = slot.icon ? getWidgetIcon(slot.icon, null) : null;
+                                return (
+                                    // The overlay strip itself is click-through so the stream keeps
+                                    // its wake-up/click behaviour — only the control takes clicks.
+                                    <span
+                                        key={i}
+                                        className="text-[10px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1 pointer-events-auto"
+                                        style={{
+                                            // A bare button carries its own filled shape — the chip
+                                            // backdrop would only double it up.
+                                            background:
+                                                slot.type === 'button' && !lbl && !SlotIcon
+                                                    ? 'transparent'
+                                                    : 'rgba(0,0,0,0.55)',
+                                            color: '#fff',
+                                        }}
+                                    >
+                                        {SlotIcon && <SlotIcon size={11} />}
+                                        {lbl && <span style={{ opacity: 0.8 }}>{lbl}</span>}
+                                        <SlotControl slot={slot} value={val} editMode={editMode} />
+                                    </span>
+                                );
+                            }
                             let display = '–';
                             let color: string | undefined;
                             switch (slot.type) {
@@ -1124,6 +1375,7 @@ export function CameraWidget({ config, editMode }: WidgetProps) {
                             slot={slot}
                             value={slot.datapoint ? dpValues[slot.datapoint] : undefined}
                             transparent={transparent}
+                            editMode={editMode}
                         />
                     </div>
                 ))}

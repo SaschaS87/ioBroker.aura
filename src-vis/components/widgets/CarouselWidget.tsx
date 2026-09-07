@@ -35,6 +35,10 @@ export type CarouselItem = {
     value?: string | number | boolean;
     activeValue?: string | number | boolean;
     inactiveValue?: string | number | boolean;
+    /** Optional label shown while the item is active (overrides `label`). */
+    labelActive?: string;
+    /** Optional label shown while the item is inactive (overrides `label`). */
+    labelInactive?: string;
     clickAction?: ClickAction;
     /** Background color while the item is active (DP matches activeValue / value). */
     bgColor?: string;
@@ -53,6 +57,10 @@ export type CarouselItem = {
 // Below the threshold, the click still fires (tap-to-toggle still works).
 const DRAG_CLICK_THRESHOLD = 6;
 
+// Slider max for the chip radius option. At the maximum the chip is rendered as
+// a full pill (matching the historical `rounded-full` default when unset).
+const CHIP_RADIUS_MAX = 40;
+
 // Loose equality that also matches across types. The Aktiv-/Inaktiv-Wert
 // inputs are <input type="text"> → always strings, while DP values can be
 // boolean / number / string. Native `==` fails on e.g. `true == "true"`, so
@@ -63,12 +71,26 @@ function eqLoose(a: unknown, b: unknown): boolean {
     return String(a).toLowerCase() === String(b).toLowerCase();
 }
 
+// Fallback active-check for items that only configure per-state labels (no
+// Aktiv-/Inaktiv-Wert). Treats the usual "off" spellings of a boolean-ish DP
+// as inactive so a plain true/false datapoint flips the text without forcing
+// the user to also fill in both comparison values.
+function isTruthyState(v: unknown): boolean {
+    if (v === null || v === undefined) return false;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    const s = String(v).trim().toLowerCase();
+    return s !== '' && s !== 'false' && s !== '0' && s !== 'off' && s !== 'null';
+}
+
 export function CarouselWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const t = useT();
     const { setState } = useIoBroker();
     const [pendingItem, setPendingItem] = useState<{ item: CarouselItem; isActive: boolean } | null>(null);
-    const [popupAction, setPopupAction] = useState<ClickAction | null>(null);
+    // Track the triggering item's label alongside the action so the popup heading
+    // shows the element name rather than the shared carousel widget name.
+    const [popup, setPopup] = useState<{ action: ClickAction; title: string } | null>(null);
 
     const WidgetIcon = getWidgetIcon(o.icon as string | undefined, GalleryHorizontal);
     const iconSize = (o.iconSize as number) || 20;
@@ -80,6 +102,15 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
     const checkDp = (o.checkDp as string) ?? '';
     const chipSizeRaw = o.chipSize as string | number | undefined;
     const chipStyle = (o.chipStyle as string) ?? 'outlined';
+    // Corner radius: undefined / max = full pill (previous rounded-full default),
+    // otherwise a fixed px radius. Matches ChipsWidget.
+    const chipRadiusRaw = o.chipRadius as number | undefined;
+    const chipRadius =
+        chipRadiusRaw === undefined || chipRadiusRaw >= CHIP_RADIUS_MAX ? 9999 : Math.max(0, chipRadiusRaw);
+    // Global fallback colours for the inactive/base state (per-item overrides win,
+    // the active highlight still takes over). Mirrors ChipsWidget precedence.
+    const chipBgColor = o.chipBgColor as string | undefined;
+    const chipTextColor = o.chipTextColor as string | undefined;
     const gap = (o.gap as number) ?? 8;
     const align = (o.align as string) ?? 'start';
     const valign = (o.valign as string) ?? 'middle';
@@ -317,12 +348,13 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
             const tab = useDashboardStore
                 .getState()
                 .layouts.find((l) => l.id === a.layoutId)
-                ?.tabs.find((t) => t.id === a.tabId);
+                ?.sections.flatMap((s) => s.tabs)
+                .find((t) => t.id === a.tabId);
             if (tab?.disabled) return;
-            useNavigationStore.getState().navigateTo(a.layoutId, a.tabId);
+            useNavigationStore.getState().navigateTo(a.layoutId, a.tabId, undefined, a.sectionId);
             return;
         }
-        setPopupAction(a);
+        setPopup({ action: a, title: item.label });
     };
 
     const handleClick = (item: CarouselItem, isActive: boolean) => {
@@ -467,8 +499,11 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
     const justify = align === 'end' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start';
     const valignJustify = valign === 'top' ? 'flex-start' : valign === 'bottom' ? 'flex-end' : 'center';
 
-    const defaultBg = (active: boolean) =>
-        chipStyle === 'filled'
+    const defaultBg = (active: boolean) => {
+        // Inactive/base state: global background colour wins over the theme default
+        // (per-item override is applied earlier, before this fallback is reached).
+        if (!active && chipBgColor) return chipBgColor;
+        return chipStyle === 'filled'
             ? active
                 ? 'var(--accent)'
                 : 'var(--app-bg)'
@@ -479,9 +514,12 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
               : active
                 ? 'var(--accent)22'
                 : 'var(--app-bg)';
+    };
 
-    const defaultColor = (active: boolean) =>
-        active ? (chipStyle === 'filled' ? '#fff' : 'var(--accent)') : 'var(--text-primary)';
+    const defaultColor = (active: boolean) => {
+        if (!active && chipTextColor) return chipTextColor;
+        return active ? (chipStyle === 'filled' ? '#fff' : 'var(--accent)') : 'var(--text-primary)';
+    };
 
     const chipBorder = (active: boolean, customBg: string | undefined) =>
         chipStyle === 'ghost'
@@ -574,6 +612,7 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
                                 snap={(snap && !autoRotate) || isSingle}
                                 fullWidth={isSingle}
                                 maxWidth={maxItemWidth}
+                                radius={chipRadius}
                                 labelAlign={labelAlign}
                                 defaultBg={defaultBg}
                                 defaultColor={defaultColor}
@@ -596,12 +635,15 @@ export function CarouselWidget({ config, editMode }: WidgetProps) {
                 />
             )}
 
-            {popupAction && (
+            {popup && (
                 <WidgetClickPopup
                     widget={config}
-                    action={popupAction}
-                    onClose={() => setPopupAction(null)}
-                    allWidgets={useDashboardStore.getState().layouts.flatMap((l) => l.tabs.flatMap((t) => t.widgets))}
+                    action={popup.action}
+                    titleOverride={popup.title}
+                    onClose={() => setPopup(null)}
+                    allWidgets={useDashboardStore
+                        .getState()
+                        .layouts.flatMap((l) => l.sections.flatMap((s) => s.tabs.flatMap((t) => t.widgets)))}
                 />
             )}
         </div>
@@ -629,6 +671,8 @@ interface CarouselItemButtonProps {
     fullWidth: boolean;
     /** Max chip width in px; 0 = uncapped. Triggers marquee on overflowing labels. */
     maxWidth: number;
+    /** Corner radius in px; 9999 = full pill. */
+    radius: number;
     /** Horizontal alignment of the label / last-change text inside the chip. */
     labelAlign: 'left' | 'center' | 'right';
     defaultBg: (active: boolean) => string;
@@ -650,6 +694,7 @@ function CarouselItemButton({
     snap,
     fullWidth,
     maxWidth,
+    radius,
     labelAlign,
     defaultBg,
     defaultColor,
@@ -661,9 +706,12 @@ function CarouselItemButton({
     // inactive comparison target, or the last-change timestamp. Without this,
     // the chip wouldn't repaint when the DP flips and the colours would stick.
     const activeTarget = item.activeValue !== undefined ? item.activeValue : item.value;
+    // Per-state labels also need the live value, even when no comparison value
+    // is configured — otherwise the text would never flip.
+    const hasStateLabels = !!(item.labelActive || item.labelInactive);
     const needsOwnDp = !!(
         item.dp &&
-        (activeTarget !== undefined || item.inactiveValue !== undefined || item.showLastChange)
+        (activeTarget !== undefined || item.inactiveValue !== undefined || item.showLastChange || hasStateLabels)
     );
     const { state: itemState } = useDatapoint(needsOwnDp ? item.dp : '');
 
@@ -692,11 +740,17 @@ function CarouselItemButton({
             // inactive value (and the DP has actually delivered a value).
             active = v !== null && !eqLoose(v, item.inactiveValue);
         }
-    } else if (checkDp) {
-        if (activeTarget !== undefined) {
-            active = eqLoose(checkValue, activeTarget);
-        }
+    } else if (checkDp && activeTarget !== undefined) {
+        active = eqLoose(checkValue, activeTarget);
+    } else if (needsOwnDp && hasStateLabels) {
+        // Labels-only item: no comparison value given, so read the DP as a plain
+        // on/off flag.
+        active = isTruthyState(itemState?.val ?? null);
     }
+
+    // The label may differ per state; both sides fall back to the base label so
+    // filling in only one of them still works.
+    const shownLabel = (active ? item.labelActive : item.labelInactive) || item.label;
 
     // Pick the color override matching the current state. Each side falls back
     // to the chip-style default (defaultBg/defaultColor) when no override is set,
@@ -750,11 +804,12 @@ function CarouselItemButton({
             // cursor and each `:hover` flip pulses the chip in/out → reads as flicker
             // synchronised to the rotation. Instant opacity feedback is fine for
             // chip-style buttons.
-            className={`flex items-center gap-1.5 ${fullWidth ? 'rounded-xl justify-center' : 'rounded-full'} whitespace-nowrap hover:opacity-80 shrink-0`}
+            className={`flex items-center gap-1.5 ${fullWidth ? 'justify-center' : ''} whitespace-nowrap hover:opacity-80 shrink-0`}
             style={{
                 background: bg,
                 color,
                 border: chipBorder(active, customBg),
+                borderRadius: radius,
                 fontSize: fs,
                 height: item.showLastChange ? 'auto' : `${h}px`,
                 minHeight: `${h}px`,
@@ -808,7 +863,7 @@ function CarouselItemButton({
                             className={`flex flex-col min-w-0 ${itemsClass}`}
                             style={{ lineHeight: 1.3, flex: '1 1 auto', textAlign }}
                         >
-                            <MarqueeText text={item.label} style={{ textAlign }} />
+                            <MarqueeText text={shownLabel} style={{ textAlign }} />
                             {item.showLastChange && lastChangeText && (
                                 <MarqueeText
                                     text={lastChangeText}
@@ -821,7 +876,7 @@ function CarouselItemButton({
                 }
                 return (
                     <span className={`flex flex-col ${itemsClass}`} style={{ lineHeight: 1.3, textAlign }}>
-                        <span>{item.label}</span>
+                        <span>{shownLabel}</span>
                         {item.showLastChange && lastChangeText && (
                             <span
                                 className="aura-last-change opacity-60"

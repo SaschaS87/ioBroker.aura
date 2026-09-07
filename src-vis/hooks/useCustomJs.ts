@@ -87,11 +87,12 @@ function pruneScripts(keep: Set<string>) {
  * <script> tags in document.head before the rest of the code is evaluated.
  *
  * @param layoutId  Active layout for per-layout overrides.
+ * @param sectionId Active section for per-section overrides.
  * @param inEditor  When true, the caller is the admin editor — execution is
  *                  gated additionally on `customJSInEditor`.
  */
-export function useCustomJs(layoutId: string | undefined, inEditor: boolean) {
-    const effective = useEffectiveSettings(layoutId);
+export function useCustomJs(layoutId: string | undefined, sectionId: string | undefined, inEditor: boolean) {
+    const effective = useEffectiveSettings(layoutId, sectionId);
     const frontend = useConfigStore((s) => s.frontend);
 
     useEffect(() => {

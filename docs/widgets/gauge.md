@@ -32,6 +32,8 @@ Alle Optionen werden im Editor unter **Widget bearbeiten** gesetzt.
 | `iconSize` | `20` | px |
 | `titleAlign` | `left` | `left` · `center` · `right` |
 | `showMinMax` | `true` | Min/Max-Labels an den Bogenenden |
+| `showValue` | `true` | Wert als große Zahl im Bogen |
+| `showValueBadge` | `false` | Wert zusätzlich als Badge unter dem Bogen, in der Farbe der aktiven Zone — wie die Badges der Zeiger 2/3 |
 
 ### Skala
 
@@ -39,10 +41,12 @@ Alle Optionen werden im Editor unter **Widget bearbeiten** gesetzt.
 | --- | --- | --- |
 | `minValue` | `0` | Skala-Minimum |
 | `maxValue` | `100` | Skala-Maximum |
+| `minDatapoint` / `maxDatapoint` | — | Datenpunkt statt fester Zahl; gewinnt über `minValue`/`maxValue` |
 | `dynamicMax` | `false` | Maximum wächst mit, wenn der Wert es übersteigt |
 | `unit` | — | Einheit hinter dem Wert |
 | `decimals` | globale Vorgabe | Nachkommastellen |
 | `strokeWidth` | `12` | Dicke des Bogens (px) |
+| `valueFontSize` | `22` | Schriftgröße des Werts; die Einheit skaliert mit |
 
 ### Wert-Transformation
 
@@ -67,11 +71,16 @@ Färbt Bogen und Nadel abhängig vom Wert; ohne Zonen zeigt der Bogen eine gefü
 
 ### Zeiger
 
+Jeder Zeiger kann bei aktiven Farbzonen die Farbe der Zone übernehmen, in die **sein eigener** Wert fällt (`pointer<N>ZoneColor`); Nadel und Badge folgen derselben Farbe. Ist die Option aus, gilt die feste Farbe.
+
 | Option | Standard | |
 | --- | --- | --- |
 | `pointer1Color` | `--accent` | Farbe Zeiger 1 |
-| `pointer1Label` | Widget-Titel | Beschriftung Zeiger 1 |
+| `pointer1ZoneColor` | `true` | Zeiger 1 folgt der Farbzone |
+| `pointer1Label` | — | Badge-Text Zeiger 1 (nur sichtbar mit `showValueBadge`) |
 | `pointer2Color` | `#f97316` | Farbe Zeiger 2 |
+| `pointer2ZoneColor` | `false` | Zeiger 2 folgt der Farbzone |
 | `pointer2Label` | — | Badge-Text Zeiger 2 |
 | `pointer3Color` | `#8b5cf6` | Farbe Zeiger 3 |
+| `pointer3ZoneColor` | `false` | Zeiger 3 folgt der Farbzone |
 | `pointer3Label` | — | Badge-Text Zeiger 3 |

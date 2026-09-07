@@ -6,49 +6,14 @@ import { useT } from '../../i18n';
 import { useSystemConfig } from '../../hooks/useSystemConfig';
 import { CustomGridView } from './CustomGridView';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { useDatapoint } from '../../hooks/useDatapoint';
+import { parseTimeValue, formatRelative } from '../../utils/parseTimeValue';
+import { pad, isoWeek, formatHM, applyTimeFormat, TIME_DASH } from '../../utils/timeDisplay';
 
 type TFn = ReturnType<typeof useT>;
 
-function pad(n: number) {
-    return String(n).padStart(2, '0');
-}
-
-/** ISO-8601 calendar week (week starts Monday; week 1 contains the first Thursday). */
-function isoWeek(d: Date): number {
-    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
-    return Math.ceil(((+t - +yearStart) / 86400000 + 1) / 7);
-}
-
-function formatHM(d: Date | null): string {
-    if (!d || isNaN(d.getTime())) return '–';
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function applyCustomFormat(
-    date: Date,
-    fmt: string,
-    t: TFn,
-    ctx: { city: string; sunrise: Date | null; sunset: Date | null },
-): string {
-    return fmt
-        .replace('EEEE', t(`clock.day.${date.getDay()}` as Parameters<TFn>[0]))
-        .replace('EE', t(`cal.day.${date.getDay()}` as Parameters<TFn>[0]))
-        .replace('MMMM', t(`clock.month.${date.getMonth()}` as Parameters<TFn>[0]))
-        .replace('yyyy', String(date.getFullYear()))
-        .replace('yy', String(date.getFullYear()).slice(-2))
-        .replace('MM', pad(date.getMonth() + 1))
-        .replace('dd', pad(date.getDate()))
-        .replace('HH', pad(date.getHours()))
-        .replace('hh', pad(date.getHours() % 12 || 12))
-        .replace('mm', pad(date.getMinutes()))
-        .replace('ss', pad(date.getSeconds()))
-        .replace('ww', String(isoWeek(date)))
-        .replace('SR', formatHM(ctx.sunrise))
-        .replace('SS', formatHM(ctx.sunset))
-        .replace('CT', ctx.city);
-}
+/** Shown instead of a formatted value when the source datapoint holds no readable time. */
+const DASH = TIME_DASH;
 
 function formatTime(date: Date, showSeconds: boolean): string {
     return `${pad(date.getHours())}:${pad(date.getMinutes())}${showSeconds ? `:${pad(date.getSeconds())}` : ''}`;
@@ -74,12 +39,31 @@ export function ClockWidget({ config }: WidgetProps) {
     const sys = useSystemConfig();
     const [now, setNow] = useState(() => new Date());
 
+    // A source datapoint turns the widget into a formatter for a foreign time value.
+    // Empty (the default) keeps the live clock behaviour.
+    const sourceRef = config.datapoint?.trim() ?? '';
+    const { value: sourceVal } = useDatapoint(sourceRef);
+    const opts = config.options ?? {};
+    const customFormatRaw = opts.customFormat as string | undefined;
+    // Only tick when something actually changes per second: the live clock, or a
+    // relative countdown against a datapoint value (REL token / `relative` cell).
+    const usesRelative =
+        Boolean(customFormatRaw?.includes('REL')) ||
+        (config.layout === 'custom' && JSON.stringify(opts.customGrid ?? '').includes('relative'));
+    const needsTick = !sourceRef || usesRelative;
+
     useEffect(() => {
+        if (!needsTick) return;
         const id = setInterval(() => setNow(new Date()), 1000);
         return () => clearInterval(id);
-    }, []);
+    }, [needsTick]);
 
-    const opts = config.options ?? {};
+    const sourceDate = sourceRef ? parseTimeValue(sourceVal, now) : null;
+    // `unreadable` drives the placeholder; `base` stays a valid Date so all
+    // formatting below (tokens, layouts, custom grid) works unchanged.
+    const unreadable = Boolean(sourceRef) && sourceDate === null;
+    const base = sourceDate ?? now;
+
     const display = (opts.display as string) ?? 'time';
     const showSeconds = Boolean(opts.showSeconds);
     const showTitle = opts.showTitle !== false;
@@ -88,7 +72,7 @@ export function ClockWidget({ config }: WidgetProps) {
     const titleAlign = (opts.titleAlign as string) ?? 'left';
     const WidgetIcon = getWidgetIcon(opts.icon as string | undefined, Clock);
     const dateLength = (opts.dateLength as 'short' | 'long') ?? 'short';
-    const customFormat = opts.customFormat as string | undefined;
+    const customFormat = customFormatRaw;
     const timeFontSize = Number(opts.timeFontSize) || 0;
     const dateFontSize = Number(opts.dateFontSize) || 0;
     const customFontSize = Number(opts.customFontSize) || 0;
@@ -109,12 +93,20 @@ export function ClockWidget({ config }: WidgetProps) {
     const sunrise = sunTimes?.sunrise ?? null;
     const sunset = sunTimes?.sunset ?? null;
 
-    const timeStr = formatTime(now, showSeconds);
+    const timeStr = unreadable ? DASH : formatTime(base, showSeconds);
     const sunriseStr = formatHM(sunrise);
     const sunsetStr = formatHM(sunset);
-    const weekStr = `${t('clock.kw')}${isoWeek(now)}`;
+    const weekStr = `${t('clock.kw')}${isoWeek(base)}`;
     const cityStr = sys.city;
-    const customStr = customFormat ? applyCustomFormat(now, customFormat, t, { city: cityStr, sunrise, sunset }) : '';
+    const relStr = sourceDate ? formatRelative(sourceDate, now, t) : DASH;
+    const customStr = customFormat
+        ? unreadable
+            ? DASH
+            : applyTimeFormat(base, customFormat, t, { city: cityStr, sunrise, sunset, rel: relStr })
+        : '';
+    // Date output as a node so every layout can render either the formatted date or
+    // the placeholder without repeating the branch.
+    const dateNode = unreadable ? DASH : <DateText date={base} length={dateLength} t={t} />;
 
     // Inline extras row: chips with optional icons, controlled per-field by toggles.
     const extrasFontStyle: CSSProperties = extrasFontSize > 0 ? { fontSize: `${extrasFontSize}px` } : {};
@@ -140,10 +132,11 @@ export function ClockWidget({ config }: WidgetProps) {
         ) : null;
 
     if (layout === 'custom') {
-        const dateStr =
-            dateLength === 'long'
-                ? `${t(`clock.day.${now.getDay()}` as Parameters<typeof t>[0])}, ${now.getDate()}. ${t(`clock.month.${now.getMonth()}` as Parameters<typeof t>[0])} ${now.getFullYear()}`
-                : `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`;
+        const dateStr = unreadable
+            ? DASH
+            : dateLength === 'long'
+              ? `${t(`clock.day.${base.getDay()}` as Parameters<typeof t>[0])}, ${base.getDate()}. ${t(`clock.month.${base.getMonth()}` as Parameters<typeof t>[0])} ${base.getFullYear()}`
+              : `${pad(base.getDate())}.${pad(base.getMonth() + 1)}.${base.getFullYear()}`;
         const defaultValue = customFormat
             ? customStr
             : display === 'date'
@@ -165,8 +158,9 @@ export function ClockWidget({ config }: WidgetProps) {
                     city: cityStr,
                     sunrise: sunriseStr,
                     sunset: sunsetStr,
-                    week: String(isoWeek(now)),
+                    week: String(isoWeek(base)),
                     kw: weekStr,
+                    relative: relStr,
                 }}
                 extraComponents={{
                     icon: <WidgetIcon size={iconSize} style={{ color: 'var(--text-secondary)' }} />,
@@ -193,20 +187,14 @@ export function ClockWidget({ config }: WidgetProps) {
                     className={`aura-widget-value ${primaryCls} ${sizeCls(primaryPx, 'text-xl')} font-bold tabular-nums leading-none text-center`}
                     style={{ color: 'var(--accent)', ...sizeStyle(primaryPx) }}
                 >
-                    {customFormat ? (
-                        customStr
-                    ) : display === 'date' ? (
-                        <DateText date={now} length={dateLength} t={t} />
-                    ) : (
-                        timeStr
-                    )}
+                    {customFormat ? customStr : display === 'date' ? dateNode : timeStr}
                 </p>
                 {!customFormat && display === 'datetime' && (
                     <p
                         className={`aura-clock-date ${sizeCls(dateFontSize, 'text-xs')}`}
                         style={{ color: 'var(--text-secondary)', ...sizeStyle(dateFontSize) }}
                     >
-                        <DateText date={now} length={dateLength} t={t} />
+                        {dateNode}
                     </p>
                 )}
                 {extrasRow}
@@ -269,7 +257,7 @@ export function ClockWidget({ config }: WidgetProps) {
                             ...sizeStyle(dateFontSize),
                         }}
                     >
-                        <DateText date={now} length={dateLength} t={t} />
+                        {dateNode}
                     </p>
                 )}
                 {extrasRow}
@@ -379,7 +367,7 @@ export function ClockWidget({ config }: WidgetProps) {
                             ...sizeStyle(dateFontSize),
                         }}
                     >
-                        <DateText date={now} length={dateLength} t={t} />
+                        {dateNode}
                     </p>
                 )}
                 {extrasRow}

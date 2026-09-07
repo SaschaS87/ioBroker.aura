@@ -22,6 +22,11 @@ export function InputWidget({ config }: WidgetProps) {
     const numMax = o.max as number | undefined;
     const numStep = o.step as number | undefined;
     const submitMode = (o.submitMode as SubmitMode) ?? 'submit';
+    // Command-field mode: the input is a pure entry box — it never mirrors the DP and
+    // empties itself after each send so the next entry can be typed right away. The DP
+    // itself is deliberately left untouched: resetting it would be a second state change
+    // and consumers (scripts, notifications) would act on the empty value.
+    const clearAfterSubmit = !!o.clearAfterSubmit && submitMode === 'submit' && !o.readOnly;
     const placeholder = (o.placeholder as string) ?? '';
     const readOnly = !!o.readOnly;
     const confirmAction = !!o.confirmAction;
@@ -31,7 +36,14 @@ export function InputWidget({ config }: WidgetProps) {
     const showSubmit = o.showSubmit !== false;
     const titleAlign = (o.titleAlign as string) ?? 'left';
     const textAlign = (o.textAlign as 'left' | 'right' | 'center') ?? 'left';
+    // Where the input field sits horizontally within its cell. Only visible when the field
+    // has a fixed width (see inputWidth) — a full-width field fills the cell regardless.
+    const fieldAlign = (o.fieldAlign as 'left' | 'right' | 'center') ?? 'left';
     const iconSize = (o.iconSize as number) || 20;
+    // Fixed input field width in px, independent of the cell width. Undefined = fill the
+    // cell (default). When set, the field keeps this width and the submit button sits
+    // directly next to it instead of being pushed to the far edge.
+    const fixedWidth = Number(o.inputWidth) > 0 ? Number(o.inputWidth) : undefined;
     const WidgetIcon = getWidgetIcon(o.icon as string | undefined, TextCursorInput);
 
     const { value: rawVal } = useDatapoint(config.datapoint);
@@ -40,17 +52,18 @@ export function InputWidget({ config }: WidgetProps) {
     // In submit mode we keep a local draft so the user can type without
     // every keystroke being written. In live mode we still keep a local
     // draft to avoid input-lag (controlled-component round-trip).
-    const [draft, setDraft] = useState<string>(dpString);
+    const [draft, setDraft] = useState<string>(clearAfterSubmit ? '' : dpString);
     const [dirty, setDirty] = useState(false);
     const lastSeenDp = useRef<string>(dpString);
 
     // Sync local draft when DP changes externally (unless the user is currently editing).
     useEffect(() => {
+        if (clearAfterSubmit) return; // command field: never show the DP value
         if (dpString !== lastSeenDp.current) {
             lastSeenDp.current = dpString;
             if (!dirty) setDraft(dpString);
         }
-    }, [dpString, dirty]);
+    }, [dpString, dirty, clearAfterSubmit]);
 
     const writeValue = (v: string) => {
         lastSeenDp.current = v;
@@ -68,6 +81,7 @@ export function InputWidget({ config }: WidgetProps) {
 
     const doCommit = () => {
         writeValue(draft);
+        if (clearAfterSubmit) setDraft('');
         setDirty(false);
     };
 
@@ -80,6 +94,16 @@ export function InputWidget({ config }: WidgetProps) {
     } = useConfirmAction(doCommit, confirmAction && submitMode === 'submit');
 
     const commit = () => {
+        if (clearAfterSubmit) {
+            // Resending the same text must write again (the receiver expects a new
+            // trigger), so the "unchanged value" shortcut below is skipped here.
+            if (draft === '') {
+                setDirty(false);
+                return;
+            }
+            runCommit();
+            return;
+        }
         if (draft === lastSeenDp.current) {
             setDirty(false);
             return;
@@ -93,7 +117,7 @@ export function InputWidget({ config }: WidgetProps) {
             writeValue(v);
             setDirty(false);
         } else {
-            setDirty(v !== lastSeenDp.current);
+            setDirty(clearAfterSubmit ? v !== '' : v !== lastSeenDp.current);
         }
     };
 
@@ -105,11 +129,15 @@ export function InputWidget({ config }: WidgetProps) {
             commit();
         } else if (e.key === 'Escape') {
             e.preventDefault();
-            setDraft(lastSeenDp.current);
+            setDraft(clearAfterSubmit ? '' : lastSeenDp.current);
             setDirty(false);
             (e.currentTarget as HTMLElement).blur();
         }
     };
+
+    // Blur commits the draft — except for a command field, where an accidental tap next
+    // to the field would fire off the message. There the send is always explicit.
+    const onBlurCommit = submitMode === 'submit' && !clearAfterSubmit ? commit : undefined;
 
     const inputClass = 'nodrag w-full text-sm rounded-lg px-2.5 py-1.5 focus:outline-none';
     const inputStyle: React.CSSProperties = {
@@ -117,9 +145,12 @@ export function InputWidget({ config }: WidgetProps) {
         color: 'var(--text-primary)',
         border: '1px solid var(--app-border)',
         textAlign,
+        // A fixed px width overrides the `w-full` class and keeps the field from
+        // shrinking; without it the field fills its cell as before.
+        ...(fixedWidth ? { width: `${fixedWidth}px`, flexShrink: 0 } : null),
     };
-    const justifyForAlign: React.CSSProperties['justifyContent'] =
-        textAlign === 'right' ? 'flex-end' : textAlign === 'center' ? 'center' : 'flex-start';
+    const fieldJustify: React.CSSProperties['justifyContent'] =
+        fieldAlign === 'right' ? 'flex-end' : fieldAlign === 'center' ? 'center' : 'flex-start';
 
     const inputEl = multiline ? (
         <textarea
@@ -130,7 +161,7 @@ export function InputWidget({ config }: WidgetProps) {
             readOnly={readOnly}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
-            onBlur={submitMode === 'submit' ? commit : undefined}
+            onBlur={onBlurCommit}
         />
     ) : (
         <input
@@ -145,7 +176,7 @@ export function InputWidget({ config }: WidgetProps) {
             step={numericInput ? numStep : undefined}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
-            onBlur={submitMode === 'submit' ? commit : undefined}
+            onBlur={onBlurCommit}
         />
     );
 
@@ -171,6 +202,22 @@ export function InputWidget({ config }: WidgetProps) {
     };
 
     const submitButton = renderSubmitButton();
+
+    // Single-line field + submit button used by the compact and default layouts. In fill mode
+    // the field grows to fill the cell and the button is a shrink-0 sibling at the far edge.
+    // With a fixed width the field keeps its size and the whole group (field + button) is
+    // positioned within the row per `fieldAlign` (left / center / right).
+    const singleLineContent = fixedWidth ? (
+        <div className="flex-1 min-w-0 flex items-center gap-2" style={{ justifyContent: fieldJustify }}>
+            {inputEl}
+            {submitButton}
+        </div>
+    ) : (
+        <>
+            <div className="flex-1 min-w-0 flex">{inputEl}</div>
+            {submitButton}
+        </>
+    );
 
     if (layout === 'custom') {
         // In custom mode the user freely places cells; the Senden-Button is
@@ -217,10 +264,7 @@ export function InputWidget({ config }: WidgetProps) {
                         )}
                     </div>
                 )}
-                <div className="flex-1 min-w-0 flex" style={{ justifyContent: justifyForAlign }}>
-                    {inputEl}
-                </div>
-                {submitButton}
+                {singleLineContent}
                 {pending && <ConfirmOverlay text={confirmText} onConfirm={confirm} onCancel={cancel} />}
             </div>
         );
@@ -251,14 +295,7 @@ export function InputWidget({ config }: WidgetProps) {
                 </div>
             )}
             <div className={`flex ${multiline ? 'flex-1 min-h-0' : 'items-center'} gap-2`}>
-                {multiline ? (
-                    inputEl
-                ) : (
-                    <div className="flex-1 min-w-0 flex" style={{ justifyContent: justifyForAlign }}>
-                        {inputEl}
-                    </div>
-                )}
-                {!multiline && submitButton}
+                {multiline ? inputEl : singleLineContent}
             </div>
             {multiline && submitButton && <div className="flex justify-end shrink-0">{submitButton}</div>}
             {pending && <ConfirmOverlay text={confirmText} onConfirm={confirm} onCancel={cancel} />}

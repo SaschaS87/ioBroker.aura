@@ -15,7 +15,7 @@ import type { ioBrokerState } from '../../../types';
 // a configured max age, so no backend detection script is required.
 //
 // Extracted from WeatherForecastStripWidget.tsx (Rollläden-Umbau, 01.09.2026)
-// so shutterfloors/shutterrooms can reuse the same box instead of a
+// so shutterfloors can reuse the same box instead of a
 // widget-specific footer pill. Extended with `requireTrueDps`: some sources
 // aren't detectable via freshness of their last write at all — e.g.
 // tahoma.1.info.connection keeps its last value (often still `true`) after

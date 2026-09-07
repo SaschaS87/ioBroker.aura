@@ -28,13 +28,53 @@ export const WIDGETS = [
       runtime: r(50, { unit: '%', min: 0, max: 100 }, { w: 11, h: 5 }) },
     { type: 'thermostat', slug: 'thermostat', label: 'Thermostat', group: 'control',
       hint: 'Soll-Temperatur einstellen und Ist-Temperatur anzeigen.',
-      runtime: r(21, {}, { w: 11, h: 7 }) },
+      layouts: ['default', 'compact', 'minimal', 'dial', 'custom'],
+      // Pilot for per-layout/variant shots (see plan). Actual temp (19.5) sits
+      // below the 21 °C setpoint → heating state (flame + red accent) is visible.
+      runtime: r(21, { actualDatapoint: 'demo.thermostat.actual' }, { w: 11, h: 7,
+        mock: { 'demo.thermostat.actual': 19.5 } }),
+      shots: [
+        { file: 'layout-default', layout: 'default', w: 11, h: 7,
+          options: { actualDatapoint: 'demo.thermostat.actual' }, mock: { 'demo.thermostat.actual': 19.5 } },
+        { file: 'layout-compact', layout: 'compact', w: 18, h: 3,
+          options: { actualDatapoint: 'demo.thermostat.actual' }, mock: { 'demo.thermostat.actual': 19.5 } },
+        { file: 'layout-minimal', layout: 'minimal', w: 8, h: 9,
+          options: { actualDatapoint: 'demo.thermostat.actual' }, mock: { 'demo.thermostat.actual': 19.5 } },
+        { file: 'layout-dial', layout: 'dial', w: 9, h: 12,
+          options: { actualDatapoint: 'demo.thermostat.actual', showPresets: false, minTemp: 10, maxTemp: 30 },
+          mock: { 'demo.thermostat.actual': 19.5 } },
+        { file: 'layout-custom', layout: 'custom', w: 15, h: 6,
+          options: {
+            actualDatapoint: 'demo.thermostat.actual',
+            customGrid: {
+              cols: 3, rows: 2, colSizes: ['auto', '1fr', 'auto'],
+              cells: [
+                { type: 'component', componentKey: 'icon', align: 'center', valign: 'middle' },
+                { type: 'title', align: 'left', valign: 'middle', bold: true },
+                { type: 'component', componentKey: 'btn-plus', align: 'center', valign: 'middle' },
+                { type: 'field', fieldKey: 'actual', align: 'left', valign: 'middle', color: 'var(--text-secondary)' },
+                { type: 'value', suffix: '°C', align: 'left', valign: 'middle', bold: true, fontSize: 22, color: 'var(--accent-red)' },
+                { type: 'component', componentKey: 'btn-minus', align: 'center', valign: 'middle' },
+              ],
+            },
+          },
+          mock: { 'demo.thermostat.actual': 19.5 } },
+        // Markante Config-Variante: Schwellwert-Färbung der Ist-Temperatur.
+        { file: 'variant-schwellwerte', layout: 'default', w: 11, h: 7,
+          options: { actualDatapoint: 'demo.thermostat.actual', colorThresholds: [[20, 'var(--accent)'], [30, 'var(--accent-red)']] },
+          mock: { 'demo.thermostat.actual': 19.5 } },
+        // Farbschwellen der Rundskala – hier greift das dritte Band (Soll 21 °C).
+        { file: 'variant-dial-schwellen', layout: 'dial', w: 9, h: 12,
+          options: { actualDatapoint: 'demo.thermostat.actual', showPresets: false, minTemp: 10, maxTemp: 30,
+            dialColorThresholds: [[19, '#3b82f6'], [22, '#f59e0b'], [30, '#ef4444']] },
+          mock: { 'demo.thermostat.actual': 19.5 } },
+      ] },
     { type: 'value', slug: 'wert-anzeige', label: 'Wert-Anzeige', group: 'control',
       hint: 'Einen Datenpunktwert als Zahl/Text anzeigen (read-only).',
       runtime: r(21.5, { unit: '°C' }, { w: 11, h: 5 }) },
     { type: 'gauge', slug: 'gauge', label: 'Gauge', group: 'control',
       hint: 'Zahlenwert als Tachonadel/Kreisbogen visualisieren.',
-      runtime: r(72, { unit: 'kW', min: 0, max: 100 }, { w: 11, h: 8 }) },
+      runtime: r(72, { unit: 'kW', minValue: 0, maxValue: 100 }, { w: 11, h: 8 }) },
     { type: 'fill', slug: 'fuellstandsanzeige', label: 'Füllstandsanzeige', group: 'control',
       hint: 'Füllstand (z. B. Wassertank, Heizöl) als Balken visualisieren.',
       runtime: r(68, { unit: '%' }, { w: 9, h: 9 }) },
@@ -63,6 +103,14 @@ export const WIDGETS = [
       hint: 'Verlauf eines einzelnen Datenpunkts als einfaches Diagramm.', runtime: null },
     { type: 'echart', slug: 'diagramm-erweitert', label: 'Diagramm (erweitert)', group: 'control',
       hint: 'Erweitertes Diagramm mit mehreren Datenpunkten und Optionen.', runtime: null },
+    { type: 'energiebilanz', slug: 'verteilung', label: 'Diagramm (Verteilung)', group: 'control',
+      hint: 'Anteilige Darstellung (Balken, Torte oder Donut) beliebig vieler Gruppen aus mehreren Datenpunkten mit History-Aggregation – z.B. Energiebilanz, Kosten, Speicherbelegung',
+      // Documented by hand (docs/widgets/verteilung.md); its images come from
+      // tools/screenshots/verteilung-examples.mjs, not from widgets-all.mjs — hence the
+      // explicit grid + screenshot paths instead of runtime.png / config.png.
+      runtime: null, defaultGrid: { w: 8, h: 8 },
+      hero: 'assets/verteilung/bsp-vt-bilanz.png',
+      configShot: 'assets/verteilung/bsp-vt-config.png' },
     { type: 'echartsPreset', slug: 'echarts', label: 'eCharts', group: 'control',
       hint: 'Vorkonfiguriertes eCharts-Diagramm per JSON-Preset.', runtime: null },
     { type: 'light', slug: 'rgb-licht', label: 'RGB-Licht', group: 'control',
@@ -87,7 +135,7 @@ export const WIDGETS = [
     { type: 'weather', slug: 'wetter', label: 'Wetter', group: 'special',
       hint: 'Wetterdaten vom ioBroker-Wetter-Adapter anzeigen.', runtime: null },
     { type: 'calendar', slug: 'kalender', label: 'Kalender', group: 'special',
-      hint: 'Termine aus dem iCal-Adapter (nur per Tab-Wizard hinzufügbar).', runtime: null },
+      hint: 'Termine aus dem iCal-Adapter.', runtime: null },
     { type: 'evcc', slug: 'evcc', label: 'evcc', group: 'special',
       hint: 'evcc Wallbox-Ladesteuerung einbinden.', runtime: null },
     { type: 'camera', slug: 'kamera', label: 'Kamera', group: 'special',
@@ -117,6 +165,9 @@ export const WIDGETS = [
       hint: 'Liste aller JavaScript-Skripte mit Status, Filter und Start-/Stopp-Aktionen.', runtime: null },
     { type: 'adapterlogs', slug: 'adapter-logs', label: 'Adapter-Logs', group: 'special',
       hint: 'Live-Log-Stream aller Adapter — Filter nach Schweregrad, Adapter und Freitext.', runtime: null },
+    { type: 'messages', slug: 'meldungen', label: 'Meldungen', group: 'special',
+      layouts: ['default', 'count'],
+      hint: 'Verlauf der eingegangenen Informationen, Warnungen und Fehler — Filter nach Schweregrad und Zeitraum.', runtime: null },
     { type: 'alarm', slug: 'alarmanlage', label: 'Alarmanlage', group: 'special',
       hint: 'ioBroker.alarm-Adapter steuern — Scharf/Inside/Nacht, Zonen, PIN, Tages-Log.', runtime: null },
     { type: 'map', slug: 'karte', label: 'Karte', group: 'special',
@@ -127,7 +178,7 @@ export const WIDGETS = [
     // ── Layout ──────────────────────────────────────────────────────────────
     { type: 'header', slug: 'abschnittstitel', label: 'Abschnittstitel', group: 'layout',
       hint: 'Trennlinie mit Überschrift zur Gliederung des Dashboards.',
-      runtime: r(null, { title: 'Wohnzimmer' }, { w: 14, h: 2, noDp: true, title: 'Wohnzimmer' }) },
+      runtime: r(null, {}, { w: 14, h: 2, noDp: true, title: 'Wohnzimmer' }) },
     { type: 'button', slug: 'button', label: 'Button', group: 'layout',
       hint: 'Klick-Aktion auslösen (Datenpunkt schreiben, HTTP-Call, Szene …).',
       runtime: r(null, {}, { w: 6, h: 4, noDp: true, title: 'Szene starten' }) },
@@ -135,4 +186,18 @@ export const WIDGETS = [
       hint: 'Mehrere Widgets in einem gemeinsamen Rahmen gruppieren.', runtime: null },
     { type: 'panels', slug: 'panels', label: 'Panels', group: 'layout',
       hint: 'Mehrere Widgets als swipebare Slides – Wischen, Pagination-Dots und Pfeil-Buttons.', runtime: null },
+    // Menü and Spiegel are documented by hand and their images come from
+    // tools/screenshots/menu-mirror.mjs (a menu needs the sections/tabs around it, a
+    // mirror a source widget next to it — more than widgets-all.mjs can seed).
+    // `customShots` keeps widgets-all.mjs from overwriting those files.
+    { type: 'menu', slug: 'menue', label: 'Menü', group: 'layout',
+      hint: 'Frei positionierbares Navigations-Menü – zeigt die Bereiche oder die Tabs zum direkten Umschalten.',
+      runtime: null, customShots: true, defaultGrid: { w: 12, h: 2 },
+      hero: 'assets/menue/variant-hbar.png',
+      configShot: 'assets/menue/config.png' },
+    { type: 'mirror', slug: 'spiegel', label: 'Spiegel', group: 'layout',
+      hint: 'Zeigt ein vorhandenes Widget live an einer zweiten Stelle an – kein Duplikat: Änderungen an der Quelle wirken sofort mit.',
+      runtime: null, customShots: true, defaultGrid: { w: 8, h: 4 },
+      hero: 'assets/spiegel/runtime.png',
+      configShot: 'assets/spiegel/config.png' },
 ];

@@ -1,5 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, AreaChart, Area, ResponsiveContainer, Tooltip, YAxis, XAxis, ReferenceLine } from 'recharts';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import {
+    LineChart,
+    Line,
+    AreaChart,
+    Area,
+    CartesianGrid,
+    ResponsiveContainer,
+    Tooltip,
+    YAxis,
+    XAxis,
+    ReferenceLine,
+} from 'recharts';
 import { TrendingUp, BarChart2, Loader } from 'lucide-react';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import { useConfigStore } from '../../store/configStore';
@@ -7,9 +18,10 @@ import { useChartHistory, type ChartTimeRange, RANGE_LABELS } from '../../hooks/
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import type { WidgetProps } from '../../types';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { formatNum, type NumberFormat } from '../../utils/formatValue';
 import { formatYTick } from '../../utils/chartFormat';
 import { samplePreviewHistory } from '../../utils/sampleChartData';
+import { applyValueTransform } from '../../utils/valueTransform';
 
 const PRESET_RANGES: ChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d'];
 
@@ -41,8 +53,9 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
     const showTitle = o.showTitle !== false;
     const showIcon = o.showIcon !== false;
     const iconSize = (o.iconSize as number) || 20;
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     const decimals = (o.decimals as number) ?? defaultDecimals;
+    const numFmt = (o.numberFormat as NumberFormat | undefined) ?? globalNumFmt;
     const unit = o.unit as string | undefined;
     const historyInstance = o.historyInstance as string | undefined;
     // Set on popup charts opened from a value-display widget that had no history instance to
@@ -63,6 +76,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
     const showYAxis = o.showYAxis === true;
     const yAxisCompact = o.yAxisCompact !== false;
     const showXAxis = o.showXAxis !== false;
+    const showGridLines = o.showGridLines === true;
     const WidgetIcon = getWidgetIcon(o.icon as string | undefined, TrendingUp);
 
     // ── Frontend-local range selection (starts from admin config, switchable at runtime) ──
@@ -110,8 +124,18 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
     // In the popup editor the datapoint is a {{placeholder}} that can't resolve, so there
     // is no real history. Show a representative sample chart instead of an empty widget.
     const isPreview = editMode && (config.datapoint?.startsWith('{{') ?? false) && raw.history.length === 0;
-    const history = isPreview ? PREVIEW_HISTORY : raw.history;
-    const current = isPreview ? history[history.length - 1].v : raw.current;
+    const rawHistory = isPreview ? PREVIEW_HISTORY : raw.history;
+    // Display-only conversion (issue #540), applied before anything derived from the points:
+    // average, y ticks and tooltips all read the converted series. Memoised so the points array
+    // keeps its identity between renders — recharts re-renders on a new reference.
+    const valueFactor = o.valueFactor as number | undefined;
+    const valueOffset = o.valueOffset as number | undefined;
+    const history = useMemo(
+        () => rawHistory.map((p) => ({ t: p.t, v: applyValueTransform(p.v, valueFactor, valueOffset) })),
+        [rawHistory, valueFactor, valueOffset],
+    );
+    const rawCurrent = isPreview ? rawHistory[rawHistory.length - 1].v : raw.current;
+    const current = rawCurrent === null ? null : applyValueTransform(rawCurrent, valueFactor, valueOffset);
     const loading = isPreview ? false : raw.loading;
 
     const avg =
@@ -147,6 +171,10 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
     };
 
     const tickStyle = { fontSize: Math.round(10 * fontScale), fill: 'var(--text-secondary)' };
+
+    // Horizontal helper lines at the y ticks (issue #558) — drawn even when the y axis itself is
+    // hidden, recharts computes the tick positions either way.
+    const gridLines = showGridLines ? <CartesianGrid horizontal vertical={false} stroke="var(--app-border)" /> : null;
 
     const noData = (
         <div
@@ -271,7 +299,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                     className="aura-widget-value text-xl font-bold leading-tight"
                                     style={{ color: 'var(--text-primary)' }}
                                 >
-                                    {formatNum(current, decimals)}
+                                    {formatNum(current, decimals, numFmt)}
                                     {unit && (
                                         <span className="text-lg ml-1 font-medium" style={{ color: unitColor }}>
                                             {unit}
@@ -281,7 +309,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                             )}
                             {showAverageAsValue && avg !== null && (
                                 <p className="text-xs leading-tight mt-0.5" style={{ color: avgColor }}>
-                                    Ø {formatNum(avg, decimals)}
+                                    Ø {formatNum(avg, decimals, numFmt)}
                                     {unit ? ` ${unit}` : ''}
                                 </p>
                             )}
@@ -305,6 +333,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                             <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
+                                    {gridLines}
                                     <YAxis
                                         domain={['auto', 'auto']}
                                         hide={!showYAxis}
@@ -312,7 +341,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                         tickLine={false}
                                         axisLine={false}
                                         width={showYAxis ? (yAxisCompact ? 22 : 36) : 0}
-                                        tickFormatter={(v: number) => formatYTick(v, decimals, yAxisCompact)}
+                                        tickFormatter={(v: number) => formatYTick(v, decimals, yAxisCompact, numFmt)}
                                     />
                                     <XAxis
                                         dataKey="t"
@@ -324,7 +353,9 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                     <Tooltip
                                         contentStyle={tooltipStyle}
                                         labelFormatter={(label) => formatLabel(Number(label))}
-                                        formatter={(v) => `${formatNum(Number(v), decimals)}${unit ? ` ${unit}` : ''}`}
+                                        formatter={(v) =>
+                                            `${formatNum(Number(v), decimals, numFmt)}${unit ? ` ${unit}` : ''}`
+                                        }
                                     />
                                     <Area
                                         type="monotone"
@@ -342,7 +373,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                             strokeDasharray="4 3"
                                             strokeWidth={1.5}
                                             label={{
-                                                value: `Ø ${formatNum(avg, decimals)}${unit ? ` ${unit}` : ''}`,
+                                                value: `Ø ${formatNum(avg, decimals, numFmt)}${unit ? ` ${unit}` : ''}`,
                                                 position: 'insideTopRight',
                                                 fill: avgColor,
                                                 fontSize: 10,
@@ -391,12 +422,12 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                 {current !== null && (
                     <div className="aura-widget-value flex flex-col items-end shrink-0 ml-2">
                         <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
-                            {formatNum(current, decimals)}
+                            {formatNum(current, decimals, numFmt)}
                             {unit ? ` ${unit}` : ''}
                         </span>
                         {showAverageAsValue && avg !== null && (
                             <span className="text-[10px] leading-tight" style={{ color: avgColor }}>
-                                Ø {formatNum(avg, decimals)}
+                                Ø {formatNum(avg, decimals, numFmt)}
                                 {unit ? ` ${unit}` : ''}
                             </span>
                         )}
@@ -414,6 +445,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                     hasSize ? (
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={history}>
+                                {gridLines}
                                 <YAxis
                                     domain={['auto', 'auto']}
                                     hide={!showYAxis}
@@ -421,7 +453,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                     tickLine={false}
                                     axisLine={false}
                                     width={showYAxis ? (yAxisCompact ? 22 : 36) : 0}
-                                    tickFormatter={(v: number) => formatYTick(v, decimals, yAxisCompact)}
+                                    tickFormatter={(v: number) => formatYTick(v, decimals, yAxisCompact, numFmt)}
                                 />
                                 <XAxis
                                     dataKey="t"
@@ -438,7 +470,9 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                 <Tooltip
                                     contentStyle={tooltipStyle}
                                     labelFormatter={(label) => formatLabel(Number(label))}
-                                    formatter={(v) => `${formatNum(Number(v), decimals)}${unit ? ` ${unit}` : ''}`}
+                                    formatter={(v) =>
+                                        `${formatNum(Number(v), decimals, numFmt)}${unit ? ` ${unit}` : ''}`
+                                    }
                                 />
                                 <Line
                                     type="monotone"
@@ -455,7 +489,7 @@ export function ChartWidget({ config, editMode }: WidgetProps) {
                                         strokeDasharray="4 3"
                                         strokeWidth={1.5}
                                         label={{
-                                            value: `Ø ${formatNum(avg, decimals)}${unit ? ` ${unit}` : ''}`,
+                                            value: `Ø ${formatNum(avg, decimals, numFmt)}${unit ? ` ${unit}` : ''}`,
                                             position: 'insideTopRight',
                                             fill: avgColor,
                                             fontSize: 10,

@@ -26,6 +26,28 @@ function fmtSoc(v: number): string {
     return `${Math.round(v)}%`;
 }
 
+// Newer evcc adapters (or the "resolve nested nodes" option) no longer expose
+// gridPower/batteryPower/batterySoc as flat number states — grid/battery arrive
+// only as JSON objects like {"power":-9.2,...}. Extract the numeric power from a
+// value that may be a plain number, a JSON object string, or a numeric string.
+// Since adapter 0.2.9 the JSON keys are capitalized (`Power`), so accept both.
+function parsePower(raw: unknown): number | null {
+    if (raw == null) return null;
+    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+    const str = String(raw).trim();
+    if (str.startsWith('{')) {
+        try {
+            const o = JSON.parse(str) as { power?: number; Power?: number };
+            const p = o.power ?? o.Power;
+            return typeof p === 'number' ? p : null;
+        } catch {
+            return null;
+        }
+    }
+    const n = parseFloat(str);
+    return Number.isFinite(n) ? n : null;
+}
+
 // ── responsive container-size hook (ResizeObserver via callback ref) ──────────
 
 function useContainerSize() {
@@ -1090,6 +1112,21 @@ export function EvccWidget({ config }: WidgetProps) {
     const { value: extSoc } = useDatapoint(effectiveBattDp);
     const { value: extPower } = useDatapoint(batteryPowerDp);
 
+    // Grid power fallback chain — the evcc adapter reshaped the grid states
+    // several times:
+    //   • `status.gridPower`      flat number (old adapters, read in useEvccData)
+    //   • `status.grid`           JSON object {"power":…} (resolved nodes off)
+    //   • `status.Grid.power`     resolved nodes, adapter ≤ 0.2.8
+    //   • `status.Grid.Power`     resolved nodes, adapter ≥ 0.2.9 (issue #516)
+    // First source with a finite number wins; a manual datapoint beats them all.
+    const gridPowerDp = (o.gridPowerDatapoint as string) ?? '';
+    const { value: gridManual } = useDatapoint(gridPowerDp);
+    const { value: gridRaw } = useDatapoint(prefix ? `${prefix}.status.grid` : '');
+    const { value: gridNodeUpper } = useDatapoint(prefix ? `${prefix}.status.Grid.Power` : '');
+    const { value: gridNodeLower } = useDatapoint(prefix ? `${prefix}.status.Grid.power` : '');
+    const gridPowerOverride =
+        parsePower(gridManual) ?? parsePower(gridNodeUpper) ?? parsePower(gridNodeLower) ?? parsePower(gridRaw);
+
     const { site: rawSite, loadpoints } = useEvccData(prefix, loadpointCount);
 
     const batteryJson = (() => {
@@ -1105,6 +1142,7 @@ export function EvccWidget({ config }: WidgetProps) {
 
     const site: SiteState = {
         ...rawSite,
+        ...(gridPowerOverride != null ? { gridPower: gridPowerOverride } : {}),
         ...(batteryJson
             ? {
                   ...(batteryJson.soc != null ? { batterySoc: batteryJson.soc } : {}),
@@ -1122,10 +1160,16 @@ export function EvccWidget({ config }: WidgetProps) {
     const headerEl =
         showTitle || showIcon ? (
             <div className="flex items-center shrink-0 min-w-0" style={{ gap: 6 * headerScale }}>
-                {showIcon && <WidgetIcon size={headerIcon} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />}
+                {showIcon && (
+                    <WidgetIcon
+                        className="aura-widget-icon"
+                        size={headerIcon}
+                        style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
+                    />
+                )}
                 {showTitle && (
                     <p
-                        className="truncate flex-1 min-w-0"
+                        className="aura-widget-title truncate flex-1 min-w-0"
                         style={{
                             color: 'var(--text-secondary)',
                             textAlign: titleAlign as React.CSSProperties['textAlign'],
@@ -1435,6 +1479,20 @@ export function EvccConfig({
                     </div>
                 </div>
             )}
+
+            <div>
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    {t('evcc.gridPowerDp')} <span style={{ opacity: 0.6 }}>{t('evcc.gridPowerDpHint')}</span>
+                </label>
+                <input
+                    type="text"
+                    value={(o.gridPowerDatapoint as string) ?? ''}
+                    onChange={(e) => set({ gridPowerDatapoint: e.target.value || undefined })}
+                    placeholder="z.B. evcc.0.status.Grid.Power"
+                    className={`${inputCls} font-mono`}
+                    style={inputSty}
+                />
+            </div>
 
             <div className="flex items-center justify-between">
                 <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>

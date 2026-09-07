@@ -1,10 +1,118 @@
-import type { WidgetConfig } from '../types';
-import type { Tab, DashboardLayout } from '../store/dashboardStore';
+import type { WidgetConfig, WidgetPreset } from '../types';
+import type { Tab, Section, DashboardLayout } from '../store/dashboardStore';
 import type { PopupView } from '../store/popupConfigStore';
 import { useGroupDefsStore, newGroupDefId } from '../store/groupDefsStore';
+import { freshWidgetId } from './widgetCopy';
+import { newPresetId } from '../store/widgetPresetsStore';
+import { useConfigStore } from '../store/configStore';
 import { anonymizePayload, anyAnonymize, type AnonymizeOptions } from './anonymizeExport';
 
 export type { AnonymizeOptions } from './anonymizeExport';
+
+// ── Cross-dashboard grid scaling ───────────────────────────────────────────────
+//
+// Widget gridPos values are in grid UNITS; their pixel size depends on the
+// dashboard's grid geometry (row height, horizontal snap, gap), which is a
+// per-dashboard setting. A tab authored on a dashboard with a large row height
+// (so one-row children comfortably hold a fixed 48px icon) looks tiny and
+// squeezed when imported onto a dashboard with a small row height. To keep the
+// visual size, exports now record the SOURCE geometry and imports rescale every
+// gridPos (widgets AND group-def children) to the TARGET geometry.
+
+export interface GridGeometry {
+    rowHeight: number;
+    snapX: number;
+    gap: number;
+}
+
+interface GridPos {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
+/** The importing/exporting instance's current (global) grid geometry. */
+function currentGrid(): GridGeometry {
+    const f = useConfigStore.getState().frontend;
+    return {
+        rowHeight: f.gridRowHeight ?? 20,
+        snapX: f.gridSnapX ?? f.gridRowHeight ?? 20,
+        gap: f.gridGap ?? 10,
+    };
+}
+
+const near1 = (f: number) => f > 0.98 && f < 1.02;
+
+/** Scale one gridPos by independent x/y factors, scaling the EDGES (not width and
+ *  x separately) so adjacent widgets stay adjacent after rounding. */
+function scaleGridPos<T extends GridPos>(gp: T, fx: number, fy: number): T {
+    const x = Math.max(0, Math.round(gp.x * fx));
+    const right = Math.round((gp.x + gp.w) * fx);
+    const y = Math.max(0, Math.round(gp.y * fy));
+    const bottom = Math.round((gp.y + gp.h) * fy);
+    return { ...gp, x, y, w: Math.max(1, right - x), h: Math.max(1, bottom - y) };
+}
+
+/**
+ * Factors that map SOURCE grid units to TARGET grid units so the pixel size is
+ * preserved. When the source geometry is known, use the exact pitch ratio. When
+ * it isn't (legacy exports with no recorded geometry), fall back to an auto-fit:
+ * fixed-size content (a child's `iconSize`) reveals the row height the tab was
+ * designed for — if that would overflow the target row, scale everything up
+ * uniformly so icons/labels stay legible instead of overlapping.
+ */
+function gridScaleFactors(
+    source: GridGeometry | undefined,
+    target: GridGeometry,
+    widgets: WidgetConfig[],
+): { fx: number; fy: number } {
+    if (source) {
+        return {
+            fx: (source.snapX + source.gap) / (target.snapX + target.gap),
+            fy: (source.rowHeight + source.gap) / (target.rowHeight + target.gap),
+        };
+    }
+    // Auto-fit: largest icon-pixels-per-row across all widgets/children.
+    let maxIconPerRow = 0;
+    for (const w of widgets) {
+        const icon = w.options?.iconSize;
+        const h = w.gridPos?.h ?? 0;
+        if (typeof icon === 'number' && h > 0) maxIconPerRow = Math.max(maxIconPerRow, icon / h);
+    }
+    // A one-row child needs ~1.3× its icon height to also fit a label. If that
+    // exceeds the target row height the content would overflow → scale uniformly.
+    const needPx = maxIconPerRow * 1.3;
+    const f = needPx > target.rowHeight ? needPx / target.rowHeight : 1;
+    return { fx: f, fy: f };
+}
+
+/** Read the source geometry an export may carry (undefined for legacy files). */
+function readSourceGrid(obj: Record<string, unknown>): GridGeometry | undefined {
+    const g = obj.grid as Partial<GridGeometry> | undefined;
+    if (!g || typeof g.rowHeight !== 'number' || typeof g.snapX !== 'number' || typeof g.gap !== 'number') {
+        return undefined;
+    }
+    return { rowHeight: g.rowHeight, snapX: g.snapX, gap: g.gap };
+}
+
+/** Rescale a widget list in place-safe fashion (returns new configs). */
+function rescaleWidgets(widgets: WidgetConfig[], fx: number, fy: number): WidgetConfig[] {
+    if (near1(fx) && near1(fy)) return widgets;
+    return widgets.map((w) => ({ ...w, gridPos: scaleGridPos(w.gridPos, fx, fy) }));
+}
+
+/** Rescale every group-def child list. */
+function rescaleGroupDefs(
+    defs: Record<string, WidgetConfig[]>,
+    fx: number,
+    fy: number,
+): Record<string, WidgetConfig[]> {
+    if (near1(fx) && near1(fy)) return defs;
+    const out: Record<string, WidgetConfig[]> = {};
+    for (const [id, children] of Object.entries(defs)) out[id] = rescaleWidgets(children, fx, fy);
+    return out;
+}
 
 // Serialises a payload (optionally anonymised) and triggers a browser download.
 // When any anonymisation is active, `-anon` is appended to the filename; when
@@ -24,7 +132,7 @@ function downloadJson(payload: unknown, base: string, descriptive: string, anon?
     URL.revokeObjectURL(url);
 }
 
-function collectGroupDefs(
+export function collectGroupDefs(
     widgets: WidgetConfig[],
     allDefs: Record<string, WidgetConfig[]>,
     out: Record<string, WidgetConfig[]>,
@@ -38,11 +146,6 @@ function collectGroupDefs(
             }
         }
     }
-}
-
-let _widgetCounter = 0;
-function freshWidgetId(): string {
-    return `w-${Date.now()}-${(++_widgetCounter).toString(36)}`;
 }
 
 export function exportWidget(config: WidgetConfig, anon?: AnonymizeOptions) {
@@ -102,6 +205,7 @@ export function exportTab(tab: Tab, anon?: AnonymizeOptions) {
     const payload = {
         _type: 'aura-tab' as const,
         _version: 1,
+        grid: currentGrid(),
         tab,
         ...(Object.keys(groupDefs).length > 0 ? { groupDefs } : {}),
     };
@@ -124,14 +228,22 @@ export function importTab(raw: unknown): Omit<Tab, 'id'> | null {
 
     const importedDefs = (obj.groupDefs ?? {}) as Record<string, WidgetConfig[]>;
 
+    // Rescale SOURCE grid units → TARGET so the imported tab keeps its pixel size.
+    const { fx, fy } = gridScaleFactors(readSourceGrid(obj), currentGrid(), [
+        ...tab.widgets,
+        ...Object.values(importedDefs).flat(),
+    ]);
+    const scaledWidgets = rescaleWidgets(tab.widgets, fx, fy);
+    const scaledDefs = rescaleGroupDefs(importedDefs, fx, fy);
+
     const defIdMap: Record<string, string> = {};
-    for (const oldId of Object.keys(importedDefs)) {
+    for (const oldId of Object.keys(scaledDefs)) {
         defIdMap[oldId] = newGroupDefId();
     }
 
     function remapWidgets(widgets: WidgetConfig[]): WidgetConfig[] {
         return widgets.map((w) => {
-            const newId = freshWidgetId();
+            const newId = freshWidgetId(w.id);
             if ((w.type === 'group' || w.type === 'panels') && w.options?.defId) {
                 const newDefId = defIdMap[w.options.defId as string] ?? (w.options.defId as string);
                 return { ...w, id: newId, options: { ...w.options, defId: newDefId } };
@@ -141,7 +253,7 @@ export function importTab(raw: unknown): Omit<Tab, 'id'> | null {
     }
 
     const { setDef } = useGroupDefsStore.getState();
-    for (const [oldId, children] of Object.entries(importedDefs)) {
+    for (const [oldId, children] of Object.entries(scaledDefs)) {
         setDef(defIdMap[oldId], remapWidgets(children as WidgetConfig[]));
     }
 
@@ -149,7 +261,7 @@ export function importTab(raw: unknown): Omit<Tab, 'id'> | null {
     return {
         name,
         slug: slug ?? name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        widgets: remapWidgets(tab.widgets),
+        widgets: remapWidgets(scaledWidgets),
         ...(icon ? { icon } : {}),
         ...(hideLabel !== undefined ? { hideLabel } : {}),
         ...(disabled !== undefined ? { disabled } : {}),
@@ -159,23 +271,122 @@ export function importTab(raw: unknown): Omit<Tab, 'id'> | null {
     };
 }
 
+// ── groupDef remap helper (shared by section/layout import) ─────────────────────
+
+/** Register imported groupDefs under fresh ids and return a widget-remapper that
+ *  rescales gridPos to the target grid, assigns fresh widget ids and rewrites
+ *  group/panels defId references. `fx`/`fy` are the source→target grid factors. */
+function makeGroupDefRemapper(
+    importedDefs: Record<string, WidgetConfig[]>,
+    fx: number,
+    fy: number,
+): (widgets: WidgetConfig[]) => WidgetConfig[] {
+    const scaledDefs = rescaleGroupDefs(importedDefs, fx, fy);
+    const defIdMap: Record<string, string> = {};
+    for (const oldId of Object.keys(scaledDefs)) {
+        defIdMap[oldId] = newGroupDefId();
+    }
+    // Assign fresh widget ids and rewrite group/panels defId references. Gridpos
+    // scaling is done separately so this never double-scales already-scaled defs.
+    const idRemap = (widgets: WidgetConfig[]): WidgetConfig[] =>
+        widgets.map((w) => {
+            const newId = freshWidgetId(w.id);
+            if ((w.type === 'group' || w.type === 'panels') && w.options?.defId) {
+                const newDefId = defIdMap[w.options.defId as string] ?? (w.options.defId as string);
+                return { ...w, id: newId, options: { ...w.options, defId: newDefId } };
+            }
+            return { ...w, id: newId };
+        });
+    const { setDef } = useGroupDefsStore.getState();
+    for (const [oldId, children] of Object.entries(scaledDefs)) {
+        setDef(defIdMap[oldId], idRemap(children));
+    }
+    // Callers pass raw (unscaled) tab widgets → scale then id-remap.
+    return (widgets: WidgetConfig[]) => idRemap(rescaleWidgets(widgets, fx, fy));
+}
+
+// ── Section export / import ─────────────────────────────────────────────────────
+//
+// A section export carries a whole Section (all tabs, all widgets, per-section
+// settings) plus the groupDefs referenced by any GROUP widget across its tabs.
+// Import remaps every tab id, widget id and groupDef id to fresh values so the
+// section can be added alongside existing ones without collisions.
+//
+// Legacy `aura-layout` exports (from before the Section level was introduced) are
+// accepted here too, since a pre-v3 layout is field-compatible with a Section.
+
+export function exportSection(section: Section, anon?: AnonymizeOptions) {
+    const allDefs = useGroupDefsStore.getState().defs;
+    const groupDefs: Record<string, WidgetConfig[]> = {};
+    for (const tab of section.tabs) {
+        collectGroupDefs(tab.widgets, allDefs, groupDefs);
+    }
+    const payload = {
+        _type: 'aura-section' as const,
+        _version: 1,
+        grid: currentGrid(),
+        section,
+        ...(Object.keys(groupDefs).length > 0 ? { groupDefs } : {}),
+    };
+    downloadJson(payload, 'aura-section', section.name, anon);
+}
+
+export function importSection(raw: unknown): Omit<Section, 'id'> | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+    // Accept both the new section export and legacy layout exports.
+    const src = (obj._type === 'aura-section' ? obj.section : obj._type === 'aura-layout' ? obj.layout : null) as
+        | (Section & { defaultTabId?: string })
+        | null;
+    if (!src || !src.name || !Array.isArray(src.tabs)) return null;
+
+    const importedDefs = (obj.groupDefs ?? {}) as Record<string, WidgetConfig[]>;
+    const { fx, fy } = gridScaleFactors(readSourceGrid(obj), currentGrid(), [
+        ...src.tabs.flatMap((tb) => tb.widgets ?? []),
+        ...Object.values(importedDefs).flat(),
+    ]);
+    const remapWidgets = makeGroupDefRemapper(importedDefs, fx, fy);
+
+    const tsBase = Date.now();
+    const tabs: Tab[] = src.tabs.map((tab, i) => ({
+        ...tab,
+        id: `tab-${tsBase}-${i}`,
+        widgets: remapWidgets(tab.widgets),
+    }));
+
+    const defaultTabId =
+        src.defaultTabId !== undefined
+            ? (tabs[src.tabs.findIndex((t) => t.id === src.defaultTabId)]?.id ?? tabs[0]?.id)
+            : undefined;
+
+    return {
+        name: src.name,
+        slug: src.slug || src.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        tabs,
+        activeTabId: tabs[0]?.id ?? '',
+        ...(defaultTabId !== undefined ? { defaultTabId } : {}),
+        ...(src.icon ? { icon: src.icon } : {}),
+        ...(src.settings ? { settings: src.settings } : {}),
+    };
+}
+
 // ── Layout export / import ────────────────────────────────────────────────────
 //
-// A full layout export carries the whole DashboardLayout (all tabs, all widgets,
-// per-layout settings) plus the groupDefs referenced by any GROUP widget across
-// every tab. Import remaps every tab id, widget id and groupDef id to fresh
-// values so the layout can be added alongside existing ones without collisions.
+// A full layout export carries the whole DashboardLayout (all sections → tabs →
+// widgets) plus every referenced groupDef. Legacy `aura-layout` files (a single
+// layout with tabs, pre-v3) are wrapped into one section on import.
 
 export function exportLayout(layout: DashboardLayout, anon?: AnonymizeOptions) {
     const allDefs = useGroupDefsStore.getState().defs;
     const groupDefs: Record<string, WidgetConfig[]> = {};
-    for (const tab of layout.tabs) {
-        collectGroupDefs(tab.widgets, allDefs, groupDefs);
+    for (const section of layout.sections) {
+        for (const tab of section.tabs) collectGroupDefs(tab.widgets, allDefs, groupDefs);
     }
 
     const payload = {
         _type: 'aura-layout' as const,
-        _version: 1,
+        _version: 2,
+        grid: currentGrid(),
         layout,
         ...(Object.keys(groupDefs).length > 0 ? { groupDefs } : {}),
     };
@@ -184,59 +395,70 @@ export function exportLayout(layout: DashboardLayout, anon?: AnonymizeOptions) {
 }
 
 /**
- * Parses and validates a layout import file. Remaps all groupDef ids, tab ids
- * and widget ids to fresh values, registers the groupDefs in the store, and
- * returns the ready-to-add layout data (id assigned by the store).
+ * Parses and validates a layout import file. Remaps all groupDef ids, tab ids and
+ * widget ids to fresh values, registers the groupDefs in the store, and returns
+ * the ready-to-add layout data (id assigned by the store). Accepts both the new
+ * (sections[]) and legacy (tabs[]) layout export shapes.
  * Returns null if the file is not a valid aura-layout export.
  */
 export function importLayout(raw: unknown): Omit<DashboardLayout, 'id'> | null {
     if (!raw || typeof raw !== 'object') return null;
     const obj = raw as Record<string, unknown>;
     if (obj._type !== 'aura-layout' || !obj.layout) return null;
-    const layout = obj.layout as DashboardLayout;
-    if (!layout.name || !Array.isArray(layout.tabs)) return null;
+    const layout = obj.layout as DashboardLayout & { tabs?: Tab[]; activeTabId?: string };
+    if (!layout.name) return null;
 
     const importedDefs = (obj.groupDefs ?? {}) as Record<string, WidgetConfig[]>;
-
-    const defIdMap: Record<string, string> = {};
-    for (const oldId of Object.keys(importedDefs)) {
-        defIdMap[oldId] = newGroupDefId();
-    }
-
-    function remapWidgets(widgets: WidgetConfig[]): WidgetConfig[] {
-        return widgets.map((w) => {
-            const newId = freshWidgetId();
-            if ((w.type === 'group' || w.type === 'panels') && w.options?.defId) {
-                const newDefId = defIdMap[w.options.defId as string] ?? (w.options.defId as string);
-                return { ...w, id: newId, options: { ...w.options, defId: newDefId } };
-            }
-            return { ...w, id: newId };
-        });
-    }
-
-    const { setDef } = useGroupDefsStore.getState();
-    for (const [oldId, children] of Object.entries(importedDefs)) {
-        setDef(defIdMap[oldId], remapWidgets(children as WidgetConfig[]));
-    }
-
+    const allSrcWidgets: WidgetConfig[] = Array.isArray(layout.sections)
+        ? layout.sections.flatMap((sec) => sec.tabs.flatMap((tb) => tb.widgets ?? []))
+        : (layout.tabs ?? []).flatMap((tb) => tb.widgets ?? []);
+    const { fx, fy } = gridScaleFactors(readSourceGrid(obj), currentGrid(), [
+        ...allSrcWidgets,
+        ...Object.values(importedDefs).flat(),
+    ]);
+    const remapWidgets = makeGroupDefRemapper(importedDefs, fx, fy);
     const tsBase = Date.now();
-    const tabs: Tab[] = layout.tabs.map((tab, i) => ({
-        ...tab,
-        id: `tab-${tsBase}-${i}`,
-        widgets: remapWidgets(tab.widgets),
-    }));
 
-    const defaultTabId =
-        layout.defaultTabId !== undefined
-            ? (tabs[layout.tabs.findIndex((t) => t.id === layout.defaultTabId)]?.id ?? tabs[0]?.id)
-            : undefined;
+    // Legacy layout (tabs[]) → wrap into a single section.
+    const srcSections: Section[] = Array.isArray(layout.sections)
+        ? layout.sections
+        : [
+              {
+                  id: `section-${tsBase}`,
+                  name: layout.name,
+                  slug: 'default',
+                  tabs: layout.tabs ?? [],
+                  activeTabId: layout.activeTabId ?? layout.tabs?.[0]?.id ?? 'default',
+                  defaultTabId: (layout as { defaultTabId?: string }).defaultTabId,
+                  icon: layout.icon,
+                  settings: layout.settings,
+              },
+          ];
+
+    const sections: Section[] = srcSections.map((sec, si) => {
+        const tabs: Tab[] = sec.tabs.map((tab, ti) => ({
+            ...tab,
+            id: `tab-${tsBase}-${si}-${ti}`,
+            widgets: remapWidgets(tab.widgets),
+        }));
+        const defaultTabId =
+            sec.defaultTabId !== undefined
+                ? (tabs[sec.tabs.findIndex((t) => t.id === sec.defaultTabId)]?.id ?? tabs[0]?.id)
+                : undefined;
+        return {
+            ...sec,
+            id: `section-${tsBase}-${si}`,
+            tabs,
+            activeTabId: tabs[0]?.id ?? '',
+            ...(defaultTabId !== undefined ? { defaultTabId } : {}),
+        };
+    });
 
     return {
         name: layout.name,
         slug: layout.slug || layout.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        tabs,
-        activeTabId: tabs[0]?.id ?? '',
-        ...(defaultTabId !== undefined ? { defaultTabId } : {}),
+        sections,
+        activeSectionId: sections[0]?.id ?? '',
         ...(layout.icon ? { icon: layout.icon } : {}),
         ...(layout.settings ? { settings: layout.settings } : {}),
     };
@@ -258,6 +480,9 @@ export function exportPopupView(view: PopupView, anon?: AnonymizeOptions) {
         name: view.name,
         ...(view.version !== undefined ? { version: view.version } : {}),
         ...(view.autoCloseSec !== undefined ? { autoCloseSec: view.autoCloseSec } : {}),
+        ...(view.transparency !== undefined ? { transparency: view.transparency } : {}),
+        ...(view.backdropDim !== undefined ? { backdropDim: view.backdropDim } : {}),
+        ...(view.background !== undefined ? { background: view.background } : {}),
         widgets: view.widgets,
     };
 
@@ -290,6 +515,116 @@ export function importPopupView(raw: unknown): PopupView | null {
         name: obj.name,
         widgets,
         ...(typeof obj.autoCloseSec === 'number' ? { autoCloseSec: obj.autoCloseSec } : {}),
+        ...(typeof obj.transparency === 'number' ? { transparency: obj.transparency } : {}),
+        ...(typeof obj.backdropDim === 'number' ? { backdropDim: obj.backdropDim } : {}),
+        ...(typeof obj.background === 'string' ? { background: obj.background } : {}),
     };
     return view;
+}
+
+// ── Widget-Designer presets ─────────────────────────────────────────────────────
+//
+// A preset is a reusable widget blueprint (WidgetConfig + referenced group defs).
+// Export writes a self-contained JSON file; import returns a store-ready preset
+// with a fresh id. Actual insertion into a dashboard happens via instantiatePreset
+// (fresh widget id + fresh group-def ids), followed by the DP mapping dialog.
+
+const PRESET_EXPORT_TYPE = 'aura-widget-preset' as const;
+
+export function exportWidgetPreset(preset: WidgetPreset, anon?: AnonymizeOptions): void {
+    const payload = { _type: PRESET_EXPORT_TYPE, _version: 1, preset };
+    downloadJson(payload, 'aura-preset', preset.name || preset.id, anon);
+}
+
+/** Parse a preset export file. Returns a store-ready WidgetPreset with a fresh id,
+ *  or null if the shape is not a valid preset export. */
+export function importWidgetPreset(raw: unknown): WidgetPreset | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const obj = raw as Record<string, unknown>;
+    if (obj._type !== PRESET_EXPORT_TYPE || !obj.preset || typeof obj.preset !== 'object') return null;
+    const preset = obj.preset as WidgetPreset;
+    if (!preset.name || !preset.widget || typeof preset.widget !== 'object') return null;
+    return {
+        id: newPresetId(),
+        name: preset.name,
+        ...(preset.icon ? { icon: preset.icon } : {}),
+        ...(preset.category ? { category: preset.category } : {}),
+        widget: preset.widget,
+        ...(preset.groupDefs ? { groupDefs: preset.groupDefs } : {}),
+    };
+}
+
+/** Build a WidgetPreset from a live widget config, capturing any referenced group
+ *  defs. Mirrors exportWidget but targets the preset store instead of a file. */
+export function buildPresetFromWidget(
+    widget: WidgetConfig,
+    meta: { name: string; icon?: string; category?: string },
+): WidgetPreset {
+    const groupDefs: Record<string, WidgetConfig[]> = {};
+    if ((widget.type === 'group' || widget.type === 'panels') && widget.options?.defId) {
+        collectGroupDefs([widget], useGroupDefsStore.getState().defs, groupDefs);
+    }
+    return {
+        id: newPresetId(),
+        name: meta.name,
+        ...(meta.icon ? { icon: meta.icon } : {}),
+        ...(meta.category ? { category: meta.category } : {}),
+        widget: JSON.parse(JSON.stringify(widget)) as WidgetConfig,
+        ...(Object.keys(groupDefs).length > 0
+            ? { groupDefs: JSON.parse(JSON.stringify(groupDefs)) as Record<string, WidgetConfig[]> }
+            : {}),
+        createdAt: Date.now(),
+    };
+}
+
+export interface InstantiatedPreset {
+    /** Fresh widget with a new id + remapped group defId, NOT yet added to the store. */
+    widget: WidgetConfig;
+    /** Fresh group defs (new ids), NOT yet written to groupDefsStore. */
+    groupDefs: Record<string, WidgetConfig[]>;
+}
+
+/**
+ * Materialise a preset into a fresh, isolated widget + group-def graph. All widget
+ * ids and group-def ids are regenerated so the result never shares state with the
+ * stored preset or with other instances. Nothing is committed to any store yet —
+ * the caller runs the DP mapping dialog first, then commits via
+ * commitPresetGroupDefs + addWidget.
+ */
+export function instantiatePreset(preset: WidgetPreset): InstantiatedPreset {
+    const widget = JSON.parse(JSON.stringify(preset.widget)) as WidgetConfig;
+    widget.id = freshWidgetId(widget.id);
+
+    const importedDefs = preset.groupDefs ?? {};
+    const idMap: Record<string, string> = {};
+    for (const oldId of Object.keys(importedDefs)) idMap[oldId] = newGroupDefId();
+
+    const remapChildren = (children: WidgetConfig[]): WidgetConfig[] =>
+        children.map((raw) => {
+            const child = JSON.parse(JSON.stringify(raw)) as WidgetConfig;
+            child.id = freshWidgetId(child.id);
+            if ((child.type === 'group' || child.type === 'panels') && child.options?.defId) {
+                const oldDefId = child.options.defId as string;
+                child.options = { ...child.options, defId: idMap[oldDefId] ?? oldDefId };
+            }
+            return child;
+        });
+
+    const groupDefs: Record<string, WidgetConfig[]> = {};
+    for (const [oldId, children] of Object.entries(importedDefs)) {
+        groupDefs[idMap[oldId]] = remapChildren(children);
+    }
+
+    if ((widget.type === 'group' || widget.type === 'panels') && widget.options?.defId) {
+        const oldDefId = widget.options.defId as string;
+        widget.options = { ...widget.options, defId: idMap[oldDefId] ?? oldDefId };
+    }
+
+    return { widget, groupDefs };
+}
+
+/** Write instantiated group defs into groupDefsStore (call right before addWidget). */
+export function commitPresetGroupDefs(groupDefs: Record<string, WidgetConfig[]>): void {
+    const { setDef } = useGroupDefsStore.getState();
+    for (const [id, children] of Object.entries(groupDefs)) setDef(id, children);
 }

@@ -7,14 +7,20 @@ import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import { useConfirmAction } from '../../hooks/useConfirmAction';
 import type { WidgetConfig, CustomCell, CustomGrid, CustomGridDef } from '../../types';
-import { resolveAssetUrl } from '../../utils/assetUrl';
+import { resolveImageSource } from '../../utils/assetUrl';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { formatNum, type NumberFormat } from '../../utils/formatValue';
 import { applyValueTransform } from '../../utils/valueTransform';
+import { formatTimeDisplay, hasTimeDisplay } from '../../utils/timeDisplay';
+import { useT } from '../../i18n';
 import { baseDpId } from '../../utils/dpRef';
+import { cellStateActive } from '../../utils/cellState';
+import { cellBarColor } from '../../utils/cellBarColor';
+import { useCellConditionStyle, type CellCondResult } from '../../hooks/useCellConditionStyle';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { HelpCircle, ChevronDown, Send } from 'lucide-react';
-import { parseValue, formatDate, toDateInputValue, toTimeInputValue, type DateOutputFormat } from './DatePickerWidget';
+import type { DateOutputFormat } from '../../utils/dateValue';
+import { useDateValueFields, type DateValueSettings } from '../common/DateValueFields';
 import { ConfirmOverlay } from './ConfirmOverlay';
 
 // ── Default grid (title top-left, large value + unit in middle row) ──────────
@@ -68,18 +74,27 @@ export function normalizeGrid(raw: unknown, fallback?: CustomGrid | CustomGridDe
 
 // ── Style helpers ─────────────────────────────────────────────────────────────
 
-function cellTextStyle(cell: CustomCell, defaultColor: string): React.CSSProperties {
+function cellTextStyle(cell: CustomCell, defaultColor: string, cond?: CellCondResult): React.CSSProperties {
     const wrap = cell.wrap === true;
+    // A matched per-cell condition overrides the static color/bold/italic.
+    const bold = cond?.bold ?? cell.bold;
+    const italic = cond?.italic ?? cell.italic;
+    const fontSize = cond?.fontSize ?? cell.fontSize;
     return {
-        fontSize: cell.fontSize ? `${cell.fontSize}px` : undefined,
-        fontWeight: cell.bold ? 'bold' : undefined,
-        fontStyle: cell.italic ? 'italic' : undefined,
-        color: cell.color || defaultColor,
+        fontSize: fontSize ? `${fontSize}px` : undefined,
+        fontWeight: bold ? 'bold' : undefined,
+        fontStyle: italic ? 'italic' : undefined,
+        color: cond?.color || cell.color || defaultColor,
         overflow: wrap || cell.allowOverflow ? 'visible' : 'hidden',
         textOverflow: wrap || cell.allowOverflow ? undefined : 'ellipsis',
         whiteSpace: wrap ? 'normal' : 'nowrap',
         wordBreak: wrap ? 'break-word' : undefined,
         overflowWrap: wrap ? 'anywhere' : undefined,
+        // Align the wrapped lines *within* the text box too. Without this the box
+        // grows to (near) full cell width when wrapping, so the container's
+        // justify-content no longer visibly centers it and the lines fall back to
+        // the default left alignment.
+        textAlign: cell.align === 'right' ? 'right' : cell.align === 'center' ? 'center' : 'left',
         // 1.3 (not 1.15) so descenders (g, j, p, q, y) aren't clipped by overflow:hidden.
         lineHeight: 1.3,
         paddingBottom: '0.1em',
@@ -121,6 +136,20 @@ function cellWrapStyle(cell: CustomCell, index: number, cols: number, rows: numb
 
 function emptyCellStyle(index: number, cols: number): React.CSSProperties {
     return { gridRow: Math.floor(index / cols) + 1, gridColumn: (index % cols) + 1 };
+}
+
+/** Merge a matched per-cell condition's background into the cell wrapper style. */
+function withCondBg(base: React.CSSProperties, cond: CellCondResult): React.CSSProperties {
+    // Also the single place a cell's pulse/blink is applied: every cell type wraps
+    // itself with this, so the effect needs no threading through each of them.
+    const animation =
+        cond.effect === 'pulse'
+            ? 'auraCondPulse 1.5s ease-in-out infinite'
+            : cond.effect === 'blink'
+              ? 'blink 1s step-end infinite'
+              : undefined;
+    if (!cond.bg && !animation) return base;
+    return { ...base, ...(cond.bg ? { background: cond.bg, borderRadius: 6 } : null), animation };
 }
 
 function alignItemsFromCell(cell: CustomCell): React.CSSProperties['alignItems'] {
@@ -177,23 +206,36 @@ function DpCellView({
     cols,
     rows,
     defaultDecimals,
+    globalNumFmt,
 }: {
     cell: CustomCell;
     index: number;
     cols: number;
     rows: number;
     defaultDecimals: number;
+    globalNumFmt?: NumberFormat;
 }) {
+    const t = useT();
     const { state, value } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     const decimals = cell.decimals ?? defaultDecimals;
+    const numFmt = cell.numberFormat ?? globalNumFmt;
     const tValue = applyValueTransform(value, cell.valueFactor, cell.valueOffset);
-    const formatted = tValue === null ? '–' : typeof tValue === 'number' ? formatNum(tValue, decimals) : String(tValue);
+    // Time datapoints (epoch s/ms, ISO string, HH:mm) are rendered as time/date when
+    // configured; unreadable values show the placeholder instead of "Invalid Date".
+    const timeStr = hasTimeDisplay(cell.valueTimeFormat)
+        ? (formatTimeDisplay(tValue, cell.valueTimeFormat, t, cell.valueTimePattern) ?? '–')
+        : null;
+    const formatted =
+        timeStr ??
+        (tValue === null ? '–' : typeof tValue === 'number' ? formatNum(tValue, decimals, numFmt) : String(tValue));
     const content = `${cell.prefix ?? ''}${formatted}${cell.suffix ?? ''}`;
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
-    const textSty = cellTextStyle(cell, 'var(--text-primary)');
+    const textSty = cellTextStyle(cell, 'var(--text-primary)', cond);
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
-            {cell.showLastChange ? (
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
+            {cond.hide ? null : cell.showLastChange ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: alignItemsFromCell(cell) }}>
                     <span style={textSty}>{content}</span>
                     <LastChangeLine lc={state?.lc} fmt={cell.lastChangeFormat ?? 'relative'} />
@@ -217,7 +259,8 @@ function LastChangeCellView({
     cols: number;
     rows: number;
 }) {
-    const { state } = useDatapoint(cell.dpId ?? '');
+    const { state, value } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     const lc = state?.lc;
     const fmt = cell.lastChangeFormat ?? 'relative';
     const [, setTick] = useState(0);
@@ -227,29 +270,53 @@ function LastChangeCellView({
         return () => clearInterval(id);
     }, [fmt, lc]);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
-    const textSty = cellTextStyle(cell, 'var(--text-primary)');
+    const textSty = cellTextStyle(cell, 'var(--text-primary)', cond);
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
-            <span style={textSty}>{lc ? formatLastChange(lc, fmt) : '–'}</span>
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
+            {!cond.hide && <span style={textSty}>{lc ? formatLastChange(lc, fmt) : '–'}</span>}
         </div>
     );
 }
 
-/** Renders an image from a URL or base64 data URI. */
+/** Renders an image from a static URL/base64 or from a datapoint value (URL / path / base64). */
 function ImageCellView({ cell, index, cols, rows }: { cell: CustomCell; index: number; cols: number; rows: number }) {
-    if (!cell.imageUrl) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
-    return (
-        <div className={`aura-custom-cell-${index}`} style={{ ...cellWrapStyle(cell, index, cols, rows), padding: 0 }}>
-            <img
-                src={resolveAssetUrl(cell.imageUrl)}
-                alt=""
-                style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: cell.objectFit ?? 'contain',
-                    display: 'block',
-                }}
+    const { value: dpValue } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, dpValue);
+    // A configured datapoint takes precedence; its value carries the image (URL / path / base64).
+    const src = (() => {
+        if (cell.dpId && dpValue != null) return resolveImageSource(String(dpValue));
+        return cell.imageUrl ? resolveImageSource(cell.imageUrl) : '';
+    })();
+    if (!src || cond.hide)
+        return (
+            <div
+                className={`aura-custom-cell-${index}`}
+                style={
+                    cond.hide ? withCondBg(cellWrapStyle(cell, index, cols, rows), cond) : emptyCellStyle(index, cols)
+                }
             />
+        );
+
+    // Explicit pixel dimensions override the cell-filling default; cellWrapStyle
+    // already flex-centers (respecting align/valign) so the image positions correctly.
+    const hasPx = cell.imageWidth != null || cell.imageHeight != null;
+    const imgStyle: React.CSSProperties = hasPx
+        ? {
+              width: cell.imageWidth != null ? cell.imageWidth : 'auto',
+              height: cell.imageHeight != null ? cell.imageHeight : 'auto',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: cell.objectFit ?? 'contain',
+              display: 'block',
+          }
+        : { width: '100%', height: '100%', objectFit: cell.objectFit ?? 'contain', display: 'block' };
+    return (
+        <div
+            className={`aura-custom-cell-${index}`}
+            style={withCondBg({ ...cellWrapStyle(cell, index, cols, rows), padding: 0 }, cond)}
+        >
+            <img src={src} alt="" style={imgStyle} />
         </div>
     );
 }
@@ -311,6 +378,7 @@ function StaticCellView({
     extraFields,
     valueColor,
     mainDpId,
+    globalNumFmt,
 }: {
     cell: CustomCell;
     index: number;
@@ -325,15 +393,20 @@ function StaticCellView({
     valueColor?: string;
     /** Main DP id for 'value' cells wanting to show last-change timestamp. */
     mainDpId?: string;
+    /** Global thousands-separator default; per-cell numberFormat overrides it. */
+    globalNumFmt?: NumberFormat;
 }) {
     const { state: mainState } = useDatapoint(mainDpId ?? '');
+    const cond = useCellConditionStyle(cell, mainState?.val, mainDpId);
     const content = (() => {
         switch (cell.type) {
             case 'title':
                 return title;
             case 'value': {
                 const displayVal =
-                    cell.decimals !== undefined && rawValue != null ? formatNum(rawValue, cell.decimals) : value;
+                    cell.decimals !== undefined && rawValue != null
+                        ? formatNum(rawValue, cell.decimals, cell.numberFormat ?? globalNumFmt)
+                        : value;
                 return `${cell.prefix ?? ''}${displayVal}${cell.suffix ?? ''}`;
             }
             case 'unit':
@@ -350,18 +423,22 @@ function StaticCellView({
     if (cell.type === 'empty' || !content)
         return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
 
+    // A rule may replace the text outright — the same effect a list row's value has.
+    const shown = cond.text ?? content;
     const fallbackColor = cell.type === 'value' && valueColor ? valueColor : 'var(--text-primary)';
-    const textSty = cellTextStyle(cell, fallbackColor);
+    const textSty = cellTextStyle(cell, fallbackColor, cond);
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
     const lc = mainState?.lc;
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
             {cell.showLastChange && lc ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: alignItemsFromCell(cell) }}>
-                    <span style={textSty}>{content}</span>
+                    <span style={textSty}>{shown}</span>
                     <LastChangeLine lc={lc} fmt={cell.lastChangeFormat ?? 'relative'} />
                 </div>
             ) : (
-                <span style={textSty}>{content}</span>
+                <span style={textSty}>{shown}</span>
             )}
         </div>
     );
@@ -379,16 +456,45 @@ function parseCellValue(raw: string | undefined, fallback: boolean | number | st
     return raw;
 }
 
+/** Button-mode switch caption: the per-state label (trueText/falseText) wins, then the
+ *  state-independent `text`, then the AN/AUS default. */
+function switchButtonLabel(cell: CustomCell, on: boolean): string {
+    return (on ? cell.trueText : cell.falseText) || cell.text || (on ? 'AN' : 'AUS');
+}
+
 /** Boolean toggle bound to a DP. */
-function SwitchCellView({ cell, index, cols, rows }: { cell: CustomCell; index: number; cols: number; rows: number }) {
-    const { state, value, setValue } = useDatapoint(cell.dpId ?? '');
+function SwitchCellView({
+    cell,
+    index,
+    cols,
+    rows,
+    uniformCh = 0,
+}: {
+    cell: CustomCell;
+    index: number;
+    cols: number;
+    rows: number;
+    uniformCh?: number;
+}) {
+    const own = useDatapoint(cell.dpId ?? '');
+    const setValue = own.setValue;
+    // Split command/status devices (MQTT plugs: writes land on cmnd.POWER, the real state
+    // is reported on stat.POWER) drive the look from a second DP — clicks still write to
+    // dpId. Without statusDpId both come from dpId as before (issue #567).
+    const statusRef = cell.statusDpId?.trim() ?? '';
+    const status = useDatapoint(statusRef);
+    const state = statusRef ? status.state : own.state;
+    const readValue = statusRef ? status.value : own.value;
+    const cond = useCellConditionStyle(cell, readValue);
     const btnRef = useRef<HTMLButtonElement | null>(null);
     const trueWrite = parseCellValue(cell.trueValue, true);
     const falseWrite = parseCellValue(cell.falseValue, false);
+    // An explicit AN-payload doubles as the state comparison, but only while reading the DP
+    // we write to — a status DP reports its own vocabulary and needs stateMode 'condition'.
     const on =
-        cell.trueValue !== undefined && cell.trueValue !== ''
-            ? String(value) === String(trueWrite)
-            : value === true || value === 1 || value === 'true' || value === '1';
+        cell.stateMode !== 'condition' && !statusRef && cell.trueValue !== undefined && cell.trueValue !== ''
+            ? String(readValue) === String(trueWrite)
+            : cellStateActive(cell, readValue, statusRef || (cell.dpId ?? ''));
     const doToggle = () => {
         if (cell.momentary) {
             const delay = cell.momentaryDelay ?? 500;
@@ -400,15 +506,29 @@ function SwitchCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
     };
     const { run: handleClick, pending, confirm, cancel } = useConfirmAction(doToggle, !!cell.confirmAction);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
-    const wrap = {
-        ...cellWrapStyle(cell, index, cols, rows),
-        position: 'relative' as const,
-        ...(cell.showLastChange ? { flexDirection: 'column' as const, gap: 2 } : {}),
-    };
+    const wrap = withCondBg(
+        {
+            ...cellWrapStyle(cell, index, cols, rows),
+            position: 'relative' as const,
+            ...(cell.showLastChange ? { flexDirection: 'column' as const, gap: 2 } : {}),
+        },
+        cond,
+    );
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrap} />;
     const lcLine = cell.showLastChange && <LastChangeLine lc={state?.lc} fmt={cell.lastChangeFormat ?? 'relative'} />;
     if (cell.controlMode === 'button') {
         const pad = cell.buttonSize ?? 8;
-        const label = cell.text || (on ? 'AN' : 'AUS');
+        const label = switchButtonLabel(cell, on);
+        // Per-state colours win over the state-independent base colour, which in turn
+        // falls back to the theme accent / white.
+        const btnBg = (on ? cell.buttonTrueColor : cell.buttonFalseColor) || cell.color || 'var(--accent)';
+        const btnFg = (on ? cell.buttonTrueTextColor : cell.buttonFalseTextColor) || cell.buttonTextColor || '#fff';
+        const widthStyle: React.CSSProperties =
+            cell.buttonWidth === 'full'
+                ? { width: '100%' }
+                : cell.buttonWidth === 'uniform' && uniformCh > 0
+                  ? { minWidth: `calc(${uniformCh}ch + ${pad * 4}px)` }
+                  : {};
         return (
             <div className={`aura-custom-cell-${index}`} style={wrap}>
                 <button
@@ -416,16 +536,18 @@ function SwitchCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
                     onClick={handleClick}
                     className="nodrag rounded-lg font-medium hover:opacity-85 transition-opacity"
                     style={{
-                        background: cell.color || 'var(--accent)',
-                        color: cell.buttonTextColor || '#fff',
+                        background: btnBg,
+                        color: btnFg,
                         border: 'none',
                         cursor: 'pointer',
                         padding: `${pad}px ${pad * 2}px`,
                         fontSize: cell.fontSize ? `${cell.fontSize}px` : undefined,
                         fontWeight: cell.bold ? 'bold' : undefined,
                         fontStyle: cell.italic ? 'italic' : undefined,
+                        textAlign: 'center',
+                        ...widthStyle,
                     }}
-                    aria-label={cell.text || (on ? 'AN' : 'AUS')}
+                    aria-label={label}
                 >
                     {label}
                 </button>
@@ -444,10 +566,10 @@ function SwitchCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
     }
     if (cell.controlMode === 'icon') {
         const iconName = on ? cell.trueIcon || cell.iconName : cell.falseIcon || cell.iconName;
-        const color = on
-            ? cell.trueColor || cell.color || 'var(--accent-green)'
-            : cell.falseColor || 'var(--text-secondary)';
-        const Icon = getWidgetIcon(iconName, HelpCircle);
+        const color =
+            cond.color ||
+            (on ? cell.trueColor || cell.color || 'var(--accent-green)' : cell.falseColor || 'var(--text-secondary)');
+        const Icon = getWidgetIcon(cond.icon || iconName, HelpCircle);
         const size = cell.fontSize ?? 28;
         return (
             <div className={`aura-custom-cell-${index}`} style={wrap}>
@@ -456,7 +578,7 @@ function SwitchCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
                     onClick={handleClick}
                     className="nodrag flex items-center justify-center transition-transform hover:scale-110"
                     style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
-                    aria-label={cell.text || (on ? 'AN' : 'AUS')}
+                    aria-label={switchButtonLabel(cell, on)}
                 >
                     <Icon size={size} style={{ color }} />
                 </button>
@@ -514,28 +636,34 @@ function SliderCellView({
     cols,
     rows,
     defaultDecimals,
+    globalNumFmt,
 }: {
     cell: CustomCell;
     index: number;
     cols: number;
     rows: number;
     defaultDecimals: number;
+    globalNumFmt?: NumberFormat;
 }) {
     const { state, value, setValue } = useDatapoint(cell.dpId ?? '');
     const [pending, setPending] = useState<number | null>(null);
+    const cond = useCellConditionStyle(cell, value);
     const min = cell.min ?? 0;
     const max = cell.max ?? 100;
     const step = cell.step ?? 1;
     const isVertical = cell.orientation === 'vertical';
     const barStyle = !!cell.barStyle;
     const barSize = cell.barSize ?? 100;
-    const color = cell.color || 'var(--accent)';
+    // Same as the progress cell: the fill (and the native slider's accent) follows a
+    // matched condition. Leaving the twin behind would only move the surprise.
+    const color = cellBarColor(cell, cond);
     const num = typeof value === 'number' ? value : Number(value ?? min);
     const displayVal = pending ?? (Number.isFinite(num) ? num : min);
     const fillRatio = Math.max(0, Math.min(1, (displayVal - min) / (max - min)));
     const valuePos = cell.valuePosition ?? 'none';
     const decimals = cell.decimals ?? defaultDecimals;
-    const valueLabel = `${cell.prefix ?? ''}${Number.isFinite(num) ? formatNum(displayVal, decimals) : '–'}${cell.suffix ?? ''}`;
+    const numFmt = cell.numberFormat ?? globalNumFmt;
+    const valueLabel = `${cell.prefix ?? ''}${Number.isFinite(num) ? formatNum(displayVal, decimals, numFmt) : '–'}${cell.suffix ?? ''}`;
 
     const writeStepped = (v: number) => {
         const stepped = Math.round(v / step) * step;
@@ -641,8 +769,13 @@ function SliderCellView({
     const wrapBase = barStyle
         ? { ...cellWrapStyle(cell, index, cols, rows), padding: '4px' }
         : { ...cellWrapStyle(cell, index, cols, rows), padding: '4px 8px' };
-    const wrapStyle = cell.showLastChange ? { ...wrapBase, flexDirection: 'column' as const, gap: 2 } : wrapBase;
+    const wrapStyle = withCondBg(
+        cell.showLastChange ? { ...wrapBase, flexDirection: 'column' as const, gap: 2 } : wrapBase,
+        cond,
+    );
     const lcLine = cell.showLastChange && <LastChangeLine lc={state?.lc} fmt={cell.lastChangeFormat ?? 'relative'} />;
+
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapStyle} />;
 
     if (valuePos === 'none') {
         return (
@@ -675,7 +808,7 @@ function SliderCellView({
     const valueEl = (
         <span
             style={{
-                ...cellTextStyle(cell, 'var(--text-primary)'),
+                ...cellTextStyle(cell, 'var(--text-primary)', cond),
                 flexShrink: 0,
                 textAlign: 'center',
                 minWidth: valuePos === 'left' || valuePos === 'right' ? '2.5em' : undefined,
@@ -722,19 +855,24 @@ function SliderCellView({
 
 /** Button that writes a fixed payload to a DP on click. */
 function ButtonCellView({ cell, index, cols, rows }: { cell: CustomCell; index: number; cols: number; rows: number }) {
-    const { state, setValue } = useDatapoint(cell.dpId ?? '');
+    const { state, value, setValue } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
     const onClick = () => setValue(parseCellValue(cell.sendValue, ''));
-    const wrap = cell.showLastChange
-        ? { ...cellWrapStyle(cell, index, cols, rows), flexDirection: 'column' as const, gap: 2 }
-        : cellWrapStyle(cell, index, cols, rows);
+    const wrap = withCondBg(
+        cell.showLastChange
+            ? { ...cellWrapStyle(cell, index, cols, rows), flexDirection: 'column' as const, gap: 2 }
+            : cellWrapStyle(cell, index, cols, rows),
+        cond,
+    );
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrap} />;
     return (
         <div className={`aura-custom-cell-${index}`} style={wrap}>
             <button
                 onClick={onClick}
                 className="nodrag px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-85 transition-opacity"
                 style={{
-                    background: cell.color || 'var(--accent)',
+                    background: cond.color || cell.color || 'var(--accent)',
                     color: '#fff',
                     border: 'none',
                     cursor: 'pointer',
@@ -742,7 +880,7 @@ function ButtonCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
                     fontWeight: cell.bold ? 'bold' : undefined,
                 }}
             >
-                {cell.text || '⏵'}
+                {cond.text ?? cell.text ?? '⏵'}
             </button>
             {cell.showLastChange && <LastChangeLine lc={state?.lc} fmt={cell.lastChangeFormat ?? 'relative'} />}
         </div>
@@ -750,12 +888,29 @@ function ButtonCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
 }
 
 /** Static Lucide / Iconify icon. */
-function IconCellView({ cell, index, cols, rows }: { cell: CustomCell; index: number; cols: number; rows: number }) {
-    const Icon = getWidgetIcon(cell.iconName, HelpCircle);
+function IconCellView({
+    cell,
+    index,
+    cols,
+    rows,
+    mainDpId,
+}: {
+    cell: CustomCell;
+    index: number;
+    cols: number;
+    rows: number;
+    /** The widget's own datapoint — a static icon has none, so `{dp}` means this. */
+    mainDpId?: string;
+}) {
+    const { state: mainState } = useDatapoint(mainDpId ?? '');
+    const cond = useCellConditionStyle(cell, mainState?.val, mainDpId);
+    const Icon = getWidgetIcon(cond.icon || cell.iconName, HelpCircle);
     const size = cell.fontSize ?? 28;
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
-            <Icon size={size} style={{ color: cell.color || 'var(--text-primary)' }} />
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
+            <Icon size={size} style={{ color: cond.iconColor || cond.color || cell.color || 'var(--text-primary)' }} />
         </div>
     );
 }
@@ -773,15 +928,22 @@ function StateIconCellView({
     rows: number;
 }) {
     const { state, value } = useDatapoint(cell.dpId ?? '');
-    const truthy = value === true || value === 1 || value === 'true' || value === '1';
+    const cond = useCellConditionStyle(cell, value);
+    // 'boolean' mode (default): truthy coercion. 'condition' mode: shared operator engine
+    // so numeric datapoints (e.g. a dimmer 0=off / >0=on) drive the icon. See issue #467.
+    const truthy = cellStateActive(cell, value, cell.dpId ?? '');
     const iconName = truthy ? cell.trueIcon || cell.iconName : cell.falseIcon || cell.iconName;
-    const color = truthy
+    const baseColor = truthy
         ? cell.trueColor || cell.color || 'var(--accent)'
         : cell.falseColor || cell.color || 'var(--text-secondary)';
-    const Icon = getWidgetIcon(iconName, HelpCircle);
+    // A matched per-cell condition can override the icon symbol and/or its color.
+    const color = cond.color || baseColor;
+    const Icon = getWidgetIcon(cond.icon || iconName, HelpCircle);
     const size = cell.fontSize ?? 28;
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
             {cell.showLastChange ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                     <Icon size={size} style={{ color }} />
@@ -801,14 +963,17 @@ function StepperCellView({
     cols,
     rows,
     defaultDecimals,
+    globalNumFmt,
 }: {
     cell: CustomCell;
     index: number;
     cols: number;
     rows: number;
     defaultDecimals: number;
+    globalNumFmt?: NumberFormat;
 }) {
     const { state, value, setValue } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
     const min = cell.min ?? -Infinity;
     const max = cell.max ?? Infinity;
@@ -816,15 +981,18 @@ function StepperCellView({
     const num = typeof value === 'number' ? value : Number(value ?? 0);
     const cur = Number.isFinite(num) ? num : 0;
     const decimals = cell.decimals ?? defaultDecimals;
-    const display = Number.isFinite(num) ? formatNum(num, decimals) : '–';
+    const numFmt = cell.numberFormat ?? globalNumFmt;
+    const display = Number.isFinite(num) ? formatNum(num, decimals, numFmt) : '–';
     const color = cell.color || 'var(--accent)';
     const btnSize = cell.fontSize ?? 14;
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
     const change = (delta: number) => {
         const next = Math.max(min, Math.min(max, cur + delta));
         setValue(next);
     };
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
             <div className="nodrag flex flex-col items-center gap-0.5 w-full">
                 <div className="flex items-center gap-1 w-full">
                     <button
@@ -844,7 +1012,7 @@ function StepperCellView({
                     </button>
                     <span
                         className="flex-1 text-center tabular-nums"
-                        style={{ ...cellTextStyle(cell, 'var(--text-primary)'), whiteSpace: 'nowrap' }}
+                        style={{ ...cellTextStyle(cell, 'var(--text-primary)', cond), whiteSpace: 'nowrap' }}
                     >
                         {`${cell.prefix ?? ''}${display}${cell.suffix ?? ''}`}
                     </span>
@@ -873,6 +1041,7 @@ function StepperCellView({
 /** Free text / number input bound to a DP. Writes live or on Enter / Send / blur. */
 function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: number; cols: number; rows: number }) {
     const { state, value, setValue } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const isNumber = cell.inputMode === 'number';
     const multiline = !!cell.multiline;
@@ -880,19 +1049,24 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
     const numericInput = isNumber && !multiline;
     const submitMode = (cell.submitMode as 'submit' | 'live' | undefined) ?? 'submit';
     const showSubmit = cell.showSubmit !== false;
+    // Command-field mode: pure entry box that never mirrors the DP and empties itself
+    // after each send. The DP is left untouched — clearing it would be a second state
+    // change that consumers (scripts, notifications) would act on.
+    const clearAfterSubmit = !!cell.clearAfterSubmit && submitMode === 'submit';
     const externalStr = value == null ? '' : String(value);
-    const [draft, setDraft] = useState(externalStr);
+    const [draft, setDraft] = useState(clearAfterSubmit ? '' : externalStr);
     const [dirty, setDirty] = useState(false);
     const lastSeen = useRef(externalStr);
 
     // Sync local draft when the DP changes externally (unless the user is editing
     // or a confirmation is pending — in which case dirty stays true).
     useEffect(() => {
+        if (clearAfterSubmit) return; // command field: never show the DP value
         if (externalStr !== lastSeen.current) {
             lastSeen.current = externalStr;
             if (!dirty) setDraft(externalStr);
         }
-    }, [externalStr, dirty]);
+    }, [externalStr, dirty, clearAfterSubmit]);
 
     const writeValue = (v: string) => {
         lastSeen.current = v;
@@ -910,6 +1084,7 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
 
     const doCommit = () => {
         writeValue(draft);
+        if (clearAfterSubmit) setDraft('');
         setDirty(false);
     };
     // Optional security confirmation before writing (only meaningful in submit mode).
@@ -921,6 +1096,16 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
     } = useConfirmAction(doCommit, !!cell.confirmAction && submitMode === 'submit');
 
     const commit = () => {
+        if (clearAfterSubmit) {
+            // Resending the same text must write again, so the "unchanged value"
+            // shortcut below is skipped for command fields.
+            if (draft === '') {
+                setDirty(false);
+                return;
+            }
+            runCommit();
+            return;
+        }
         if (draft === lastSeen.current) {
             setDirty(false);
             return;
@@ -934,7 +1119,7 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
             writeValue(v);
             setDirty(false);
         } else {
-            setDirty(v !== lastSeen.current);
+            setDirty(clearAfterSubmit ? v !== '' : v !== lastSeen.current);
         }
     };
 
@@ -942,13 +1127,13 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
 
     const inputSty: React.CSSProperties = {
         background: 'var(--app-bg)',
-        color: cell.color || 'var(--text-primary)',
+        color: cond.color || cell.color || 'var(--text-primary)',
         border: '1px solid var(--app-border)',
         borderRadius: 8,
         padding: '4px 6px',
         fontSize: cell.fontSize ? `${cell.fontSize}px` : 12,
-        fontWeight: cell.bold ? 'bold' : undefined,
-        fontStyle: cell.italic ? 'italic' : undefined,
+        fontWeight: (cond.bold ?? cell.bold) ? 'bold' : undefined,
+        fontStyle: (cond.italic ?? cell.italic) ? 'italic' : undefined,
         width: '100%',
         minWidth: 0,
         textAlign: cell.align === 'center' ? 'center' : cell.align === 'right' ? 'right' : 'left',
@@ -962,11 +1147,15 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
             commit();
         } else if (e.key === 'Escape') {
             e.preventDefault();
-            setDraft(lastSeen.current);
+            setDraft(clearAfterSubmit ? '' : lastSeen.current);
             setDirty(false);
             (e.currentTarget as HTMLElement).blur();
         }
     };
+
+    // Blur commits the draft — except for a command field, where an accidental tap next
+    // to the field would fire off the message. There the send is always explicit.
+    const onBlurCommit = submitMode === 'submit' && !clearAfterSubmit ? commit : undefined;
 
     const submitBtn =
         submitMode === 'submit' && showSubmit ? (
@@ -987,7 +1176,8 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
             </button>
         ) : null;
 
-    const wrapSty = { ...cellWrapStyle(cell, index, cols, rows), padding: '2px 4px' };
+    const wrapSty = withCondBg({ ...cellWrapStyle(cell, index, cols, rows), padding: '2px 4px' }, cond);
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     const columnWrap = cell.showLastChange || multiline;
     return (
         <div
@@ -1000,7 +1190,7 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
                     <textarea
                         value={draft}
                         onChange={(e) => onChange(e.target.value)}
-                        onBlur={submitMode === 'submit' ? commit : undefined}
+                        onBlur={onBlurCommit}
                         onKeyDown={onKeyDown}
                         placeholder={cell.text || ''}
                         className="nodrag focus:outline-none resize-none flex-1 w-full min-h-0"
@@ -1014,7 +1204,7 @@ function InputCellView({ cell, index, cols, rows }: { cell: CustomCell; index: n
                         type={numericInput ? 'number' : 'text'}
                         value={draft}
                         onChange={(e) => onChange(e.target.value)}
-                        onBlur={submitMode === 'submit' ? commit : undefined}
+                        onBlur={onBlurCommit}
                         onKeyDown={onKeyDown}
                         min={numericInput ? cell.min : undefined}
                         max={numericInput ? cell.max : undefined}
@@ -1047,30 +1237,40 @@ function ProgressCellView({
     cols,
     rows,
     defaultDecimals,
+    globalNumFmt,
 }: {
     cell: CustomCell;
     index: number;
     cols: number;
     rows: number;
     defaultDecimals: number;
+    globalNumFmt?: NumberFormat;
 }) {
     const { state, value } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
     const min = cell.min ?? 0;
     const max = cell.max ?? 100;
     const isVertical = cell.orientation === 'vertical';
     const barSize = cell.barSize ?? 100;
-    const color = cell.color || 'var(--accent)';
+    // A matched condition paints the bar, not only the number on top of it — see
+    // cellBarColor for why that was not obvious from the outside.
+    const color = cellBarColor(cell, cond);
     // Display-only transform: value mapped into display space; min/max are in display units.
     const rawNum = typeof value === 'number' ? value : Number(value ?? min);
     const num = applyValueTransform(rawNum, cell.valueFactor, cell.valueOffset);
     const cur = Number.isFinite(num) ? num : min;
     const ratio = Math.max(0, Math.min(1, (cur - min) / (max - min)));
     const decimals = cell.decimals ?? defaultDecimals;
-    const label = `${cell.prefix ?? ''}${Number.isFinite(num) ? formatNum(num, decimals) : '–'}${cell.suffix ?? ''}`;
-    const wrapSty = cell.showLastChange
-        ? { ...cellWrapStyle(cell, index, cols, rows), padding: '4px', flexDirection: 'column' as const, gap: 2 }
-        : { ...cellWrapStyle(cell, index, cols, rows), padding: '4px' };
+    const numFmt = cell.numberFormat ?? globalNumFmt;
+    const label = `${cell.prefix ?? ''}${Number.isFinite(num) ? formatNum(num, decimals, numFmt) : '–'}${cell.suffix ?? ''}`;
+    const wrapSty = withCondBg(
+        cell.showLastChange
+            ? { ...cellWrapStyle(cell, index, cols, rows), padding: '4px', flexDirection: 'column' as const, gap: 2 }
+            : { ...cellWrapStyle(cell, index, cols, rows), padding: '4px' },
+        cond,
+    );
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     return (
         <div className={`aura-custom-cell-${index}`} style={wrapSty}>
             <div
@@ -1105,7 +1305,7 @@ function ProgressCellView({
                     {cell.showValue && (
                         <div
                             className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                            style={{ ...cellTextStyle(cell, '#fff'), mixBlendMode: 'difference' }}
+                            style={{ ...cellTextStyle(cell, '#fff', cond), mixBlendMode: 'difference' }}
                         >
                             <span>{label}</span>
                         </div>
@@ -1130,15 +1330,21 @@ function StateTextCellView({
     rows: number;
 }) {
     const { state, value } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
-    const truthy = value === true || value === 1 || value === 'true' || value === '1';
+    // stateMode 'condition' lets string/numeric states (MQTT 'ON'/'OFF') pick the label
+    // instead of only the boolean shapes (issue #567).
+    const truthy = cellStateActive(cell, value, cell.dpId ?? '');
     const label = truthy ? (cell.trueText ?? '') : (cell.falseText ?? '');
     // Fallbacks must match the editor's default color swatches (#22c55e / #64748b),
     // so the preselected colors apply immediately without the user touching the picker.
     const color = truthy ? cell.trueColor || cell.color || '#22c55e' : cell.falseColor || cell.color || '#64748b';
-    const textSty = { ...cellTextStyle(cell, color), color };
+    // A matched per-cell condition takes precedence over the true/false color.
+    const textSty = { ...cellTextStyle(cell, color, cond), color: cond.color || color };
+    const wrapSty = withCondBg(cellWrapStyle(cell, index, cols, rows), cond);
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     return (
-        <div className={`aura-custom-cell-${index}`} style={cellWrapStyle(cell, index, cols, rows)}>
+        <div className={`aura-custom-cell-${index}`} style={wrapSty}>
             {cell.showLastChange ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: alignItemsFromCell(cell) }}>
                     <span style={textSty}>{label}</span>
@@ -1154,6 +1360,7 @@ function StateTextCellView({
 /** Dropdown bound to a DP — maps DP values to labels (mini enum widget per cell). */
 function SelectCellView({ cell, index, cols, rows }: { cell: CustomCell; index: number; cols: number; rows: number }) {
     const { state, value, setValue } = useDatapoint(cell.dpId ?? '');
+    const cond = useCellConditionStyle(cell, value);
     const selRef = useRef<HTMLSelectElement>(null);
     if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
     const entries = cell.entries ?? [];
@@ -1184,7 +1391,8 @@ function SelectCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
     const showText = display === 'text' || display === 'icon-text';
     const labelText = current?.label ?? (currentStr || '–');
     const labelColor = current?.color;
-    const finalColor = labelColor ?? cell.color ?? 'var(--text-primary)';
+    // A matched per-cell condition takes precedence over the entry / cell color.
+    const finalColor = cond.color || labelColor || cell.color || 'var(--text-primary)';
     const iconSize = cell.fontSize ?? 16;
     const Icon = current?.icon ? getWidgetIcon(current.icon, HelpCircle) : null;
 
@@ -1194,7 +1402,7 @@ function SelectCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
             {showText && (
                 <span
                     style={{
-                        ...cellTextStyle(cell, 'var(--text-primary)'),
+                        ...cellTextStyle(cell, 'var(--text-primary)', cond),
                         color: finalColor,
                         minWidth: 0,
                         flex: '1 1 0',
@@ -1206,7 +1414,8 @@ function SelectCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
         </div>
     );
 
-    const wrapSty = { ...cellWrapStyle(cell, index, cols, rows), padding: '2px 4px' };
+    const wrapSty = withCondBg({ ...cellWrapStyle(cell, index, cols, rows), padding: '2px 4px' }, cond);
+    if (cond.hide) return <div className={`aura-custom-cell-${index}`} style={wrapSty} />;
     const lcLine = cell.showLastChange && <LastChangeLine lc={state?.lc} fmt={cell.lastChangeFormat ?? 'relative'} />;
 
     if (hideSelect) {
@@ -1241,11 +1450,16 @@ function SelectCellView({ cell, index, cols, rows }: { cell: CustomCell; index: 
                         className="nodrag rounded-lg pl-2 pr-6 py-1 focus:outline-none appearance-none truncate w-full"
                         style={{
                             background: 'var(--app-bg)',
-                            color: cell.color || 'var(--text-primary)',
+                            // A matched per-cell condition overrides the dropdown's
+                            // current-entry color/weight/style (it shows the current value).
+                            // WebkitTextFillColor is required for the *selected* value text
+                            // of a native <select> to honor the color on Chromium/Windows.
+                            color: cond.color || cell.color || 'var(--text-primary)',
+                            WebkitTextFillColor: cond.color || cell.color || 'var(--text-primary)',
                             border: '1px solid var(--app-border)',
                             fontSize: cell.fontSize ? `${cell.fontSize}px` : 12,
-                            fontWeight: cell.bold ? 'bold' : undefined,
-                            fontStyle: cell.italic ? 'italic' : undefined,
+                            fontWeight: (cond.bold ?? cell.bold) ? 'bold' : undefined,
+                            fontStyle: (cond.italic ?? cell.italic) ? 'italic' : undefined,
                             maxWidth: '100%',
                             minWidth: 0,
                         }}
@@ -1283,48 +1497,14 @@ function DatePickerCellView({
 }) {
     const { state, value } = useDatapoint(cell.dpId ?? '');
     const { setState } = useIoBroker();
-    const timeOnly = cell.timeOnly === true;
-    const showTime = timeOnly || cell.showTime === true;
-    const outputFmt = (cell.dateFormat as DateOutputFormat) ?? 'timestamp_ms';
-
-    const currentDate = parseValue(value);
-    const [dateVal, setDateVal] = useState(() => (currentDate ? toDateInputValue(currentDate) : ''));
-    const [timeVal, setTimeVal] = useState(() => {
-        if (currentDate) return toTimeInputValue(currentDate);
-        if (timeOnly && typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
-        return '00:00';
-    });
-
-    useEffect(() => {
-        if (timeOnly) {
-            if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) setTimeVal(value.slice(0, 5));
-            else if (currentDate) setTimeVal(toTimeInputValue(currentDate));
-            return;
-        }
-        if (!currentDate) return;
-        setDateVal(toDateInputValue(currentDate));
-        setTimeVal(toTimeInputValue(currentDate));
-    }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const writeValue = (date: string, time: string) => {
-        if (!cell.dpId) return;
-        if (timeOnly) {
-            if (!time) return;
-            const [h, mi] = time.split(':').map(Number);
-            const dt = new Date(1970, 0, 1, h ?? 0, mi ?? 0);
-            setState(baseDpId(cell.dpId), formatDate(dt, outputFmt));
-            return;
-        }
-        if (!date) return;
-        const [y, mo, d] = date.split('-').map(Number);
-        const [h, mi] = time.split(':').map(Number);
-        const dt = showTime ? new Date(y, mo - 1, d, h ?? 0, mi ?? 0) : new Date(y, mo - 1, d, 0, 0, 0, 0);
-        if (isNaN(dt.getTime())) return;
-        setState(baseDpId(cell.dpId), formatDate(dt, outputFmt));
+    const settings: DateValueSettings = {
+        inputFormat: cell.dateInput === 'custom' ? 'custom' : 'picker',
+        inputPattern: cell.dateInputPattern,
+        timeOnly: cell.timeOnly === true,
+        showTime: cell.showTime === true,
+        outputFormat: (cell.dateFormat as DateOutputFormat) ?? 'timestamp_ms',
+        outputPattern: cell.datePattern,
     };
-
-    if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
-
     const inputSty: React.CSSProperties = {
         background: 'var(--app-bg)',
         color: 'var(--text-primary)',
@@ -1336,6 +1516,18 @@ function DatePickerCellView({
         flexShrink: 0,
         minWidth: 0,
     };
+    const { dateInput, timeInput } = useDateValueFields({
+        value,
+        settings,
+        onWrite: (v) => {
+            if (cell.dpId) setState(baseDpId(cell.dpId), v);
+        },
+        className: 'nodrag focus:outline-none flex-1 min-w-0',
+        wrapClassName: 'flex-1 min-w-0',
+        style: inputSty,
+    });
+
+    if (!cell.dpId) return <div className={`aura-custom-cell-${index}`} style={emptyCellStyle(index, cols)} />;
 
     const wrapSty = { ...cellWrapStyle(cell, index, cols, rows), padding: '2px 4px' };
     return (
@@ -1344,30 +1536,8 @@ function DatePickerCellView({
             style={cell.showLastChange ? { ...wrapSty, flexDirection: 'column' as const, gap: 2 } : wrapSty}
         >
             <div className="flex flex-wrap gap-1 items-center w-full">
-                {!timeOnly && (
-                    <input
-                        type="date"
-                        value={dateVal}
-                        onChange={(e) => {
-                            setDateVal(e.target.value);
-                            writeValue(e.target.value, timeVal);
-                        }}
-                        className="nodrag focus:outline-none flex-1 min-w-0"
-                        style={inputSty}
-                    />
-                )}
-                {showTime && (
-                    <input
-                        type="time"
-                        value={timeVal}
-                        onChange={(e) => {
-                            setTimeVal(e.target.value);
-                            writeValue(dateVal, e.target.value);
-                        }}
-                        className="nodrag focus:outline-none flex-1 min-w-0"
-                        style={inputSty}
-                    />
-                )}
+                {dateInput}
+                {timeInput}
             </div>
             {cell.showLastChange && <LastChangeLine lc={state?.lc} fmt={cell.lastChangeFormat ?? 'relative'} />}
         </div>
@@ -1413,7 +1583,7 @@ export function CustomGridView({
 }: CustomGridViewProps) {
     const grid = normalizeGrid(config.options?.customGrid, fallback);
     const { cols, rows, cells, colSizes, rowSizes } = grid;
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     // minmax(0, 1fr) — ohne die 0-Untergrenze würde CSS-Grid die Spalten/Zeilen am min-content
     // der Zellinhalte ausrichten; ein langer Freitext in einer Außenzelle macht dann die Spalte
     // breiter und verschiebt z.B. den Drehregler in der Mittenzelle aus der Mitte.
@@ -1422,6 +1592,14 @@ export function CustomGridView({
     // When custom row sizes are used, anchor content at top instead of CSS-grid's default
     // "stretch" which distributes free space across auto rows (causing huge gaps).
     const alignContent = rowSizes ? 'start' : undefined;
+    // 'uniform' button width: widest label (in chars) among button-mode switch cells
+    // that opted into 'uniform' — every such button gets this as min-width so they align.
+    const uniformButtonCh = Math.max(
+        0,
+        ...cells
+            .filter((c) => c.type === 'switch' && c.controlMode === 'button' && c.buttonWidth === 'uniform')
+            .map((c) => Math.max(switchButtonLabel(c, true).length, switchButtonLabel(c, false).length)),
+    );
     return (
         <div
             className="aura-custom-grid"
@@ -1446,6 +1624,7 @@ export function CustomGridView({
                                 cols={cols}
                                 rows={rows}
                                 defaultDecimals={defaultDecimals}
+                                globalNumFmt={globalNumFmt}
                             />
                         );
                     case 'image':
@@ -1462,7 +1641,16 @@ export function CustomGridView({
                             />
                         );
                     case 'switch':
-                        return <SwitchCellView key={i} cell={cell} index={i} cols={cols} rows={rows} />;
+                        return (
+                            <SwitchCellView
+                                key={i}
+                                cell={cell}
+                                index={i}
+                                cols={cols}
+                                rows={rows}
+                                uniformCh={uniformButtonCh}
+                            />
+                        );
                     case 'slider':
                         return (
                             <SliderCellView
@@ -1472,12 +1660,22 @@ export function CustomGridView({
                                 cols={cols}
                                 rows={rows}
                                 defaultDecimals={defaultDecimals}
+                                globalNumFmt={globalNumFmt}
                             />
                         );
                     case 'button':
                         return <ButtonCellView key={i} cell={cell} index={i} cols={cols} rows={rows} />;
                     case 'icon':
-                        return <IconCellView key={i} cell={cell} index={i} cols={cols} rows={rows} />;
+                        return (
+                            <IconCellView
+                                key={i}
+                                cell={cell}
+                                index={i}
+                                cols={cols}
+                                rows={rows}
+                                mainDpId={config.datapoint}
+                            />
+                        );
                     case 'state-icon':
                         return <StateIconCellView key={i} cell={cell} index={i} cols={cols} rows={rows} />;
                     case 'datepicker':
@@ -1491,6 +1689,7 @@ export function CustomGridView({
                                 cols={cols}
                                 rows={rows}
                                 defaultDecimals={defaultDecimals}
+                                globalNumFmt={globalNumFmt}
                             />
                         );
                     case 'input':
@@ -1504,6 +1703,7 @@ export function CustomGridView({
                                 cols={cols}
                                 rows={rows}
                                 defaultDecimals={defaultDecimals}
+                                globalNumFmt={globalNumFmt}
                             />
                         );
                     case 'state-text':
@@ -1520,13 +1720,18 @@ export function CustomGridView({
                                 index={i}
                                 cols={cols}
                                 rows={rows}
-                                title={config.title}
+                                // A title cell is placed by hand, so it normally ignores showTitle
+                                // — but a condition that hides the title has to reach it here too,
+                                // otherwise "Titel zeigen: ausblenden" silently does nothing in a
+                                // custom layout.
+                                title={config.options?.showTitle === false ? '' : config.title}
                                 value={value}
                                 rawValue={rawValue}
                                 unit={unit}
                                 extraFields={extraFields}
                                 valueColor={valueColor}
                                 mainDpId={config.datapoint}
+                                globalNumFmt={globalNumFmt}
                             />
                         );
                 }

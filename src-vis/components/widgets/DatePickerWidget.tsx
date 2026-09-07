@@ -1,95 +1,25 @@
-import { useState, useEffect } from 'react';
 import { CalendarClock, CalendarDays, Clock } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import type { WidgetProps } from '../../types';
 import { contentPositionClass } from '../../utils/widgetUtils';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { useDateValueFields, type DateValueSettings } from '../common/DateValueFields';
+import type { DateOutputFormat } from '../../utils/dateValue';
 import { StatusBadges } from './StatusBadges';
-
-export type DateOutputFormat =
-    | 'timestamp_ms'
-    | 'timestamp_s'
-    | 'iso'
-    | 'date'
-    | 'datetime_local'
-    | 'de_date'
-    | 'de_datetime'
-    | 'time_hhmm'
-    | 'time_hhmmss';
-
-export const FORMAT_LABELS: Record<DateOutputFormat, string> = {
-    timestamp_ms: 'Timestamp (ms)',
-    timestamp_s: 'Timestamp (s)',
-    iso: 'ISO 8601 (2025-01-15T13:30:00.000Z)',
-    date: 'Datum (2025-01-15)',
-    datetime_local: 'Datum+Zeit (2025-01-15T13:30)',
-    de_date: 'Datum (15.01.2025)',
-    de_datetime: 'Datum+Zeit (15.01.2025 13:30)',
-    time_hhmm: 'Uhrzeit (13:30)',
-    time_hhmmss: 'Uhrzeit (13:30:00)',
-};
-
-function pad(n: number) {
-    return String(n).padStart(2, '0');
-}
-
-/** Parse any supported format back to a local Date */
-export function parseValue(val: unknown): Date | null {
-    if (val == null || val === '') return null;
-    if (typeof val === 'number') {
-        const d = new Date(val > 1e10 ? val : val * 1000);
-        return isNaN(d.getTime()) ? null : d;
-    }
-    if (typeof val === 'string') {
-        // German format DD.MM.YYYY or DD.MM.YYYY HH:mm
-        const m = val.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
-        if (m) {
-            const d = new Date(+m[3], +m[2] - 1, +m[1], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0);
-            return isNaN(d.getTime()) ? null : d;
-        }
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? null : d;
-    }
-    return null;
-}
-
-export function formatDate(d: Date, fmt: DateOutputFormat): string | number {
-    switch (fmt) {
-        case 'timestamp_ms':
-            return d.getTime();
-        case 'timestamp_s':
-            return Math.floor(d.getTime() / 1000);
-        case 'iso':
-            return d.toISOString();
-        case 'date':
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-        case 'datetime_local':
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        case 'de_date':
-            return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
-        case 'de_datetime':
-            return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        case 'time_hhmm':
-            return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        case 'time_hhmmss':
-            return `${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-    }
-}
-
-export function toDateInputValue(d: Date) {
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-export function toTimeInputValue(d: Date) {
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export function DatePickerWidget({ config }: WidgetProps) {
     const o = config.options ?? {};
-    const timeOnly = o.timeOnly === true;
-    const showTime = timeOnly || o.showTime === true;
-    const outputFmt = (o.outputFormat as DateOutputFormat) ?? 'timestamp_ms';
+    const settings: DateValueSettings = {
+        inputFormat: o.inputFormat === 'custom' ? 'custom' : 'picker',
+        inputPattern: o.inputPattern as string | undefined,
+        timeOnly: o.timeOnly === true,
+        showTime: o.showTime === true,
+        outputFormat: (o.outputFormat as DateOutputFormat) ?? 'timestamp_ms',
+        outputPattern: o.outputPattern as string | undefined,
+    };
+    const timeOnly = settings.timeOnly === true;
+    const showTime = timeOnly || settings.showTime === true;
     const showTitle = o.showTitle !== false;
     const showIcon = o.showIcon !== false;
     const titleAlign = (o.titleAlign as string) ?? 'left';
@@ -102,72 +32,6 @@ export function DatePickerWidget({ config }: WidgetProps) {
     const { value } = useDatapoint(config.datapoint);
     const { setState } = useIoBroker();
 
-    const currentDate = parseValue(value);
-
-    const [dateVal, setDateVal] = useState(() => (currentDate ? toDateInputValue(currentDate) : ''));
-    const [timeVal, setTimeVal] = useState(() => {
-        if (currentDate) return toTimeInputValue(currentDate);
-        // For timeOnly, parse HH:mm string directly
-        if (timeOnly && typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
-        return '00:00';
-    });
-
-    // Sync when DP value changes externally
-    useEffect(() => {
-        if (timeOnly) {
-            // timeOnly: value may be "HH:mm" or "HH:mm:ss" string
-            if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) {
-                setTimeVal(value.slice(0, 5));
-            } else if (currentDate) {
-                setTimeVal(toTimeInputValue(currentDate));
-            }
-            return;
-        }
-        if (!currentDate) return;
-        setDateVal(toDateInputValue(currentDate));
-        setTimeVal(toTimeInputValue(currentDate));
-    }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const writeValue = (date: string, time: string) => {
-        if (timeOnly) {
-            // Write time directly without a date component
-            if (!time) return;
-            const [h, mi] = time.split(':').map(Number);
-            const dt = new Date(1970, 0, 1, h ?? 0, mi ?? 0);
-            setState(config.datapoint, formatDate(dt, outputFmt));
-            return;
-        }
-        if (!date) return;
-        const [y, mo, d] = date.split('-').map(Number);
-        const [h, mi] = time.split(':').map(Number);
-        const dt = showTime ? new Date(y, mo - 1, d, h ?? 0, mi ?? 0) : new Date(y, mo - 1, d, 0, 0, 0, 0);
-        if (isNaN(dt.getTime())) return;
-        setState(config.datapoint, formatDate(dt, outputFmt));
-    };
-
-    const handleDate = (v: string) => {
-        setDateVal(v);
-        writeValue(v, timeVal);
-    };
-    const handleTime = (v: string) => {
-        setTimeVal(v);
-        writeValue(dateVal, v);
-    };
-
-    const currentDisplay = (() => {
-        if (timeOnly) return timeVal || '–';
-        if (!currentDate) return '–';
-        return showTime
-            ? currentDate.toLocaleString('de-DE', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-              })
-            : currentDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    })();
-
     const inputSty: React.CSSProperties = {
         background: 'var(--app-bg)',
         color: 'var(--text-primary)',
@@ -179,25 +43,20 @@ export function DatePickerWidget({ config }: WidgetProps) {
         flexShrink: 0,
     };
 
-    const dateInput = !timeOnly ? (
-        <input
-            type="date"
-            value={dateVal}
-            onChange={(e) => handleDate(e.target.value)}
-            className="aura-widget-action nodrag focus:outline-none"
-            style={inputSty}
-        />
-    ) : null;
-
-    const timeInput = showTime ? (
-        <input
-            type="time"
-            value={timeVal}
-            onChange={(e) => handleTime(e.target.value)}
-            className="aura-widget-action nodrag focus:outline-none"
-            style={inputSty}
-        />
-    ) : null;
+    // The custom field replaces both native pickers, so the layouts below keep
+    // rendering the same two slots.
+    const {
+        dateInput,
+        timeInput,
+        currentText: currentDisplay,
+    } = useDateValueFields({
+        value,
+        settings,
+        onWrite: (v) => setState(config.datapoint, v),
+        className: 'aura-widget-action nodrag focus:outline-none',
+        style: inputSty,
+        patternAutoWidth: true,
+    });
 
     // ── CARD ─────────────────────────────────────────────────────────────────
     if (layout === 'card') {

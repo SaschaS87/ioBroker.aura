@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { FunctionSquare, X } from 'lucide-react';
 import { usePortalThemeVars } from '../../contexts/PortalTargetContext';
 import { matchValueTransformPreset } from '../../utils/valueTransform';
+import { hasTimeDisplay } from '../../utils/timeDisplay';
 import { ValueTransformFields, type ValueTransformPatch } from './ValueTransformFields';
 
 interface ValueTransformButtonProps {
@@ -10,25 +11,44 @@ interface ValueTransformButtonProps {
     offset?: number;
     /** Stored selection id; takes precedence over factor/offset matching. */
     presetId?: string;
+    /** Stored time output preset id (or 'custom'). */
+    timeFormat?: string;
+    /** Stored token pattern for the 'custom' time format. */
+    timePattern?: string;
+    /** Show the time-formatting section — only for targets that render the value as text. */
+    allowTimeFormat?: boolean;
+    /** Datapoint reference of the edited target; drives the live preview. */
+    dpId?: string;
     onPatch: (patch: ValueTransformPatch) => void;
     /** When true, selecting a preset also fills the `unit` field. */
     fillUnit?: boolean;
+    /** Store "Keine" as 'none' so it switches off a list-wide default. */
+    explicitNone?: boolean;
     /** Icon size — match the sibling picker / JSON-path buttons. */
     size?: number;
+    /** Extra classes on the button, e.g. a height when the sibling field can wrap. */
+    className?: string;
 }
 
 /**
- * Compact control to attach a display-only value transform (factor/offset) to a
- * datapoint. Sits next to the DP picker button; clicking opens a small popover
- * with the preset dropdown + manual fields instead of taking inline space.
+ * Compact control to attach a display-only value transform (factor/offset, and
+ * optionally a time format) to a datapoint. Sits next to the DP picker button;
+ * clicking opens a small popover with the preset dropdowns + manual fields
+ * instead of taking inline space.
  */
 export function ValueTransformButton({
     factor,
     offset,
     presetId,
+    timeFormat,
+    timePattern,
+    allowTimeFormat = false,
+    dpId,
     onPatch,
     fillUnit = false,
+    explicitNone = false,
     size = 13,
+    className = '',
 }: ValueTransformButtonProps) {
     const themeVars = usePortalThemeVars();
     const [open, setOpen] = useState(false);
@@ -36,7 +56,7 @@ export function ValueTransformButton({
     const popRef = useRef<HTMLDivElement | null>(null);
     const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
-    const active = matchValueTransformPreset(factor, offset) !== 'none';
+    const active = matchValueTransformPreset(factor, offset) !== 'none' || hasTimeDisplay(timeFormat);
 
     useLayoutEffect(() => {
         if (!open || !btnRef.current) return;
@@ -70,8 +90,8 @@ export function ValueTransformButton({
                 ref={btnRef}
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                title="Umrechnung (nur Anzeige)"
-                className="px-2 rounded-lg hover:opacity-80 shrink-0 relative"
+                title={allowTimeFormat ? 'Umrechnung / Zeit-Formatierung (nur Anzeige)' : 'Umrechnung (nur Anzeige)'}
+                className={`px-2 rounded-lg hover:opacity-80 shrink-0 relative flex items-center justify-center ${className}`}
                 style={{
                     background: active ? 'color-mix(in srgb, var(--accent) 18%, var(--app-bg))' : 'var(--app-bg)',
                     color: active ? 'var(--accent)' : 'var(--text-secondary)',
@@ -101,7 +121,7 @@ export function ValueTransformButton({
                     >
                         <div className="flex items-center justify-between mb-1.5">
                             <span className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                Wert-Umrechnung
+                                {allowTimeFormat ? 'Wert-Umrechnung / Zeit' : 'Wert-Umrechnung'}
                             </span>
                             <button
                                 type="button"
@@ -116,8 +136,13 @@ export function ValueTransformButton({
                             factor={factor}
                             offset={offset}
                             presetId={presetId}
+                            timeFormat={timeFormat}
+                            timePattern={timePattern}
+                            allowTimeFormat={allowTimeFormat}
+                            dpId={dpId}
                             onPatch={onPatch}
                             fillUnit={fillUnit}
+                            explicitNone={explicitNone}
                         />
                     </div>,
                     document.body,

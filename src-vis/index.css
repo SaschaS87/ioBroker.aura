@@ -9,6 +9,20 @@ body,
     height: 100%;
 }
 
+/*
+ * ThemeProvider sets `color-scheme: dark` on <html> so native form controls
+ * (range inputs, scrollbars, selects) render dark. `color-scheme` is inherited,
+ * so every <iframe> would otherwise inherit `dark`. When an embedded document
+ * (external page, /echarts preset page) does not itself declare `dark`, the
+ * browser treats this as a color-scheme mismatch and paints an OPAQUE WHITE
+ * canvas behind the frame — giving iframe/eCharts widgets a white background in
+ * dark mode. Reset iframes to `normal` so they no longer inherit the forced
+ * dark scheme and composite transparently over the (dark) widget card again.
+ */
+iframe {
+    color-scheme: normal;
+}
+
 @keyframes blink {
     0%,
     100% {
@@ -16,6 +30,132 @@ body,
     }
     50% {
         opacity: 0.25;
+    }
+}
+
+/*
+ * A condition rule may paint ONE element of a widget instead of the whole card.
+ * Every widget marks its title, icon and value with these classes, so the rule
+ * reaches them from the frame root without a line of code per widget type. The
+ * !important is needed because most widgets set the colour inline.
+ */
+.aura-cond-title-color .aura-widget-title {
+    color: var(--cond-title-color) !important;
+}
+.aura-cond-title-bold .aura-widget-title {
+    font-weight: 700 !important;
+}
+.aura-cond-title-italic .aura-widget-title {
+    font-style: italic !important;
+}
+/* Text size. The line box follows the size, so `line-height: normal` keeps a bigger
+   title from being clipped by the height the widget reserved for the old one. */
+.aura-cond-title-size .aura-widget-title {
+    font-size: var(--cond-title-size) !important;
+    line-height: normal !important;
+}
+.aura-cond-title-hide .aura-widget-title {
+    display: none !important;
+}
+
+.aura-cond-icon-color .aura-widget-icon {
+    color: var(--cond-icon-color) !important;
+}
+.aura-cond-icon-hide .aura-widget-icon {
+    display: none !important;
+}
+
+.aura-cond-value-color .aura-widget-value {
+    color: var(--cond-value-color) !important;
+}
+.aura-cond-value-bold .aura-widget-value {
+    font-weight: 700 !important;
+}
+.aura-cond-value-italic .aura-widget-value {
+    font-style: italic !important;
+}
+.aura-cond-value-size .aura-widget-value {
+    font-size: var(--cond-value-size) !important;
+    line-height: normal !important;
+}
+.aura-cond-value-hide .aura-widget-value {
+    display: none !important;
+}
+
+/* Condition effect on ONE element — a list row, a grid cell, a value in the second
+   line. The widget-level equivalents are Tailwind's animate-pulse and `blink` above;
+   these are applied as an inline animation, so they need a name of their own. */
+@keyframes auraCondPulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* A widget-level condition may set the whole card bold/italic. Inheritance alone is
+   not enough: most widgets give their texts an explicit Tailwind weight, which would
+   win over an inherited one — hence the descendant selector and !important. */
+.aura-cond-bold,
+.aura-cond-bold * {
+    font-weight: 700 !important;
+}
+.aura-cond-italic,
+.aura-cond-italic * {
+    font-style: italic !important;
+}
+
+/* "Nur der Rand pulsiert" — the card keeps its opacity, so the content stays
+   readable while the frame signals. Same shape as the deep-link highlight above:
+   a solid ring plus a soft halo, which reads from across the room where a thin
+   line does not.
+
+   It lives on a pseudo-element rather than on the card, because the card's own
+   box-shadow is an inline style that an animation would replace for good — and
+   the ring must not cost the widget its drop shadow. --cond-ring is set by the
+   frame from the rule (Rand-Farbe, else the border colour, else the accent). */
+.aura-cond-ring {
+    /* so the halo is not painted over by the next widget in the grid */
+    z-index: 1;
+}
+.aura-cond-ring::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    animation: auraCondRingPulse 1.6s ease-in-out infinite;
+}
+@keyframes auraCondRingPulse {
+    0%,
+    100% {
+        box-shadow:
+            0 0 0 0 var(--cond-ring, var(--accent)),
+            0 0 0 0 color-mix(in srgb, var(--cond-ring, var(--accent)) 45%, transparent);
+    }
+    50% {
+        box-shadow:
+            0 0 0 3px var(--cond-ring, var(--accent)),
+            0 0 0 12px color-mix(in srgb, var(--cond-ring, var(--accent)) 22%, transparent);
+    }
+}
+
+/* Two columns in the element-rule editor. It appears both in a wide modal and in
+   a narrow detail pane, so the split has to follow the width it actually gets —
+   a viewport media query would break the narrow one into two cramped columns. */
+.aura-rule-body {
+    container-type: inline-size;
+}
+.aura-rule-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+}
+@container (min-width: 26rem) {
+    .aura-rule-cols {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -82,30 +222,65 @@ body,
    Scales all Tailwind text-* utilities within the frontend app container.
    The --font-scale CSS variable is set by ThemeProvider from configStore.
    Scoped to [data-aura-app="frontend"] so the admin UI is never affected.
+
+   The line height MUST be scaled along with the font size. Tailwind ships text-*
+   with an absolute line-height (text-xs = 12px/16px); scaling only the font size
+   leaves the line box at 16px, and every text that clips its overflow - a title
+   with `truncate` above all - cuts the descenders off (g, p, y) once the scale
+   goes above ~1.15. Same rem ratios as Tailwind, so scale 1 is byte-identical.
    ─────────────────────────────────────────────────────────────────────────── */
 [data-aura-app='frontend'] .text-xs {
     font-size: calc(0.75rem * var(--font-scale, 1));
+    line-height: calc(1rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-sm {
     font-size: calc(0.875rem * var(--font-scale, 1));
+    line-height: calc(1.25rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-base {
     font-size: calc(1rem * var(--font-scale, 1));
+    line-height: calc(1.5rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-lg {
     font-size: calc(1.125rem * var(--font-scale, 1));
+    line-height: calc(1.75rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-xl {
     font-size: calc(1.25rem * var(--font-scale, 1));
+    line-height: calc(1.75rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-2xl {
     font-size: calc(1.5rem * var(--font-scale, 1));
+    line-height: calc(2rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-3xl {
     font-size: calc(1.875rem * var(--font-scale, 1));
+    line-height: calc(2.25rem * var(--font-scale, 1));
 }
 [data-aura-app='frontend'] .text-4xl {
     font-size: calc(2.25rem * var(--font-scale, 1));
+    line-height: calc(2.5rem * var(--font-scale, 1));
+}
+/* An explicit leading-* has to keep winning. Tailwind's own utilities do that by
+   source order, but the rules above carry one class more, so they would outrank
+   them - hence the same-specificity restatement, after the block. */
+[data-aura-app='frontend'] .leading-none {
+    line-height: 1;
+}
+[data-aura-app='frontend'] .leading-tight {
+    line-height: 1.25;
+}
+[data-aura-app='frontend'] .leading-snug {
+    line-height: 1.375;
+}
+[data-aura-app='frontend'] .leading-normal {
+    line-height: 1.5;
+}
+[data-aura-app='frontend'] .leading-relaxed {
+    line-height: 1.625;
+}
+[data-aura-app='frontend'] .leading-loose {
+    line-height: 2;
 }
 /* ── Styled scrollbar ────────────────────────────────────────────────────────
    Thin accent-coloured scrollbar for overflow containers.
@@ -133,6 +308,77 @@ body,
 }
 .aura-scroll::-webkit-scrollbar-corner {
     background: transparent;
+}
+
+/* ── Row bleed inside a scroll container ─────────────────────────────────────
+   List rows that bleed past the content column (negative margins, so the row
+   background and an accent bar reach into the widget's padding gutter) hit two
+   problems inside a scroller: `overflow-y: auto` promotes `overflow-x` to
+   `auto`, which cuts the overhang off on the left because a LTR scroll
+   container cannot scroll into negative space — and `scrollbar-gutter: stable`
+   permanently shortens the content box on the right, so the same row ends up
+   closer to the left widget edge than to the right one (#590).
+
+   Both helpers widen the box by the bleed without moving its content box, so
+   the overhang stays inside the clip box on either side. The scroller also
+   pushes the reserved gutter out of its content box with the measured
+   --aura-sbw (see utils/scrollbarGutter.ts) — the scrollbar then sits in the
+   widget's padding next to the rows instead of eating into them.
+
+   How far the box may grow is capped by --aura-widget-pad, the "Innenabstand
+   der Widgets" the frame actually applied: the reserved band has to end at the
+   card edge at the latest. With a padding too small to hold bleed + gutter the
+   right margin stops at the padding and the left one turns into an equal inset,
+   which keeps both sides even instead of pushing the rows out of the card.
+   ─────────────────────────────────────────────────────────────────────────── */
+/* Host of such a list: caps the row overhang at the padding the card actually
+   has, so the rows never reach past the card edge. --aura-bleed-max is the
+   overhang the layout would like (6px by default, set per layout). */
+.aura-bleed-host {
+    --aura-bleed: min(var(--aura-bleed-max, 6px), var(--aura-widget-pad, 16px));
+}
+.aura-bleed-row {
+    margin-left: calc(-1 * var(--aura-bleed, 0px));
+    margin-right: calc(-1 * var(--aura-bleed, 0px));
+}
+.aura-bleed-clip,
+.aura-bleed-scroll {
+    --aura-bleed-r: min(var(--aura-widget-pad, 16px), calc(var(--aura-bleed) + var(--aura-sbw, 0px)));
+    /* the left side carries no gutter, so it bleeds that much less */
+    --aura-bleed-l: calc(var(--aura-bleed-r) - var(--aura-sbw, 0px));
+    margin-right: calc(-1 * var(--aura-bleed-r));
+}
+/* The clipping parent has no gutter of its own — it only has to be wide enough
+   to not cut off the scroller inside it, and must keep its content box put
+   (the widget header lines up with it). Padding cannot go negative, so an inset
+   left side simply needs no widening here. */
+.aura-bleed-clip {
+    margin-left: calc(-1 * max(0px, var(--aura-bleed-l)));
+    padding-left: max(0px, var(--aura-bleed-l));
+    padding-right: var(--aura-bleed-r);
+}
+.aura-bleed-scroll {
+    margin-left: calc(-1 * var(--aura-bleed-l));
+    padding-left: var(--aura-bleed);
+    padding-right: var(--aura-bleed);
+}
+
+/* ── Touch devices: hide the native scrollbar under .aura-scroll-touch ───────
+   Tablets/phones use overlay scrollbars that fade out, and Blink ignores
+   ::-webkit-scrollbar in overlay mode (incl. the DevTools device toolbar), so a
+   horizontally overflowing dashboard gives no hint it can be scrolled. The
+   TouchScrollbar component draws a persistent, draggable thumb instead — one
+   that shows everywhere. Hide the native bar here so iOS (which WOULD honour a
+   forced ::-webkit-scrollbar) doesn't render a second, redundant one.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (pointer: coarse) {
+    .aura-scroll.aura-scroll-touch {
+        scrollbar-width: none; /* Firefox */
+    }
+    .aura-scroll.aura-scroll-touch::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+    }
 }
 
 /* Tab-bar scroll rows use overflow-x:auto for horizontal tab scrolling, which
@@ -176,6 +422,21 @@ body,
 }
 .aura-tab-scroll--mobile::-webkit-scrollbar {
     display: none;
+}
+/* Restored 04.09.2026. ScrollRow.tsx renders this thumb, but the rule was lost
+   while resolving the index.css conflict of the 0.53.3 merge. Without
+   `position: absolute` the div is no longer taken out of the flow: it becomes a
+   normal flex item next to the tab row and ate 175 of 375 px on a phone, so the
+   tab strip was cut off after "Garten" and looked like tabs were missing.
+   Measured against the deployed 0.21.13, which does not render the element at
+   all. Identical to upstream (origin/main, src-vis/index.css). */
+.aura-tab-scroll-ind {
+    position: absolute;
+    bottom: 3px;
+    height: 3px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--accent, #888) 60%, transparent);
+    pointer-events: none;
 }
 
 /* Hide-scrollbar utility — used by the carousel widget when options.hideScrollbar is set */
@@ -256,6 +517,18 @@ body,
     transition: none !important;
 }
 
+/* ── Corner badges vs. the next grid item ────────────────────────────────────
+   A corner badge sits ON the widget edge and overflows outward. Grid items are
+   placed with a transform, so every item is its own stacking context: a z-index
+   inside the widget can never lift that overhang above the NEXT item, which
+   paints on top and swallows the badge (a long label lost its text under the
+   widget to its right). Lifting the item that actually carries a badge is
+   enough - a dragged item keeps z-index 3 from react-grid-layout and still wins.
+   ─────────────────────────────────────────────────────────────────────────── */
+.react-grid-item:has(.aura-badge-corner):not(.react-draggable-dragging) {
+    z-index: 2;
+}
+
 /* ── Range-input track ───────────────────────────────────────────────────────
    appearance-none removes the native track; re-style it so the rail stays
    visible on light themes. The thumb colour is still set per-component via
@@ -294,6 +567,16 @@ input[type='range']::-moz-range-thumb {
     cursor: pointer;
 }
 
+/* ── Date/time fields ────────────────────────────────────────────────────────
+   Chromium paints its own picker button into date/time inputs, Firefox paints
+   none at all — the same field looked openable in one browser and dead in the
+   other (issue #544). DateTimeInput draws a themed button instead, so the
+   native one has to go wherever it exists.
+   ─────────────────────────────────────────────────────────────────────────── */
+.aura-dt-input::-webkit-calendar-picker-indicator {
+    display: none;
+}
+
 /* Arbitrary px sizes used in some widgets */
 [data-aura-app='frontend'] .text-\[9px\] {
     font-size: calc(9px * var(--font-scale, 1));
@@ -307,12 +590,94 @@ input[type='range']::-moz-range-thumb {
 
 /* Editor "peek" mode — while held (Ctrl+Alt) hide all edit-only chrome so the
    editor shows the clean frontend look. Toggled by adding `aura-peek` to body. */
-.aura-peek .aura-edit-chrome {
+.aura-peek .aura-edit-chrome,
+.aura-peek .aura-group-toolbar {
     opacity: 0 !important;
     pointer-events: none !important;
 }
 .aura-peek .react-resizable-handle {
     display: none !important;
+}
+
+/* Header-less group: its config controls live in a hover-reveal toolbar (top-left)
+   so children sit flush to the top with no reserved header strip. Hidden and
+   non-interactive until the group is hovered or holds focus (e.g. menu open). */
+.aura-group-toolbar {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+}
+.aura-widget:hover > .aura-group-toolbar,
+.aura-widget:focus-within > .aura-group-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ── Message HTML (issue #429) ────────────────────────────────────
+   Title and body of a message render sanitised HTML, so a notice can carry a
+   table, a list or some emphasis. Tailwind's preflight strips the browser
+   defaults from those elements, so without this a <table> would come out as a
+   run-on line. Scoped to the message card — deliberately not a global reset. */
+.aura-msg-html :where(p) {
+    margin: 0 0 0.35em;
+}
+.aura-msg-html :where(p:last-child) {
+    margin-bottom: 0;
+}
+.aura-msg-html :where(b, strong) {
+    font-weight: 600;
+    /* inherit, not a theme token: the card may be painted in an accent colour. */
+    color: inherit;
+}
+.aura-msg-html :where(ul, ol) {
+    margin: 0.2em 0;
+    padding-left: 1.2em;
+}
+.aura-msg-html :where(ul) {
+    list-style-type: disc;
+}
+.aura-msg-html :where(ol) {
+    list-style-type: decimal;
+}
+.aura-msg-html :where(a) {
+    color: inherit;
+    text-decoration: underline;
+}
+.aura-msg-html :where(code, pre) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.92em;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: 4px;
+    padding: 0 0.25em;
+}
+.aura-msg-html :where(hr) {
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    margin: 0.4em 0;
+}
+/* A wide table scrolls inside the card instead of stretching it. */
+.aura-msg-html :where(table) {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    border-collapse: collapse;
+    margin: 0.25em 0;
+}
+.aura-msg-html :where(th, td) {
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    padding: 0.2em 0.45em;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+.aura-msg-html :where(th) {
+    font-weight: 600;
+    color: inherit;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.aura-msg-html :where(img) {
+    max-width: 100%;
+    height: auto;
 }
 
 /* ── Shared tab footer bar ───────────────────────────────────────────────────

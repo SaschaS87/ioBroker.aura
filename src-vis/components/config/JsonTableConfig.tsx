@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, RefreshCw, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import type { JsonColumnDef } from '../widgets/JsonTableWidget';
 import { ColorPicker } from '../common/ColorPicker';
+import { ImagePathHint } from './ImagePathHint';
 import { getStateDirect } from '../../hooks/useIoBroker';
 
 interface Props {
@@ -307,6 +308,35 @@ export function JsonTableConfig({ datapoint, options: o, onChange }: Props) {
                 />
             </div>
 
+            {/* Sortable columns */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                        Sortierbar
+                    </label>
+                    <p className="text-[10px]" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+                        Klick auf Spaltenkopf sortiert (auf/ab/aus)
+                    </p>
+                </div>
+                <Toggle value={boolOpt('sortable', false)} onToggle={() => toggleOpt('sortable', false)} />
+            </div>
+
+            {/* Max rows */}
+            <div>
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Max. Zeilen (0 = alle)
+                </label>
+                <input
+                    type="number"
+                    min={0}
+                    max={9999}
+                    value={(o.maxRows as number) ?? 0}
+                    onChange={(e) => set({ maxRows: Math.max(0, Number(e.target.value) || 0) || undefined })}
+                    className={jCls}
+                    style={jSty}
+                />
+            </div>
+
             {/* ── Columns editor ── */}
             <div className="mt-1">
                 <div className="flex items-center justify-between mb-1.5">
@@ -440,6 +470,101 @@ export function JsonTableConfig({ datapoint, options: o, onChange }: Props) {
                                     </span>
                                 </label>
                             </div>
+                            {/* Row 3.5: width / alignment / wrap */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-1">
+                                    <label className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                                        Breite
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={2000}
+                                        value={col.width ?? ''}
+                                        onChange={(e) => updateCol(idx, { width: Number(e.target.value) || undefined })}
+                                        placeholder="auto"
+                                        className="text-xs rounded-lg px-2 py-1 focus:outline-none w-16"
+                                        style={jSty}
+                                    />
+                                    <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                                        px
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-0.5">
+                                    {(
+                                        [
+                                            ['left', AlignLeft],
+                                            ['center', AlignCenter],
+                                            ['right', AlignRight],
+                                        ] as const
+                                    ).map(([val, Ico]) => {
+                                        const active = (col.align ?? 'left') === val;
+                                        return (
+                                            <button
+                                                key={val}
+                                                type="button"
+                                                onClick={() =>
+                                                    updateCol(idx, { align: val === 'left' ? undefined : val })
+                                                }
+                                                className="p-1 rounded transition-colors"
+                                                style={{
+                                                    background: active ? 'var(--accent)' : 'var(--app-border)',
+                                                    color: active ? '#fff' : 'var(--text-secondary)',
+                                                }}
+                                                title={`Ausrichtung: ${val}`}
+                                            >
+                                                <Ico size={12} />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <Toggle
+                                        value={col.wrap ?? false}
+                                        onToggle={() => updateCol(idx, { wrap: !(col.wrap ?? false) })}
+                                    />
+                                    <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                                        Umbruch
+                                    </span>
+                                </label>
+                            </div>
+                            {/* Row 3.6: prefix / suffix (text decoration, not for image columns) */}
+                            {!col.image && (
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1">
+                                        <label
+                                            className="text-[10px] block mb-1"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            Präfix
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={col.prefix ?? ''}
+                                            onChange={(e) => updateCol(idx, { prefix: e.target.value || undefined })}
+                                            placeholder="z.B. €"
+                                            className={jCls}
+                                            style={jSty}
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label
+                                            className="text-[10px] block mb-1"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            Suffix
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={col.suffix ?? ''}
+                                            onChange={(e) => updateCol(idx, { suffix: e.target.value || undefined })}
+                                            placeholder="z.B. °C"
+                                            className={jCls}
+                                            style={jSty}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             {/* Row 4: image size (only if image enabled) */}
                             {col.image && (
                                 <>
@@ -476,8 +601,23 @@ export function JsonTableConfig({ datapoint, options: o, onChange }: Props) {
                                             className={jCls}
                                             style={jSty}
                                         />
+                                        <p
+                                            className="text-[9px] mt-0.5"
+                                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                        >
+                                            Leer lassen, wenn die Zellwerte schon vollständige Pfade enthalten.
+                                        </p>
+                                        <ImagePathHint className="mt-1.5" />
                                     </div>
                                 </>
+                            )}
+                            {col.html && (
+                                <p className="text-[9px]" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+                                    Lokale Bilder in <code>{'<img>'}</code> via <code>aura-file:</code>-Präfix, z.B.{' '}
+                                    <code>
+                                        {'<img src="aura-file:/opt/iobroker/iobroker-data/files/vis.0/Aura/icon.png">'}
+                                    </code>
+                                </p>
                             )}
                         </div>
                     ))}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { getStateDirect, subscribeStateDirect } from './useIoBroker';
 import { useDashboardStore } from '../store/dashboardStore';
 import { hydrateGroupDefs } from '../store/groupDefsStore';
+import { hydrateWidgetPresets } from '../store/widgetPresetsStore';
 import {
     isPending,
     isSavingRecently,
@@ -23,10 +24,15 @@ function applyOneState(key: SyncStoreKey, raw: string): boolean {
         hydrateGroupDefs(raw);
         return true;
     }
+    if (key === 'aura-widget-presets') {
+        hydrateWidgetPresets(raw);
+        return true;
+    }
 
-    // Preserve in-memory activeTabId/activeLayoutId for the dashboard key —
-    // navigation state is flushed directly to localStorage and must not be
-    // overwritten by a slightly stale remote copy.
+    // Preserve in-memory navigation state (activeLayoutId / per-layout
+    // activeSectionId / per-section activeTabId) for the dashboard key — it is
+    // flushed directly to localStorage and must not be overwritten by a slightly
+    // stale remote copy.
     let remoteStr = raw;
     if (key === 'aura-dashboard') {
         try {
@@ -38,7 +44,14 @@ function applyOneState(key: SyncStoreKey, raw: string): boolean {
                 if (Array.isArray(state.layouts)) {
                     state.layouts = (state.layouts as Array<Record<string, unknown>>).map((l) => {
                         const cur = current.layouts.find((cl) => cl.id === (l as { id: string }).id);
-                        return cur ? { ...l, activeTabId: cur.activeTabId } : l;
+                        if (!cur) return l;
+                        const sections = Array.isArray(l.sections)
+                            ? (l.sections as Array<Record<string, unknown>>).map((sec) => {
+                                  const curSec = cur.sections.find((cs) => cs.id === (sec as { id: string }).id);
+                                  return curSec ? { ...sec, activeTabId: curSec.activeTabId } : sec;
+                              })
+                            : l.sections;
+                        return { ...l, activeSectionId: cur.activeSectionId, sections };
                     });
                 }
                 parsed.state = state;
@@ -102,7 +115,7 @@ export function useConfigSync(
     const poll = useCallback(() => {
         if (!configLoaded.current) return;
         const pollKeys = (Object.keys(IOBROKER_STATE_MAP) as SyncStoreKey[])
-            .filter((k) => k !== 'aura-group-defs')
+            .filter((k) => k !== 'aura-group-defs' && k !== 'aura-widget-presets')
             .filter((k) => ignoreDirty || !isPending(k));
         Promise.all(
             pollKeys.map((key) =>
@@ -116,7 +129,9 @@ export function useConfigSync(
                 }),
             ),
         ).then((results) => {
-            const appliedKeys = results.filter((k): k is Exclude<SyncStoreKey, 'aura-group-defs'> => k !== null);
+            const appliedKeys = results.filter(
+                (k): k is Exclude<SyncStoreKey, 'aura-group-defs' | 'aura-widget-presets'> => k !== null,
+            );
             if (appliedKeys.length > 0) {
                 // include global settings — see subscribe path above.
                 rehydrateAll(true);

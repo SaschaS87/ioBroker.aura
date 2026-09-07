@@ -11,12 +11,16 @@ import {
     CartesianGrid,
     ReferenceLine,
 } from 'recharts';
-import { Activity, Info, X, RefreshCw } from 'lucide-react';
-import { sendToDirect, useIoBroker } from '../../hooks/useIoBroker';
+import { useNavigate } from 'react-router-dom';
+import { Activity, Info, X, RefreshCw, RotateCcw } from 'lucide-react';
+import { sendToDirect, useIoBroker, getObjectViewDirect, getStateDirect } from '../../hooks/useIoBroker';
+import { resetBreakdown } from '../../utils/perfBreakdown';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useDashboardStore } from '../../store/dashboardStore';
+import { useGroupDefsStore } from '../../store/groupDefsStore';
 import { NS } from '../../utils/namespace';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
-import type { WidgetProps } from '../../types';
+import type { WidgetProps, WidgetConfig } from '../../types';
 
 // ── Metric catalogue ──────────────────────────────────────────────────────────
 //
@@ -39,6 +43,13 @@ const METRICS: MetricMeta[] = [
     { key: 'socketToFirstState', label: 'Socket → 1. DP', color: '#f59e0b', good: 300, ok: 800 },
     { key: 'tabSwitch', label: 'Tab-Wechsel', color: '#a855f7', good: 150, ok: 400 },
     { key: 'longTaskMax', label: 'Long-Task max', color: '#ef4444', good: 50, ok: 150 },
+    // Network breakdown — high values here (with normal render times) point to
+    // internet/VPN latency rather than the device.
+    { key: 'ttfb', label: 'TTFB (Server)', color: '#06b6d4', good: 200, ok: 600 },
+    { key: 'transfer', label: 'Transfer', color: '#14b8a6', good: 200, ok: 800 },
+    { key: 'dns', label: 'DNS', color: '#8b5cf6', good: 30, ok: 150 },
+    { key: 'tcp', label: 'TCP/TLS', color: '#ec4899', good: 80, ok: 400 },
+    { key: 'backendPing', label: 'Backend-Ping', color: '#eab308', good: 80, ok: 300 },
 ];
 const METRIC_BY_KEY: Record<string, MetricMeta> = Object.fromEntries(METRICS.map((m) => [m.key, m]));
 
@@ -71,6 +82,52 @@ interface BreakdownClient {
     ts: number;
     entries: BreakdownEntry[];
 }
+interface WidgetLoc {
+    layoutId: string;
+    layoutName: string;
+    tabId: string;
+    tabName: string;
+}
+
+// Build a widget-id → {layout,tab} map from the dashboard config, so the
+// breakdown can show which tab a widget lives on and deep-link to the editor.
+// Group/panel children live in a separate store (groupDefsStore) but belong to
+// the same tab as their container — recurse into them.
+function buildWidgetLocationMap(
+    layouts: ReturnType<typeof useDashboardStore.getState>['layouts'],
+    defs: Record<string, WidgetConfig[]>,
+): Map<string, WidgetLoc> {
+    const map = new Map<string, WidgetLoc>();
+    const addChildren = (defId: string | undefined, loc: WidgetLoc, seen: Set<string>): void => {
+        if (!defId || seen.has(defId)) return;
+        seen.add(defId);
+        for (const k of defs[defId] ?? []) {
+            map.set(k.id, loc);
+            if (k.type === 'group' || k.type === 'panels')
+                addChildren(k.options?.defId as string | undefined, loc, seen);
+        }
+    };
+    for (const l of layouts) {
+        const multiSection = l.sections.length > 1;
+        for (const sec of l.sections) {
+            for (const tab of sec.tabs) {
+                const loc: WidgetLoc = {
+                    layoutId: l.id,
+                    layoutName: l.name,
+                    tabId: tab.id,
+                    tabName: multiSection ? `${sec.name} / ${tab.name}` : tab.name,
+                };
+                for (const w of tab.widgets) {
+                    map.set(w.id, loc);
+                    if (w.type === 'group' || w.type === 'panels')
+                        addChildren(w.options?.defId as string | undefined, loc, new Set());
+                }
+            }
+        }
+    }
+    return map;
+}
+
 // Reference thresholds (ms) per metric: value ≤ good → green, ≤ ok → amber, else red.
 const TH_READY = { good: 300, ok: 1000 };
 const TH_RENDER = { good: 16, ok: 50 };
@@ -135,6 +192,15 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
 
     const { connected } = useIoBroker();
     const myClientId = useConnectionStore((s) => s.clientId);
+    const navigate = useNavigate();
+
+    // Resolve which tab a widget lives on (and enable a jump into the editor).
+    const layouts = useDashboardStore((s) => s.layouts);
+    const groupDefs = useGroupDefsStore((s) => s.defs);
+    const widgetLoc = useMemo(() => buildWidgetLocationMap(layouts, groupDefs), [layouts, groupDefs]);
+    // Editor deep-link only makes sense in the backend page (set via config option),
+    // not on the public dashboard where it would navigate the viewer to /admin.
+    const linkToEditor = o.linkToEditor === true;
     const Icon = getWidgetIcon((o.icon as string) ?? 'Activity', Activity);
 
     // Client filter: default to *this* device so the numbers are directly
@@ -155,10 +221,34 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
     useEffect(() => setViewSel((o.view as string) === 'breakdown' ? 'breakdown' : 'chart'), [o.view]);
     const [breakdown, setBreakdown] = useState<BreakdownClient[]>([]);
     const [showInfo, setShowInfo] = useState(false);
+    // Runtime-hidden metric series (legend click) — lets you focus on one value.
+    const [hiddenMetrics, setHiddenMetrics] = useState<Set<string>>(new Set());
     // Bumped by the refresh button to re-poll the backend immediately. This only
     // re-fetches the already-stored data — unlike F5 it does NOT create a new
     // page-load sample or reset this client's session counters.
     const [refreshNonce, setRefreshNonce] = useState(0);
+    // Refresh button feedback: spins while the triggered fetch is in flight (with
+    // a short minimum so the spin is perceptible even on a fast round-trip).
+    const [refreshing, setRefreshing] = useState(false);
+    const pendingRefreshRef = useRef(false);
+    const refreshStartRef = useRef(0);
+
+    const triggerRefresh = () => {
+        if (refreshing) return;
+        pendingRefreshRef.current = true;
+        refreshStartRef.current = performance.now();
+        setRefreshing(true);
+        setRefreshNonce((n) => n + 1);
+    };
+    // Called from the active poll once its post-refresh fetch settles.
+    const finishRefresh = (isCancelled: () => boolean) => {
+        if (!pendingRefreshRef.current) return;
+        pendingRefreshRef.current = false;
+        const wait = Math.max(0, 600 - (performance.now() - refreshStartRef.current));
+        setTimeout(() => {
+            if (!isCancelled()) setRefreshing(false);
+        }, wait);
+    };
 
     const bufferRef = useRef<PerfSample[]>([]);
     const seenSeqRef = useRef(0);
@@ -199,6 +289,7 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                     seenSeqRef.current = result.latestSeq;
                 }
             }
+            finishRefresh(() => cancelled);
             timer = setTimeout(pollOnce, 5000);
         };
         pollOnce();
@@ -225,6 +316,7 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
             if (!cancelled && res && typeof res === 'object' && 'clients' in res && Array.isArray(res.clients)) {
                 setBreakdown(res.clients);
             }
+            finishRefresh(() => cancelled);
             timer = setTimeout(poll, 8000);
         };
         poll();
@@ -234,17 +326,52 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
         };
     }, [connected, editMode, viewSel, refreshNonce]);
 
+    // Client names from the registry (aura.0.clients.<id>.info.name) — the same
+    // source the Settings page uses. Perf samples are keyed by the same client id
+    // (the device fingerprint), so we can show the assigned name instead of the id.
+    const [clientNames, setClientNames] = useState<Record<string, string>>({});
+    useEffect(() => {
+        if (!connected || editMode) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const res = await getObjectViewDirect('channel', `${NS}.clients.`, `${NS}.clients.香`);
+                const rows = res.rows.filter((r) => r.id.split('.').length === 4);
+                const entries = await Promise.all(
+                    rows.map(async (row) => {
+                        const id = row.id.split('.')[3];
+                        const st = await getStateDirect(`${row.id}.info.name`);
+                        return [id, st?.val ? String(st.val) : ''] as const;
+                    }),
+                );
+                if (cancelled) return;
+                const map: Record<string, string> = {};
+                for (const [id, name] of entries) if (name) map[id] = name;
+                setClientNames(map);
+            } catch {
+                /* registry unreadable — fall back to ids */
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [connected, editMode, refreshNonce]);
+
+    // Resolve a client id to its display name: registry name → embedded sample
+    // name → shortened id.
+    const clientLabel = (id: string, embedded?: string) => clientNames[id] || embedded || id.slice(0, 8);
+
     // Distinct clients seen in either data source, for the filter dropdown.
     const clientOptions = useMemo(() => {
         const byId = new Map<string, string>();
         for (const e of bufferRef.current) {
-            if (e.client) byId.set(e.client, e.clientName || e.client.slice(0, 8));
+            if (e.client) byId.set(e.client, clientLabel(e.client, e.clientName));
         }
         for (const c of breakdown) {
-            if (c.client) byId.set(c.client, c.clientName || byId.get(c.client) || c.client.slice(0, 8));
+            if (c.client) byId.set(c.client, clientLabel(c.client, c.clientName));
         }
         return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-    }, [tick, breakdown]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [tick, breakdown, clientNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Build the recharts series (merge samples per timestamp) plus the latest
     // value per metric for the status badges — both honouring the client filter.
@@ -277,10 +404,20 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
         return { points: arr, spanMs: span, latest: latestByMetric };
     }, [tick, enabledKey, windowMs, editMode, clientSel, myClientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const seriesMetrics = enabledMetrics.map((k) => METRIC_BY_KEY[k]).filter(Boolean);
+    // Legend = every configured metric; series/badges = the ones not toggled off
+    // at runtime (click a legend entry to focus on a single value).
+    const legendMetrics = enabledMetrics.map((k) => METRIC_BY_KEY[k]).filter(Boolean);
+    const seriesMetrics = legendMetrics.filter((m) => !hiddenMetrics.has(m.key));
     const hasData = points.length > 0;
     // Reference lines only make sense when a single metric owns the Y axis.
     const soloMetric = seriesMetrics.length === 1 ? seriesMetrics[0] : null;
+    const toggleMetric = (key: string) =>
+        setHiddenMetrics((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
 
     // Merge breakdown entries across the selected client(s). Widgets get one row
     // each with ready- and render-time side by side (so you can see which one is
@@ -300,7 +437,7 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
             if (max > s.max) s.max = max;
         };
         const avgOf = (s: Slot) => (s.count ? Math.round(s.sum / s.count) : 0);
-        const widgets = new Map<string, { label: string; ready: Slot; render: Slot }>();
+        const widgets = new Map<string, { label: string; ids: Set<string>; ready: Slot; render: Slot }>();
         const backend = new Map<string, { label: string; slot: Slot }>();
         for (const c of sel) {
             for (const e of c.entries) {
@@ -310,10 +447,21 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                     add(cur.slot, e.avg, e.count, e.max);
                     backend.set(e.key, cur);
                 } else if (e.cat === 'widgetReady' || e.cat === 'widgetRender') {
-                    const w = widgets.get(e.key) ?? { label: e.label, ready: empty(), render: empty() };
+                    // Group by the stable label (type · title), not the raw widget id.
+                    // Container widgets can churn through many short-lived child ids
+                    // for the same logical widget — grouping by label collapses those
+                    // into one row instead of dozens of duplicates. We still keep the
+                    // ids so we can resolve the widget's tab / editor link.
+                    const w = widgets.get(e.label) ?? {
+                        label: e.label,
+                        ids: new Set<string>(),
+                        ready: empty(),
+                        render: empty(),
+                    };
                     w.label = e.label;
+                    if (e.key) w.ids.add(e.key);
                     add(e.cat === 'widgetReady' ? w.ready : w.render, e.avg, e.count, e.max);
-                    widgets.set(e.key, w);
+                    widgets.set(e.label, w);
                 }
             }
         }
@@ -321,8 +469,30 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
             .map((w) => {
                 const readyAvg = avgOf(w.ready);
                 const renderAvg = avgOf(w.render);
+                // Label is "type · title" (or just "type" when untitled) — split it
+                // into separate type and name columns. type has no " · " so the
+                // first token is always the type.
+                const sepIdx = w.label.indexOf(' · ');
+                const type = sepIdx >= 0 ? w.label.slice(0, sepIdx) : w.label;
+                const name = sepIdx >= 0 ? w.label.slice(sepIdx + 3) : '—';
+                // Resolve the tab from the first id that still exists in the config
+                // (churned/deleted ids won't resolve → no location).
+                let loc: WidgetLoc | undefined;
+                let widgetId: string | undefined;
+                for (const id of w.ids) {
+                    const l = widgetLoc.get(id);
+                    if (l) {
+                        loc = l;
+                        widgetId = id;
+                        break;
+                    }
+                }
                 return {
                     label: w.label,
+                    name,
+                    type,
+                    loc,
+                    widgetId,
                     readyAvg,
                     readyMax: w.ready.max,
                     renderAvg,
@@ -337,8 +507,28 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
             .sort((a, b) => b.avg - a.avg)
             .slice(0, 8);
         return { widgetRows: wRows, backendRows: bRows };
-    }, [breakdown, clientSel, myClientId]);
+    }, [breakdown, clientSel, myClientId, widgetLoc]);
     const hasBreakdown = widgetRows.length > 0 || backendRows.length > 0;
+    const multiLayout = layouts.length > 1;
+
+    const jumpToEditor = (loc: WidgetLoc, widgetId: string) => {
+        navigate(
+            `/admin/editor?layout=${encodeURIComponent(loc.layoutId)}&tab=${encodeURIComponent(
+                loc.tabId,
+            )}&focus=${encodeURIComponent(widgetId)}`,
+        );
+    };
+
+    // Newest snapshot timestamp among the selected client(s) — shows data freshness.
+    const breakdownUpdatedAt = useMemo(() => {
+        let mx = 0;
+        for (const c of breakdown) {
+            const match =
+                clientSel === 'all' ? true : clientSel === 'current' ? c.client === myClientId : c.client === clientSel;
+            if (match && c.ts > mx) mx = c.ts;
+        }
+        return mx;
+    }, [breakdown, clientSel, myClientId]);
 
     const tooltipStyle: React.CSSProperties = {
         background: 'var(--app-surface)',
@@ -377,13 +567,19 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                         </p>
                     )}
                     {!showTitle && <span className="flex-1 min-w-0" />}
+                    {refreshing && (
+                        <span className="text-[10px] opacity-70 shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                            Lädt…
+                        </span>
+                    )}
                     <button
-                        onClick={() => setRefreshNonce((n) => n + 1)}
+                        onClick={triggerRefresh}
+                        disabled={refreshing}
                         className="flex items-center rounded-md p-1 focus:outline-none shrink-0"
-                        style={selectStyle}
+                        style={{ ...selectStyle, cursor: refreshing ? 'default' : 'pointer' }}
                         title="Aktualisieren (lädt nur neu vom Backend — verfälscht die Messwerte nicht)"
                     >
-                        <RefreshCw size={12} />
+                        <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
                     </button>
                     <button
                         onClick={() => setViewSel(viewSel === 'chart' ? 'breakdown' : 'chart')}
@@ -391,7 +587,7 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                         style={selectStyle}
                         title="Ansicht wechseln (Verlauf / Details)"
                     >
-                        {viewSel === 'chart' ? 'Verlauf' : 'Details'}
+                        {viewSel === 'chart' ? 'Details anzeigen' : 'Verlauf anzeigen'}
                     </button>
                     {viewSel === 'chart' && (
                         <select
@@ -407,6 +603,16 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                             <option value="7d">7 Tage</option>
                             <option value="all">Alles</option>
                         </select>
+                    )}
+                    {viewSel === 'chart' && (
+                        <button
+                            onClick={() => setShowInfo(true)}
+                            className="flex items-center rounded-md p-1 focus:outline-none shrink-0"
+                            style={{ ...selectStyle, cursor: 'pointer' }}
+                            title="Worauf du achten solltest (Netzwerk vs. Gerät)"
+                        >
+                            <Info size={12} />
+                        </button>
                     )}
                     {clientOptions.length > 0 && (
                         <select
@@ -430,16 +636,26 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
 
             {viewSel === 'chart' && showLegend && (
                 <div className="flex items-center gap-2 flex-wrap shrink-0 text-[10px]">
-                    {seriesMetrics.map((m) => (
-                        <span
-                            key={m.key}
-                            className="flex items-center gap-1"
-                            style={{ color: 'var(--text-secondary)' }}
-                        >
-                            <span style={{ width: 8, height: 8, borderRadius: 9, background: m.color }} />
-                            {m.label}
-                        </span>
-                    ))}
+                    {legendMetrics.map((m) => {
+                        const hidden = hiddenMetrics.has(m.key);
+                        return (
+                            <button
+                                key={m.key}
+                                onClick={() => toggleMetric(m.key)}
+                                className="flex items-center gap-1 focus:outline-none"
+                                style={{
+                                    color: 'var(--text-secondary)',
+                                    opacity: hidden ? 0.4 : 1,
+                                    textDecoration: hidden ? 'line-through' : 'none',
+                                    cursor: 'pointer',
+                                }}
+                                title={hidden ? `${m.label} einblenden` : `${m.label} ausblenden`}
+                            >
+                                <span style={{ width: 8, height: 8, borderRadius: 9, background: m.color }} />
+                                {m.label}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
@@ -466,7 +682,7 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                 </div>
             )}
 
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div className={`flex-1 min-h-0 ${viewSel === 'breakdown' ? 'overflow-auto' : 'overflow-hidden'}`}>
                 {viewSel === 'breakdown' ? (
                     !hasBreakdown ? (
                         <div
@@ -479,7 +695,30 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                         </div>
                     ) : (
                         <div className="flex flex-col gap-2 py-0.5">
-                            <div className="flex items-center justify-end">
+                            <div className="flex items-center gap-2">
+                                {breakdownUpdatedAt > 0 && (
+                                    <span className="text-[10px] opacity-70" style={{ color: 'var(--text-secondary)' }}>
+                                        Stand: {new Date(breakdownUpdatedAt).toLocaleTimeString('de-DE')}
+                                    </span>
+                                )}
+                                <span className="flex-1" />
+                                <button
+                                    onClick={() => {
+                                        resetBreakdown();
+                                        setBreakdown([]);
+                                        setRefreshNonce((n) => n + 1);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 focus:outline-none"
+                                    style={{
+                                        background: 'var(--app-bg)',
+                                        color: 'var(--text-secondary)',
+                                        border: '1px solid var(--app-border)',
+                                    }}
+                                    title="Zähler zurücksetzen und neu messen (kein Seiten-Reload — verfälscht die Lade-Metriken nicht)"
+                                >
+                                    <RotateCcw size={11} />
+                                    Zurücksetzen
+                                </button>
                                 <button
                                     onClick={() => setShowInfo(true)}
                                     className="flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 focus:outline-none"
@@ -510,7 +749,9 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                                         className="flex items-center gap-1.5 text-[9px] mb-0.5"
                                         style={{ color: 'var(--text-secondary)' }}
                                     >
-                                        <span className="flex-1 min-w-0">Widget</span>
+                                        <span className="flex-1 min-w-0">Name</span>
+                                        <span style={{ minWidth: 96, textAlign: 'left' }}>Typ</span>
+                                        <span style={{ minWidth: 120, textAlign: 'left' }}>Tab</span>
                                         <span style={{ minWidth: 56, textAlign: 'right' }}>Bereit</span>
                                         <span style={{ minWidth: 56, textAlign: 'right' }}>Render</span>
                                         <span style={{ minWidth: 56, textAlign: 'right' }}>Σ</span>
@@ -521,14 +762,54 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                                                 STATUS_COLOR[classifyMs(r.readyAvg, TH_READY.good, TH_READY.ok)];
                                             const cRender =
                                                 STATUS_COLOR[classifyMs(r.renderAvg, TH_RENDER.good, TH_RENDER.ok)];
+                                            const canJump = linkToEditor && !!r.widgetId && !!r.loc;
+                                            const tabText = r.loc
+                                                ? multiLayout
+                                                    ? `${r.loc.layoutName} · ${r.loc.tabName}`
+                                                    : r.loc.tabName
+                                                : '—';
                                             return (
-                                                <div key={r.label} className="flex items-center gap-1.5 text-[11px]">
+                                                <div
+                                                    key={r.label}
+                                                    className={`flex items-center gap-1.5 text-[11px] rounded ${
+                                                        canJump ? 'cursor-pointer hover:opacity-70' : ''
+                                                    }`}
+                                                    onClick={
+                                                        canJump ? () => jumpToEditor(r.loc!, r.widgetId!) : undefined
+                                                    }
+                                                    title={canJump ? 'Im Dashboard-Editor öffnen' : undefined}
+                                                >
                                                     <span
                                                         className="flex-1 min-w-0 truncate"
                                                         style={{ color: 'var(--text-primary)' }}
-                                                        title={r.label}
+                                                        title={r.name}
                                                     >
-                                                        {r.label}
+                                                        {r.name}
+                                                    </span>
+                                                    <span
+                                                        className="truncate opacity-70"
+                                                        style={{
+                                                            color: 'var(--text-secondary)',
+                                                            minWidth: 96,
+                                                            maxWidth: 96,
+                                                            textAlign: 'left',
+                                                        }}
+                                                        title={r.type}
+                                                    >
+                                                        {r.type}
+                                                    </span>
+                                                    <span
+                                                        className="truncate"
+                                                        style={{
+                                                            color: r.loc ? 'var(--accent)' : 'var(--text-secondary)',
+                                                            minWidth: 120,
+                                                            maxWidth: 120,
+                                                            textAlign: 'left',
+                                                            opacity: r.loc ? 1 : 0.5,
+                                                        }}
+                                                        title={tabText}
+                                                    >
+                                                        {tabText}
                                                     </span>
                                                     <span
                                                         style={{ color: cReady, minWidth: 56, textAlign: 'right' }}
@@ -801,7 +1082,7 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                            <b>So liest du die Details</b>
+                            <b>{viewSel === 'breakdown' ? 'So liest du die Details' : 'Worauf du achten solltest'}</b>
                             <button
                                 onClick={() => setShowInfo(false)}
                                 className="shrink-0 rounded p-0.5 focus:outline-none"
@@ -811,31 +1092,63 @@ export function LoadTimesWidget({ config, editMode }: WidgetProps) {
                                 <X size={14} />
                             </button>
                         </div>
-                        <ul className="flex flex-col gap-1.5" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                            <li>
-                                <b>Bereit</b> — Zeit von Mount bis die Daten sichtbar sind (inklusive Warten auf
-                                Backend-Daten). Zielwert ≤ {TH_READY.good} ms. Hoch = das Widget wartet lange auf seine
-                                Daten.
-                            </li>
-                            <li>
-                                <b>Render</b> — reine Zeichenzeit im Browser (CPU). Zielwert ≤ {TH_RENDER.good} ms (ein
-                                60-fps-Frame). Hoch = das Widget ist teuer zu zeichnen.
-                            </li>
-                            <li>
-                                <b>Σ</b> — Bereit + Render zusammen. Danach wird sortiert (größtes zuerst).
-                            </li>
-                            <li>
-                                Jede Zelle ist einzeln eingefärbt:{' '}
-                                <span style={{ color: STATUS_COLOR.good }}>grün</span> gut,{' '}
-                                <span style={{ color: STATUS_COLOR.ok }}>gelb</span> ok,{' '}
-                                <span style={{ color: STATUS_COLOR.bad }}>rot</span> langsam.{' '}
-                                <b>Niedriger ist besser.</b>
-                            </li>
-                            <li className="opacity-80">
-                                <b>Backend-Befehle</b>: <b>Anzahl</b> = Aufrufe, <b>Ø</b> = typische (durchschnittliche)
-                                Zeit, <b>↑ Spitze</b> = längste Einzelmessung.
-                            </li>
-                        </ul>
+                        {viewSel === 'breakdown' ? (
+                            <ul className="flex flex-col gap-1.5" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                                <li>
+                                    <b>Bereit</b> — Zeit von Mount bis die Daten sichtbar sind (inklusive Warten auf
+                                    Backend-Daten). Zielwert ≤ {TH_READY.good} ms. Hoch = das Widget wartet lange auf
+                                    seine Daten.
+                                </li>
+                                <li>
+                                    <b>Render</b> — reine Zeichenzeit im Browser (CPU). Zielwert ≤ {TH_RENDER.good} ms
+                                    (ein 60-fps-Frame). Hoch = das Widget ist teuer zu zeichnen.
+                                </li>
+                                <li>
+                                    <b>Σ</b> — Bereit + Render zusammen. Danach wird sortiert (größtes zuerst).
+                                </li>
+                                <li>
+                                    Jede Zelle ist einzeln eingefärbt:{' '}
+                                    <span style={{ color: STATUS_COLOR.good }}>grün</span> gut,{' '}
+                                    <span style={{ color: STATUS_COLOR.ok }}>gelb</span> ok,{' '}
+                                    <span style={{ color: STATUS_COLOR.bad }}>rot</span> langsam.{' '}
+                                    <b>Niedriger ist besser.</b>
+                                </li>
+                                <li className="opacity-80">
+                                    <b>Backend-Befehle</b>: <b>Anzahl</b> = Aufrufe, <b>Ø</b> = typische
+                                    (durchschnittliche) Zeit, <b>↑ Spitze</b> = längste Einzelmessung.
+                                </li>
+                            </ul>
+                        ) : (
+                            <ul
+                                className="flex flex-col gap-2"
+                                style={{ listStyle: 'none', padding: 0, margin: 0, maxWidth: 460 }}
+                            >
+                                <li>
+                                    <b>🌐 Netzwerk (Internet/VPN):</b> <b>TTFB</b> (Server-Antwortzeit = Latenz),{' '}
+                                    <b>DNS</b>, <b>TCP/TLS</b> (Verbindungsaufbau), <b>Backend-Ping</b> (reine
+                                    Umlaufzeit) und <b>Socket → 1. DP</b>. Sind diese hoch (und Render niedrig), liegt
+                                    es am <b>Netzwerk</b> — z. B. VPN, mobile Verbindung, langsames WLAN.{' '}
+                                    <b>Transfer</b> = Download-Größe/Bandbreite.
+                                </li>
+                                <li>
+                                    <b>🖥️ Gerät/Browser:</b> <b>Render</b> und <b>Long-Task</b> (Zeichen-/Rechenzeit),{' '}
+                                    <b>First Paint</b>, <b>Tab-Wechsel</b>. Sind diese hoch (und Ping/TTFB niedrig),
+                                    liegt es am <b>Gerät</b> (schwaches Tablet) oder an einem <b>teuren Widget</b>.
+                                </li>
+                                <li>
+                                    <b>Σ Gesamt:</b> <b>Initial-Load</b> = Gesamtzeit bis die Seite fertig ist (Netz +
+                                    Laden + Rendern zusammen).
+                                </li>
+                                <li className="opacity-90">
+                                    <b>Faustregel:</b> Ping/TTFB hoch → Internet-Latenz. Transfer hoch → Bandbreite.
+                                    Render/Long-Task hoch → Gerät/Widget. Farbe:{' '}
+                                    <span style={{ color: STATUS_COLOR.good }}>grün</span> gut,{' '}
+                                    <span style={{ color: STATUS_COLOR.ok }}>gelb</span> ok,{' '}
+                                    <span style={{ color: STATUS_COLOR.bad }}>rot</span> langsam. Klicke Metriken in der
+                                    Legende an, um dich auf einen Wert zu konzentrieren.
+                                </li>
+                            </ul>
+                        )}
                     </div>
                 </div>
             )}

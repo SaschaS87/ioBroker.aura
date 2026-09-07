@@ -1,12 +1,12 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
-import { Table2, Search, X } from 'lucide-react';
+import { Table2, Search, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useDashboardStore } from '../../store/dashboardStore';
 import { useConfigStore } from '../../store/configStore';
 import type { WidgetProps } from '../../types';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
-import { resolveAssetUrl } from '../../utils/assetUrl';
+import { resolveAssetUrl, proxifyIfMixed, resolveHtmlAssets, resolveImageSource } from '../../utils/assetUrl';
 
 // ── Column definition (stored in options.columns) ─────────────────────────────
 export interface JsonColumnDef {
@@ -21,7 +21,31 @@ export interface JsonColumnDef {
     imagePathPrefix?: string;
     /** Render Iconify tokens (e.g. "mdi:window-open-variant") inline as SVG icons. */
     iconify?: boolean;
+    /** Text prepended to every non-empty cell value in this column (e.g. "€"). Not applied to image cells. */
+    prefix?: string;
+    /** Text appended to every non-empty cell value in this column (e.g. " °C"). Not applied to image cells. */
+    suffix?: string;
+    /** Fixed column width in px. Unset → auto. */
+    width?: number;
+    /** Allow the cell text to wrap onto multiple lines (default: single line, ellipsis). */
+    wrap?: boolean;
+    /** Horizontal alignment of header + cells. Default 'left'. */
+    align?: 'left' | 'center' | 'right';
     order?: number; // lower = further left
+}
+
+/** Compare two raw cell values: numeric when both look like numbers, else a
+ *  locale-aware string compare (with numeric collation so "9" < "10"). */
+function compareCellValues(a: unknown, b: unknown): number {
+    const aEmpty = a === null || a === undefined || a === '';
+    const bEmpty = b === null || b === undefined || b === '';
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return -1;
+    if (bEmpty) return 1;
+    const na = typeof a === 'number' ? a : Number(a);
+    const nb = typeof b === 'number' ? b : Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+    return cellText(a).localeCompare(cellText(b), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 // Iconify token pattern: <set>:<name>, e.g. "mdi:home", "material-symbols:lock".
@@ -62,25 +86,57 @@ function effectiveAdminBaseUrl(adminBaseUrl: string | undefined): string {
 }
 
 /** Resolve image URL for a cell.
- *  - http(s)://, //, data: → as-is
- *  - aura-file:… → fs/read endpoint
- *  - /<adapter>.admin/… → prepend adminBaseUrl (global) or columnPrefix (override)
- *  - everything else → fall back to aura-file: (legacy behaviour) */
+ *  - http(s)://, //, data:, aura-file:… → handled by the shared resolver
+ *  - a per-column prefix, when set, wins over every automatic rewrite
+ *  - /<adapter>.admin/… → prepend adminBaseUrl
+ *  - everything else → shared resolver, i.e. web-adapter paths such as
+ *    `/adapter/pirate-weather/icons/…` go through /webfs (issue #519) */
 function resolveImageSrc(v: unknown, adminBaseUrl: string, columnPrefix?: string): string {
     if (typeof v !== 'string' || !v) return '';
-    if (/^(https?:)?\/\//i.test(v) || v.startsWith('data:')) return v;
-    if (v.startsWith('aura-file:')) return resolveAssetUrl(v);
+    if (/^(https?:)?\/\//i.test(v) || v.startsWith('data:') || v.startsWith('aura-file:')) {
+        return resolveImageSource(v);
+    }
     // Per-column prefix overrides global handling
     if (columnPrefix && columnPrefix.trim()) {
         const prefix = columnPrefix.trim().replace(/\/+$/, '');
         const path = v.startsWith('/') ? v : `/${v}`;
-        return prefix + path;
+        // An `aura-file:` prefix must still be routed to the /fs/read endpoint —
+        // proxifyIfMixed only handles http(s), so it would leave the raw
+        // `aura-file:…` string in the <img src> and the browser can't load it
+        // (issue #469).
+        return resolveImageSource(prefix + path);
     }
     // ioBroker admin asset path: /<adapter>.admin/...
     if (/^\/[^/]+\.admin\//.test(v) && adminBaseUrl) {
-        return adminBaseUrl + v;
+        return proxifyIfMixed(adminBaseUrl + v);
     }
+    return resolveImageSource(v);
+}
+
+/** Until #519 every unprefixed path was read from aura's local file system.
+ *  Kept as an onError fallback so tables configured against a local path keep
+ *  working now that such values are routed to the web adapter first. */
+function legacyImageSrc(v: unknown): string {
+    if (typeof v !== 'string' || !v) return '';
+    if (/^(https?:)?\/\//i.test(v) || v.startsWith('data:') || v.startsWith('aura-file:')) return '';
     return resolveAssetUrl(`aura-file:${v.replace(/^\/+/, '')}`);
+}
+
+/** Image cell that retries with the legacy local-file URL when the primary
+ *  (web-adapter) URL fails to load. */
+function TableImage({ src, fallback, size }: { src: string; fallback: string; size: number }) {
+    const [current, setCurrent] = useState(src);
+    useEffect(() => setCurrent(src), [src]);
+    return (
+        <img
+            src={current}
+            alt=""
+            onError={() => {
+                if (fallback && current !== fallback) setCurrent(fallback);
+            }}
+            style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
+        />
+    );
 }
 
 // ── Raw table shape after parsing ─────────────────────────────────────────────
@@ -144,8 +200,12 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
     const opts = config.options ?? {};
     const { value } = useDatapoint(config.datapoint);
 
+    const transparent = !!opts.transparent;
     const headerBg = (opts.headerBg as string) ?? 'var(--accent)';
-    const headerColor = (opts.headerColor as string) ?? '#ffffff';
+    // Transparency drops the accent-coloured header background, so the default
+    // white header text would vanish on a light theme — fall back to the theme
+    // text colour instead. An explicitly configured colour always wins.
+    const headerColor = (opts.headerColor as string) ?? (transparent ? 'var(--text-primary)' : '#ffffff');
     const firstColHeader = (opts.firstColHeader as boolean) ?? false;
     const firstColBg = (opts.firstColBg as string) ?? 'var(--app-bg)';
     const firstColColor = (opts.firstColColor as string) ?? 'var(--text-secondary)';
@@ -154,7 +214,8 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
     const showSearch = (opts.showSearch as boolean) ?? false;
     const fontSize = (opts.fontSize as number) ?? 12;
     const autoHeight = (opts.autoHeight as boolean) ?? false;
-    const transparent = !!opts.transparent;
+    const sortable = (opts.sortable as boolean) ?? false;
+    const maxRows = (opts.maxRows as number) ?? 0;
     const showTitle = opts.showTitle !== false;
     const showIcon = opts.showIcon !== false;
     const iconSize = (opts.iconSize as number) || 20;
@@ -162,6 +223,7 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
     const WidgetIcon = getWidgetIcon(opts.icon as string | undefined, Table2);
     const adminBaseUrl = useConfigStore((s) => effectiveAdminBaseUrl(s.frontend.adminBaseUrl));
     const [query, setQuery] = useState('');
+    const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
 
     const contentRef = useRef<HTMLDivElement>(null);
 
@@ -200,6 +262,33 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
         return tableData.rows.filter((row) => columns.some((col) => cellText(row[col.key]).toLowerCase().includes(q)));
     }, [tableData, columns, query]);
 
+    // Sort by the clicked column header (only when sorting is enabled and the
+    // referenced column is still present).
+    const sortedRows = useMemo(() => {
+        if (!sortable || !sort || !columns.some((c) => c.key === sort.key)) return filteredRows;
+        const arr = [...filteredRows];
+        arr.sort((r1, r2) => {
+            const cmp = compareCellValues(r1[sort.key], r2[sort.key]);
+            return sort.dir === 'asc' ? cmp : -cmp;
+        });
+        return arr;
+    }, [filteredRows, columns, sortable, sort]);
+
+    // Optional hard cap on the number of displayed rows.
+    const displayedRows = useMemo(
+        () => (maxRows > 0 ? sortedRows.slice(0, maxRows) : sortedRows),
+        [sortedRows, maxRows],
+    );
+
+    // Cycle a header through asc → desc → unsorted.
+    const toggleSort = (key: string) => {
+        setSort((prev) => {
+            if (!prev || prev.key !== key) return { key, dir: 'asc' };
+            if (prev.dir === 'asc') return { key, dir: 'desc' };
+            return null;
+        });
+    };
+
     // Auto-height: measure content and update gridPos.h when data changes.
     // We compare against config.gridPos.h (not a ref) and include it in deps so
     // the effect re-runs when external writes (e.g. delayed loadConfigFromIoBroker
@@ -219,7 +308,9 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
             // gridGap/gridRowHeight and produce a wrong (too small) gridPos.h.
             const { layouts } = useDashboardStore.getState();
             const { frontend } = useConfigStore.getState();
-            const layout = layouts.find((l) => l.tabs.some((t) => (t.widgets ?? []).some((w) => w.id === latest.id)));
+            const layout = layouts.find((l) =>
+                l.sections.some((sec) => sec.tabs.some((t) => (t.widgets ?? []).some((w) => w.id === latest.id))),
+            );
             const cellSize = layout?.settings?.gridRowHeight ?? frontend.gridRowHeight ?? 20;
             const margin = layout?.settings?.gridGap ?? frontend.gridGap ?? 10;
             // The outer .aura-widget wrapper adds vertical padding (widgetPadding)
@@ -246,7 +337,7 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
         return () => ro.disconnect();
     }, [
         autoHeight,
-        filteredRows.length,
+        displayedRows.length,
         columns.length,
         showHeader,
         showSearch,
@@ -400,31 +491,72 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
                     {showHeader && columns.length > 0 && (
                         <thead>
                             <tr>
-                                {columns.map((col, ci) => (
-                                    <th
-                                        key={col.key}
-                                        className="text-left whitespace-nowrap sticky top-0"
-                                        style={{
-                                            padding: `${Math.round(fs * 0.4)}px ${Math.round(fs * 0.6)}px`,
-                                            background: transparent
-                                                ? 'transparent'
-                                                : firstColHeader && ci === 0
-                                                  ? firstColBg
-                                                  : headerBg,
-                                            color: firstColHeader && ci === 0 ? firstColColor : headerColor,
-                                            fontWeight: 600,
-                                            borderBottom: '2px solid var(--app-border)',
-                                            zIndex: 1,
-                                        }}
-                                    >
-                                        {col.label ?? col.key}
-                                    </th>
-                                ))}
+                                {columns.map((col, ci) => {
+                                    const align = col.align ?? 'left';
+                                    const isSorted = sortable && sort?.key === col.key;
+                                    return (
+                                        <th
+                                            key={col.key}
+                                            onClick={sortable ? () => toggleSort(col.key) : undefined}
+                                            className="whitespace-nowrap sticky top-0"
+                                            style={{
+                                                padding: `${Math.round(fs * 0.4)}px ${Math.round(fs * 0.6)}px`,
+                                                textAlign: align,
+                                                width: col.width && col.width > 0 ? col.width : undefined,
+                                                cursor: sortable ? 'pointer' : undefined,
+                                                userSelect: sortable ? 'none' : undefined,
+                                                background: transparent
+                                                    ? 'transparent'
+                                                    : firstColHeader && ci === 0
+                                                      ? firstColBg
+                                                      : headerBg,
+                                                color: firstColHeader && ci === 0 ? firstColColor : headerColor,
+                                                fontWeight: 600,
+                                                borderBottom: '2px solid var(--app-border)',
+                                                zIndex: 1,
+                                            }}
+                                        >
+                                            <span
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 3,
+                                                    justifyContent:
+                                                        align === 'right'
+                                                            ? 'flex-end'
+                                                            : align === 'center'
+                                                              ? 'center'
+                                                              : 'flex-start',
+                                                }}
+                                            >
+                                                {col.label ?? col.key}
+                                                {/* Reserve the arrow slot on every sortable header so the
+                                                    label doesn't shift when a sort indicator appears. */}
+                                                {sortable && (
+                                                    <span
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            width: Math.round(fs * 0.9),
+                                                            flexShrink: 0,
+                                                            visibility: isSorted ? 'visible' : 'hidden',
+                                                        }}
+                                                    >
+                                                        {sort?.dir === 'desc' ? (
+                                                            <ArrowDown size={Math.round(fs * 0.9)} />
+                                                        ) : (
+                                                            <ArrowUp size={Math.round(fs * 0.9)} />
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                     )}
                     <tbody>
-                        {filteredRows.length === 0 ? (
+                        {displayedRows.length === 0 ? (
                             <tr>
                                 <td
                                     colSpan={columns.length}
@@ -435,7 +567,7 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
                                 </td>
                             </tr>
                         ) : (
-                            filteredRows.map((row, ri) => (
+                            displayedRows.map((row, ri) => (
                                 <tr
                                     key={ri}
                                     style={{
@@ -449,10 +581,22 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
                                         const isLabel = firstColHeader && ci === 0;
                                         const raw = row[col.key];
                                         const isImage = col.image ?? false;
+                                        const imgSrc = isImage
+                                            ? resolveImageSrc(raw, adminBaseUrl, col.imagePathPrefix)
+                                            : '';
                                         const isHtml = !isImage && (col.html ?? false);
                                         const useIconify = !isImage && !isHtml && (col.iconify ?? false);
                                         const imgSize =
                                             col.imageSize && col.imageSize > 0 ? col.imageSize : Math.round(fs * 2.4);
+                                        const wrap = col.wrap ?? false;
+                                        const hasWidth = !!(col.width && col.width > 0);
+                                        // Prefix/suffix decorate real values only — the "–" placeholder
+                                        // for empty cells stays bare. Not applied to image cells.
+                                        const hasValue = raw !== null && raw !== undefined && raw !== '';
+                                        const decorated =
+                                            hasValue && (col.prefix || col.suffix)
+                                                ? `${col.prefix ?? ''}${cellText(raw)}${col.suffix ?? ''}`
+                                                : cellText(raw);
                                         return (
                                             <td
                                                 key={col.key}
@@ -461,39 +605,37 @@ export function JsonTableWidget({ config, onConfigChange }: WidgetProps) {
                                                     color: isLabel ? firstColColor : 'var(--text-primary)',
                                                     background: isLabel ? firstColBg : undefined,
                                                     fontWeight: isLabel ? 600 : 400,
+                                                    textAlign: col.align ?? 'left',
+                                                    width: hasWidth ? col.width : undefined,
                                                     borderRight: isLabel ? '2px solid var(--app-border)' : undefined,
                                                     borderBottom: `1px solid color-mix(in srgb, var(--app-border) 50%, transparent)`,
-                                                    maxWidth: isHtml || isImage ? undefined : '20em',
-                                                    overflow: 'hidden',
-                                                    textOverflow: isHtml || isImage ? undefined : 'ellipsis',
-                                                    whiteSpace: isHtml || isImage ? undefined : 'nowrap',
+                                                    maxWidth:
+                                                        isHtml || isImage || wrap || hasWidth ? undefined : '20em',
+                                                    overflow: isHtml || isImage || wrap ? undefined : 'hidden',
+                                                    textOverflow: isHtml || isImage || wrap ? undefined : 'ellipsis',
+                                                    whiteSpace: isHtml || isImage || wrap ? undefined : 'nowrap',
                                                 }}
                                             >
                                                 {isImage ? (
-                                                    resolveImageSrc(raw, adminBaseUrl, col.imagePathPrefix) ? (
-                                                        <img
-                                                            src={resolveImageSrc(
-                                                                raw,
-                                                                adminBaseUrl,
-                                                                col.imagePathPrefix,
-                                                            )}
-                                                            alt=""
-                                                            style={{
-                                                                width: imgSize,
-                                                                height: imgSize,
-                                                                objectFit: 'contain',
-                                                                display: 'block',
-                                                            }}
+                                                    imgSrc ? (
+                                                        <TableImage
+                                                            src={imgSrc}
+                                                            fallback={col.imagePathPrefix ? '' : legacyImageSrc(raw)}
+                                                            size={imgSize}
                                                         />
                                                     ) : (
                                                         <span style={{ opacity: 0.5 }}>–</span>
                                                     )
                                                 ) : isHtml ? (
-                                                    <span dangerouslySetInnerHTML={{ __html: cellText(raw) }} />
+                                                    <span
+                                                        dangerouslySetInnerHTML={{
+                                                            __html: resolveHtmlAssets(decorated),
+                                                        }}
+                                                    />
                                                 ) : useIconify ? (
-                                                    renderTextWithIcons(cellText(raw), fs)
+                                                    renderTextWithIcons(decorated, fs)
                                                 ) : (
-                                                    cellText(raw)
+                                                    decorated
                                                 )}
                                             </td>
                                         );

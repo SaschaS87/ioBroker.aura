@@ -13,6 +13,8 @@
  */
 import type { DatapointEntry } from '../hooks/useDatapointList';
 import { getRoleDisplay } from './listEntryDisplay';
+import type { NameFilterRule } from './nameFilter';
+import type { RowPopupOptions } from './rowClickAction';
 
 export type Severity = 'crit' | 'warn' | 'ok';
 export type CategoryKey = 'battery' | 'window' | 'light' | 'unreach' | 'alarm';
@@ -53,6 +55,70 @@ function isReachableRole(r: string): boolean {
     );
 }
 
+/** Roles that mark a window/door contact directly. */
+function isWindowRole(r: string): boolean {
+    return r === 'sensor.window' || r === 'window' || r === 'sensor.door' || r === 'door';
+}
+
+export type ContactLevel = 'closed' | 'tilted' | 'open';
+
+/** Word matchers for the three contact states, matched against a `common.states` label. */
+const CONTACT_WORDS: Record<ContactLevel, RegExp> = {
+    closed: /(closed|geschlossen|^zu$|^dicht$)/,
+    tilted: /(tilted|gekippt|kipp)/,
+    open: /(open|offen|geöffnet|geoeffnet)/,
+};
+
+/**
+ * The contact level a datapoint's `common.states` enum maps a value to, or null when
+ * the datapoint has no such enum (or the value is not part of it).
+ */
+function levelFromStates(dp: DatapointEntry, val: unknown): ContactLevel | null {
+    const label = dp.states?.[String(val)];
+    if (!label) return null;
+    const l = label.toLowerCase().trim();
+    // tilted first: "gekippt" must not be swallowed by a broader open/closed match.
+    if (CONTACT_WORDS.tilted.test(l)) return 'tilted';
+    if (CONTACT_WORDS.closed.test(l)) return 'closed';
+    if (CONTACT_WORDS.open.test(l)) return 'open';
+    return null;
+}
+
+/**
+ * True when a datapoint carries a *tri-state* contact enum instead of a contact role:
+ * rotary handles (HmIP-SRH, HM-Sec-RHS) publish role `state` with
+ * `common.states` = { 0: CLOSED, 1: TILTED, 2: OPEN }, so a role check alone never
+ * sees them. Detected from the state labels, so it works for every adapter using the
+ * same wording. A plain closed/open enum is NOT matched — those either carry a contact
+ * role already or are a thermostat's derived WINDOW_STATE, which would only duplicate
+ * the real contact.
+ */
+export function hasContactStates(dp: DatapointEntry): boolean {
+    const labels = Object.values(dp.states ?? {}).map((l) => l.toLowerCase().trim());
+    if (labels.length < 2) return false;
+    return (
+        labels.some((l) => CONTACT_WORDS.tilted.test(l)) &&
+        labels.some((l) => CONTACT_WORDS.closed.test(l) || CONTACT_WORDS.open.test(l))
+    );
+}
+
+/**
+ * Resolves a contact value to closed/tilted/open. The datapoint's own enum wins; without
+ * one, anything that is not an explicit "closed" value counts as open — a numeric contact
+ * reporting 2 (HomeMatic OPEN) must not read as closed the way a plain truthy check does.
+ */
+export function contactLevel(dp: DatapointEntry, val: unknown): ContactLevel {
+    const fromStates = levelFromStates(dp, val);
+    if (fromStates) return fromStates;
+    if (val === null || val === undefined || val === false || val === 0) return 'closed';
+    if (typeof val === 'string') {
+        const s = val.toLowerCase().trim();
+        if (s === '' || s === '0' || s === 'false' || CONTACT_WORDS.closed.test(s)) return 'closed';
+        if (CONTACT_WORDS.tilted.test(s)) return 'tilted';
+    }
+    return 'open';
+}
+
 /** True when a role marks a smoke/fire/water/flood safety alarm. */
 function isAlarmRole(r: string): boolean {
     return (
@@ -69,7 +135,7 @@ function isLightFunc(label: string): boolean {
     return f.includes('licht') || f.includes('light') || f.includes('lamp');
 }
 
-export interface StatusOverviewOptions {
+export interface StatusOverviewOptions extends RowPopupOptions {
     // Categories (default: all on)
     catBattery?: boolean;
     catWindow?: boolean;
@@ -100,14 +166,30 @@ export interface StatusOverviewOptions {
     /** Per-category background colour for attention rows/tiles (default: tint of the highlight colour). */
     categoryBgColors?: Partial<Record<CategoryKey, string>>;
     cardMinWidth?: number; // card layout: min tile width in px (default 96)
+    /** Horizontal alignment of the rows/tiles/pills (default 'left'; mainly relevant for the Minimal layout). */
+    contentAlign?: 'left' | 'center' | 'right';
     namePattern?: string; // device label template, tokens <Raum> <Gerät> <DPName> <Name> <ID>
+    nameFilters?: NameFilterRule[]; // text rules applied to the token values before substitution
     showTitle?: boolean; // show the widget title in the header (default true)
     showCount?: boolean; // show the hint-count chip in the header top-right (default true)
+    /**
+     * Cap on the rows actually rendered (0 / unset = no cap).
+     *
+     * The rows are discovered at runtime, so the widget's height could not be
+     * planned — on a dashboard that must not scroll it had to be left out. With
+     * a cap the height is known, and the "+N weitere" row says what was cut.
+     * Sorting runs first, so the cap keeps the most urgent rows; the alert chip
+     * keeps counting all of them.
+     */
+    maxRows?: number;
+    showMore?: boolean; // show the "+N weitere" row when maxRows cuts the list off (default true)
+    showRoom?: boolean; // show the device room next to the name (default true; layouts Standard/Kompakt)
+    showSince?: boolean; // show how long a window/door has been open ("seit 5 min", default true)
     autoHeight?: boolean; // size the widget to its content in the stacked/mobile view (default false)
     showOkCategories?: boolean; // also list categories with no alerts (default false)
+    showAllClear?: boolean; // show the „Alles in Ordnung“ panel when nothing needs attention (default true)
     allClearText?: string;
     sortBy?: 'severity' | 'room'; // default 'severity'
-    rowClick?: 'none' | 'jump'; // click a row → jump to a widget bound to that DP (default 'jump')
 }
 
 /** One datapoint currently in an attention state. */
@@ -167,7 +249,8 @@ export function categoryOf(
 
     if (opts.catAlarm !== false && isAlarmRole(r)) return 'alarm';
     if (opts.catWindow !== false) {
-        if (r === 'sensor.window' || r === 'window' || r === 'sensor.door' || r === 'door') return 'window';
+        if (isWindowRole(r)) return 'window';
+        if (hasContactStates(dp)) return 'window';
     }
     if (opts.catUnreach !== false) {
         // Explicit user patterns win (even the sticky twin, if the user really wants it).
@@ -291,9 +374,14 @@ export function evaluateItem(
     }
 
     if (cat === 'window') {
-        const rd = getRoleDisplay(dp.role, val);
-        if (!isOn(val))
+        const level = contactLevel(dp, val);
+        // Role labels stay in charge of the wording ("Geöffnet" for a door role), but they
+        // are asked with the resolved level — getRoleDisplay's own truthy check would read
+        // a numeric 2 (OPEN) as closed.
+        const rd = getRoleDisplay(dp.role, level !== 'closed');
+        if (level === 'closed')
             return includeOk ? { ...base, severity: 'ok', label: rd?.label ?? 'Geschlossen', color: OK } : null;
+        if (level === 'tilted') return { ...base, severity: 'warn', label: 'Gekippt', color: SEVERITY_COLOR.warn };
         return { ...base, severity: 'crit', label: rd?.label ?? 'Offen', color: rd?.color ?? SEVERITY_COLOR.crit };
     }
 
@@ -320,6 +408,25 @@ export function evaluateItem(
     }
 
     return null;
+}
+
+/**
+ * True while the widget must not claim a verdict yet: the datapoint scan is still
+ * running, or values are still missing. Over a slow (external) connection both take a
+ * moment, and "Alles in Ordnung" during that window is simply wrong — it flips to open
+ * windows and weak batteries the second the data lands.
+ *
+ * `settled` is the grace-period escape hatch: a getState reply lost on a flaky
+ * connection would otherwise keep the widget loading forever.
+ */
+export function isStatusLoading(p: {
+    discovered: boolean;
+    settled: boolean;
+    loaded: number;
+    expected: number;
+}): boolean {
+    if (!p.discovered) return true;
+    return !p.settled && p.loaded < p.expected;
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { crit: 0, warn: 1, ok: 2 };

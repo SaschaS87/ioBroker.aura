@@ -1,4 +1,5 @@
 import { lazyWithReload } from '../../utils/lazyWithReload';
+import type { WidgetType } from '../../types';
 import { SwitchWidget } from './SwitchWidget';
 import { ValueWidget } from './ValueWidget';
 import { DimmerWidget } from './DimmerWidget';
@@ -45,12 +46,21 @@ import { EnergiebilanzWidget } from './EnergiebilanzWidget';
 import { HttpRequestWidget } from './HttpRequestWidget';
 import { ButtonWidget } from './ButtonWidget';
 import { StatusOverviewWidget } from './StatusOverviewWidget';
+import { MirrorWidget } from './MirrorWidget';
+import { MessagesWidget } from './MessagesWidget';
+import { MenuWidget } from './MenuWidget';
+import { RainStationWidget } from './RainStationWidget';
+import { RainDailyWidget } from './RainDailyWidget';
+import { RoomClimateWidget } from './RoomClimateWidget';
 
 // Chart widgets are heavy (recharts ~380 KB, echarts ~1.1 MB) — lazy-loaded so
 // dashboards without charts skip the cost. Consumers must render these inside
 // a <Suspense> boundary.
 const ChartWidget = lazyWithReload(() => import('./ChartWidget').then((m) => ({ default: m.ChartWidget })));
 const ClimateWidget = lazyWithReload(() => import('./ClimateWidget').then((m) => ({ default: m.ClimateWidget })));
+const AirControlWidget = lazyWithReload(() =>
+    import('./AirControlWidget').then((m) => ({ default: m.AirControlWidget })),
+);
 const EChartWidget = lazyWithReload(() => import('./EChartWidget').then((m) => ({ default: m.EChartWidget })));
 const EChartsPresetWidget = lazyWithReload(() =>
     import('./EChartsPresetWidget').then((m) => ({ default: m.EChartsPresetWidget })),
@@ -59,6 +69,16 @@ const EChartsPresetWidget = lazyWithReload(() =>
 const MapWidget = lazyWithReload(() => import('./MapWidget').then((m) => ({ default: m.MapWidget })));
 // LoadTimesWidget pulls in recharts — lazy-load it like the other chart widgets.
 const LoadTimesWidget = lazyWithReload(() => import('./LoadTimesWidget').then((m) => ({ default: m.LoadTimesWidget })));
+// HeatingWidget will pull in echarts for its detail chart later — lazy from the start.
+const HeatingWidget = lazyWithReload(() => import('./HeatingWidget').then((m) => ({ default: m.HeatingWidget })));
+// WeatherForecastStripWidget pulls in echarts for its detail chart.
+const WeatherForecastStripWidget = lazyWithReload(() =>
+    import('./WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
+);
+// ShutterFloorsWidget is a specialized widget for TaHoma roller shutters, grouped by floor.
+const ShutterFloorsWidget = lazyWithReload(() =>
+    import('./shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
+);
 
 export function getWidgetMap() {
     return {
@@ -94,6 +114,7 @@ export function getWidgetMap() {
         mediaplayer: MediaplayerWidget,
         slider: SliderWidget,
         climate: ClimateWidget,
+        aircontrol: AirControlWidget,
         universal: UniversalWidget,
         enum: EnumWidget,
         light: LightWidget,
@@ -113,7 +134,18 @@ export function getWidgetMap() {
         map: MapWidget,
         statusoverview: StatusOverviewWidget,
         loadtimes: LoadTimesWidget,
-    } as const;
+        mirror: MirrorWidget,
+        messages: MessagesWidget,
+        menu: MenuWidget,
+        shutterfloors: ShutterFloorsWidget,
+        roomclimate: RoomClimateWidget,
+        rainstation: RainStationWidget,
+        raindaily: RainDailyWidget,
+        heating: HeatingWidget,
+        weatherforecaststrip: WeatherForecastStripWidget,
+        // `satisfies` makes a missing widget type a build error instead of a
+        // "Unbekannter Widget-Typ" notice in mirrors, popups and tab embeds.
+    } as const satisfies Record<WidgetType, unknown>;
 }
 
 export type WidgetMap = ReturnType<typeof getWidgetMap>;

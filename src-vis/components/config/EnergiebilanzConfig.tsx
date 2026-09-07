@@ -9,22 +9,27 @@ import { useState, useEffect, useRef } from 'react';
 import { Database, X, Plus, ChevronUp, ChevronDown, Settings2 } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import type { WidgetConfig } from '../../types';
+import { REST_COLOR, OVER_COLOR } from '../widgets/EnergiebilanzWidget';
 import type { EnergyBalanceOptions, EnergyBar, LegendFormat } from '../widgets/EnergiebilanzWidget';
 import type { EnergyAggregate, EnergyEntry } from '../../hooks/useEnergyBalanceValues';
 import { ColorPicker } from '../common/ColorPicker';
 import { DatapointPicker } from './DatapointPicker';
+import { ValueFormatRow } from './ValueFormatRow';
 import { IconPickerModal } from './IconPickerModal';
 import { getObjectDirect } from '../../hooks/useIoBroker';
 import { detectHistoryAdapters, RANGE_LABELS, type DetectedAdapter } from '../../hooks/useChartHistory';
 import type { EChartTimeRange } from '../../hooks/useMultiSeriesData';
 import { lucidePascalToIconify } from '../../utils/iconifyLoader';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
-import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
 
-const CHART_RANGES: EChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d', 'custom'];
+// Presets offered for the configured (default) time range.
+const DEFAULT_RANGES: EChartTimeRange[] = ['1h', '24h', '7d', '30d', 'custom'];
+// Presets the admin can expose in the frontend range selector.
+const FRONTEND_RANGES: EChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d', 'custom'];
 const AGGREGATES: { id: EnergyAggregate; label: string }[] = [
     { id: 'last', label: 'Letzter Wert' },
     { id: 'delta', label: 'Differenz (Ende − Start)' },
+    { id: 'consumption', label: 'Verbrauch/Ertrag (Zuwachs — für Zähler)' },
     { id: 'sum', label: 'Summe' },
     { id: 'average', label: 'Durchschnitt' },
     { id: 'max', label: 'Maximum' },
@@ -75,7 +80,6 @@ function EntryRow({
     onRemove,
     onMove,
     onRefreshAdapters,
-    defaultDecimals,
     canMoveUp,
     canMoveDown,
 }: {
@@ -85,7 +89,6 @@ function EntryRow({
     onRemove: () => void;
     onMove: (dir: -1 | 1) => void;
     onRefreshAdapters: () => void;
-    defaultDecimals: number;
     canMoveUp: boolean;
     canMoveDown: boolean;
 }) {
@@ -223,45 +226,11 @@ function EntryRow({
                         </div>
                     </div>
 
-                    {/* Row 3: Dezimalstellen (Global), Aggregation */}
+                    {/* Row 3: Dezimalstellen + 1000er-Trennzeichen */}
+                    <ValueFormatRow decimals={entry.decimals} numberFormat={entry.numberFormat} onChange={onUpdate} />
+
+                    {/* Row 4: Aggregation */}
                     <div className="grid grid-cols-2 gap-1.5">
-                        <div>
-                            <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                Dezimalstellen
-                            </label>
-                            <div className="flex items-center gap-1.5">
-                                <input
-                                    type="number"
-                                    min={0}
-                                    max={5}
-                                    disabled={entry.decimals === undefined}
-                                    value={entry.decimals ?? defaultDecimals}
-                                    onChange={(e) => onUpdate({ decimals: Number(e.target.value) })}
-                                    className={`${inputCls} flex-1 min-w-0`}
-                                    style={{ ...inputStyle, opacity: entry.decimals === undefined ? 0.5 : 1 }}
-                                />
-                                <button
-                                    onClick={() =>
-                                        onUpdate({
-                                            decimals: entry.decimals === undefined ? defaultDecimals : undefined,
-                                        })
-                                    }
-                                    title={
-                                        entry.decimals === undefined
-                                            ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                            : 'Auf globale Einstellung zurücksetzen'
-                                    }
-                                    className="px-1.5 py-1 rounded text-[10px] font-bold shrink-0"
-                                    style={{
-                                        background:
-                                            entry.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
-                                        color: entry.decimals === undefined ? '#fff' : 'var(--text-secondary)',
-                                    }}
-                                >
-                                    Global
-                                </button>
-                            </div>
-                        </div>
                         <div>
                             <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
                                 Aggregation
@@ -280,6 +249,13 @@ function EntryRow({
                             </select>
                         </div>
                     </div>
+                    {entry.aggregate === 'consumption' && (
+                        <p className="text-[9px] leading-snug" style={{ color: 'var(--text-secondary)' }}>
+                            Summiert den Zuwachs des Zählers im Zeitraum. Passt für fortlaufende Zähler ebenso wie für
+                            Tageszähler, die um Mitternacht auf 0 zurückspringen — {'„Differenz“'} liefert dort einen
+                            negativen Wert.
+                        </p>
+                    )}
 
                     {/* History adapter */}
                     <div>
@@ -362,7 +338,6 @@ function BarSection({
     onRemove,
     onMove,
     onRefreshAdapters,
-    defaultDecimals,
 }: {
     bar: EnergyBar;
     index: number;
@@ -372,9 +347,10 @@ function BarSection({
     onRemove: () => void;
     onMove: (dir: -1 | 1) => void;
     onRefreshAdapters: (entryId: string, datapointId: string) => void;
-    defaultDecimals: number;
 }) {
     const entries = bar.entries ?? [];
+    const [targetDpOpen, setTargetDpOpen] = useState(false);
+    const hasTarget = !!bar.totalDatapoint || typeof bar.totalValue === 'number';
 
     const setEntries = (next: EnergyEntry[]) => onUpdate({ entries: next });
     const addEntry = () =>
@@ -453,7 +429,6 @@ function BarSection({
                         onRemove={() => removeEntry(e.id)}
                         onMove={(dir) => moveEntry(idx, dir)}
                         onRefreshAdapters={() => onRefreshAdapters(e.id, e.datapointId)}
-                        defaultDecimals={defaultDecimals}
                         canMoveUp={idx > 0}
                         canMoveDown={idx < entries.length - 1}
                     />
@@ -467,6 +442,150 @@ function BarSection({
             >
                 <Plus size={11} /> Datenpunkt hinzufügen
             </button>
+
+            {/* 100 % reference of this group - without it the group's own sum is 100 %. */}
+            <div className="rounded p-1.5 space-y-1" style={{ border: '1px dashed var(--app-border)' }}>
+                <label className="text-[9px] block" style={{ color: 'var(--text-secondary)' }}>
+                    Vorgabe = 100 % (optional)
+                </label>
+                <div className="flex items-center gap-1.5">
+                    <input
+                        value={bar.totalDatapoint ?? ''}
+                        placeholder="Datenpunkt, z.B. 0_userdata.0.strom.abschlag"
+                        onChange={(e) => onUpdate({ totalDatapoint: e.target.value || undefined })}
+                        className={`${inputCls} font-mono min-w-0`}
+                        style={inputStyle}
+                    />
+                    <button
+                        onClick={() => setTargetDpOpen(true)}
+                        title="Datenpunkt wählen"
+                        className="flex items-center justify-center rounded hover:opacity-80 shrink-0"
+                        style={{ background: 'var(--accent)', color: '#fff', width: 28, height: 26 }}
+                    >
+                        <Database size={13} />
+                    </button>
+                </div>
+                <div className="flex items-end gap-1.5">
+                    <div style={{ width: 84 }}>
+                        <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            Fester Wert
+                        </label>
+                        <input
+                            type="number"
+                            value={typeof bar.totalValue === 'number' ? bar.totalValue : ''}
+                            placeholder="—"
+                            onChange={(e) =>
+                                onUpdate({ totalValue: e.target.value === '' ? undefined : Number(e.target.value) })
+                            }
+                            className={`${inputCls} py-0`}
+                            style={{ ...inputStyle, height: ROW2_H }}
+                        />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            Rest-Bezeichnung
+                        </label>
+                        <input
+                            value={bar.restLabel ?? ''}
+                            placeholder="Rest"
+                            onChange={(e) => onUpdate({ restLabel: e.target.value || undefined })}
+                            className={`${inputCls} py-0`}
+                            style={{ ...inputStyle, height: ROW2_H }}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            Farbe
+                        </label>
+                        <ColorPicker
+                            value={bar.restColor ?? REST_COLOR}
+                            onChange={(v) => onUpdate({ restColor: v })}
+                            className="block rounded cursor-pointer"
+                            style={{ width: 30, height: ROW2_H, border: '1px solid var(--app-border)' }}
+                        />
+                    </div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={bar.showRest !== false}
+                        onChange={(e) => onUpdate({ showRest: e.target.checked ? undefined : false })}
+                        className="rounded"
+                    />
+                    <span className="text-[9px]" style={{ color: 'var(--text-secondary)' }}>
+                        Rest als eigenes Segment anzeigen
+                    </span>
+                </label>
+                {/* Warning colour from a share of the reference - a full bar alone does not
+                    say whether the budget was met or blown (#607). */}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={bar.overActive === true}
+                        onChange={(e) => onUpdate({ overActive: e.target.checked ? true : undefined })}
+                        className="rounded"
+                    />
+                    <span className="text-[9px]" style={{ color: 'var(--text-secondary)' }}>
+                        Farbe ab Schwelle wechseln
+                    </span>
+                </label>
+                {bar.overActive === true && (
+                    <div className="flex items-end gap-1.5">
+                        <div style={{ width: 84 }}>
+                            <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                                Ab %
+                            </label>
+                            <input
+                                type="number"
+                                value={typeof bar.overThreshold === 'number' ? bar.overThreshold : ''}
+                                placeholder="100"
+                                onChange={(e) =>
+                                    onUpdate({
+                                        overThreshold: e.target.value === '' ? undefined : Number(e.target.value),
+                                    })
+                                }
+                                className={`${inputCls} py-0`}
+                                style={{ ...inputStyle, height: ROW2_H }}
+                                data-aura-energy-over-threshold={bar.id}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[9px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                                Warnfarbe
+                            </label>
+                            <ColorPicker
+                                value={bar.overColor ?? OVER_COLOR}
+                                onChange={(v) => onUpdate({ overColor: v })}
+                                className="block rounded cursor-pointer"
+                                style={{ width: 30, height: ROW2_H, border: '1px solid var(--app-border)' }}
+                            />
+                        </div>
+                        <p
+                            className="text-[9px] leading-snug flex-1 min-w-0"
+                            style={{ color: 'var(--text-secondary)' }}
+                        >
+                            Ab diesem Anteil an der Vorgabe wechseln die Einträge auf die Warnfarbe. Der Rest behält
+                            seine Farbe.
+                        </p>
+                    </div>
+                )}
+                <p className="text-[9px] leading-snug" style={{ color: 'var(--text-secondary)' }}>
+                    {hasTarget
+                        ? 'Die Einträge zeigen ihren Anteil an der Vorgabe; die Differenz erscheint als „Rest“. Über der Vorgabe bleibt die Gruppe bei 100 % und der Rest verschwindet.'
+                        : 'Leer = die Gruppensumme ist 100 %. Mit Vorgabe (z. B. Abschlag 160 €) zeigt die Gruppe, wie viel davon verbraucht ist. Ein Datenpunkt gewinnt über den festen Wert.'}
+                </p>
+            </div>
+
+            {targetDpOpen && (
+                <DatapointPicker
+                    currentValue={bar.totalDatapoint ?? ''}
+                    onSelect={(id) => {
+                        if (id) onUpdate({ totalDatapoint: id });
+                        setTargetDpOpen(false);
+                    }}
+                    onClose={() => setTargetDpOpen(false)}
+                />
+            )}
         </div>
     );
 }
@@ -476,7 +595,6 @@ function BarSection({
 export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
     const o = (config.options ?? {}) as unknown as EnergyBalanceOptions;
     const bars = o.bars ?? [];
-    const { defaultDecimals } = useGlobalSettingsStore();
     const [adapterStates, setAdapterStates] = useState<Record<string, AdapterState>>({});
 
     // Always-current snapshot of bars so async auto-detection (which resolves out of render
@@ -557,6 +675,16 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
     }, [detectKey]);
 
     const range = o.range ?? '24h';
+    const lockRange = o.lockRange === true;
+    const presetFrontendRanges = FRONTEND_RANGES.filter((r) => r !== 'custom');
+    const visibleRanges = o.visibleRanges && o.visibleRanges.length > 0 ? o.visibleRanges : presetFrontendRanges;
+    const toggleVisibleRange = (r: EChartTimeRange) => {
+        const next = visibleRanges.includes(r)
+            ? visibleRanges.filter((x) => x !== r)
+            : FRONTEND_RANGES.filter((x) => visibleRanges.includes(x) || x === r);
+        if (next.length === 0) return; // keep at least one range selectable
+        setO({ visibleRanges: next });
+    };
 
     return (
         <div className="aura-scroll flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: '80vh' }}>
@@ -572,7 +700,6 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
                     onRemove={() => removeBar(b.id)}
                     onMove={(dir) => moveBar(idx, dir)}
                     onRefreshAdapters={(entryId, dp) => detect(entryId, dp, true)}
-                    defaultDecimals={defaultDecimals}
                 />
             ))}
             <button
@@ -620,6 +747,23 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
                 </div>
             )}
 
+            {(o.chartStyle ?? 'bars') === 'bars' && (
+                <div>
+                    <label className="text-[11px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                        Stapelrichtung
+                    </label>
+                    <select
+                        value={o.barDirection ?? 'down'}
+                        onChange={(e) => setO({ barDirection: e.target.value as EnergyBalanceOptions['barDirection'] })}
+                        className={inputCls}
+                        style={inputStyle}
+                    >
+                        <option value="down">Erster Eintrag oben (Rest unten)</option>
+                        <option value="up">Erster Eintrag unten (Rest oben)</option>
+                    </select>
+                </div>
+            )}
+
             {(o.chartStyle === 'pie' || o.chartStyle === 'donut') && (
                 <div>
                     <label className="text-[11px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
@@ -638,34 +782,16 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
                 </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2">
-                <div>
-                    <label className="text-[11px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
-                        Einheit
-                    </label>
-                    <input
-                        value={o.unit ?? ''}
-                        placeholder="kWh"
-                        onChange={(e) => setO({ unit: e.target.value || undefined })}
-                        className={inputCls}
-                        style={inputStyle}
-                    />
-                </div>
-                <div>
-                    <label className="text-[11px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
-                        Nachkommastellen
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        max={5}
-                        value={o.decimals ?? defaultDecimals}
-                        onChange={(e) => setO({ decimals: Number(e.target.value) })}
-                        className={inputCls}
-                        style={inputStyle}
-                    />
-                </div>
-            </div>
+            <ValueFormatRow
+                unit={o.unit}
+                unitPlaceholder="kWh"
+                onUnitChange={(v) => setO({ unit: v })}
+                decimals={o.decimals}
+                numberFormat={o.numberFormat}
+                onChange={setO}
+                inputClassName={inputCls}
+                inputStyle={inputStyle}
+            />
 
             {/* range */}
             <div>
@@ -678,7 +804,7 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
                     className={inputCls}
                     style={inputStyle}
                 >
-                    {CHART_RANGES.map((r) => (
+                    {DEFAULT_RANGES.map((r) => (
                         <option key={r} value={r}>
                             {RANGE_LABELS[r]}
                         </option>
@@ -705,6 +831,47 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
                         </select>
                     </div>
                 )}
+
+                {/* Which ranges the frontend selector offers (hidden while locked) */}
+                {!lockRange && (
+                    <div className="mt-2">
+                        <label className="text-[11px] block mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            Sichtbare Zeitbereiche im Frontend
+                        </label>
+                        <div className="flex gap-1 flex-wrap">
+                            {FRONTEND_RANGES.map((r) => {
+                                const active = visibleRanges.includes(r);
+                                return (
+                                    <button
+                                        key={r}
+                                        onClick={() => toggleVisibleRange(r)}
+                                        className="flex-1 text-[11px] py-1 rounded-md hover:opacity-80 transition-opacity"
+                                        style={{
+                                            background: active ? 'var(--accent)' : 'var(--app-bg)',
+                                            color: active ? '#fff' : 'var(--text-secondary)',
+                                            border: `1px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                            minWidth: 36,
+                                        }}
+                                    >
+                                        {RANGE_LABELS[r]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={lockRange}
+                        onChange={(e) => setO({ lockRange: e.target.checked })}
+                        className="rounded"
+                    />
+                    <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                        Zeitraum im Frontend sperren
+                    </span>
+                </label>
             </div>
 
             {/* toggles */}
@@ -733,6 +900,34 @@ export function EnergiebilanzConfig({ config, onConfigChange }: Props) {
                                 />
                             </button>
                         </div>
+                        {/* Icon-in-segment — sits under the percent-labels toggle, but is
+                            independent of it (default off), so either/both/neither can show. */}
+                        {key === 'showPercent' &&
+                            (
+                                [
+                                    ['showSegmentIcon', 'Icon im Segment anzeigen', false],
+                                    ['showOutsidePercent', 'Kleine Werte außerhalb anzeigen (Torte/Donut)', true],
+                                ] as [keyof EnergyBalanceOptions, string, boolean][]
+                            ).map(([optKey, optLabel, defOn]) => {
+                                const on = defOn ? o[optKey] !== false : o[optKey] === true;
+                                return (
+                                    <div key={optKey} className="mt-1 flex items-center justify-between">
+                                        <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                            {optLabel}
+                                        </label>
+                                        <button
+                                            onClick={() => setO({ [optKey]: !on } as Partial<EnergyBalanceOptions>)}
+                                            className="relative w-9 h-5 rounded-full transition-colors"
+                                            style={{ background: on ? 'var(--accent)' : 'var(--app-border)' }}
+                                        >
+                                            <span
+                                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+                                                style={{ left: on ? '18px' : '2px' }}
+                                            />
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         {/* sub-options that only take effect with bar titles shown */}
                         {key === 'showBarTitles' && val && (
                             <div

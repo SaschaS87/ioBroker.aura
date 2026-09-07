@@ -1,18 +1,35 @@
 import { Fragment, useEffect, useMemo, useState, useCallback } from 'react';
-import { RefreshCw, Filter, List } from 'lucide-react';
-import type { WidgetProps, ioBrokerState } from '../../types';
+import { RefreshCw, List } from 'lucide-react';
+import type { WidgetProps, ioBrokerObject, ioBrokerState, ElementConditionRule } from '../../types';
+import { useElementConditionStyles, type ElementCondInput } from '../../hooks/useElementConditionStyles';
+import { condAnimation, condTextStyle, partOf, rowHidden, type ElementCondResult } from '../../utils/rowConditions';
 import { getObjectViewDirect, useIoBroker } from '../../hooks/useIoBroker';
 import { ensureDatapointCache } from '../../hooks/useDatapointList';
 import { saveAll, saveToIoBroker } from '../../store/persistManager';
 import { isRelevantDp } from '../../utils/dpRelevance';
-import { getRoleDisplay, getThresholdColor } from '../../utils/listEntryDisplay';
+import { getRoleDisplay } from '../../utils/listEntryDisplay';
+import { getThresholdColor, type ColorThreshold } from '../../utils/colorThresholds';
 import { CustomGridView } from './CustomGridView';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
+import {
+    buildEnumMemberIndex,
+    collectEnumFilterOptions,
+    enumIdsForObject,
+    matchesEnumFilter,
+    splitEnumFilter,
+    type EnumFilterOption,
+} from '../../utils/enumFilter';
+import { formatItemName, finishItemName, hasLiveToken, type NameFilterRule } from '../../utils/nameFilter';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { useT } from '../../i18n';
+import { usePopupAutoHeight } from '../../contexts/PopupAutoHeightContext';
 import { formatLastChange } from '../../utils/formatLastChange';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { type NumberFormat } from '../../utils/formatValue';
+import { computeListStats, type ListStat } from '../../utils/listStats';
+import { StatLine } from './StatLine';
+import { useDpTokenResolver } from './DynamicTitle';
+import { stripDpTokens } from '../../utils/dpTokens';
 import { publishListCount, unpublishList } from '../../utils/publishWidgetState';
 import {
     listEntryTarget,
@@ -24,14 +41,54 @@ import {
     type GroupActionConfigOpts,
 } from '../../utils/groupTargets';
 import { GroupActionControl } from './GroupActionControl';
+import { EntrySubLine, subCondKey, type EntrySubDp } from './EntrySubLine';
+import { useTemplateValues } from '../../hooks/useTemplateValues';
+import { resolveSubDpTemplate } from '../../utils/subDpTemplate';
+import { ListFilterChip } from './ListFilterChip';
+import {
+    buildFilterChoices,
+    filterEmptyText,
+    filterModeLabel,
+    matchesFilterMode,
+    matchesSearch,
+    normalizeFilterMode,
+    type ListFilterOptions,
+    type ListFilterRow,
+} from '../../utils/listFilter';
+import { effectiveSortRules, makeSortComparator, type ListSortOptions } from '../../utils/listSort';
+import { useRowPopup } from '../../hooks/useRowPopup';
+import type { RowClickSetting, RowPopupOptions } from '../../utils/rowClickAction';
 import {
     ShutterControl,
     StepperControl,
+    SliderControl,
     PresetButtons,
+    SelectControl,
+    entrySelectLabel,
     MomentaryButton,
+    StateDisplay,
+    ContactDisplay,
+    TimeDisplay,
+    InputControl,
+    DateEntryControl,
+    SwitchControl,
+    entryDateText,
+    formatEntryTime,
+    entryValueText,
+    resolveContactDisplay,
+    matchStateMap,
+    switchEntryActive,
+    switchReadValue,
+    switchStatusDp,
+    entryExtraDps,
+    contactLocked,
+    ContactLockBadge,
+    switchWriteValues,
     NON_TOGGLE_DISPLAY_TYPES,
     type EntryControlConfig,
 } from './entryControls';
+import type { ValueTransformSettings } from '../../utils/valueTransform';
+import { applyListDisplay } from '../../utils/listDisplayDefaults';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +97,11 @@ export interface AutoListEntry extends EntryControlConfig {
     label?: string;
     rooms?: string[];
     unit?: string;
+    /** Own number format of this row; unset = the list-wide setting. */
+    decimals?: number;
+    numberFormat?: NumberFormat;
+    /** Own colour scale of this row; unset = the list-wide one. */
+    colorThresholds?: ColorThreshold[];
     role?: string;
     trueLabel?: string;
     falseLabel?: string;
@@ -52,19 +114,42 @@ export interface AutoListEntry extends EntryControlConfig {
     activeBg?: string;
     /** Per-DP entry background when off/false/0. Overrides global inactiveBg. */
     inactiveBg?: string;
+    /** Per-row click action. Overrides the list-wide setting; undefined = inherit. */
+    clickAction?: RowClickSetting;
+    /** Heading of this row's popup. Beats options.rowPopupTitle; unset = the row name. */
+    popupTitle?: string;
+    /** Title bar of this row's popup: true = hide, false = show, unset = as the list. */
+    popupHideTitle?: boolean;
+    /** Extra display-only datapoints on a second line. Replaces options.subDpTemplate
+     *  for this entry; empty/unset = the template applies. */
+    subDps?: EntrySubDp[];
+    /** Icon in front of the name — the only place a row icon is configured (issue #572). */
+    icon?: string;
+    /** Conditional formatting of this row (issue #572). */
+    conditions?: ElementConditionRule[];
 }
 
-export interface AutoListOptions extends GroupActionConfigOpts {
+export interface AutoListOptions
+    extends GroupActionConfigOpts, RowPopupOptions, ValueTransformSettings, ListFilterOptions, ListSortOptions {
     entries: AutoListEntry[];
+    /** Colour scale for the numeric values of every row (see utils/colorThresholds). */
+    colorThresholds?: ColorThreshold[];
     filterRoles?: string;
     filterIdPattern?: string;
     filterRooms?: string;
     filterFuncs?: string;
+    /**
+     * Custom enum categories (issue #568): comma-separated FULL enum ids, e.g.
+     * 'enum.floors.og, enum.floors.dg'. Ids, not labels - the same name may exist
+     * under several categories. OR inside a category, AND across categories.
+     */
+    filterEnums?: string;
     filterTypes?: string;
     excludeIdPatterns?: string;
     excludeIds?: string[];
     syncIntervalMin?: number;
     decimals?: number;
+    numberFormat?: NumberFormat;
     showRoom?: boolean;
     showId?: boolean;
     /** Group entries by their (first) room, rendering the room name as a section heading. */
@@ -78,16 +163,29 @@ export interface AutoListOptions extends GroupActionConfigOpts {
     /** Background color of room section headings. Default a faint tint. */
     roomHeaderBg?: string;
     filterRelevant?: boolean;
-    /** 'all' = show everything (default), 'active' = only on/> 0, 'inactive' = only off/0 */
-    valueFilter?: 'all' | 'active' | 'inactive';
-    filterActiveLabel?: string;
-    filterInactiveLabel?: string;
+    /** Entry label template, tokens <Raum> <Gerät> <DPName> <Name> <ID>. Empty = the plain name. */
+    namePattern?: string;
+    /** Text rules applied to the token values before substitution (see utils/nameFilter). */
+    nameFilters?: NameFilterRule[];
+    /**
+     * Filter the frontend starts with: 'all' (default), the built-ins 'active' /
+     * 'inactive', or the id of a filterPresets entry (see utils/listFilter).
+     */
+    valueFilter?: string;
     showTitle?: boolean;
     showCount?: boolean;
-    sortBy?: 'none' | 'label' | 'value';
-    sortOrder?: 'asc' | 'desc';
-    sortBy2?: 'none' | 'label' | 'value';
-    sortOrder2?: 'asc' | 'desc';
+    /**
+     * Cap on the rows actually rendered (0 / unset = no cap).
+     *
+     * The rows of an autolist appear at runtime out of room and function, so its
+     * height cannot be planned: a dashboard built to never scroll had to leave
+     * the widget out entirely. With a cap the height IS known — and what is cut
+     * off is said out loud by the "+N weitere" row rather than silently dropped.
+     * Filters and sorting run first, so the cap keeps the rows that matter.
+     */
+    maxRows?: number;
+    /** Show the "+N weitere" row when `maxRows` cuts the list off. Default true. */
+    showMore?: boolean;
     filterAdapters?: string;
     cardMinWidth?: number;
     /** Global default label for on/true/>0 state (fallback when entry has no trueLabel). */
@@ -105,10 +203,18 @@ export interface AutoListOptions extends GroupActionConfigOpts {
     /** Publish the filtered count to aura.0.lists.<widgetId>.count */
     publishCount?: boolean;
     /** Backend display filter — independent from frontend valueFilter. Default 'all'. */
-    backendValueFilter?: 'all' | 'active' | 'inactive';
-    /** Show sum of numeric values from visible entries below the title. */
+    backendValueFilter?: string;
+    /** Hide the frontend filter chip in the widget header. Default false. */
+    hideFilterButton?: boolean;
+    /** Show an aggregate line of numeric values from visible entries below the title. */
     showSum?: boolean;
-    /** Prefix label for the sum line (default 'Σ'). */
+    /** Which aggregates to show. Default (undefined/empty) = sum only. */
+    sumStats?: ListStat[];
+    /** Per-stat text prefix. Falls back to a default symbol per stat. */
+    statLabels?: Partial<Record<ListStat, string>>;
+    /** Per-stat icon (iconify id / lucide name) rendered before the value. */
+    statIcons?: Partial<Record<ListStat, string>>;
+    /** Legacy prefix label for the sum part (default 'Σ'). Superseded by statLabels.sum. */
     sumLabel?: string;
     /** Text alignment of the sum line. Default 'left'. */
     sumAlign?: 'left' | 'center' | 'right';
@@ -122,6 +228,36 @@ export interface AutoListOptions extends GroupActionConfigOpts {
     wrapText?: boolean;
     /** When wrapText is on: minimum % of the row reserved for the label (10..90). Value gets the rest. Default 50. */
     labelMinPercent?: number;
+    /** Second line for EVERY entry: ids may use `{{parent}}` / `{{dp}}` / `{{name}}` and
+     *  are resolved per row. An entry's own `subDps` replaces this. */
+    subDpTemplate?: EntrySubDp[];
+    /** Template rows whose resolved datapoint does not exist are left out instead of
+     *  rendering a dash (a device without BATTERY). Default true. */
+    subDpTemplateHideMissing?: boolean;
+    /**
+     * Row icon for EVERY entry — the rows come from a filter and change on each sync,
+     * so the icon is configured once for the list (tab "Icon"). An entry's own `icon`
+     * wins, a condition rule wins over both.
+     */
+    entryIcon?: string;
+    /** Size of that icon in px. Default 13. */
+    entryIconSize?: number;
+    /** Colour of that icon. Unset = --text-secondary (the badge colour in `minimal`). */
+    entryIconColor?: string;
+    /**
+     * Display type + its options for EVERY entry — same reason as `entryIcon`: the rows
+     * come from a filter, so the display is configured once for the list (tab
+     * "Darstellung"). An entry with its own `displayType` is configured completely on
+     * its own and ignores this block (see utils/listDisplayDefaults).
+     */
+    entryDisplay?: EntryControlConfig;
+    /**
+     * Conditional formatting applied to EVERY row (issue #572). Clause datapoints may
+     * use `{{parent}}` / `{{dp}}` / `{{name}}`, resolved per row — that is what makes one
+     * rule work for a whole discovered list. Rules on the entry itself are applied
+     * afterwards and therefore win per field.
+     */
+    rowConditions?: ElementConditionRule[];
     // Group action options (groupSwitch, groupActionType, …) come from GroupActionConfigOpts.
 }
 
@@ -159,12 +295,13 @@ export function matchesIdPattern(id: string, pattern: string): boolean {
     return id.toLowerCase().includes(p.toLowerCase());
 }
 
-function compareVals(a: ioBrokerState['val'], b: ioBrokerState['val']): number {
-    if (a === null || a === undefined) return 1;
-    if (b === null || b === undefined) return -1;
-    if (typeof a === 'boolean' && typeof b === 'boolean') return (a ? 1 : 0) - (b ? 1 : 0);
-    if (typeof a === 'number' && typeof b === 'number') return a - b;
-    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+/** true = value counts as "active" (on / > 0) — the polarity the row controls render. */
+function isActive(val: ioBrokerState['val']): boolean {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val > 0;
+    if (typeof val === 'string') return val !== '' && val !== '0' && val.toLowerCase() !== 'false';
+    return false;
 }
 
 function isDimmerRole(role?: string) {
@@ -179,27 +316,59 @@ function isNumericRole(role?: string) {
     return r.startsWith('value.') || r === 'value' || r.startsWith('level.') || r === 'level';
 }
 
+/** The entry's own second-line datapoints, empty ids dropped. Empty = the list-wide
+ *  template applies — "own" must mean the same thing everywhere or an entry can end up
+ *  counted as configured while rendering the template. */
+function ownSubDps(entry: AutoListEntry): EntrySubDp[] {
+    return (entry.subDps ?? []).filter((s) => !!s?.id);
+}
+
 export function resolveName(name: string | Record<string, string> | undefined, fallback: string): string {
     if (!name) return fallback;
     if (typeof name === 'string') return name;
     return name.de ?? name.en ?? Object.values(name)[0] ?? fallback;
 }
 
+type ViewRow = { id: string; value: ioBrokerObject };
+
+/**
+ * ioBroker's plain `state`/`channel`/`device` object view does not return the
+ * `alias.*` namespace - a second range query over `alias.` is required, exactly
+ * as in hooks/useDatapointList. Without it a dashboard built purely on aliases
+ * finds nothing in the datapoint search (issue #524).
+ */
+async function viewWithAliases(type: 'state' | 'channel' | 'device'): Promise<ViewRow[]> {
+    const [plain, aliases] = await Promise.all([
+        getObjectViewDirect(type),
+        getObjectViewDirect(type, 'alias.', 'alias.\u9999'),
+    ]);
+    const seen = new Set(plain.rows.map((r) => r.id));
+    const out = [...plain.rows];
+    for (const row of aliases.rows) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        out.push(row);
+    }
+    return out;
+}
+
 export async function loadFilterOptions(): Promise<{
     roles: string[];
     rooms: string[];
     funcs: string[];
+    /** User-defined enum categories, e.g. enum.floors.* (issue #568). */
+    enums: EnumFilterOption[];
     types: string[];
     adapters: string[];
 }> {
-    const [stateResult, enumResult] = await Promise.all([
-        getObjectViewDirect('state'),
+    const [stateRows, enumResult] = await Promise.all([
+        viewWithAliases('state'),
         getObjectViewDirect('enum', 'enum.', 'enum.\u9999'),
     ]);
     const rolesSet = new Set<string>();
     const typesSet = new Set<string>();
     const adaptersSet = new Set<string>();
-    for (const { id, value: obj } of stateResult.rows) {
+    for (const { id, value: obj } of stateRows) {
         if (obj?.common?.role) rolesSet.add(obj.common.role);
         if (obj?.common?.type) typesSet.add(obj.common.type);
         const parts = id.split('.');
@@ -217,6 +386,7 @@ export async function loadFilterOptions(): Promise<{
         roles: Array.from(rolesSet).sort(),
         rooms: rooms.sort(),
         funcs: funcs.sort(),
+        enums: collectEnumFilterOptions(enumResult.rows.map((r) => r.value)),
         types: Array.from(typesSet).sort(),
         adapters: Array.from(adaptersSet).sort(),
     };
@@ -229,22 +399,23 @@ export async function discoverDatapoints(
         | 'filterIdPattern'
         | 'filterRooms'
         | 'filterFuncs'
+        | 'filterEnums'
         | 'filterTypes'
         | 'excludeIdPatterns'
         | 'excludeIds'
         | 'filterAdapters'
     >,
 ): Promise<DiscoveredDp[]> {
-    const [stateResult, channelResult, deviceResult, enumResult] = await Promise.all([
-        getObjectViewDirect('state'),
-        getObjectViewDirect('channel'),
-        getObjectViewDirect('device'),
+    const [stateRows, channelRows, deviceRows, enumResult] = await Promise.all([
+        viewWithAliases('state'),
+        viewWithAliases('channel'),
+        viewWithAliases('device'),
         getObjectViewDirect('enum', 'enum.', 'enum.\u9999'),
     ]);
 
     // Build parent name map (channels override devices when both exist)
     const parentNames = new Map<string, string>();
-    for (const { id, value: obj } of [...deviceResult.rows, ...channelResult.rows]) {
+    for (const { id, value: obj } of [...deviceRows, ...channelRows]) {
         if (!obj?.common?.name) continue;
         const n = resolveName(obj.common.name as string | Record<string, string>, '');
         if (n) parentNames.set(id, n);
@@ -269,6 +440,12 @@ export async function discoverDatapoints(
             else e.funcs.push(label);
         }
     }
+
+    // Custom categories (enum.floors & co.) get their own index: they are matched by
+    // enum id, and their members are usually rooms rather than states, so membership
+    // has to be resolved through the nested enums (see utils/enumFilter).
+    const enumFilter = splitEnumFilter(opts.filterEnums);
+    const customEnumIndex = enumFilter.length ? buildEnumMemberIndex(enumResult.rows.map((r) => r.value)) : null;
 
     // Role filter: exact match (same as DatapointPicker) with OR semantics for multiple values.
     const roleFilter = (opts.filterRoles ?? '')
@@ -301,8 +478,11 @@ export async function discoverDatapoints(
         .filter(Boolean);
     const excludeIdsSet = new Set<string>(opts.excludeIds ?? []);
 
-    return stateResult.rows
+    return stateRows
         .filter(({ id, value: obj }) => {
+            // Malformed rows (missing common) exist in some user DBs - drop them so
+            // the mapper below can dereference common safely.
+            if (!obj?.common) return false;
             const role = obj.common.role ?? '';
             if (roleFilter.length > 0 && !roleFilter.includes(role)) return false;
             if (idPatterns.length > 0 && !idPatterns.some((p) => matchesIdPattern(id, p))) return false;
@@ -332,6 +512,7 @@ export async function discoverDatapoints(
                 if (roomFilter.length > 0 && !roomFilter.some((r) => roomsSet.has(r))) return false;
                 if (funcFilter.length > 0 && !funcFilter.some((f) => funcsSet.has(f))) return false;
             }
+            if (customEnumIndex && !matchesEnumFilter(enumFilter, enumIdsForObject(id, customEnumIndex))) return false;
             return true;
         })
         .map(({ id, value: obj }) => {
@@ -381,30 +562,68 @@ export async function discoverDatapoints(
 function EntryValue({
     entry,
     val,
+    statusVal,
+    lockVal,
+    presetsJson,
+    dpStates,
     writable,
     setState,
     thresholds,
     decimals,
+    numFmt,
     activeColor,
     inactiveColor,
     trueText,
     falseText,
     wrap,
     valueMaxPct,
+    listTransform,
+    cond,
 }: {
     entry: AutoListEntry;
     val: ioBrokerState['val'];
+    /** Live value of the switch display's status datapoint, when one is configured. */
+    statusVal?: ioBrokerState['val'];
+    /** Live value of the contact display's lock datapoint, when one is configured. */
+    lockVal?: ioBrokerState['val'];
+    /** Live value of the preset display's JSON datapoint, when one is configured. */
+    presetsJson?: ioBrokerState['val'];
+    /** Every subscribed datapoint, for the controls that read more than one
+     *  (the shutter's position feedback, slats, activity and lock datapoints). */
+    dpStates?: Record<string, ioBrokerState | null>;
     writable: boolean;
     setState: (id: string, v: boolean | number | string) => void;
-    thresholds?: [number, string][];
+    thresholds?: ColorThreshold[];
     decimals: number;
+    numFmt?: NumberFormat;
     activeColor: string;
     inactiveColor: string;
     trueText?: string;
     falseText?: string;
     wrap?: boolean;
     valueMaxPct?: number;
+    /** List-wide value conversion / time format; the entry's own settings win. */
+    listTransform?: ValueTransformSettings;
+    /** Conditional formatting for this row's value (issue #572). */
+    cond?: ElementCondResult;
 }) {
+    const t = useT();
+    // Display-only conversion — text output only, never the writing controls.
+    const disp = entryValueText(entry, listTransform, val, decimals, numFmt, t);
+    // A condition beats the colour scale — the scale is the default, the rule the
+    // exception. Inline weight/style also beat the Tailwind font classes below.
+    const condColor = cond?.color;
+    const condFont = condTextStyle(cond);
+    // A rule may replace the value outright — "true" becomes "ONLINE". No control is
+    // drawn for it then: the row states a fact instead of offering a switch. No hook
+    // runs below this point, so the early return is safe.
+    if (cond?.hide) return null;
+    if (cond?.text !== undefined)
+        return (
+            <span className="text-xs font-medium tabular-nums" style={{ color: condColor, ...condFont }}>
+                {cond.text}
+            </span>
+        );
     // For text-style value spans: drop shrink-0 + allow wrapping when wrap=true.
     // maxWidth caps the value (default 50%) so the label always keeps a guaranteed share.
     const textValueCls = wrap
@@ -420,20 +639,113 @@ function EntryValue({
 
     // Rich control types — shared with the static list (see entryControls).
     const dt = entry.displayType ?? 'auto';
-    if (dt === 'shutter') return <ShutterControl entry={entry} val={val} setState={setState} />;
-    if (dt === 'stepper') return <StepperControl entry={entry} val={val} setState={setState} decimals={decimals} />;
+    if (dt === 'shutter') return <ShutterControl entry={entry} val={val} setState={setState} dpStates={dpStates} />;
+    if (dt === 'stepper')
+        return (
+            <StepperControl
+                entry={entry}
+                val={val}
+                setState={setState}
+                decimals={decimals}
+                numFmt={numFmt}
+                // The stepper prints the raw value (it writes it back), so its colour
+                // must be matched against that value, not the converted one.
+                valueColor={getThresholdColor(val, thresholds)}
+                cond={cond}
+            />
+        );
     if (dt === 'buttons')
-        return <PresetButtons entry={entry} val={val} setState={setState} activeColor={activeColor} />;
+        return (
+            <PresetButtons
+                entry={entry}
+                val={val}
+                setState={setState}
+                activeColor={activeColor}
+                presetsJson={presetsJson}
+            />
+        );
+    if (dt === 'select')
+        return <SelectControl entry={entry} val={val} setState={setState} cond={cond} presetsJson={presetsJson} />;
     if (dt === 'momentary') return <MomentaryButton entry={entry} setState={setState} />;
+    if (dt === 'states') return <StateDisplay entry={entry} val={val} cond={cond} />;
+    if (dt === 'contact') return <ContactDisplay entry={entry} val={val} lockVal={lockVal} cond={cond} />;
+    if (dt === 'time')
+        return (
+            <TimeDisplay
+                entry={entry}
+                val={disp.value}
+                className={textValueCls}
+                style={{ ...valueMaxStyle, ...condFont, color: condColor ?? 'var(--text-primary)' }}
+            />
+        );
+    if (dt === 'datepicker') return <DateEntryControl entry={entry} val={val} setState={setState} cond={cond} />;
+    if (dt === 'input') return <InputControl entry={entry} val={val} setState={setState} cond={cond} />;
+    // Forced "Nur Wert" — skip the role/switch/dimmer paths below, render text only.
+    if (dt === 'value') {
+        const active = isActive(val);
+        return (
+            <span
+                className={textValueCls}
+                style={{
+                    ...valueMaxStyle,
+                    ...condFont,
+                    color:
+                        condColor ??
+                        getThresholdColor(disp.value, thresholds) ??
+                        (active ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                }}
+            >
+                {disp.text != null ? `${disp.text}${entry.unit && !disp.isTime ? ` ${entry.unit}` : ''}` : '–'}
+            </span>
+        );
+    }
+    // Forced "Schieberegler" — the shared control with the Schieberegler widget's
+    // option set (scale, step, colour, bar look, write on release, read-only).
+    if (dt === 'slider')
+        return (
+            <SliderControl
+                entry={entry}
+                val={val}
+                writable={writable}
+                setState={setState}
+                valueColor={condColor ?? getThresholdColor(val, thresholds)}
+                className={textValueCls}
+                textStyle={{ ...valueMaxStyle, ...condFont }}
+                cond={cond}
+            />
+        );
+    // Forced "Schalter": the shared control, so a string/enum datapoint gets a toggle
+    // too — the automatic path below only ever recognises the boolean-ish shapes.
+    if (dt === 'switch')
+        return (
+            <SwitchControl
+                entry={entry}
+                val={val}
+                statusVal={statusVal}
+                writable={writable}
+                setState={setState}
+                activeColor={activeColor}
+                inactiveColor={inactiveColor}
+                trueLabel={trueLabel}
+                falseLabel={falseLabel}
+                cond={cond}
+            />
+        );
 
     // Role-based display for sensors (window, door, motion, smoke, …)
     if (isBoolLike && !hasLabels) {
         const roleDisplay = getRoleDisplay(entry.role, val);
         if (roleDisplay) {
+            // A rule beats the role's own colour, exactly like it beats the scale.
+            const fill = condColor ?? roleDisplay.color;
             return (
                 <span
                     className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{ background: `${roleDisplay.color}22`, color: roleDisplay.color }}
+                    style={{
+                        background: `color-mix(in srgb, ${fill} 18%, transparent)`,
+                        color: fill,
+                        ...condFont,
+                    }}
                 >
                     {roleDisplay.label}
                 </span>
@@ -443,7 +755,7 @@ function EntryValue({
 
     if (isBoolLike) {
         if (hasLabels) {
-            const fill = on ? activeColor : inactiveColor;
+            const fill = condColor ?? (on ? activeColor : inactiveColor);
             return (
                 <button
                     onClick={writable ? () => setState(entry.id, isBool ? !on : on ? 0 : 1) : undefined}
@@ -452,6 +764,7 @@ function EntryValue({
                         background: `color-mix(in srgb, ${fill} 18%, transparent)`,
                         color: fill,
                         cursor: writable ? 'pointer' : 'default',
+                        ...condFont,
                     }}
                 >
                     {on ? trueLabel || 'AN' : falseLabel || 'AUS'}
@@ -485,46 +798,30 @@ function EntryValue({
         );
     }
 
-    const thresholdColor = getThresholdColor(val, thresholds);
+    const thresholdColor = getThresholdColor(disp.value, thresholds);
 
-    if (typeof val === 'number' && isDimmerRole(entry.id)) {
-        if (!writable) {
-            return (
-                <span
-                    className={textValueCls}
-                    style={{ ...valueMaxStyle, color: thresholdColor ?? 'var(--text-primary)' }}
-                >
-                    {Math.round(val)}
-                    {entry.unit ?? '%'}
-                </span>
-            );
-        }
+    // Automatic dimmer row (LEVEL/DIMMER/BRIGHTNESS): the same control, on its
+    // defaults — 0…100 with the value next to it, as it always looked.
+    if (typeof val === 'number' && isDimmerRole(entry.id))
         return (
-            <div className="shrink-0 flex items-center gap-1.5">
-                <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={val}
-                    onChange={(e) => setState(entry.id, Number(e.target.value))}
-                    className="w-20 h-1"
-                    style={{ accentColor: 'var(--accent)' }}
-                />
-                <span
-                    className="text-[10px] w-8 text-right tabular-nums"
-                    style={{ color: thresholdColor ?? 'var(--text-secondary)' }}
-                >
-                    {Math.round(val)}
-                    {entry.unit ?? '%'}
-                </span>
-            </div>
+            <SliderControl
+                entry={entry}
+                val={val}
+                writable={writable}
+                setState={setState}
+                valueColor={condColor ?? thresholdColor}
+                className={textValueCls}
+                textStyle={{ ...valueMaxStyle, ...condFont }}
+                cond={cond}
+            />
         );
-    }
 
-    const displayVal = typeof val === 'number' ? formatNum(val, decimals) : String(val);
     return (
-        <span className={textValueCls} style={{ ...valueMaxStyle, color: thresholdColor ?? 'var(--text-primary)' }}>
-            {val != null ? `${displayVal}${entry.unit ? ` ${entry.unit}` : ''}` : '–'}
+        <span
+            className={textValueCls}
+            style={{ ...valueMaxStyle, ...condFont, color: condColor ?? thresholdColor ?? 'var(--text-primary)' }}
+        >
+            {disp.text != null ? `${disp.text}${entry.unit && !disp.isTime ? ` ${entry.unit}` : ''}` : '–'}
         </span>
     );
 }
@@ -534,23 +831,40 @@ function EntryValue({
 function CardEntryValue({
     entry,
     val,
+    statusVal,
+    lockVal,
+    presetsJson,
+    dpStates,
     writable,
     setState,
     thresholds,
     decimals,
+    numFmt,
     activeColor,
     inactiveColor,
     trueText,
     falseText,
     wrap,
     valueMaxPct: _valueMaxPct,
+    listTransform,
+    cond,
 }: {
     entry: AutoListEntry;
     val: ioBrokerState['val'];
+    /** Live value of the switch display's status datapoint, when one is configured. */
+    statusVal?: ioBrokerState['val'];
+    /** Live value of the contact display's lock datapoint, when one is configured. */
+    lockVal?: ioBrokerState['val'];
+    /** Live value of the preset display's JSON datapoint, when one is configured. */
+    presetsJson?: ioBrokerState['val'];
+    /** Every subscribed datapoint, for the controls that read more than one
+     *  (the shutter's position feedback, slats, activity and lock datapoints). */
+    dpStates?: Record<string, ioBrokerState | null>;
     writable: boolean;
     setState: (id: string, v: boolean | number | string) => void;
-    thresholds?: [number, string][];
+    thresholds?: ColorThreshold[];
     decimals: number;
+    numFmt?: NumberFormat;
     activeColor: string;
     inactiveColor: string;
     trueText?: string;
@@ -558,7 +872,28 @@ function CardEntryValue({
     wrap?: boolean;
     /** Accepted for API parity with EntryValue; card layout is vertical so the cap doesn't apply. */
     valueMaxPct?: number;
+    /** List-wide value conversion / time format; the entry's own settings win. */
+    listTransform?: ValueTransformSettings;
+    /** Conditional formatting for this row's value (issue #572). */
+    cond?: ElementCondResult;
 }) {
+    const t = useT();
+    // Display-only conversion — text output only, never the writing controls.
+    const disp = entryValueText(entry, listTransform, val, decimals, numFmt, t);
+    // A condition beats the colour scale — the scale is the default, the rule the
+    // exception. Inline weight/style also beat the Tailwind font classes below.
+    const condColor = cond?.color;
+    const condFont = condTextStyle(cond);
+    // A rule may replace the value outright — "true" becomes "ONLINE". No control is
+    // drawn for it then: the row states a fact instead of offering a switch. No hook
+    // runs below this point, so the early return is safe.
+    if (cond?.hide) return null;
+    if (cond?.text !== undefined)
+        return (
+            <span className="text-xs font-medium tabular-nums" style={{ color: condColor, ...condFont }}>
+                {cond.text}
+            </span>
+        );
     // Card text values: add break-words when wrap=true so long single tokens still break.
     const cardTextWrap = wrap ? 'break-words [overflow-wrap:anywhere]' : '';
     const trueLabel = entry.trueLabel ?? trueText;
@@ -570,20 +905,112 @@ function CardEntryValue({
 
     // Rich control types — shared with the static list (see entryControls).
     const dt = entry.displayType ?? 'auto';
-    if (dt === 'shutter') return <ShutterControl entry={entry} val={val} setState={setState} />;
-    if (dt === 'stepper') return <StepperControl entry={entry} val={val} setState={setState} decimals={decimals} />;
+    if (dt === 'shutter')
+        return <ShutterControl entry={entry} val={val} setState={setState} dpStates={dpStates} card />;
+    if (dt === 'stepper')
+        return (
+            <StepperControl
+                entry={entry}
+                val={val}
+                setState={setState}
+                decimals={decimals}
+                numFmt={numFmt}
+                // The stepper prints the raw value (it writes it back), so its colour
+                // must be matched against that value, not the converted one.
+                valueColor={getThresholdColor(val, thresholds)}
+                cond={cond}
+            />
+        );
     if (dt === 'buttons')
-        return <PresetButtons entry={entry} val={val} setState={setState} activeColor={activeColor} />;
+        return (
+            <PresetButtons
+                entry={entry}
+                val={val}
+                setState={setState}
+                activeColor={activeColor}
+                presetsJson={presetsJson}
+            />
+        );
+    if (dt === 'select')
+        return <SelectControl entry={entry} val={val} setState={setState} card cond={cond} presetsJson={presetsJson} />;
     if (dt === 'momentary') return <MomentaryButton entry={entry} setState={setState} />;
+    if (dt === 'states') return <StateDisplay entry={entry} val={val} cond={cond} />;
+    if (dt === 'contact') return <ContactDisplay entry={entry} val={val} lockVal={lockVal} cond={cond} />;
+    if (dt === 'time')
+        return (
+            <TimeDisplay
+                entry={entry}
+                val={disp.value}
+                className={`text-xl font-bold tabular-nums text-center leading-none ${cardTextWrap}`}
+                style={{ color: condColor ?? 'var(--text-primary)', ...condFont }}
+            />
+        );
+    if (dt === 'datepicker')
+        return <DateEntryControl entry={entry} val={val} setState={setState} fullWidth cond={cond} />;
+    if (dt === 'input') return <InputControl entry={entry} val={val} setState={setState} fullWidth cond={cond} />;
+    // Forced "Nur Wert" — see the row variant.
+    if (dt === 'value')
+        return (
+            <span
+                className={`text-xl font-bold tabular-nums text-center leading-none ${cardTextWrap}`}
+                style={{
+                    color: condColor ?? getThresholdColor(disp.value, thresholds) ?? 'var(--text-primary)',
+                    ...condFont,
+                }}
+            >
+                {disp.text ?? '–'}
+                {entry.unit && !disp.isTime && (
+                    <span className="text-sm ml-0.5 font-normal" style={{ color: 'var(--text-secondary)' }}>
+                        {entry.unit}
+                    </span>
+                )}
+            </span>
+        );
+    // Forced "Schieberegler" — see the row variant; `card` fills the cell.
+    if (dt === 'slider')
+        return (
+            <SliderControl
+                entry={entry}
+                val={val}
+                writable={writable}
+                setState={setState}
+                card
+                valueColor={condColor ?? getThresholdColor(val, thresholds)}
+                textStyle={condFont}
+                cond={cond}
+            />
+        );
+    // Forced "Schalter" — see the row variant; `card` makes it fill the cell.
+    if (dt === 'switch')
+        return (
+            <SwitchControl
+                entry={entry}
+                val={val}
+                statusVal={statusVal}
+                writable={writable}
+                setState={setState}
+                activeColor={activeColor}
+                inactiveColor={inactiveColor}
+                trueLabel={trueLabel}
+                falseLabel={falseLabel}
+                card
+                cond={cond}
+            />
+        );
 
     // Role-based display for sensors
     if (isBoolLike && !hasLabels) {
         const roleDisplay = getRoleDisplay(entry.role, val);
         if (roleDisplay) {
+            const fill = condColor ?? roleDisplay.color;
             return (
                 <span
                     className="w-full py-1.5 rounded-lg text-xs font-semibold text-center block"
-                    style={{ background: `${roleDisplay.color}22`, color: roleDisplay.color }}
+                    style={{
+                        background: `color-mix(in srgb, ${fill} 18%, transparent)`,
+                        color: fill,
+                        ...condFont,
+                    }}
                 >
                     {roleDisplay.label}
                 </span>
@@ -593,7 +1020,7 @@ function CardEntryValue({
 
     if (isBoolLike) {
         if (hasLabels) {
-            const fill = on ? activeColor : inactiveColor;
+            const fill = condColor ?? (on ? activeColor : inactiveColor);
             return (
                 <button
                     onClick={writable ? () => setState(entry.id, isBool ? !on : on ? 0 : 1) : undefined}
@@ -602,6 +1029,7 @@ function CardEntryValue({
                         background: `color-mix(in srgb, ${fill} 18%, transparent)`,
                         color: fill,
                         cursor: writable ? 'pointer' : 'default',
+                        ...condFont,
                     }}
                 >
                     {on ? trueLabel || 'AN' : falseLabel || 'AUS'}
@@ -614,8 +1042,9 @@ function CardEntryValue({
                 className="w-full py-1.5 rounded-lg text-xs font-semibold"
                 style={{
                     background: on ? activeColor : 'var(--app-border)',
-                    color: on ? '#fff' : 'var(--text-secondary)',
+                    color: condColor ?? (on ? '#fff' : 'var(--text-secondary)'),
                     cursor: writable ? 'pointer' : 'default',
+                    ...condFont,
                 }}
             >
                 {on ? 'AN' : 'AUS'}
@@ -623,54 +1052,30 @@ function CardEntryValue({
         );
     }
 
-    const thresholdColor = getThresholdColor(val, thresholds);
+    const thresholdColor = getThresholdColor(disp.value, thresholds);
 
-    if (typeof val === 'number' && isDimmerRole(entry.id)) {
-        if (!writable) {
-            return (
-                <span
-                    className="text-xl font-bold tabular-nums"
-                    style={{ color: thresholdColor ?? 'var(--text-primary)' }}
-                >
-                    {Math.round(val)}
-                    <span className="text-sm ml-0.5 font-normal" style={{ color: 'var(--text-secondary)' }}>
-                        {entry.unit ?? '%'}
-                    </span>
-                </span>
-            );
-        }
+    // Automatic dimmer cell — see the row variant.
+    if (typeof val === 'number' && isDimmerRole(entry.id))
         return (
-            <div className="w-full flex flex-col items-center gap-1">
-                <span
-                    className="text-xl font-bold tabular-nums"
-                    style={{ color: thresholdColor ?? 'var(--text-primary)' }}
-                >
-                    {Math.round(val)}
-                    <span className="text-sm ml-0.5 font-normal" style={{ color: 'var(--text-secondary)' }}>
-                        {entry.unit ?? '%'}
-                    </span>
-                </span>
-                <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={val}
-                    onChange={(e) => setState(entry.id, Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full"
-                    style={{ accentColor: 'var(--accent)' }}
-                />
-            </div>
+            <SliderControl
+                entry={entry}
+                val={val}
+                writable={writable}
+                setState={setState}
+                card
+                valueColor={condColor ?? thresholdColor}
+                textStyle={condFont}
+                cond={cond}
+            />
         );
-    }
 
-    const displayVal = typeof val === 'number' ? formatNum(val, decimals) : String(val);
     return (
         <span
             className={`text-xl font-bold tabular-nums text-center leading-none ${cardTextWrap}`}
-            style={{ color: thresholdColor ?? 'var(--text-primary)' }}
+            style={{ color: condColor ?? thresholdColor ?? 'var(--text-primary)', ...condFont }}
         >
-            {val != null ? displayVal : '–'}
-            {entry.unit && (
+            {disp.text ?? '–'}
+            {entry.unit && !disp.isTime && (
                 <span className="text-sm ml-0.5 font-normal" style={{ color: 'var(--text-secondary)' }}>
                     {entry.unit}
                 </span>
@@ -702,16 +1107,25 @@ function RoomHeader({ room, style }: { room: string; style?: React.CSSProperties
 
 export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps) {
     const opts = useMemo(() => (config.options ?? { entries: [] }) as unknown as AutoListOptions, [config.options]);
-    const entries = useMemo<AutoListEntry[]>(() => (opts.entries ?? []).filter((e) => !!e?.id), [opts.entries]);
+    // The list-wide display block is folded in here, once: everything downstream —
+    // rendering, the group master switch, the row conditions — then sees a row that
+    // already carries the display it should get.
+    const entries = useMemo<AutoListEntry[]>(
+        () => (opts.entries ?? []).filter((e) => !!e?.id).map((e) => applyListDisplay(e, opts.entryDisplay)),
+        [opts.entries, opts.entryDisplay],
+    );
+    // Inside an auto-height popup-view: render the full list without an inner scrollbar
+    // so the popup grid (and dialog) can grow to fit every row. Off elsewhere.
+    const autoHeight = usePopupAutoHeight();
     const t = useT();
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     const decimals = (opts.decimals as number) ?? defaultDecimals;
+    const numFmt = opts.numberFormat ?? globalNumFmt;
     const { subscribe, setState, getState } = useIoBroker();
     const [states, setStates] = useState<Record<string, ioBrokerState | null>>({});
     const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
     const [resolvedRooms, setResolvedRooms] = useState<Record<string, string[]>>({});
     const [syncing, setSyncing] = useState(false);
-    const [showFilter, setShowFilter] = useState(false);
     const [lastChangedTs, setLastChangedTs] = useState(0);
     // Frontend filter is a per-viewer runtime toggle held in local state — it is
     // NOT persisted back to config. The read-only frontend runs useConfigSync with
@@ -719,12 +1133,140 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
     // would be overwritten on the next sync and reset the filter. Local-only state
     // applies instantly and survives syncs; the effect only adopts the admin-set
     // default on load / when the admin genuinely changes it.
-    const [viewFilter, setViewFilter] = useState<FilterMode>((opts.valueFilter ?? 'all') as FilterMode);
+    const [viewFilter, setViewFilter] = useState<string>(opts.valueFilter ?? 'all');
     useEffect(() => {
-        setViewFilter((opts.valueFilter ?? 'all') as FilterMode);
+        setViewFilter(opts.valueFilter ?? 'all');
     }, [opts.valueFilter]);
+    // Free-text search: same reasoning as the filter mode — per viewer, never persisted.
+    const [searchTerm, setSearchTerm] = useState('');
     const syncMs = (opts.syncIntervalMin ?? 5) * 60_000;
     const layout = config.layout ?? 'default';
+    // Row click -> detail popup for that datapoint (issue #524).
+    const rowPopup = useRowPopup(config, opts, editMode);
+
+    // ── Second line: extra datapoints per row ──────────────────────────────────
+    // Two sources, the entry's own list beating the list-wide template: hand-picked
+    // datapoints on a single entry, or the template resolved against each row's own
+    // datapoint ({{parent}}.BATTERY & co.). The template is what makes this usable on
+    // a list whose rows come from a filter - see utils/subDpTemplate.
+    const subDpTemplate = opts.subDpTemplate;
+    const entrySubDps = useMemo(() => {
+        const map = new Map<string, EntrySubDp[]>();
+        for (const e of entries) {
+            const own = ownSubDps(e);
+            map.set(e.id, own.length ? own : resolveSubDpTemplate(subDpTemplate, e.id));
+        }
+        return map;
+    }, [entries, subDpTemplate]);
+    // Outside the entry subscription above: second-line datapoints take no part in
+    // sorting or the statistics line, so they get their own read-only subscription
+    // (the same hook the value widget uses for its template datapoints). Filter
+    // presets and the free-text search DO read them - see utils/listFilter.
+    const subDpRefs = useMemo(() => [...new Set([...entrySubDps.values()].flat().map((s) => s.id))], [entrySubDps]);
+    const subValues = useTemplateValues(subDpRefs);
+    // Metadata of the datapoints a TEMPLATE resolved to. Two jobs: it tells apart
+    // "datapoint exists" from "device does not have it" (so a thermostat without
+    // BATTERY does not add a dash to its row), and it supplies the unit the template
+    // itself cannot know per device. Hand-picked subDps skip this - the user named
+    // that exact datapoint and gets a dash if it is missing, like in the static list.
+    const templateIds = useMemo(
+        () =>
+            subDpTemplate?.length
+                ? [
+                      ...new Set(
+                          entries
+                              .filter((e) => ownSubDps(e).length === 0)
+                              .flatMap((e) => (entrySubDps.get(e.id) ?? []).map((s) => s.id)),
+                      ),
+                  ]
+                : [],
+        [entries, entrySubDps, subDpTemplate],
+    );
+    const templateIdKey = templateIds.join(',');
+    const [templateMeta, setTemplateMeta] = useState<Record<string, { unit?: string }>>({});
+    useEffect(() => {
+        if (!templateIdKey) {
+            setTemplateMeta({});
+            return;
+        }
+        let cancelled = false;
+        ensureDatapointCache()
+            .then((cache) => {
+                if (cancelled) return;
+                const byId = new Map(cache.map((c) => [c.id, c]));
+                const meta: Record<string, { unit?: string }> = {};
+                for (const id of templateIdKey.split(',')) {
+                    const found = byId.get(id);
+                    if (found) meta[id] = { unit: found.unit };
+                }
+                setTemplateMeta(meta);
+            })
+            .catch(() => {
+                /* offline - the live-value fallback below still shows what answers */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [templateIdKey]);
+
+    const hideMissingSubDps = opts.subDpTemplateHideMissing !== false;
+    // ── Conditional formatting (issue #572) ──────────────────────────────────
+    // One hook for the whole list — rows and their second-line datapoints alike.
+    // Per row the list-wide rules come first and the entry's own ones after, so the
+    // entry wins per field simply by being later in the array.
+    const condItems = useMemo<ElementCondInput[]>(() => {
+        const listRules = opts.rowConditions ?? [];
+        const out: ElementCondInput[] = [];
+        for (const e of entries) {
+            const rules = e.conditions?.length ? [...listRules, ...e.conditions] : listRules;
+            // `in`, not a truthy value: a datapoint that answered with null is loaded
+            // too, and the message effect must not read that as "still waiting".
+            if (rules.length)
+                out.push({
+                    key: e.id,
+                    dp: e.id,
+                    value: states[e.id]?.val ?? null,
+                    loaded: e.id in states,
+                    rules,
+                });
+            for (const sub of entrySubDps.get(e.id) ?? []) {
+                if (!sub?.id || !sub.conditions?.length) continue;
+                out.push({
+                    key: subCondKey(e.id, sub.id),
+                    dp: sub.id,
+                    value: subValues[sub.id] ?? null,
+                    rules: sub.conditions,
+                });
+            }
+        }
+        return out;
+    }, [entries, opts.rowConditions, states, subValues, entrySubDps]);
+    const conds = useElementConditionStyles(condItems);
+
+    const subLineFor = (entry: AutoListEntry) => {
+        const list = entrySubDps.get(entry.id);
+        if (!list?.length) return null;
+        const own = ownSubDps(entry).length > 0;
+        // A datapoint missing from the cache but answering with a value counts as
+        // present: the cache can still be loading, and it lags fresh objects.
+        const usable =
+            own || !hideMissingSubDps
+                ? list
+                : list.filter((s) => templateMeta[s.id] !== undefined || subValues[s.id] != null);
+        if (!usable.length) return null;
+        const resolved = own ? usable : usable.map((s) => (s.unit ? s : { ...s, unit: templateMeta[s.id]?.unit }));
+        return (
+            <EntrySubLine
+                subDps={resolved}
+                values={subValues}
+                listTransform={opts}
+                decimals={decimals}
+                numFmt={numFmt}
+                entryId={entry.id}
+                conds={conds}
+            />
+        );
+    };
 
     const saveOpts = useCallback(
         (patch: Partial<AutoListOptions>) => {
@@ -733,17 +1275,22 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
         [config, opts, onConfigChange],
     );
 
-    const entryKey = entries.map((e) => e.id).join(',');
+    // A switch entry may read its state from a separate status datapoint (Tasmota &
+    // co.) — those ids go into the same states map, so every layout (incl. the badges,
+    // which draw no control of their own) sees the feedback value.
+    const statusIds = [...new Set(entries.flatMap(entryExtraDps))].filter((id) => !entries.some((e) => e.id === id));
+    const entryKey = [...entries.map((e) => e.id), ...statusIds].join(',');
     // NB: keyed on entryKey only — no prevKey guard. A prevKey ref survives the
     // StrictMode mount→unmount→remount cycle and would make the remount skip
     // re-subscribing (after the unmount tore the subscriptions down), leaving
     // the list with zero live subscriptions in dev.
     useEffect(() => {
         if (entries.length === 0) return;
-        entries.forEach((e) => getState(e.id).then((s) => setStates((prev) => ({ ...prev, [e.id]: s }))));
-        const unsubs = entries.map((e) =>
-            subscribe(e.id, (s) => {
-                setStates((prev) => ({ ...prev, [e.id]: s }));
+        const subIds = [...entries.map((e) => e.id), ...statusIds];
+        subIds.forEach((id) => getState(id).then((s) => setStates((prev) => ({ ...prev, [id]: s }))));
+        const unsubs = subIds.map((id) =>
+            subscribe(id, (s) => {
+                setStates((prev) => ({ ...prev, [id]: s }));
                 if (s) setLastChangedTs((prev) => Math.max(prev, s.lc > 0 ? s.lc : s.ts));
             }),
         );
@@ -770,6 +1317,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
             opts.filterIdPattern ||
             opts.filterRooms ||
             opts.filterFuncs ||
+            opts.filterEnums ||
             opts.filterTypes ||
             opts.filterAdapters;
         if (!hasFilter) return;
@@ -791,7 +1339,9 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
             if (newEntries.length > 0) {
                 saveOpts({ entries: [...entries, ...newEntries] });
                 saveAll();
-                saveToIoBroker();
+                // Scoped: the frontend must not push its theme/groups/popup-config
+                // copy along with a dashboard edit.
+                saveToIoBroker({ only: ['aura-dashboard'] });
             }
         } finally {
             setSyncing(false);
@@ -803,66 +1353,110 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
         return () => clearInterval(timer);
     }, [runSync, syncMs]);
 
-    const getLabel = (entry: AutoListEntry) =>
+    // Label pipeline: composed name → name pattern (incl. the `{{parent}}` variables) →
+    // live `[[dp]]` values. The last step is a hook, so the raw labels of every entry are
+    // collected first and the resolver subscribes to all referenced datapoints at once.
+    const baseName = (entry: AutoListEntry) =>
         applyDpNameFilter(entry.label || resolvedNames[entry.id] || entry.id.split('.').pop() || entry.id);
+    const rawLabel = (entry: AutoListEntry) =>
+        formatItemName(
+            { id: entry.id, name: baseName(entry), room: entry.rooms?.[0] },
+            opts.namePattern,
+            opts.nameFilters,
+        );
+    const resolveDpTokens = useDpTokenResolver(entries.map(rawLabel));
+    const getLabel = (entry: AutoListEntry) => {
+        const raw = rawLabel(entry);
+        if (!hasLiveToken(raw)) return raw;
+        const base = baseName(entry);
+        // 'Ergebnis' rules were deferred until the value was in — see finishItemName.
+        return finishItemName(resolveDpTokens(raw, base), opts.nameFilters, base);
+    };
 
     // ── Value filter ───────────────────────────────────────────────────────────
     // Driven by local state so frontend clicks take effect immediately, not
-    // only after the config sync round-trips back from the backend.
-    const valueFilter = viewFilter;
-    const filterActiveLabel = opts.filterActiveLabel || 'Nur aktive';
-    const filterInactiveLabel = opts.filterInactiveLabel || 'Nur inaktive';
-    type FilterMode = 'all' | 'active' | 'inactive';
-    const filterLabels: Record<FilterMode, string> = {
-        all: 'Alle',
-        active: filterActiveLabel,
-        inactive: filterInactiveLabel,
-    };
+    // only after the config sync round-trips back from the backend. The menu holds
+    // the built-ins plus the admin's own presets; a mode that no longer exists
+    // (deleted preset) falls back to 'all' instead of hiding every row.
+    const filterChoices = useMemo(() => buildFilterChoices(opts), [opts]);
+    const valueFilter = normalizeFilterMode(viewFilter, filterChoices);
 
-    /** true = value is considered "active" (on / > 0) */
-    const isActive = (val: ioBrokerState['val']): boolean => {
-        if (val === null || val === undefined) return false;
-        if (typeof val === 'boolean') return val;
-        if (typeof val === 'number') return val > 0;
-        if (typeof val === 'string') return val !== '' && val !== '0' && val.toLowerCase() !== 'false';
-        return false;
-    };
+    // Everything a filter rule / the free-text search may look at for one row: the main
+    // value plus the second line's extra datapoints - per entry or resolved from the
+    // list-wide template, exactly as they are rendered.
+    const filterRow = (entry: AutoListEntry): ListFilterRow => ({
+        id: entry.id,
+        label: getLabel(entry),
+        value: states[entry.id]?.val ?? null,
+        subs: (entrySubDps.get(entry.id) ?? []).map((s) => ({
+            id: s.id,
+            label: s.label,
+            value: subValues[s.id] ?? null,
+        })),
+    });
 
     // In editMode the Aura admin view honors a separate backendValueFilter so
     // the editor preview can show what users will see (e.g. only active entries).
-    const backendValueFilter = (opts.backendValueFilter ?? 'all') as FilterMode;
-    const effectiveFilter: FilterMode = editMode ? backendValueFilter : valueFilter;
+    const backendValueFilter = opts.backendValueFilter ?? 'all';
+    const effectiveFilter = editMode ? backendValueFilter : valueFilter;
+    // The search is a frontend-only affordance; the editor preview ignores it. A term
+    // typed before the admin hid the field (or the whole chip) is dropped too -
+    // otherwise it would keep filtering with no way left to clear it.
+    const searchReachable = !opts.hideFilterSearch && !opts.hideFilterButton;
+    const effectiveSearch = editMode || !searchReachable ? '' : searchTerm;
 
-    const visibleEntries = useMemo(() => {
+    const matchedEntries = useMemo(() => {
         let result =
-            effectiveFilter === 'all'
+            effectiveFilter === 'all' && !effectiveSearch.trim()
                 ? entries
                 : entries.filter((e) => {
-                      const val = states[e.id]?.val ?? null;
-                      if (val === null) return false;
-                      return effectiveFilter === 'active' ? isActive(val) : !isActive(val);
+                      const row = filterRow(e);
+                      return (
+                          matchesFilterMode(effectiveFilter, opts.filterPresets, row) &&
+                          matchesSearch(row, effectiveSearch)
+                      );
                   });
-        const sortBy = opts.sortBy ?? 'none';
-        const sortOrder = opts.sortOrder ?? 'asc';
-        const sortBy2 = opts.sortBy2 ?? 'none';
-        const sortOrder2 = opts.sortOrder2 ?? 'asc';
-        if (sortBy !== 'none') {
-            const cmpFor = (key: 'label' | 'value', a: AutoListEntry, b: AutoListEntry) =>
-                key === 'label'
-                    ? getLabel(a).localeCompare(getLabel(b), undefined, { numeric: true, sensitivity: 'base' })
-                    : compareVals(states[a.id]?.val ?? null, states[b.id]?.val ?? null);
-            result = [...result].sort((a, b) => {
-                const cmp1 = cmpFor(sortBy, a, b);
-                if (cmp1 !== 0) return sortOrder === 'desc' ? -cmp1 : cmp1;
-                if (sortBy2 !== 'none' && sortBy2 !== sortBy) {
-                    const cmp2 = cmpFor(sortBy2, a, b);
-                    return sortOrder2 === 'desc' ? -cmp2 : cmp2;
-                }
-                return 0;
-            });
-        }
+        // The rule chain (or the legacy sortBy pair mapped onto it) — the row it reads
+        // is the one the filters see, built once per entry rather than per comparison.
+        const cmp = makeSortComparator(effectiveSortRules(opts), filterRow, (e) => e.id);
+        if (cmp) result = [...result].sort(cmp);
         return result;
-    }, [entries, states, effectiveFilter, opts.sortBy, opts.sortOrder, opts.sortBy2, opts.sortOrder2, resolvedNames]); // eslint-disable-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        entries,
+        states,
+        subValues,
+        entrySubDps,
+        effectiveFilter,
+        effectiveSearch,
+        opts.filterPresets,
+        opts.sortRules,
+        opts.sortBy,
+        opts.sortOrder,
+        opts.sortBy2,
+        opts.sortOrder2,
+        resolvedNames,
+    ]);
+
+    // ── Row cap ──────────────────────────────────────────────────────────────────
+    // The rows come from a filter, so their number is a runtime fact and the
+    // widget's height could not be planned. `maxRows` turns it back into a known
+    // one; the cut is announced by the "+N weitere" row below, never silent.
+    // Counting, statistics and the empty check keep looking at ALL matched rows —
+    // a sum over the visible slice would be a different number wearing the same
+    // label.
+    const maxRows = Number.isFinite(opts.maxRows) && (opts.maxRows as number) > 0 ? Math.floor(opts.maxRows!) : 0;
+    const visibleEntries = useMemo(
+        () => (maxRows ? matchedEntries.slice(0, maxRows) : matchedEntries),
+        [matchedEntries, maxRows],
+    );
+    const hiddenCount = matchedEntries.length - visibleEntries.length;
+    const moreRow =
+        hiddenCount > 0 && opts.showMore !== false ? (
+            <p className="aura-list-more shrink-0 px-3 py-1" style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                {t('calendar.more', { count: hiddenCount })}
+            </p>
+        ) : null;
 
     // ── Room grouping ────────────────────────────────────────────────────────────
     // Partition the (already filtered + sorted) entries by their first room. The
@@ -871,7 +1465,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
     const groupByRoom = !!opts.groupByRoom;
     const roomSections = useMemo<{ room: string; entries: AutoListEntry[] }[] | null>(() => {
         if (!groupByRoom) return null;
-        const NO_ROOM = ' '; // sorts/keys the no-room bucket without clashing with a real room
+        const NO_ROOM = '\u0000'; // sorts/keys the no-room bucket without clashing with a real room
         const map = new Map<string, AutoListEntry[]>();
         for (const e of visibleEntries) {
             const rooms = resolvedRooms[e.id] ?? e.rooms;
@@ -891,37 +1485,29 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
     }, [groupByRoom, visibleEntries, resolvedRooms, opts.noRoomLabel]);
 
     // Count published to ioBroker state = view-mode count using the frontend valueFilter,
-    // independent from backendValueFilter (which only affects the editor preview).
+    // independent from backendValueFilter (which only affects the editor preview) and
+    // from the free-text search (a per-viewer, transient narrowing).
     const viewCount = useMemo(() => {
         if (valueFilter === 'all') return entries.length;
-        return entries.filter((e) => {
-            const val = states[e.id]?.val ?? null;
-            if (val === null) return false;
-            return valueFilter === 'active' ? isActive(val) : !isActive(val);
-        }).length;
-    }, [entries, states, valueFilter]);
+        return entries.filter((e) => matchesFilterMode(valueFilter, opts.filterPresets, filterRow(e))).length;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entries, states, subValues, entrySubDps, valueFilter, opts.filterPresets]);
 
     useEffect(() => {
         if (!opts.publishCount) return;
-        publishListCount(config.id, config.title || 'Dynamische Liste', viewCount);
-    }, [opts.publishCount, viewCount, config.id, config.title]);
+        // The published name is a plain string — [[dp]] tokens are a display feature.
+        // `config.title` is deliberately NOT a dependency: it only names the object on
+        // the first publish, and a title with a live token would otherwise re-fire this
+        // effect (and rewrite the unchanged count) on every value change.
+        publishListCount(config.id, stripDpTokens(config.title || '') || 'Dynamische Liste', viewCount);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [opts.publishCount, viewCount, config.id]);
 
-    // Sum of numeric values from visible entries (single shared unit assumed —
-    // first encountered unit wins; entries with non-numeric values are skipped).
-    const sumInfo = useMemo(() => {
-        if (!opts.showSum) return null;
-        let sum = 0;
-        let unit: string | undefined;
-        let count = 0;
-        for (const e of visibleEntries) {
-            const v = states[e.id]?.val;
-            if (typeof v !== 'number' || !isFinite(v)) continue;
-            sum += v;
-            count++;
-            if (unit === undefined && e.unit) unit = e.unit;
-        }
-        return count > 0 ? { sum, unit, count } : null;
-    }, [opts.showSum, visibleEntries, states]);
+    // Aggregate (sum / avg / min / max) of numeric values from visible entries.
+    const sumInfo = useMemo(
+        () => (opts.showSum ? computeListStats(matchedEntries, states, opts) : null),
+        [matchedEntries, states, opts],
+    );
 
     useEffect(() => {
         if (opts.publishCount) return;
@@ -1007,7 +1593,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
               })()
             : null;
 
-    const globalThresholds = o.colorThresholds as [number, string][] | undefined;
+    const globalThresholds = opts.colorThresholds;
     const globalActiveColor = opts.activeColor || 'var(--accent-green)';
     const globalInactiveColor = opts.inactiveColor || 'var(--text-secondary)';
     const globalActiveBg = opts.activeBg;
@@ -1043,77 +1629,41 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                 {config.title || 'Dynamische Liste'}
                                 {showCount && entries.length > 0 && (
                                     <span className="ml-1 opacity-50">
-                                        ({valueFilter !== 'all' ? `${visibleEntries.length}/` : ''}
+                                        ({valueFilter !== 'all' ? `${matchedEntries.length}/` : ''}
                                         {entries.length})
                                     </span>
                                 )}
                             </p>
                         )}
                         {opts.showSum && sumInfo && (
-                            <p
-                                className="tabular-nums truncate"
-                                style={{
-                                    color: 'var(--text-secondary)',
-                                    opacity: 0.75,
-                                    textAlign: (opts.sumAlign ?? 'left') as React.CSSProperties['textAlign'],
-                                    fontSize: `${opts.sumFontSize ?? 10}px`,
-                                }}
-                            >
-                                {opts.sumLabel ?? 'Σ'} {formatNum(sumInfo.sum, decimals)}
-                                {sumInfo.unit ? ` ${sumInfo.unit}` : ''}
-                            </p>
+                            <StatLine
+                                stats={sumInfo}
+                                selected={opts.sumStats}
+                                labels={opts.statLabels}
+                                icons={opts.statIcons}
+                                sumLabel={opts.sumLabel}
+                                decimals={decimals}
+                                numFmt={numFmt}
+                                align={opts.sumAlign ?? 'left'}
+                                fontSize={opts.sumFontSize ?? 10}
+                            />
                         )}
                     </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     {masterSwitch}
-                    <div className="relative">
-                        <button
-                            onClick={() => setShowFilter((v) => !v)}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] hover:opacity-80"
-                            style={{
-                                background:
-                                    valueFilter !== 'all'
-                                        ? 'color-mix(in srgb, var(--accent) 15%, transparent)'
-                                        : 'transparent',
-                                color: valueFilter !== 'all' ? 'var(--accent)' : 'var(--text-secondary)',
-                                border: `1px solid ${valueFilter !== 'all' ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'transparent'}`,
-                            }}
-                            title="Filter"
-                        >
-                            <Filter size={10} />
-                            {valueFilter !== 'all' && <span>{filterLabels[valueFilter as FilterMode]}</span>}
-                        </button>
-                        {showFilter && (
-                            <>
-                                <div className="fixed inset-0 z-10" onClick={() => setShowFilter(false)} />
-                                <div
-                                    className="absolute right-0 top-6 rounded-lg shadow-xl z-20 overflow-hidden min-w-[110px]"
-                                    style={{ background: 'var(--app-surface)', border: '1px solid var(--app-border)' }}
-                                >
-                                    {(Object.keys(filterLabels) as FilterMode[]).map((mode) => (
-                                        <button
-                                            key={mode}
-                                            onClick={() => {
-                                                setViewFilter(mode);
-                                                setShowFilter(false);
-                                            }}
-                                            className="w-full px-3 py-2 text-xs text-left hover:opacity-80"
-                                            style={{
-                                                background:
-                                                    valueFilter === mode
-                                                        ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
-                                                        : 'transparent',
-                                                color: valueFilter === mode ? 'var(--accent)' : 'var(--text-primary)',
-                                            }}
-                                        >
-                                            {filterLabels[mode]}
-                                        </button>
-                                    ))}
-                                </div>
-                            </>
-                        )}
-                    </div>
+                    {!opts.hideFilterButton && (
+                        <ListFilterChip
+                            choices={filterChoices}
+                            value={valueFilter}
+                            onChange={setViewFilter}
+                            search={searchTerm}
+                            onSearchChange={setSearchTerm}
+                            showSearch={!opts.hideFilterSearch}
+                            searchPlaceholder={opts.filterSearchPlaceholder}
+                            label={filterModeLabel(valueFilter, filterChoices)}
+                        />
+                    )}
                     <button
                         onClick={runSync}
                         title="Jetzt synchronisieren"
@@ -1126,22 +1676,29 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
             </div>
         ) : null;
 
-    const empty = (editMode ? entries.length === 0 : visibleEntries.length === 0) && (
+    const empty = (editMode ? entries.length === 0 : matchedEntries.length === 0) && (
         <div className="flex-1 flex items-center justify-center p-4">
             <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
                 {entries.length === 0
                     ? `Noch keine Datenpunkte konfiguriert.${editMode ? ' Bearbeiten → Datenpunkte suchen.' : ''}`
-                    : valueFilter === 'active'
-                      ? `Alle Datenpunkte "${filterInactiveLabel.replace('Nur ', '')}".`
-                      : `Alle Datenpunkte "${filterActiveLabel.replace('Nur ', '')}".`}
+                    : filterEmptyText(
+                          effectiveFilter,
+                          effectiveSearch,
+                          filterModeLabel(effectiveFilter, filterChoices),
+                      )}
             </p>
         </div>
     );
 
+    // 'custom' is no longer offered for lists (utils/widgetLayouts NO_CUSTOM) and is
+    // undocumented - the branch stays so dashboards that stored it keep rendering.
     if (layout === 'custom') return <CustomGridView config={config} value="" />;
 
     const wrap = !!opts.wrapText;
     const labelWrapCls = wrap ? 'break-words [overflow-wrap:anywhere]' : 'truncate';
+    // Auto-height mode drops the fill-and-scroll classes so the list grows naturally.
+    const rootHCls = autoHeight ? '' : 'h-full';
+    const fillCls = autoHeight ? '' : 'aura-scroll flex-1 overflow-auto min-h-0';
     const labelMinPct = Math.max(10, Math.min(90, opts.labelMinPercent ?? 50));
     const valueMaxPct = 100 - labelMinPct;
     const labelContainerStyle: React.CSSProperties | undefined = wrap ? { minWidth: `${labelMinPct}%` } : undefined;
@@ -1161,7 +1718,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
 
     // ── ANZAHL (count) — zeigt nur die Anzahl der Einträge ────────────────────
     if (layout === 'count') {
-        const count = effectiveFilter === 'all' ? entries.length : visibleEntries.length;
+        const count = effectiveFilter === 'all' ? entries.length : matchedEntries.length;
         return (
             <div className="aura-widget-row relative flex flex-col items-center justify-center h-full gap-1">
                 {showIcon && <HeaderIcon size={iconSize} style={{ color: 'var(--text-secondary)', opacity: 0.7 }} />}
@@ -1187,11 +1744,12 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
     // ── KACHELN (card) ─────────────────────────────────────────────────────────
     if (layout === 'card') {
         return (
-            <div className="aura-widget-row relative flex flex-col h-full">
+            <div className={`aura-widget-row relative flex flex-col ${rootHCls}`}>
                 {header}
                 {empty}
+                {rowPopup.node}
                 {visibleEntries.length > 0 && (
-                    <div className="aura-scroll flex-1 overflow-auto min-h-0 p-2 flex flex-col gap-2">
+                    <div className={`${fillCls} p-2 flex flex-col gap-2`}>
                         {sections.map((sec) => (
                             <div key={sec.room ?? '__all'}>
                                 {sec.room != null && (
@@ -1208,46 +1766,99 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                     {sec.entries.map((entry) => {
                                         const state = states[entry.id] ?? null;
                                         const val = state?.val ?? null;
+                                        const rc = conds.get(entry.id);
+                                        if (rowHidden(rc)) return null;
+                                        const cIcon = partOf(rc, 'icon');
+                                        const cName = partOf(rc, 'name');
+                                        const cValue = partOf(rc, 'value');
+                                        // The row icon comes from a rule, from the entry, or from the
+                                        // list-wide default (tab "Icon").
+                                        const iconName = cIcon.icon ?? entry.icon ?? opts.entryIcon;
+                                        const EntryIcon =
+                                            iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
+                                        const entryIconSize =
+                                            cIcon.iconSize ?? entry.iconSize ?? opts.entryIconSize ?? 13;
                                         const label = getLabel(entry);
                                         const eOn = isActive(val);
                                         const entryActiveColor = entry.activeColor || globalActiveColor;
                                         const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
                                         const stateBg =
-                                            (eOn
+                                            rc?.row?.bg ??
+                                            ((eOn
                                                 ? entry.activeBg || globalActiveBg
-                                                : entry.inactiveBg || globalInactiveBg) || 'var(--app-bg)';
+                                                : entry.inactiveBg || globalInactiveBg) ||
+                                                'var(--app-bg)');
                                         const lcTs = showEntryLastChange ? state?.lc || state?.ts || 0 : 0;
+                                        const rowProps = rowPopup.row(
+                                            entry.id,
+                                            label,
+                                            { role: entry.role },
+                                            entry.clickAction,
+                                            entry.popupTitle,
+                                            entry.popupHideTitle,
+                                        );
                                         return (
                                             <div
                                                 key={entry.id}
                                                 className="rounded-xl p-2.5 flex flex-col gap-2 relative"
                                                 style={{
                                                     background: stateBg,
+                                                    animation: condAnimation(rc?.row),
                                                     border: '1px solid var(--widget-border)',
+                                                    cursor: rowProps ? 'pointer' : undefined,
                                                 }}
+                                                {...rowProps}
                                             >
                                                 <span
-                                                    className={`text-[10px] leading-tight ${labelWrapCls}`}
-                                                    style={{ color: 'var(--text-secondary)' }}
+                                                    className={`flex items-center gap-1 text-[10px] leading-tight ${labelWrapCls}`}
+                                                    style={{
+                                                        color: cName.color ?? 'var(--text-secondary)',
+                                                        fontSize: cName.fontSize,
+                                                        fontWeight: cName.bold ? 700 : undefined,
+                                                        fontStyle: cName.italic ? 'italic' : undefined,
+                                                        animation: condAnimation(cName),
+                                                    }}
                                                 >
-                                                    {label}
+                                                    {EntryIcon && (
+                                                        <EntryIcon
+                                                            size={entryIconSize}
+                                                            className="shrink-0"
+                                                            style={{
+                                                                color:
+                                                                    cIcon.iconColor ??
+                                                                    cIcon.color ??
+                                                                    opts.entryIconColor ??
+                                                                    'var(--text-secondary)',
+                                                                animation: condAnimation(cIcon),
+                                                            }}
+                                                        />
+                                                    )}
+                                                    {!cName.hide && (cName.text ?? label)}
                                                 </span>
                                                 <div className="flex items-center justify-center">
                                                     <CardEntryValue
+                                                        cond={cValue}
                                                         entry={entry}
                                                         val={val}
+                                                        statusVal={states[switchStatusDp(entry)]?.val}
+                                                        lockVal={states[(entry.contactLockDp ?? '').trim()]?.val}
+                                                        presetsJson={states[(entry.presetsDp ?? '').trim()]?.val}
+                                                        dpStates={states}
                                                         writable={entry.writable !== false}
                                                         setState={setState}
-                                                        thresholds={globalThresholds}
-                                                        decimals={decimals}
+                                                        thresholds={entry.colorThresholds ?? globalThresholds}
+                                                        decimals={entry.decimals ?? decimals}
+                                                        numFmt={entry.numberFormat ?? numFmt}
                                                         activeColor={entryActiveColor}
                                                         inactiveColor={entryInactiveColor}
                                                         trueText={opts.trueText}
                                                         falseText={opts.falseText}
                                                         wrap={wrap}
                                                         valueMaxPct={valueMaxPct}
+                                                        listTransform={opts}
                                                     />
                                                 </div>
+                                                {subLineFor(entry)}
                                                 {opts.showRoom && entry.rooms?.length ? (
                                                     <span
                                                         className="text-[9px] truncate opacity-50"
@@ -1278,6 +1889,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                         ))}
                     </div>
                 )}
+                {moreRow}
                 {lcOverlay}
             </div>
         );
@@ -1286,12 +1898,13 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
     // ── KOMPAKT (compact) — 2-column dense list ────────────────────────────────
     if (layout === 'compact') {
         return (
-            <div className="aura-widget-row relative flex flex-col h-full">
+            <div className={`aura-widget-row relative flex flex-col ${rootHCls}`}>
                 {header}
                 {empty}
+                {rowPopup.node}
                 {visibleEntries.length > 0 && (
                     <div
-                        className="aura-scroll flex-1 overflow-auto min-h-0"
+                        className={fillCls}
                         style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', alignContent: 'start' }}
                     >
                         {sections.map((sec) => (
@@ -1302,21 +1915,42 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                 {sec.entries.map((entry, i) => {
                                     const state = states[entry.id] ?? null;
                                     const val = state?.val ?? null;
+                                    const rc = conds.get(entry.id);
+                                    if (rowHidden(rc)) return null;
+                                    const cIcon = partOf(rc, 'icon');
+                                    const cName = partOf(rc, 'name');
+                                    const cValue = partOf(rc, 'value');
+                                    // The row icon comes from a rule, from the entry, or from the
+                                    // list-wide default (tab "Icon").
+                                    const iconName = cIcon.icon ?? entry.icon ?? opts.entryIcon;
+                                    const EntryIcon = iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
+                                    const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? opts.entryIconSize ?? 13;
                                     const label = getLabel(entry);
                                     const isRight = i % 2 === 1;
                                     const eOn = isActive(val);
                                     const entryActiveColor = entry.activeColor || globalActiveColor;
                                     const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
-                                    const stateBg = eOn
-                                        ? entry.activeBg || globalActiveBg
-                                        : entry.inactiveBg || globalInactiveBg;
+                                    const stateBg =
+                                        rc?.row?.bg ??
+                                        (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg);
                                     const lcTs = showEntryLastChange ? state?.lc || state?.ts || 0 : 0;
+                                    const rowProps = rowPopup.row(
+                                        entry.id,
+                                        label,
+                                        { role: entry.role },
+                                        entry.clickAction,
+                                        entry.popupTitle,
+                                        entry.popupHideTitle,
+                                    );
                                     return (
+                                        // Column wrapper so the second line spans the whole cell instead
+                                        // of becoming a third flex item next to label and value.
                                         <div
                                             key={entry.id}
-                                            className={`flex gap-1.5 px-2 py-1.5 ${wrap ? 'items-start' : 'items-center'}`}
+                                            className="flex flex-col gap-1 px-2 py-1.5"
                                             style={{
                                                 background: stateBg,
+                                                animation: condAnimation(rc?.row),
                                                 borderBottom: showDividers
                                                     ? '1px solid var(--widget-border)'
                                                     : undefined,
@@ -1324,44 +1958,76 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                                     showDividers && isRight
                                                         ? '1px solid var(--widget-border)'
                                                         : undefined,
+                                                cursor: rowProps ? 'pointer' : undefined,
                                             }}
+                                            {...rowProps}
                                         >
-                                            <div className="flex-1 min-w-0" style={labelContainerStyle}>
-                                                <span
-                                                    className={`block text-[11px] ${labelWrapCls}`}
-                                                    style={{ color: 'var(--text-primary)' }}
-                                                >
-                                                    {label}
-                                                </span>
-                                                {lcTs > 0 && (
-                                                    <span
-                                                        className="aura-last-change block text-[8px] truncate"
-                                                        style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                                    >
-                                                        {formatLastChange(
-                                                            t as (
-                                                                k: string,
-                                                                v?: Record<string, string | number>,
-                                                            ) => string,
-                                                            lcTs,
-                                                        )}
-                                                    </span>
+                                            <div className={`flex gap-1.5 ${wrap ? 'items-start' : 'items-center'}`}>
+                                                {EntryIcon && (
+                                                    <EntryIcon
+                                                        size={entryIconSize}
+                                                        className="shrink-0"
+                                                        style={{
+                                                            color:
+                                                                cIcon.iconColor ??
+                                                                cIcon.color ??
+                                                                opts.entryIconColor ??
+                                                                'var(--text-secondary)',
+                                                            animation: condAnimation(cIcon),
+                                                        }}
+                                                    />
                                                 )}
+                                                <div className="flex-1 min-w-0" style={labelContainerStyle}>
+                                                    <span
+                                                        className={`block text-[11px] ${labelWrapCls}`}
+                                                        style={{
+                                                            color: cName.color ?? 'var(--text-primary)',
+                                                            fontSize: cName.fontSize,
+                                                            fontWeight: cName.bold ? 700 : undefined,
+                                                            fontStyle: cName.italic ? 'italic' : undefined,
+                                                            animation: condAnimation(cName),
+                                                        }}
+                                                    >
+                                                        {!cName.hide && (cName.text ?? label)}
+                                                    </span>
+                                                    {lcTs > 0 && (
+                                                        <span
+                                                            className="aura-last-change block text-[8px] truncate"
+                                                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                        >
+                                                            {formatLastChange(
+                                                                t as (
+                                                                    k: string,
+                                                                    v?: Record<string, string | number>,
+                                                                ) => string,
+                                                                lcTs,
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <EntryValue
+                                                    cond={cValue}
+                                                    entry={entry}
+                                                    val={val}
+                                                    statusVal={states[switchStatusDp(entry)]?.val}
+                                                    lockVal={states[(entry.contactLockDp ?? '').trim()]?.val}
+                                                    presetsJson={states[(entry.presetsDp ?? '').trim()]?.val}
+                                                    dpStates={states}
+                                                    writable={entry.writable !== false}
+                                                    setState={setState}
+                                                    thresholds={entry.colorThresholds ?? globalThresholds}
+                                                    decimals={entry.decimals ?? decimals}
+                                                    numFmt={entry.numberFormat ?? numFmt}
+                                                    activeColor={entryActiveColor}
+                                                    inactiveColor={entryInactiveColor}
+                                                    trueText={opts.trueText}
+                                                    falseText={opts.falseText}
+                                                    wrap={wrap}
+                                                    valueMaxPct={valueMaxPct}
+                                                    listTransform={opts}
+                                                />
                                             </div>
-                                            <EntryValue
-                                                entry={entry}
-                                                val={val}
-                                                writable={entry.writable !== false}
-                                                setState={setState}
-                                                thresholds={globalThresholds}
-                                                decimals={decimals}
-                                                activeColor={entryActiveColor}
-                                                inactiveColor={entryInactiveColor}
-                                                trueText={opts.trueText}
-                                                falseText={opts.falseText}
-                                                wrap={wrap}
-                                                valueMaxPct={valueMaxPct}
-                                            />
+                                            {subLineFor(entry)}
                                         </div>
                                     );
                                 })}
@@ -1369,6 +2035,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                         ))}
                     </div>
                 )}
+                {moreRow}
                 {lcOverlay}
             </div>
         );
@@ -1377,11 +2044,12 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
     // ── BADGES (minimal) — inline pill per entry ───────────────────────────────
     if (layout === 'minimal') {
         return (
-            <div className="aura-widget-row relative flex flex-col h-full">
+            <div className={`aura-widget-row relative flex flex-col ${rootHCls}`}>
                 {header}
                 {empty}
+                {rowPopup.node}
                 {visibleEntries.length > 0 && (
-                    <div className="aura-scroll flex-1 overflow-auto min-h-0 p-2 flex flex-wrap gap-1.5 content-start">
+                    <div className={`${fillCls} p-2 flex flex-wrap gap-1.5 content-start`}>
                         {sections.map((sec) => (
                             <Fragment key={sec.room ?? '__all'}>
                                 {sec.room != null && (
@@ -1393,41 +2061,125 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                 {sec.entries.map((entry) => {
                                     const state = states[entry.id] ?? null;
                                     const val = state?.val ?? null;
+                                    const rc = conds.get(entry.id);
+                                    if (rowHidden(rc)) return null;
+                                    const cIcon = partOf(rc, 'icon');
+                                    const cName = partOf(rc, 'name');
+                                    const cValue = partOf(rc, 'value');
+                                    // The row icon comes from a rule, from the entry, or from the
+                                    // list-wide default (tab "Icon").
+                                    const iconName = cIcon.icon ?? entry.icon ?? opts.entryIcon;
+                                    const EntryIcon = iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
+                                    const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? opts.entryIconSize ?? 13;
                                     const label = getLabel(entry);
                                     const writable = entry.writable !== false;
                                     // Rich controls have no compact pill form — show their value, no toggle.
                                     const lockValue =
-                                        !!entry.displayType && NON_TOGGLE_DISPLAY_TYPES.has(entry.displayType);
+                                        entry.displayType === 'value' ||
+                                        entry.displayType === 'slider' ||
+                                        (!!entry.displayType && NON_TOGGLE_DISPLAY_TYPES.has(entry.displayType));
                                     const trueLabel = entry.trueLabel ?? opts.trueText;
                                     const falseLabel = entry.falseLabel ?? opts.falseText;
                                     const hasLabels = !!(trueLabel || falseLabel);
                                     const isBool = typeof val === 'boolean';
                                     const isBoolLike = isBool || (typeof val === 'number' && (val === 0 || val === 1));
                                     const on = val === true || val === 1;
+                                    // A badge draws no control, so it evaluates the switch itself —
+                                    // through the shared rule, so status DP, write values and the
+                                    // condition mode work here exactly as in the other layouts.
+                                    const forceSwitch = entry.displayType === 'switch';
+                                    const switchStatusVal = states[switchStatusDp(entry)]?.val;
+                                    const switchActive = forceSwitch
+                                        ? switchEntryActive(
+                                              entry,
+                                              switchReadValue(entry, val, switchStatusVal),
+                                              entry.id,
+                                          )
+                                        : isBoolLike && on;
+                                    // Multi-state mapping (window handle etc.): match the value to a
+                                    // configured state so the badge shows its label + color + icon.
+                                    const stateMatch =
+                                        entry.displayType === 'states' ? matchStateMap(entry.states, val) : undefined;
+                                    // Window/door contact mapping (HmIP/Boolean/… → closed/tilted/open).
+                                    const contactMatch =
+                                        entry.displayType === 'contact' ? resolveContactDisplay(entry, val) : undefined;
+                                    // The contact's lock datapoint rides along as its own small padlock.
+                                    const lockState =
+                                        entry.displayType === 'contact'
+                                            ? contactLocked(entry, states[(entry.contactLockDp ?? '').trim()]?.val)
+                                            : null;
+                                    // Display-only conversion / time format (per DP or list-wide).
+                                    const disp = entryValueText(
+                                        entry,
+                                        opts,
+                                        val,
+                                        entry.decimals ?? decimals,
+                                        entry.numberFormat ?? numFmt,
+                                        t,
+                                    );
+                                    // Time datapoint rendered as time/date instead of the raw value.
+                                    const timeText =
+                                        entry.displayType === 'time'
+                                            ? formatEntryTime(entry, disp.value, t)
+                                            : entry.displayType === 'datepicker'
+                                              ? entryDateText(entry, val)
+                                              : null;
+                                    // A badge draws no control: a select row prints the label of
+                                    // the entry matching its value instead of the raw value.
+                                    const selectText =
+                                        entry.displayType === 'select'
+                                            ? entrySelectLabel(entry, val, states[(entry.presetsDp ?? '').trim()]?.val)
+                                            : null;
                                     const roleDisplay =
-                                        isBoolLike && !hasLabels ? getRoleDisplay(entry.role, val) : null;
-                                    const valueStr = roleDisplay
-                                        ? roleDisplay.label
-                                        : isBoolLike && hasLabels
-                                          ? on
-                                              ? trueLabel || 'AN'
-                                              : falseLabel || 'AUS'
-                                          : val != null
-                                            ? `${String(val)}${entry.unit ? `\u202f${entry.unit}` : ''}`
-                                            : '–';
+                                        !stateMatch && !contactMatch && !forceSwitch && isBoolLike && !hasLabels
+                                            ? getRoleDisplay(entry.role, val)
+                                            : null;
+                                    // Untouched entries keep printing the raw value unrounded —
+                                    // that is the badge's established look.
+                                    const plainText = disp.active ? disp.text : val != null ? String(val) : null;
+                                    const valueStr =
+                                        timeText ??
+                                        selectText ??
+                                        (contactMatch
+                                            ? contactMatch.label
+                                            : stateMatch
+                                              ? (stateMatch.label ?? String(stateMatch.value))
+                                              : roleDisplay
+                                                ? roleDisplay.label
+                                                : forceSwitch || (isBoolLike && hasLabels)
+                                                  ? switchActive
+                                                      ? trueLabel || 'AN'
+                                                      : falseLabel || 'AUS'
+                                                  : plainText != null
+                                                    ? `${plainText}${entry.unit && !disp.isTime ? `\u202f${entry.unit}` : ''}`
+                                                    : '–');
                                     const entryActiveColor = entry.activeColor || globalActiveColor;
                                     const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
                                     const eOn = isActive(val);
-                                    const stateBg = eOn
-                                        ? entry.activeBg || globalActiveBg
-                                        : entry.inactiveBg || globalInactiveBg;
-                                    const pillColor = roleDisplay
-                                        ? roleDisplay.color
-                                        : isBoolLike && on
-                                          ? entryActiveColor
-                                          : hasLabels
-                                            ? entryInactiveColor
-                                            : null;
+                                    const stateBg =
+                                        rc?.row?.bg ??
+                                        (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg);
+                                    const pillColor = contactMatch
+                                        ? contactMatch.color
+                                        : stateMatch
+                                          ? (stateMatch.color ?? null)
+                                          : roleDisplay
+                                            ? roleDisplay.color
+                                            : switchActive
+                                              ? entryActiveColor
+                                              : hasLabels
+                                                ? entryInactiveColor
+                                                : null;
+                                    // A rule wins, then the display-type mapping, then the row icon.
+                                    const BadgeIcon = cIcon.hide
+                                        ? null
+                                        : cIcon.icon
+                                          ? getWidgetIcon(cIcon.icon, null!)
+                                          : contactMatch
+                                            ? getWidgetIcon(contactMatch.icon, null!)
+                                            : stateMatch?.icon
+                                              ? getWidgetIcon(stateMatch.icon, null!)
+                                              : EntryIcon;
                                     const lcTs = showEntryLastChange ? state?.lc || state?.ts || 0 : 0;
                                     const lcText =
                                         lcTs > 0
@@ -1437,13 +2189,40 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                               )
                                             : '';
 
+                                    // A badge is the whole row, so toggling and opening a popup
+                                    // would collide: automatic mode only takes over badges that
+                                    // have no toggle of their own (sensors, read-only, numeric).
+                                    // An explicitly configured action beats the toggle.
+                                    const togglable =
+                                        writable &&
+                                        !roleDisplay &&
+                                        !lockValue &&
+                                        (forceSwitch || isBoolLike) &&
+                                        !rowPopup.explicit(entry.clickAction);
+                                    const rowProps = togglable
+                                        ? undefined
+                                        : rowPopup.row(
+                                              entry.id,
+                                              label,
+                                              { role: entry.role },
+                                              entry.clickAction,
+                                              entry.popupTitle,
+                                              entry.popupHideTitle,
+                                          );
                                     return (
                                         <button
                                             key={entry.id}
-                                            onClick={() => {
-                                                if (!writable || roleDisplay || lockValue) return;
-                                                if (isBool) setState(entry.id, !on);
-                                                else if (isBoolLike) setState(entry.id, on ? 0 : 1);
+                                            {...rowProps}
+                                            onClick={(e) => {
+                                                if (togglable) {
+                                                    if (forceSwitch) {
+                                                        const w = switchWriteValues(entry, val);
+                                                        setState(entry.id, switchActive ? w.off : w.on);
+                                                    } else if (isBool) setState(entry.id, !on);
+                                                    else setState(entry.id, on ? 0 : 1);
+                                                    return;
+                                                }
+                                                rowProps?.onClick(e);
                                             }}
                                             title={lcText || undefined}
                                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors hover:opacity-80"
@@ -1455,21 +2234,51 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                                                         : 'var(--app-bg)'),
                                                 color: pillColor ?? 'var(--text-secondary)',
                                                 border: `1px solid ${stateBg ? 'transparent' : pillColor ? `color-mix(in srgb, ${pillColor} 34%, transparent)` : 'var(--widget-border)'}`,
-                                                cursor: isBoolLike && writable && !roleDisplay ? 'pointer' : 'default',
+                                                cursor: togglable || rowProps ? 'pointer' : 'default',
                                             }}
                                         >
-                                            <span className="opacity-70 truncate" style={{ maxWidth: 80 }}>
-                                                {label}
-                                            </span>
+                                            {lockState !== null && <ContactLockBadge locked={lockState} />}
+                                            {BadgeIcon && (
+                                                <BadgeIcon
+                                                    size={entryIconSize}
+                                                    className="shrink-0 opacity-70"
+                                                    style={{
+                                                        color: cIcon.iconColor ?? cIcon.color ?? opts.entryIconColor,
+                                                        animation: condAnimation(cIcon),
+                                                    }}
+                                                />
+                                            )}
                                             <span
-                                                className="font-semibold tabular-nums"
+                                                className="opacity-70 truncate"
                                                 style={{
-                                                    color:
-                                                        isBoolLike || roleDisplay ? 'inherit' : 'var(--text-primary)',
+                                                    maxWidth: 80,
+                                                    color: cName.color,
+                                                    fontSize: cName.fontSize,
+                                                    fontWeight: cName.bold ? 700 : undefined,
+                                                    fontStyle: cName.italic ? 'italic' : undefined,
+                                                    animation: condAnimation(cName),
                                                 }}
                                             >
-                                                {valueStr}
+                                                {!cName.hide && (cName.text ?? label)}
                                             </span>
+                                            {!cValue.hide && (
+                                                <span
+                                                    className="font-semibold tabular-nums"
+                                                    style={{
+                                                        color:
+                                                            cValue.color ??
+                                                            (isBoolLike || roleDisplay || stateMatch || contactMatch
+                                                                ? 'inherit'
+                                                                : 'var(--text-primary)'),
+                                                        fontSize: cValue.fontSize,
+                                                        fontWeight: cValue.bold ? 700 : undefined,
+                                                        fontStyle: cValue.italic ? 'italic' : undefined,
+                                                        animation: condAnimation(cValue),
+                                                    }}
+                                                >
+                                                    {cValue.text ?? valueStr}
+                                                </span>
+                                            )}
                                         </button>
                                     );
                                 })}
@@ -1477,6 +2286,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                         ))}
                     </div>
                 )}
+                {moreRow}
                 {lcOverlay}
             </div>
         );
@@ -1484,84 +2294,141 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
 
     // ── STANDARD (default) — full-width rows ───────────────────────────────────
     return (
-        <div className="relative flex flex-col h-full">
+        <div className={`relative flex flex-col ${rootHCls}`}>
             {header}
             {empty}
+            {rowPopup.node}
             {visibleEntries.length > 0 && (
-                <div className="aura-scroll flex-1 overflow-auto min-h-0">
+                <div className={fillCls}>
                     {sections.map((sec) => (
                         <Fragment key={sec.room ?? '__all'}>
                             {sec.room != null && <RoomHeader room={sec.room} style={roomHeaderStyle} />}
                             {sec.entries.map((entry) => {
                                 const state = states[entry.id] ?? null;
                                 const val = state?.val ?? null;
+                                const rc = conds.get(entry.id);
+                                if (rowHidden(rc)) return null;
+                                const cIcon = partOf(rc, 'icon');
+                                const cName = partOf(rc, 'name');
+                                const cValue = partOf(rc, 'value');
+                                // The row icon comes from a rule, from the entry, or from the
+                                // list-wide default (tab "Icon").
+                                const iconName = cIcon.icon ?? entry.icon ?? opts.entryIcon;
+                                const EntryIcon = iconName && !cIcon.hide ? getWidgetIcon(iconName, null!) : null;
+                                const entryIconSize = cIcon.iconSize ?? entry.iconSize ?? opts.entryIconSize ?? 13;
                                 const label = getLabel(entry);
                                 const roomLabel = entry.rooms?.join(', ');
                                 const eOn = isActive(val);
                                 const entryActiveColor = entry.activeColor || globalActiveColor;
                                 const entryInactiveColor = entry.inactiveColor || globalInactiveColor;
-                                const stateBg = eOn
-                                    ? entry.activeBg || globalActiveBg
-                                    : entry.inactiveBg || globalInactiveBg;
+                                const stateBg =
+                                    rc?.row?.bg ??
+                                    (eOn ? entry.activeBg || globalActiveBg : entry.inactiveBg || globalInactiveBg);
                                 const lcTs = showEntryLastChange ? state?.lc || state?.ts || 0 : 0;
+                                const rowProps = rowPopup.row(
+                                    entry.id,
+                                    label,
+                                    { role: entry.role },
+                                    entry.clickAction,
+                                    entry.popupTitle,
+                                    entry.popupHideTitle,
+                                );
                                 return (
+                                    // Column wrapper so the second line spans the whole row instead of
+                                    // becoming a third flex item next to label and value.
                                     <div
                                         key={entry.id}
-                                        className={`flex gap-2 px-3 py-2 ${wrap ? 'items-start' : 'items-center'}`}
+                                        className="flex flex-col gap-1 px-3 py-2"
                                         style={{
                                             background: stateBg,
+                                            animation: condAnimation(rc?.row),
                                             borderBottom: showDividers ? '1px solid var(--widget-border)' : undefined,
+                                            cursor: rowProps ? 'pointer' : undefined,
                                         }}
+                                        {...rowProps}
                                     >
-                                        <div className="flex-1 min-w-0" style={labelContainerStyle}>
-                                            <div
-                                                className={`text-xs ${labelWrapCls}`}
-                                                style={{ color: 'var(--text-primary)' }}
-                                            >
-                                                {label}
+                                        <div className={`flex gap-2 ${wrap ? 'items-start' : 'items-center'}`}>
+                                            {EntryIcon && (
+                                                <EntryIcon
+                                                    size={entryIconSize}
+                                                    className="shrink-0 mt-0.5"
+                                                    style={{
+                                                        color:
+                                                            cIcon.iconColor ??
+                                                            cIcon.color ??
+                                                            opts.entryIconColor ??
+                                                            'var(--text-secondary)',
+                                                        animation: condAnimation(cIcon),
+                                                    }}
+                                                />
+                                            )}
+                                            <div className="flex-1 min-w-0" style={labelContainerStyle}>
+                                                <div
+                                                    className={`text-xs ${labelWrapCls}`}
+                                                    style={{
+                                                        color: cName.color ?? 'var(--text-primary)',
+                                                        fontSize: cName.fontSize,
+                                                        fontWeight: cName.bold ? 700 : undefined,
+                                                        fontStyle: cName.italic ? 'italic' : undefined,
+                                                        animation: condAnimation(cName),
+                                                    }}
+                                                >
+                                                    {!cName.hide && (cName.text ?? label)}
+                                                </div>
+                                                {opts.showRoom && (roomLabel || entry.id) && (
+                                                    <div
+                                                        className="text-[10px] truncate"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        {roomLabel || entry.id}
+                                                    </div>
+                                                )}
+                                                {opts.showId && (
+                                                    <div
+                                                        className="text-[9px] truncate font-mono"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        {entry.id}
+                                                    </div>
+                                                )}
+                                                {lcTs > 0 && (
+                                                    <div
+                                                        className="aura-last-change text-[9px] truncate"
+                                                        style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                    >
+                                                        {formatLastChange(
+                                                            t as (
+                                                                k: string,
+                                                                v?: Record<string, string | number>,
+                                                            ) => string,
+                                                            lcTs,
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
-                                            {opts.showRoom && (roomLabel || entry.id) && (
-                                                <div
-                                                    className="text-[10px] truncate"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    {roomLabel || entry.id}
-                                                </div>
-                                            )}
-                                            {opts.showId && (
-                                                <div
-                                                    className="text-[9px] truncate font-mono"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    {entry.id}
-                                                </div>
-                                            )}
-                                            {lcTs > 0 && (
-                                                <div
-                                                    className="aura-last-change text-[9px] truncate"
-                                                    style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                                >
-                                                    {formatLastChange(
-                                                        t as (k: string, v?: Record<string, string | number>) => string,
-                                                        lcTs,
-                                                    )}
-                                                </div>
-                                            )}
+                                            <EntryValue
+                                                cond={cValue}
+                                                entry={entry}
+                                                val={val}
+                                                statusVal={states[switchStatusDp(entry)]?.val}
+                                                lockVal={states[(entry.contactLockDp ?? '').trim()]?.val}
+                                                presetsJson={states[(entry.presetsDp ?? '').trim()]?.val}
+                                                dpStates={states}
+                                                writable={entry.writable !== false}
+                                                setState={setState}
+                                                thresholds={entry.colorThresholds ?? globalThresholds}
+                                                decimals={entry.decimals ?? decimals}
+                                                numFmt={entry.numberFormat ?? numFmt}
+                                                activeColor={entryActiveColor}
+                                                inactiveColor={entryInactiveColor}
+                                                trueText={opts.trueText}
+                                                falseText={opts.falseText}
+                                                wrap={wrap}
+                                                valueMaxPct={valueMaxPct}
+                                                listTransform={opts}
+                                            />
                                         </div>
-                                        <EntryValue
-                                            entry={entry}
-                                            val={val}
-                                            writable={entry.writable !== false}
-                                            setState={setState}
-                                            thresholds={globalThresholds}
-                                            decimals={decimals}
-                                            activeColor={entryActiveColor}
-                                            inactiveColor={entryInactiveColor}
-                                            trueText={opts.trueText}
-                                            falseText={opts.falseText}
-                                            wrap={wrap}
-                                            valueMaxPct={valueMaxPct}
-                                        />
+                                        {subLineFor(entry)}
                                     </div>
                                 );
                             })}
@@ -1569,6 +2436,7 @@ export function AutoListWidget({ config, editMode, onConfigChange }: WidgetProps
                     ))}
                 </div>
             )}
+            {moreRow}
             {lcOverlay}
         </div>
     );

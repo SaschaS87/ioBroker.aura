@@ -2,11 +2,13 @@ import React, { useMemo, useState, type CSSProperties } from 'react';
 import { Power, SunDim } from 'lucide-react';
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { useIoBroker } from '../../hooks/useIoBroker';
-import type { WidgetProps } from '../../types';
+import type { WidgetProps, ConditionOperator } from '../../types';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { getThresholdColor, type ColorThreshold } from '../../utils/colorThresholds';
 import { StatusBadges } from './StatusBadges';
 import { CustomGridView } from './CustomGridView';
 import { useStatusFields } from '../../hooks/useStatusFields';
+import { evaluateClause } from '../../utils/conditionEval';
 
 function parseVal(raw: string | undefined, fallback: boolean): boolean | number | string {
     if (raw === undefined || raw === '') return fallback;
@@ -79,27 +81,34 @@ export function DimmerWidget({ config }: WidgetProps) {
         handleSliderChange(getBarValue(e));
     };
 
-    const thresholds = o.colorThresholds as Array<[number, string]> | undefined;
-    const thresholdColor = useMemo(() => {
-        if (!thresholds?.length) return undefined;
-        for (const [thresh, color] of thresholds) {
-            if (displayLevel < thresh) return color;
-        }
-        return thresholds[thresholds.length - 1][1];
-    }, [thresholds, displayLevel]);
+    const thresholds = o.colorThresholds as ColorThreshold[] | undefined;
+    const thresholdColor = useMemo(() => getThresholdColor(displayLevel, thresholds), [thresholds, displayLevel]);
     const valueColor = thresholdColor ?? 'var(--text-primary)';
 
     const onValue = o.onValue as string | undefined;
     const offValue = o.offValue as string | undefined;
     const trueWrite = parseVal(onValue, true);
     const falseWrite = parseVal(offValue, false);
+    // Pure dimmer (no separate switch DP): 'boolean' mode keeps level>0; 'condition'
+    // mode lets the on/off icon switch at a configurable threshold (issue #467).
     const isOn = switchDp
         ? onValue !== undefined && onValue !== ''
             ? String(switchValue) === String(trueWrite)
             : typeof switchValue === 'boolean'
               ? switchValue
               : switchValue === 1 || switchValue === '1' || switchValue === 'true'
-        : displayLevel > 0;
+        : o.stateMode === 'condition'
+          ? evaluateClause(
+                {
+                    datapoint: config.datapoint,
+                    operator: (o.stateOperator as ConditionOperator) ?? '>',
+                    value: String(o.stateValue ?? '0'),
+                    valueType: 'static',
+                },
+                displayLevel,
+                new Map(),
+            )
+          : displayLevel > 0;
     const handleToggle = () => {
         if (switchDp) {
             setState(switchDp, isOn ? falseWrite : trueWrite);

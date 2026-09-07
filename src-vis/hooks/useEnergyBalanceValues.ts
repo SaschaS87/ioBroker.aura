@@ -9,16 +9,21 @@
  * entry's `aggregate` mode. The `last` mode short-circuits to the datapoint's current
  * state (the true last value) instead of a history query — a step-aggregated query
  * returns bucket averages, which can be non-zero even when the last logged value is 0.
- * Entries without a history adapter fall back to the live state value. A periodic tick
- * keeps the window from freezing, and live updates refresh the value immediately.
+ * The `consumption` mode sums the counter's booked rises instead of differencing the
+ * window's ends, so a day counter that resets at midnight still adds up (see
+ * `counterIncrease`). Entries without a history adapter fall back to the live state value.
+ * A periodic tick keeps the window from freezing, and live updates refresh the value
+ * immediately.
  */
 import { useState, useEffect, useRef } from 'react';
 import { getHistoryDirect, getObjectDirect, getStateDirect, getStateFromCache, type HistoryEntry } from './useIoBroker';
-import { detectHistoryAdapters } from './useChartHistory';
+import { detectHistoryAdapters, TOTAL_FLOOR_MS } from './useChartHistory';
+import { bucketDeltas, bucketStart, deltaFetchCount } from './useMultiSeriesData';
 import type { EChartTimeRange } from './useMultiSeriesData';
 import type { ioBrokerState } from '../types';
+import type { NumberFormat } from '../utils/formatValue';
 
-export type EnergyAggregate = 'last' | 'delta' | 'sum' | 'average' | 'max' | 'min';
+export type EnergyAggregate = 'last' | 'delta' | 'consumption' | 'sum' | 'average' | 'max' | 'min';
 
 export interface EnergyEntry {
     id: string;
@@ -28,6 +33,7 @@ export interface EnergyEntry {
     color?: string;
     unit?: string;
     decimals?: number;
+    numberFormat?: NumberFormat;
     historyInstance?: string;
     aggregate?: EnergyAggregate;
 }
@@ -43,6 +49,9 @@ const RANGE_MS: Record<Exclude<EChartTimeRange, 'custom'>, number> = {
     '24h': 86_400_000,
     '7d': 604_800_000,
     '30d': 2_592_000_000,
+    '1y': 31_536_000_000,
+    // Not offered by this widget's preset lists; present so the range type stays shared.
+    total: TOTAL_FLOOR_MS,
 };
 
 function getRangeMs(range: EChartTimeRange, customVal?: number, customUnit?: 'h' | 'd'): number {
@@ -59,7 +68,8 @@ function getStepForMs(rangeMs: number): number | undefined {
     if (rangeMs <= 12 * 3_600_000) return 300_000;
     if (rangeMs <= 48 * 3_600_000) return 900_000;
     if (rangeMs <= 14 * 86_400_000) return 3_600_000;
-    return 21_600_000;
+    if (rangeMs <= 60 * 86_400_000) return 21_600_000;
+    return Math.max(86_400_000, Math.ceil(rangeMs / 900 / 86_400_000) * 86_400_000);
 }
 
 /** Reduce a sorted [ts,val][] series to a single number per the aggregate mode. */
@@ -81,6 +91,53 @@ function reduce(data: [number, number][], mode: EnergyAggregate): number | null 
         default:
             return vals[vals.length - 1];
     }
+}
+
+/**
+ * Total increase a counter booked inside the window — reset- and glitch-aware (issue #561).
+ *
+ * `delta` is a plain `end − start`, which only holds for a counter that rises forever. A DAY
+ * counter (`sourceanalytix.*.01_currentDay`, a PV inverter's day yield) falls back to 0 at
+ * midnight, so on a rolling 24 h window `end − start` compares today's part-day against
+ * yesterday's finished day and comes out negative — the share each entry then contributes to
+ * its bar is meaningless.
+ *
+ * So instead of differencing the two ends, every rise in the series is booked and summed, which
+ * is what `bucketDeltas` already does for the advanced chart's `delta` bars (#545): a midnight
+ * drop books nothing and the climb after it is real consumption, while a stray low reading
+ * inside a day is told apart from a reset and its jump back discarded. Summing the hourly
+ * buckets it returns gives the window's total, i.e. the sum of the daily values whenever the
+ * window sits on day boundaries. For a monotonic meter the result is identical to `delta`.
+ */
+export function counterIncrease(data: [number, number][], windowStart: number): number | null {
+    if (data.length === 0) return null;
+    // Hour buckets, anchored on the window's own hour so nothing inside it is trimmed away.
+    const { points } = bucketDeltas(data, 'hour', bucketStart(windowStart, 'hour'));
+    return points.reduce((sum, p) => sum + p[1], 0);
+}
+
+/**
+ * getHistory step for a `consumption` fetch — `undefined` means raw readings.
+ *
+ * The rises are summed client-side, so the fetch must not average the midnight reset of a day
+ * counter away: a step comes back as `max` (the reading at the step's end), which keeps every
+ * drop visible, and once the step is a whole day the extra low row of a `minmax` fetch is what
+ * makes the reset visible at all (#545). The steps stay well below the row cap while giving the
+ * sum enough resolution — the only increase a step can swallow is the part that falls inside
+ * the very step the counter resets in, which for a day counter is the middle of the night.
+ * `getStepForMs` cannot be reused: its coarse end would return a single row for a 1 h window,
+ * and one reading has no rise to book.
+ *
+ * A whole day is the coarsest step there is: beyond that one step holds several reset cycles of a
+ * day counter and its `minmax` rows expose only one climb of them, which cut long windows down to a
+ * fraction of the real increase (issue #562). Long windows pay for the extra rows out of the row
+ * budget instead (`deltaFetchCount`).
+ */
+export function counterFetchStep(rangeMs: number): number | undefined {
+    if (rangeMs <= 3 * 3_600_000) return undefined; // raw — every logged reading
+    if (rangeMs <= 48 * 3_600_000) return 900_000; // 15 min → ≥ 96 rows for a day
+    if (rangeMs <= 45 * 86_400_000) return 3_600_000; // hourly → ≤ 1080 rows
+    return 86_400_000;
 }
 
 export function useEnergyBalanceValues(
@@ -175,23 +232,44 @@ export function useEnergyBalanceValues(
             }
 
             if (!instance) {
-                // No history adapter — seed from the live state value (≈ 'last').
+                // No history adapter — a ranged aggregate can't be computed, so fall back to
+                // the datapoint's current value (≈ 'last'). Fetch it live via getStateDirect
+                // rather than the synchronous cache, which is empty on first mount before any
+                // subscription has fired — otherwise pie/donut/bars render empty until the DP
+                // next changes. Seed instantly from the cache if present to avoid a flash.
                 const cached = getStateFromCache(e.datapointId);
-                const val = typeof cached?.val === 'number' ? (cached.val as number) : null;
-                setResults((prev) => new Map(prev).set(e.id, { value: val, loading: false }));
+                if (typeof cached?.val === 'number') {
+                    setResults((prev) => new Map(prev).set(e.id, { value: cached.val as number, loading: false }));
+                }
+                getStateDirect(e.datapointId).then((state) => {
+                    if (!mountedRef.current) return;
+                    const val = typeof state?.val === 'number' ? (state.val as number) : null;
+                    setResults((prev) => new Map(prev).set(e.id, { value: val, loading: false }));
+                });
                 return;
             }
 
             const end = Date.now();
             const start = end - rangeMs;
-            const step = getStepForMs(rangeMs);
+            const isCounter = mode === 'consumption';
+            const step = isCounter ? counterFetchStep(rangeMs) : getStepForMs(rangeMs);
             getHistoryDirect(e.datapointId, {
                 instance,
                 start,
                 end,
                 step,
-                aggregate: step ? 'average' : 'none',
-                count: 1000,
+                // See `counterFetchStep`: a counter's rises are summed client-side, so the fetch
+                // must hand back readings the midnight reset is still visible in, not averages.
+                aggregate: isCounter
+                    ? !step
+                        ? 'none'
+                        : step >= 86_400_000
+                          ? 'minmax'
+                          : 'max'
+                    : step
+                      ? 'average'
+                      : 'none',
+                count: isCounter ? (step ? deltaFetchCount(step, rangeMs) : 3000) : 1000,
             })
                 .then((raw: HistoryEntry[]) => {
                     if (!mountedRef.current) return;
@@ -202,7 +280,8 @@ export function useEnergyBalanceValues(
                         )
                         .map((d): [number, number] => [d.ts, d.val as number])
                         .sort((a, b) => a[0] - b[0]);
-                    setResults((prev) => new Map(prev).set(e.id, { value: reduce(data, mode), loading: false }));
+                    const value = isCounter ? counterIncrease(data, start) : reduce(data, mode);
+                    setResults((prev) => new Map(prev).set(e.id, { value, loading: false }));
                 })
                 .catch(() => {
                     if (!mountedRef.current) return;

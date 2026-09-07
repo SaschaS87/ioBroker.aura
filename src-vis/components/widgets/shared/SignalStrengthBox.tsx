@@ -11,7 +11,7 @@ import {
     RADIO_COLOR,
     clockTime,
     type RadioLevel,
-} from '../shutterrooms/tahomaRadio';
+} from '../shuttershared/tahomaRadio';
 import { formatAgeShort } from './DataSourceHealthBox';
 
 // ── Signal-strength box (Feature 16, 02.09.2026) — collapsible card fuer die

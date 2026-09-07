@@ -9,13 +9,16 @@
  *   - status icon (grey = unconfigured, slate = master off, orange = master on
  *     but no enabled events, green = at least one event armed)
  *   - title + master switch
- *   - compact list of up to N events (weekday chips, trigger preview, target DP)
+ *   - scrollable list of all events (weekday chips, trigger preview, target DP)
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Timer, Sun, Sunset, Sunrise, Moon, CalendarRange, Clock, Plus, Pencil } from 'lucide-react';
-import type { WidgetProps, TimerEvent, TimerWeekday, TimerTrigger } from '../../types';
+import * as SunCalc from 'suncalc';
+import { Timer, Sun, Sunset, Sunrise, Moon, CalendarRange, Clock, Plus, Pencil, Power, PowerOff } from 'lucide-react';
+import type { WidgetProps, TimerEvent, TimerWeekday, TimerTrigger, TimerAstroEvent } from '../../types';
 import { contentPositionClass } from '../../utils/widgetUtils';
+import { classifyTimerValue, effectiveEventValue } from '../../utils/timerValue';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { useSystemConfig } from '../../hooks/useSystemConfig';
 import { publishTimerConfig, publishTimerEnabled, type TimerConfigPayload } from '../../utils/publishTimerConfig';
 import { TimerEventModal } from './TimerEventModal';
 import { CustomGridView } from './CustomGridView';
@@ -28,11 +31,15 @@ import { NS } from '../../utils/namespace';
  * unsaved change is otherwise overwritten by the next stateChange echo or
  * poll. Calling saveToIoBroker() arms the `isSavingRecently` window (5 s)
  * that suppresses our own echo and prevents the rollback.
+ *
+ * Scoped to aura-dashboard: an unscoped save from the read-only frontend also
+ * pushes whatever this browser holds for theme/groups/popup-config, which can
+ * roll the admin's config back to this device's copy.
  */
 function flushDashboard() {
     try {
         saveAll();
-        saveToIoBroker();
+        saveToIoBroker({ only: ['aura-dashboard'] });
     } catch {
         /* offline / not configured */
     }
@@ -60,7 +67,36 @@ const WEEKDAY_LABEL_SHORT: Record<TimerWeekday, string> = {
 };
 const WEEKDAY_ORDER: TimerWeekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-export function formatTrigger(t: TimerTrigger): string {
+const ASTRO_SUNCALC_KEY: Record<TimerAstroEvent, keyof ReturnType<typeof SunCalc.getTimes>> = {
+    sunrise: 'sunrise',
+    sunset: 'sunset',
+    dawn: 'dawn',
+    dusk: 'dusk',
+    solarNoon: 'solarNoon',
+};
+
+/**
+ * Resolve an astro trigger to today's wall-clock time (HH:MM) at the given
+ * location, applying the configured offset. Returns '' when no location is
+ * known (system.config lat/lon unset) or SunCalc yields no time (e.g. polar
+ * day/night) — the caller then falls back to the symbol-only preview.
+ */
+function astroTimeStr(t: Extract<TimerTrigger, { kind: 'astro' }>, lat: number | null, lon: number | null): string {
+    if (lat == null || lon == null) return '';
+    const base = SunCalc.getTimes(new Date(), lat, lon)[ASTRO_SUNCALC_KEY[t.event]];
+    if (!(base instanceof Date) || isNaN(base.getTime())) return '';
+    const d = new Date(base.getTime() + t.offsetMin * 60000);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Preview string for an event's trigger. For astro triggers, pass the resolved
+ * wall-clock time (astroTimeStr) so the widget shows e.g. "06:45 ☀↑ +30m"
+ * instead of the symbol alone. Set showSymbol=false to drop the ☀↑/☀↓ emoji
+ * once a time is shown (falls back to the symbol when no time is available, so
+ * the row is never blank).
+ */
+export function formatTrigger(t: TimerTrigger, astroTime?: string, showSymbol = true): string {
     switch (t.kind) {
         case 'time':
             return `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
@@ -77,7 +113,11 @@ export function formatTrigger(t: TimerTrigger): string {
                           : '☀';
             const sign = t.offsetMin >= 0 ? '+' : '−';
             const mag = Math.abs(t.offsetMin);
-            return mag === 0 ? symbol : `${symbol} ${sign}${mag}m`;
+            const offsetTxt = mag === 0 ? '' : `${sign}${mag}m`;
+            // Keep the symbol whenever there's no resolved time to show in its
+            // place, so hiding it never leaves the row blank.
+            const head = showSymbol || !astroTime ? symbol : '';
+            return [astroTime, head, offsetTxt].filter(Boolean).join(' ');
         }
         case 'once': {
             try {
@@ -123,6 +163,63 @@ function TriggerIcon({ trigger, size = 12 }: { trigger: TimerTrigger; size?: num
     return <Sun size={size} />;
 }
 
+/**
+ * Shows what an event *does* to the target — the green live-dot only tells you
+ * the event is armed, not whether it switches the target on or off. For boolean
+ * values we render a coloured Ein/Aus pill; other values are shown literally.
+ * A 'range' trigger fires the value at the start and its inverse at the end, so
+ * a boolean range shows both icons.
+ */
+function ValueBadge({ raw, isRange, iconOnly }: { raw: string; isRange?: boolean; iconOnly?: boolean }) {
+    const kind = classifyTimerValue(raw);
+    const sz = iconOnly ? 12 : 11;
+
+    if (isRange && kind !== 'other') {
+        return (
+            <span
+                className="flex items-center gap-0.5 shrink-0"
+                title="Schaltet am Start ein und am Ende aus (bzw. umgekehrt)"
+            >
+                <Power size={sz} style={{ color: 'var(--accent-green)' }} />
+                <PowerOff size={sz} style={{ color: 'var(--accent-red)' }} />
+            </span>
+        );
+    }
+
+    if (kind === 'on' || kind === 'off') {
+        const on = kind === 'on';
+        const Icon = on ? Power : PowerOff;
+        const color = on ? 'var(--accent-green)' : 'var(--accent-red)';
+        const title = on ? 'Schaltet ein' : 'Schaltet aus';
+        if (iconOnly)
+            return (
+                <span className="shrink-0 flex items-center" title={title}>
+                    <Icon size={sz} style={{ color }} />
+                </span>
+            );
+        return (
+            <span
+                className="flex items-center gap-0.5 shrink-0 text-[9px] font-semibold rounded px-1 py-0.5"
+                style={{ color, border: `1px solid ${color}` }}
+                title={title}
+            >
+                <Icon size={10} /> {on ? 'Ein' : 'Aus'}
+            </span>
+        );
+    }
+
+    // other: show the literal value that will be written
+    return (
+        <span
+            className="shrink-0 text-[9px] font-medium rounded px-1 py-0.5 max-w-[64px] truncate"
+            style={{ color: 'var(--text-secondary)', border: '1px solid var(--app-border)' }}
+            title={`Setzt Wert: ${raw}`}
+        >
+            {raw}
+        </span>
+    );
+}
+
 function statusColor(masterEnabled: boolean, events: TimerEvent[], hasTarget: boolean): string {
     if (!hasTarget) return 'var(--text-secondary)'; // grey — admin hasn't set target yet
     if (events.length === 0) return 'var(--text-secondary)'; // grey — no events
@@ -165,6 +262,7 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
     const showMaster = o.showMasterSwitch !== false;
     const showEvents = o.showEvents !== false;
     const showAdd = o.showAddButton !== false;
+    const showAstroSymbol = o.showAstroSymbol !== false;
     const titleAlign = (o.titleAlign as string) ?? 'left';
     const iconSize = (o.iconSize as number) || 20;
     const WidgetIcon = getWidgetIcon(o.icon as string | undefined, Timer);
@@ -177,6 +275,17 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
     const hasTarget = !!targetDp;
     const statusCol = statusColor(masterEnabled, events, hasTarget);
     const enabledCount = events.filter((e) => e.enabled && e.weekdays.length > 0).length;
+
+    // Astro triggers only carry an event + offset — resolve them to today's
+    // actual clock time (sunrise/sunset for this location) so the list shows a
+    // time next to the symbol instead of the icon alone.
+    const sys = useSystemConfig();
+    const triggerLabel = (t: TimerTrigger): string =>
+        formatTrigger(
+            t,
+            t.kind === 'astro' ? astroTimeStr(t, sys.latitude, sys.longitude) : undefined,
+            showAstroSymbol,
+        );
 
     // Assign a stable, instance-unique stateBaseId on first mount. Copies / group
     // clones get a fresh path because copyConfig + cloneChildren strip stateBaseId,
@@ -262,8 +371,9 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
     const layout = config.layout ?? 'default';
     const isCompact = layout === 'compact';
     const isCustom = layout === 'custom';
-    const visibleEvents = events.slice(0, isCompact ? 2 : 4);
-    const hiddenCount = events.length - visibleEvents.length;
+    // Show every event — the list scrolls inside the widget rather than being
+    // truncated with a "+N weitere" note the user can't expand.
+    const visibleEvents = events;
 
     // In edit mode the widget is shown inside the admin editor for layout/styling
     // only — interaction is disabled so the admin can't accidentally toggle the
@@ -312,7 +422,7 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
     );
 
     const eventList = (
-        <div className="flex flex-col gap-1 w-full">
+        <div className="flex flex-col gap-1 w-full flex-1 min-h-0 overflow-y-auto">
             {visibleEvents.map((ev) => {
                 const isLive = ev.enabled && ev.weekdays.length > 0 && masterEnabled;
                 return (
@@ -361,8 +471,12 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
                                 style={{ color: 'var(--text-primary)' }}
                             >
                                 <TriggerIcon trigger={ev.trigger} />
-                                {formatTrigger(ev.trigger)}
+                                {triggerLabel(ev.trigger)}
                             </span>
+                            <ValueBadge
+                                raw={effectiveEventValue(ev.value, targetValue, allowEventValue)}
+                                isRange={ev.trigger.kind === 'range'}
+                            />
                             {ev.label ? (
                                 <span
                                     className="text-[10px] flex-1 truncate text-right"
@@ -384,11 +498,6 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
                     </div>
                 );
             })}
-            {hiddenCount > 0 && (
-                <p className="text-[10px] italic" style={{ color: 'var(--text-secondary)' }}>
-                    +{hiddenCount} weitere
-                </p>
-            )}
             {events.length === 0 && (
                 <p className="text-[10px] italic text-center" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
                     Noch keine Ereignisse
@@ -421,7 +530,9 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
         </button>
     );
 
-    const iconNode = showIcon ? <WidgetIcon size={iconSize} style={{ color: statusCol, flexShrink: 0 }} /> : null;
+    const iconNode = showIcon ? (
+        <WidgetIcon className="aura-widget-icon" size={iconSize} style={{ color: statusCol, flexShrink: 0 }} />
+    ) : null;
 
     const modal = editing && (
         <TimerEventModal
@@ -469,7 +580,7 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
                     {iconNode}
                     {showTitle && (
                         <p
-                            className="text-[11px] flex-1 truncate"
+                            className="aura-widget-title text-[11px] flex-1 truncate"
                             style={{
                                 color: 'var(--text-primary)',
                                 textAlign: titleAlign as React.CSSProperties['textAlign'],
@@ -500,41 +611,50 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
                     )}
                 </div>
                 {showEvents && (
-                    <div className="flex-1 overflow-hidden flex flex-col gap-0.5">
-                        {visibleEvents.map((ev) => (
-                            <button
-                                key={ev.id}
-                                onClick={interactive ? () => setEditing(ev) : undefined}
-                                disabled={!interactive}
-                                className="nodrag flex items-center gap-1 text-[10px] text-left hover:opacity-80"
-                                style={{
-                                    color: 'var(--text-primary)',
-                                    cursor: interactive ? 'pointer' : 'default',
-                                    opacity: interactive ? 1 : 0.7,
-                                }}
-                            >
-                                <span
-                                    className="w-2 h-2 rounded-full shrink-0"
+                    <div className="flex-1 min-h-0 flex flex-col gap-0.5">
+                        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5">
+                            {visibleEvents.map((ev) => (
+                                <button
+                                    key={ev.id}
+                                    onClick={interactive ? () => setEditing(ev) : undefined}
+                                    disabled={!interactive}
+                                    className="nodrag flex items-center gap-1 text-[10px] text-left hover:opacity-80"
                                     style={{
-                                        background:
-                                            ev.enabled && masterEnabled ? 'var(--accent-green)' : 'var(--app-border)',
+                                        color: 'var(--text-primary)',
+                                        cursor: interactive ? 'pointer' : 'default',
+                                        opacity: interactive ? 1 : 0.7,
                                     }}
-                                />
-                                <TriggerIcon trigger={ev.trigger} />
-                                <span className="font-mono">{formatTrigger(ev.trigger)}</span>
-                                <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>
-                                    {ev.label ||
-                                        (ev.trigger.kind === 'time' || ev.trigger.kind === 'astro'
-                                            ? weekdaysText(ev.weekdays)
-                                            : '')}
-                                </span>
-                            </button>
-                        ))}
+                                >
+                                    <span
+                                        className="w-2 h-2 rounded-full shrink-0"
+                                        style={{
+                                            background:
+                                                ev.enabled && masterEnabled
+                                                    ? 'var(--accent-green)'
+                                                    : 'var(--app-border)',
+                                        }}
+                                    />
+                                    <TriggerIcon trigger={ev.trigger} />
+                                    <span className="font-mono">{triggerLabel(ev.trigger)}</span>
+                                    <ValueBadge
+                                        raw={effectiveEventValue(ev.value, targetValue, allowEventValue)}
+                                        isRange={ev.trigger.kind === 'range'}
+                                        iconOnly
+                                    />
+                                    <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                                        {ev.label ||
+                                            (ev.trigger.kind === 'time' || ev.trigger.kind === 'astro'
+                                                ? weekdaysText(ev.weekdays)
+                                                : '')}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
                         {showAdd && (
                             <button
                                 onClick={interactive ? () => setEditing('new') : undefined}
                                 disabled={!interactive}
-                                className="nodrag mt-auto py-1 text-[10px] rounded-md hover:opacity-80 flex items-center justify-center gap-1"
+                                className="nodrag shrink-0 py-1 text-[10px] rounded-md hover:opacity-80 flex items-center justify-center gap-1"
                                 style={{
                                     background: 'transparent',
                                     color: 'var(--text-secondary)',
@@ -560,7 +680,7 @@ export function TimerWidget({ config, editMode, onConfigChange }: WidgetProps) {
                 {iconNode}
                 {showTitle && (
                     <p
-                        className="text-xs flex-1 truncate"
+                        className="aura-widget-title text-xs flex-1 truncate"
                         style={{
                             color: 'var(--text-primary)',
                             textAlign: titleAlign as React.CSSProperties['textAlign'],

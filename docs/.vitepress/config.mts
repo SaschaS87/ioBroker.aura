@@ -13,6 +13,15 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
 
+  markdown: {
+    config(md) {
+      // Inline-Code wörtlich ausgeben. Ohne v-pre kompiliert Vue `{{dp}}` als
+      // Interpolation (rendert leer, `{{…}}` bricht sogar den Build).
+      md.renderer.rules.code_inline = (tokens, idx) =>
+        `<code v-pre>${md.utils.escapeHtml(tokens[idx].content)}</code>`;
+    },
+  },
+
   themeConfig: {
     nav: [
       { text: 'Start', link: '/' },
@@ -29,12 +38,18 @@ export default defineConfig({
             { text: 'Übersicht', link: '/einstellungen/' },
             { text: 'Dashboard-Editor', link: '/einstellungen/editor' },
             { text: 'Popups', link: '/einstellungen/popups' },
+            { text: 'Meldungen', link: '/einstellungen/meldungen' },
             { text: 'Widget-Verwaltung', link: '/einstellungen/widgets' },
             { text: 'Layouts & Theme', link: '/einstellungen/layouts' },
             { text: 'Frontend', link: '/einstellungen/frontend' },
             { text: 'CSS & JS', link: '/einstellungen/css-js' },
+            { text: 'Design-Tokens', link: '/einstellungen/design-tokens' },
             { text: 'Einstellungen', link: '/einstellungen/settings' },
           ],
+        },
+        {
+          text: 'Instanz',
+          items: [{ text: 'KI-Zugriff (MCP)', link: '/einstellungen/mcp' }],
         },
       ],
     },

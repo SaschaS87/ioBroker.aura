@@ -2,10 +2,17 @@ import { useCallback, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactGridLayout from 'react-grid-layout/legacy';
 import { ArrowLeft, Plus, Upload } from 'lucide-react';
-import { usePopupConfigStore, BUILTIN_VIEW_IDS } from '../../store/popupConfigStore';
+import {
+    usePopupConfigStore,
+    BUILTIN_VIEW_IDS,
+    MAX_POPUP_TRANSPARENCY,
+    pctOrUndefined,
+    DEFAULT_POPUP_BACKGROUND,
+} from '../../store/popupConfigStore';
 import { useEffectiveSettings } from '../../hooks/useEffectiveSettings';
 import { WidgetFrame } from '../../components/layout/WidgetFrame';
 import { ImportWidgetDialog } from '../../components/config/ImportWidgetDialog';
+import { PopupBackgroundField } from '../../components/common/PopupBackgroundField';
 import { ActiveLayoutContext } from '../../contexts/ActiveLayoutContext';
 import { WIDGET_REGISTRY, ALL_POPUP_PLACEHOLDER_KEYS } from '../../widgetRegistry';
 import { useSuperAdmin } from '../../hooks/useSuperAdmin';
@@ -22,6 +29,11 @@ const PLACEHOLDER_DOCS: { token: string; example: string; desc: string }[] = [
     { token: '{{dp}}', example: 'alias.0.Heizung.Bad.TSOLL', desc: 'Haupt-Datenpunkt (voll)' },
     { token: '{{parent}}', example: 'alias.0.Heizung.Bad', desc: 'Eltern-Strang (ohne letztes Segment)' },
     { token: '{{name}}', example: 'TSOLL', desc: 'Letztes Segment' },
+    {
+        token: '[[dp]]',
+        example: '21.5',
+        desc: 'Wert des Datenpunkts (Popup-Titel und Widget-Name jedes Widgets)',
+    },
 ];
 
 /** Concrete usage scenarios — what to type, in which field, and what comes out.
@@ -52,6 +64,16 @@ const PLACEHOLDER_SCENARIOS: { value: string; field: string; result: string }[] 
         field: 'Widget-Titel',
         result: 'TSOLL',
     },
+    {
+        value: '[[{{parent}}.TIST]] °C',
+        field: 'Widget-Titel (jedes Widget)',
+        result: '21.5 °C (live)',
+    },
+    {
+        value: '{{name}} · [[{{parent}}.TIST]] °C',
+        field: 'Popup-Titel (Klick-Aktion)',
+        result: 'TSOLL · 21.5 °C (live)',
+    },
 ];
 
 /** Option-based placeholders (everything beyond the core DP vars), listed as plain chips. */
@@ -59,13 +81,26 @@ const OPTION_PLACEHOLDER_KEYS = ALL_POPUP_PLACEHOLDER_KEYS.filter((k) => !['dp',
 
 /** Widget types for the "add" dropdown, sorted alphabetically by label so the list
  *  stays ordered automatically as new widgets are registered. */
-const SORTED_WIDGET_REGISTRY = [...WIDGET_REGISTRY].sort((a, b) => a.label.localeCompare(b.label, 'de'));
+const SORTED_WIDGET_REGISTRY = WIDGET_REGISTRY.filter((m) => !m.hidden).sort((a, b) =>
+    a.label.localeCompare(b.label, 'de'),
+);
 
 export function PopupViewEditor() {
     const { viewId } = useParams<{ viewId: string }>();
     const navigate = useNavigate();
-    const { views, addWidgetToView, removeWidgetFromView, updateWidgetInView, copyView, setViewAutoCloseSec } =
-        usePopupConfigStore();
+    const {
+        views,
+        addWidgetToView,
+        removeWidgetFromView,
+        updateWidgetInView,
+        copyView,
+        setViewAutoCloseSec,
+        setViewTransparency,
+        setViewBackdropDim,
+        setViewBackground,
+    } = usePopupConfigStore();
+
+    const globalPopupBackground = usePopupConfigStore((s) => s.globalPopupBackground);
 
     const isSuperAdmin = useSuperAdmin();
     const view = views.find((v) => v.id === viewId);
@@ -230,6 +265,57 @@ export function PopupViewEditor() {
                             }}
                         />
                     </label>
+                    <label
+                        className="flex items-center gap-1.5 text-[11px]"
+                        style={{ color: 'var(--text-secondary)' }}
+                        title="Transparenz des Popups für diese View (%, leer = global)"
+                    >
+                        Transparenz
+                        <input
+                            type="number"
+                            min={0}
+                            max={MAX_POPUP_TRANSPARENCY}
+                            step={5}
+                            value={view.transparency ?? ''}
+                            onChange={(e) => setViewTransparency(viewId, pctOrUndefined(e.target.value))}
+                            placeholder="global"
+                            className="text-xs rounded-lg px-2 py-1.5 focus:outline-none w-16"
+                            style={{
+                                background: 'var(--app-bg)',
+                                color: 'var(--text-primary)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        />
+                    </label>
+                    <label
+                        className="flex items-center gap-1.5 text-[11px]"
+                        style={{ color: 'var(--text-secondary)' }}
+                        title="Abdunklung des Hintergrunds für diese View (%, leer = global)"
+                    >
+                        Abdunklung
+                        <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={view.backdropDim ?? ''}
+                            onChange={(e) => setViewBackdropDim(viewId, pctOrUndefined(e.target.value))}
+                            placeholder="global"
+                            className="text-xs rounded-lg px-2 py-1.5 focus:outline-none w-16"
+                            style={{
+                                background: 'var(--app-bg)',
+                                color: 'var(--text-primary)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        />
+                    </label>
+                    <PopupBackgroundField
+                        label="Hintergrund"
+                        value={view.background}
+                        onChange={(v) => setViewBackground(viewId, v)}
+                        inheritLabel="global"
+                        inline
+                    />
                     <select
                         value={addType}
                         onChange={(e) => setAddType(e.target.value as WidgetType)}
@@ -283,6 +369,17 @@ export function PopupViewEditor() {
                             <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
                                 {EXAMPLE_MAIN_DP}
                             </span>
+                        </p>
+                        <p className="mb-2" style={{ opacity: 0.8 }}>
+                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                                {'{{…}}'}
+                            </span>{' '}
+                            ersetzt einmalig <em>Text</em>.{' '}
+                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                                {'[[…]]'}
+                            </span>{' '}
+                            liest dagegen laufend den <em>Wert</em> des Datenpunkts — im Popup-Titel und im Namen jedes
+                            Widgets. Beides kombinierbar, die Text-Ersetzung läuft zuerst.
                         </p>
                         <table className="border-collapse" style={{ width: 'auto' }}>
                             <thead>
@@ -362,8 +459,13 @@ export function PopupViewEditor() {
                     </div>
                 )}
 
-                {/* Grid canvas */}
-                <div ref={containerRefCallback} className="aura-scroll flex-1 overflow-auto p-4">
+                {/* Grid canvas — painted in the popup's own surface colour so the
+                    configured contrast to the widget cards is visible while editing. */}
+                <div
+                    ref={containerRefCallback}
+                    className="aura-scroll flex-1 overflow-auto p-4"
+                    style={{ background: view.background ?? globalPopupBackground ?? DEFAULT_POPUP_BACKGROUND }}
+                >
                     {widgets.length === 0 ? (
                         <div
                             className="flex items-center justify-center h-48 text-sm"

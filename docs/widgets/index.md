@@ -11,6 +11,7 @@
 | [Datumswähler](./datumswaehler) | Datum/Uhrzeit auswählen und als Datenpunkt speichern. |
 | [Diagramm (einfach)](./diagramm) | Verlauf eines einzelnen Datenpunkts als einfaches Diagramm. |
 | [Diagramm (erweitert)](./diagramm-erweitert) | Erweitertes Diagramm mit mehreren Datenpunkten und Optionen. |
+| [Diagramm (Verteilung)](./verteilung) | Anteilige Darstellung (Balken, Torte oder Donut) beliebig vieler Gruppen aus mehreren Datenpunkten mit History-Aggregation – z.B. Energiebilanz, Kosten, Speicherbelegung |
 | [Dimmer](./dimmer) | Licht dimmen – Helligkeitsregler 0–100 % mit Ein/Aus-Taste. |
 | [Drehregler](./drehregler) | Wert über Drehknopf einstellen – 3 Zeigertypen, Winkelbereich konfigurierbar. |
 | [Dynamische Liste](./dynamische-liste) | Datenpunkte automatisch aus einem ioBroker-Ordner auflisten. |
@@ -44,9 +45,11 @@
 | [HTML](./html) | Beliebigen HTML/CSS-Code frei einbetten. |
 | [iFrame](./iframe) | Externe Webseite oder lokale URL einbetten. |
 | [JSON-Tabelle](./json-tabelle) | JSON-Array-Datenpunkt als formatierte Tabelle anzeigen. |
-| [Kalender](./kalender) | Termine aus dem iCal-Adapter (nur per Tab-Wizard hinzufügbar). |
+| [Kalender](./kalender) | Termine aus dem iCal-Adapter. |
 | [Kamera](./kamera) | Kamera-Livebild einbinden (go2rtc / MJPEG-Stream). |
+| [Karte](./karte) | Positionen (Auto, Kind, …) aus Datenpunkten auf einer OpenStreetMap-Karte anzeigen – optional mit Entfernung. |
 | [Karussell](./karussell) | Horizontal scrollbare Chip-Liste – pro Item Datenpunkt + eigene Klick-Aktion. |
+| [Meldungen](./meldungen) | Verlauf der eingegangenen Informationen, Warnungen und Fehler — Filter nach Schweregrad und Zeitraum. |
 | [Müllabfuhr](./muellabfuhr) | Nächste Müllabfuhr-Termine vom Trash-Adapter anzeigen. |
 | [Müllabfuhr-Zeitplan](./muellabfuhr-zeitplan) | Detaillierter Müllabfuhr-Kalender (Datenpunkt vom Trash-Adapter). |
 | [Skript-Status](./skript-status) | Liste aller JavaScript-Skripte mit Status, Filter und Start-/Stopp-Aktionen. |
@@ -62,8 +65,22 @@
 | [Abschnittstitel](./abschnittstitel) | Trennlinie mit Überschrift zur Gliederung des Dashboards. |
 | [Button](./button) | Klick-Aktion auslösen (Datenpunkt schreiben, HTTP-Call, Szene …). |
 | [Gruppe](./gruppe) | Mehrere Widgets in einem gemeinsamen Rahmen gruppieren. |
+| [Menü](./menue) | Frei positionierbares Navigations-Menü – zeigt die Bereiche oder die Tabs zum direkten Umschalten. |
 | [Panels](./panels) | Mehrere Widgets als swipebare Slides – Wischen, Pagination-Dots und Pfeil-Buttons. |
+| [Spiegel](./spiegel) | Zeigt ein vorhandenes Widget live an einer zweiten Stelle an – kein Duplikat: Änderungen an der Quelle wirken sofort mit. |
 
 ## Konzepte
 
+- [Bindings & Berechnungen](./bindings) — Datenpunkt-Platzhalter im HTML, mit Rechnen, Runden, Farben und Datum
 - [Custom-Layout](./custom-layout) — Widgets mit freier Zellen-Matrix gestalten
+
+## Datenpunkt-Wert im Widget-Namen
+
+Der Name jedes Widgets löst `[[<dp>]]` zum aktuellen Wert dieses Datenpunkts auf, gemischt mit festem Text:
+
+| Name | zeigt |
+| --- | --- |
+| `Wohnzimmer [[0_userdata.0.Temp]] °C` | `Wohnzimmer 21.5 °C` |
+| `[[0_userdata.0.Status]]` | den Inhalt des Datenpunkts |
+
+Mehrere Tokens pro Name sind erlaubt, JSON-Pfade (`[[dp?battery.soc]]`) ebenfalls; Booleans erscheinen als `AN` / `AUS`. In einer [Popup-View](../einstellungen/popups#platzhalter) kombinierbar mit `{{parent}}`.

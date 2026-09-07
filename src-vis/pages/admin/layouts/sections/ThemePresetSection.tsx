@@ -1,6 +1,11 @@
+import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '../../../../store/themeStore';
-import { useDashboardStore } from '../../../../store/dashboardStore';
-import { THEMES } from '../../../../themes';
+import { useLayoutSetting } from '../shared/useLayoutSetting';
+import { ResetDefaultsButton } from '../shared/ResetDefaultsButton';
+import { InactiveNotice } from '../shared/InactiveNotice';
+import { useThemeModeDp } from '../../../../hooks/useThemeModeDp';
+import { BROWSER_SYNC_ANCHOR } from './BrowserThemeSyncSection';
+import { THEMES, DEFAULT_THEME_ID, getTheme } from '../../../../themes';
 import { useT } from '../../../../i18n';
 
 interface ThemePresetSectionProps {
@@ -9,13 +14,33 @@ interface ThemePresetSectionProps {
 
 export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
     const t = useT();
+    const navigate = useNavigate();
     const { themeId, applyThemePreset } = useThemeStore();
-    const layouts = useDashboardStore((s) => s.layouts);
-    const updateLayoutSettings = useDashboardStore((s) => s.updateLayoutSettings);
-    const clearLayoutSettings = useDashboardStore((s) => s.clearLayoutSettings);
+    const followBrowser = useThemeStore((s) => s.followBrowser);
+    const browserDarkThemeId = useThemeStore((s) => s.browserDarkThemeId);
+    const browserLightThemeId = useThemeStore((s) => s.browserLightThemeId);
+    const { ls, setPatch, clear } = useLayoutSetting(contextId);
+    const { mode, clear: clearMode } = useThemeModeDp();
 
-    const ls = contextId ? layouts.find((l) => l.id === contextId)?.settings : undefined;
     const effectiveThemeId = ls?.themeId ?? themeId;
+    const canReset = contextId ? ls?.themeId !== undefined : themeId !== DEFAULT_THEME_ID;
+
+    // While the theme follows the browser, the picked preset is overwritten on
+    // every page load — say so and point at the switch instead of letting the
+    // user click a choice that never shows up in the frontend (#573).
+    const jumpToBrowserSync = () => {
+        if (contextId) navigate('/admin/design?ctx=global&tab=theme');
+        window.setTimeout(
+            () => document.getElementById(BROWSER_SYNC_ANCHOR)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+            contextId ? 120 : 0,
+        );
+    };
+
+    // A dark/light-mode datapoint replaces designs of the opposite brightness
+    // (a dark design stays put in dark mode) — only worth mentioning while the
+    // selected design actually clashes with the mode.
+    const modeTheme = mode === 'dark' ? getTheme(browserDarkThemeId) : getTheme(browserLightThemeId);
+    const modeClashes = mode !== null && getTheme(effectiveThemeId).dark !== (mode === 'dark');
 
     return (
         <div
@@ -26,18 +51,43 @@ export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
                 <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
                     {t('theme.preset.title')}
                 </h2>
+                <ResetDefaultsButton
+                    onReset={() => (contextId ? clear('themeId') : applyThemePreset(DEFAULT_THEME_ID))}
+                    disabled={!canReset}
+                    scoped={contextId !== null}
+                />
             </div>
             <p className="text-xs mb-4 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 {t('theme.preset.desc')}
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {followBrowser && (
+                <InactiveNotice
+                    text={t('theme.preset.browserActive')}
+                    actionLabel={t('theme.preset.browserAction')}
+                    onAction={jumpToBrowserSync}
+                />
+            )}
+            {!followBrowser && modeClashes && (
+                <InactiveNotice
+                    text={t(mode === 'dark' ? 'theme.preset.modeDark' : 'theme.preset.modeLight', {
+                        theme: modeTheme.name,
+                    })}
+                    actionLabel={t('theme.preset.modeAction')}
+                    onAction={clearMode}
+                />
+            )}
+            <div
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
+                style={followBrowser ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
+            >
                 {THEMES.map((theme) => (
                     <button
                         key={theme.id}
+                        disabled={followBrowser}
                         onClick={() => {
                             if (!contextId) {
                                 applyThemePreset(theme.id);
-                            } else updateLayoutSettings(contextId, { themeId: theme.id, customVars: undefined });
+                            } else setPatch({ themeId: theme.id, customVars: undefined });
                         }}
                         className="rounded-xl p-3 text-left transition-opacity hover:opacity-80 space-y-2.5"
                         style={{
@@ -80,15 +130,6 @@ export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
                     </button>
                 ))}
             </div>
-            {contextId && ls?.themeId && (
-                <button
-                    onClick={() => clearLayoutSettings(contextId, 'themeId')}
-                    className="mt-3 text-xs hover:opacity-70"
-                    style={{ color: 'var(--text-secondary)' }}
-                >
-                    ↩ Auf Global zurücksetzen
-                </button>
-            )}
         </div>
     );
 }

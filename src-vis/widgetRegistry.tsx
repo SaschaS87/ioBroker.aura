@@ -42,6 +42,7 @@ import {
     Globe,
     MousePointerClick,
     Wind,
+    AirVent,
     CloudRain,
     Flame,
     LayoutGrid,
@@ -58,15 +59,18 @@ import {
     MapPin,
     PieChart,
     Activity,
+    CopyPlus,
+    Menu,
+    BellRing,
     type LucideIcon,
 } from 'lucide-react';
-import type { WidgetType } from './types';
+import type { WidgetType, ConditionSlot } from './types';
 
 export type AddMode =
     | 'datapoint' // requires an ioBroker state ID
     | 'group' // legacy – no longer used for new widgets
     | 'free' // no datapoint / special config (clock, header, …)
-    | 'wizard-only'; // cannot be added manually (calendar)
+    | 'wizard-only'; // not offered in the widget type switcher / panels list (calendar)
 
 export type WidgetGroup = 'control' | 'special' | 'layout';
 
@@ -74,7 +78,7 @@ export interface WidgetMeta {
     type: WidgetType;
     /** Full German name shown in dialogs, admin lists, … */
     label: string;
-    /** Short name for compact labels (TabWizard badges) */
+    /** Short name for compact labels (badges, dense lists) */
     shortLabel: string;
     /** Lucide icon component – render at any size */
     Icon: LucideIcon;
@@ -96,7 +100,21 @@ export interface WidgetMeta {
     hint?: string;
     /** Option keys pre-filled with {{key}} placeholders when adding this widget inside a popup view editor */
     popupDefaults?: Record<string, string>;
+    /** Deprecated/hidden: existing instances keep working, but it is filtered out of the "add widget" pickers */
+    hidden?: boolean;
+    /**
+     * Which "Anzeige überschreiben" slots a condition may set on this type — the
+     * editor offers exactly these, so a configured override always has an effect.
+     * Omitted means the default DEFAULT_CONDITION_SLOTS; use conditionSlotsFor().
+     */
+    conditionSlots?: ConditionSlot[];
 }
+
+// Every widget except these reads options.icon / options.iconSize (46 of 55 do it
+// literally, the rest through config.options?.icon), so icon + title are the
+// default. 'value' is opt-in: it only works where the widget reads
+// options.valueTextOverride — see utils/conditionSet.
+export const DEFAULT_CONDITION_SLOTS: ConditionSlot[] = ['icon', 'title'];
 
 export const WIDGET_GROUPS: { id: WidgetGroup; label: string }[] = [
     { id: 'control', label: 'Steuerung & Anzeige' },
@@ -107,6 +125,7 @@ export const WIDGET_GROUPS: { id: WidgetGroup; label: string }[] = [
 export const WIDGET_REGISTRY: WidgetMeta[] = [
     {
         type: 'switch',
+        conditionSlots: ['icon', 'title', 'value'],
         label: 'Schalter',
         shortLabel: 'Schalter',
         Icon: Zap,
@@ -139,20 +158,6 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
             batteryDp: '{{batteryDp}}',
             unreachDp: '{{unreachDp}}',
         },
-    },
-    {
-        type: 'shutterrooms',
-        label: 'Rollläden (Raumkarten)',
-        shortLabel: 'Rollläden',
-        Icon: AlignJustify,
-        iconName: 'AlignJustify',
-        color: '#64748b',
-        defaultW: 42,
-        defaultH: 40,
-        addMode: 'free',
-        widgetGroup: 'control',
-        mock: { t: 'Rollläden', v: '' },
-        hint: 'Raumkarten mit Fassaden-Filter, Kachel-Steuerung und Feinregler-Sheet (TaHoma)',
     },
     {
         type: 'shutterfloors',
@@ -213,6 +218,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         type: 'value',
+        conditionSlots: ['icon', 'title', 'value'],
         label: 'Wert-Anzeige',
         shortLabel: 'Wert',
         Icon: TrendingUp,
@@ -266,7 +272,25 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         widgetGroup: 'control',
         mock: { t: 'Wohnzimmer', v: '21.4', u: '°C', sub: '💧 52%' },
         hint: 'Temperatur, Luftfeuchtigkeit und optionalen Temperaturverlauf kombiniert anzeigen',
-        popupDefaults: { targetDatapoint: '{{targetDatapoint}}', humidityDatapoint: '{{humidityDatapoint}}' },
+        popupDefaults: {
+            targetDatapoint: '{{targetDatapoint}}',
+            humidityDatapoint: '{{humidityDatapoint}}',
+            pressureDatapoint: '{{pressureDatapoint}}',
+        },
+    },
+    {
+        type: 'aircontrol',
+        label: 'Klimasteuerung',
+        shortLabel: 'Klima',
+        Icon: AirVent,
+        iconName: 'AirVent',
+        color: '#0ea5e9',
+        defaultW: 12,
+        defaultH: 8,
+        addMode: 'free',
+        widgetGroup: 'control',
+        mock: { t: 'Wohnzimmer', v: '22', u: '°C', sub: 'Kühlen · Auto' },
+        hint: 'Klimagerät steuern: Power, Modus, Lüfter, Lamellen, Eco – mit Hersteller-Profilen und automatischer Datenpunkt-Befüllung',
     },
     {
         type: 'roomclimate',
@@ -434,7 +458,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         addMode: 'wizard-only',
         widgetGroup: 'special',
         mock: { t: 'Kalender', v: '3' },
-        hint: 'Termine aus dem iCal-Adapter (nur per Tab-Wizard hinzufügbar)',
+        hint: 'Termine aus einer ical-Adapter-Instanz oder direkt von einer iCal-URL',
     },
     {
         type: 'evcc',
@@ -555,8 +579,12 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         Icon: Layers2,
         iconName: 'Layers2',
         color: '#a78bfa',
-        defaultW: 12,
-        defaultH: 6,
+        // A group is a container, not a tile: at the default grid pitch (20px
+        // cell + 10px gap = 30px in both axes) this is roughly a 470x200 box,
+        // instead of the old 12x6 strip. The height only applies while the group
+        // is empty: once it has children it hugs them (groupRows / Dashboard).
+        defaultW: 16,
+        defaultH: 7,
         addMode: 'free',
         widgetGroup: 'layout',
         mock: { t: 'Gruppe', v: '' },
@@ -592,6 +620,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         type: 'windowcontact',
+        conditionSlots: ['icon', 'title', 'value'],
         label: 'Fenster-/Türkontakt',
         shortLabel: 'Kontakt',
         Icon: DoorOpen,
@@ -606,6 +635,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         type: 'binarysensor',
+        conditionSlots: ['icon', 'title', 'value'],
         label: 'Binärsensor',
         shortLabel: 'Sensor',
         Icon: ShieldAlert,
@@ -620,6 +650,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         type: 'stateimage',
+        conditionSlots: ['icon', 'title', 'value'],
         label: 'Zustandsbild',
         shortLabel: 'Zustandsbild',
         Icon: ToggleRight,
@@ -827,6 +858,9 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         widgetGroup: 'special',
         mock: { t: 'Ladezeiten', v: '' },
         hint: 'Verlauf der Frontend-Ladezeiten (Initial-Load, First Paint, Socket→DP, Tab-Wechsel, Long-Tasks)',
+        // Superseded by the backend page (Admin → Ladezeiten). Hidden from the
+        // add pickers; existing widget instances keep rendering and working.
+        hidden: true,
     },
     {
         type: 'input',
@@ -858,6 +892,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         type: 'map',
+        conditionSlots: [],
         label: 'Karte',
         shortLabel: 'Karte',
         Icon: MapPin,
@@ -872,6 +907,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
     },
     {
         type: 'statusoverview',
+        conditionSlots: ['title'],
         label: 'Statusübersicht',
         shortLabel: 'Status',
         Icon: ListChecks,
@@ -926,6 +962,50 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         mock: { t: 'Panels', v: '' },
         hint: 'Mehrere Widgets als swipebare Slides – Wischen, Pagination-Dots und Pfeil-Buttons',
     },
+    {
+        type: 'mirror',
+        conditionSlots: [],
+        label: 'Spiegel',
+        shortLabel: 'Spiegel',
+        Icon: CopyPlus,
+        iconName: 'CopyPlus',
+        color: '#64748b',
+        defaultW: 8,
+        defaultH: 4,
+        addMode: 'free',
+        widgetGroup: 'layout',
+        mock: { t: 'Spiegel', v: '⧉' },
+        hint: 'Zeigt ein vorhandenes Widget live an einer zweiten Stelle an – kein Duplikat: Änderungen an der Quelle wirken sofort mit',
+    },
+    {
+        type: 'menu',
+        conditionSlots: [],
+        label: 'Menü',
+        shortLabel: 'Menü',
+        Icon: Menu,
+        iconName: 'Menu',
+        color: '#6366f1',
+        defaultW: 12,
+        defaultH: 2,
+        addMode: 'free',
+        widgetGroup: 'layout',
+        mock: { t: 'Menü', v: '☰' },
+        hint: 'Frei positionierbares Navigations-Menü – zeigt die Bereiche oder die Tabs zum direkten Umschalten',
+    },
+    {
+        type: 'messages',
+        label: 'Meldungen',
+        shortLabel: 'Meldungen',
+        Icon: BellRing,
+        iconName: 'BellRing',
+        color: '#f59e0b',
+        defaultW: 10,
+        defaultH: 8,
+        addMode: 'free',
+        widgetGroup: 'special',
+        mock: { t: 'Meldungen', v: '' },
+        hint: 'Verlauf der eingegangenen Informationen, Warnungen und Fehler – Filter nach Schweregrad und Zeitraum, Klick öffnet die Detailansicht',
+    },
 ];
 
 /** Fast lookup by type */
@@ -933,6 +1013,10 @@ export const WIDGET_BY_TYPE = Object.fromEntries(WIDGET_REGISTRY.map((m) => [m.t
     WidgetType,
     WidgetMeta
 >;
+
+export function conditionSlotsFor(type: WidgetType): ConditionSlot[] {
+    return WIDGET_BY_TYPE[type]?.conditionSlots ?? DEFAULT_CONDITION_SLOTS;
+}
 
 /** All {{key}} placeholder names available in popup views (union of all popupDefaults keys + dp/parent/name).
  *  `dp` is the trigger's main datapoint, `parent` its parent strang (id without the last segment),

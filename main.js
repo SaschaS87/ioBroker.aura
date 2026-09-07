@@ -6,6 +6,8 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const SunCalc = require('suncalc');
+const { handleMcpRequest } = require('./lib/mcp/httpEndpoint');
+const { maskClientConfig, resolveClientConfig } = require('./lib/mcp/clientConfig');
 
 // ── Calendar fetch helper ────────────────────────────────────────────────────
 
@@ -54,6 +56,59 @@ function fetchUrl(url, _depth = 0) {
         req.on('error', (e) => done(reject, e));
         req.end();
     });
+}
+
+// ── Message system (issue #429) ──────────────────────────────────────────────
+// A "message" is an info/warning/error notice that scripts push into Aura by
+// writing JSON (or plain text) to one of the `messages.send` datapoints. The
+// adapter is the single place where a payload is parsed, defaulted and archived;
+// the frontend only ever consumes finished entries from `messages.history` /
+// `messages.lastMessage`, so there is no second rule set to keep in sync.
+
+const MESSAGE_SEVERITIES = ['info', 'success', 'warning', 'error'];
+
+const MESSAGE_POSITIONS = [
+    'top-left',
+    'top-center',
+    'top-right',
+    'center-left',
+    'center',
+    'center-right',
+    'bottom-left',
+    'bottom-center',
+    'bottom-right',
+];
+
+/** Auto-close default per severity, in seconds. 0 = stays until dismissed. */
+const MESSAGE_DEFAULT_DURATION = { info: 8, success: 8, warning: 15, error: 0 };
+const MESSAGE_DEFAULT_POSITION = 'top-right';
+
+const MESSAGE_HISTORY_SIZE_DEFAULT = 100;
+const MESSAGE_HISTORY_SIZE_MAX = 1000;
+const MESSAGE_RETENTION_DAYS_DEFAULT = 30;
+
+// Hard caps: a runaway script must not be able to blow up the history datapoint.
+const MESSAGE_STR_MAX = 4000;
+// Titles render as sanitised HTML too, so markup eats into the budget.
+const MESSAGE_TITLE_MAX = 1000;
+const MESSAGE_ID_MAX = 128;
+const MESSAGE_ACTIONS_MAX = 6;
+const MESSAGE_TARGET_CLIENTS_MAX = 50;
+// CSS colour strings; a cap is enough, React puts them in a style object where a
+// value can only ever be a value.
+const MESSAGE_COLOR_MAX = 64;
+
+const MESSAGE_APPEARANCES = ['bar', 'filled', 'outline', 'plain'];
+const MESSAGE_ALIGNS = ['left', 'center', 'right'];
+/** How the card prints `ts` when the timestamp is switched on. */
+const MESSAGE_TIME_FORMATS = ['time', 'datetime'];
+const MESSAGE_DEFAULT_TIME_FORMAT = 'time';
+
+/** ioBroker object ids allow a restricted charset — layout slugs are free user text. */
+function sanitizeIdSegment(raw) {
+    return String(raw || '')
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .slice(0, 64);
 }
 
 // ── Proxy helpers ────────────────────────────────────────────────────────────
@@ -323,10 +378,31 @@ function proxyWebSocket(req, socket, targetWsUrl, log, sendForwardedFor = true) 
             lines.push(`Sec-WebSocket-Protocol: ${proxyRes.headers['sec-websocket-protocol']}`);
         socket.write(`${lines.join('\r\n')}\r\n\r\n`);
         if (proxyHead && proxyHead.length) proxySocket.unshift(proxyHead);
+        // Upgraded sockets carry a long-lived, mostly idle WebSocket: disable any
+        // inherited inactivity timeout, send frames immediately, and let TCP
+        // keepalive reap a leg whose peer vanished without a FIN (router/NAT drop
+        // while the browser tab was suspended).
+        for (const sock of [socket, proxySocket]) {
+            sock.setTimeout(0);
+            sock.setNoDelay(true);
+            sock.setKeepAlive(true, 30000);
+        }
         proxySocket.pipe(socket);
         socket.pipe(proxySocket);
-        proxySocket.on('error', () => socket.destroy());
-        socket.on('error', () => proxySocket.destroy());
+        // Tear down BOTH legs whenever either one ends. `pipe` alone only
+        // forwards a clean FIN — an abruptly destroyed upstream (web adapter
+        // restart, dropped route) emits 'close' without 'end' or 'error', which
+        // used to leave the browser leg open forever. The client then believed it
+        // was still connected, never reconnected, and every datapoint silently
+        // froze until a full page reload. (issue #528)
+        const closeBoth = () => {
+            socket.destroy();
+            proxySocket.destroy();
+        };
+        proxySocket.on('error', closeBoth);
+        socket.on('error', closeBoth);
+        proxySocket.on('close', closeBoth);
+        socket.on('close', closeBoth);
     });
     proxyReq.on('error', (e) => {
         log.debug(`aura: WS proxy error for ${targetWsUrl}: ${e.message}`);
@@ -515,87 +591,18 @@ class Aura extends utils.Adapter {
             const cId = String(reg.clientId);
             const displayName = reg.name ? String(reg.name) : cId.slice(0, 8);
 
-            await this.setObjectNotExistsAsync(`clients.${cId}`, {
-                type: 'channel',
-                common: { name: displayName },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.info`, {
-                type: 'channel',
-                common: { name: 'Info' },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.info.name`, {
-                type: 'state',
-                common: {
-                    name: 'Client Name',
-                    type: 'string',
-                    role: 'text',
-                    read: true,
-                    write: true,
-                    def: displayName,
-                },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.info.lastSeen`, {
-                type: 'state',
-                common: { name: 'Last Seen', type: 'number', role: 'date', read: true, write: true, def: 0 },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.info.resolutionWidth`, {
-                type: 'state',
-                common: {
-                    name: 'Screen resolution width',
-                    type: 'number',
-                    role: 'value',
-                    unit: 'px',
-                    read: true,
-                    write: true,
-                    def: 0,
-                },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.info.resolutionHeight`, {
-                type: 'state',
-                common: {
-                    name: 'Screen resolution height',
-                    type: 'number',
-                    role: 'value',
-                    unit: 'px',
-                    read: true,
-                    write: true,
-                    def: 0,
-                },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.navigate`, {
-                type: 'channel',
-                common: { name: 'Navigation' },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.navigate.url`, {
-                type: 'state',
-                common: { name: 'Navigate', type: 'string', role: 'url', read: true, write: true, def: '' },
-                native: {},
-            });
-            await this.setObjectNotExistsAsync(`clients.${cId}.navigate.target`, {
-                type: 'state',
-                common: {
-                    name: 'Navigate to view/tab (select)',
-                    type: 'string',
-                    role: 'text',
-                    read: true,
-                    write: true,
-                    def: '',
-                    states: {},
-                },
-                native: {},
-            });
+            await this._ensureClientTree(cId, displayName);
             // Populate the freshly-created selector with the current view/tab list.
             await this._syncNavigateTargets();
 
             await this.setStateAsync(`clients.${cId}.info.name`, { val: displayName, ack: true });
             await this.setStateAsync(`clients.${cId}.info.lastSeen`, { val: Date.now(), ack: true });
+            if (reg.userAgent) {
+                await this.setStateAsync(`clients.${cId}.info.userAgent`, {
+                    val: String(reg.userAgent),
+                    ack: true,
+                });
+            }
 
             this.log.info(`[clients] registered: ${cId} (${displayName})`);
             await this.setStateAsync('clients.register', '', true);
@@ -603,8 +610,8 @@ class Aura extends utils.Adapter {
         }
 
         // Client resolution relay: frontend writes {clientId, width, height} → adapter stores the
-        // per-client viewport resolution. Fired on connect and (debounced) on resize/rotation. DPs
-        // are ensured idempotently here so clients registered before this feature get them on demand.
+        // per-client viewport resolution. Fired on connect and (debounced) on resize/rotation, so
+        // this is also where an incomplete client tree heals itself.
         if (id.endsWith('clients.resolution') && state && !state.ack && state.val) {
             let payload;
             try {
@@ -616,48 +623,30 @@ class Aura extends utils.Adapter {
             const cId = payload && payload.clientId ? String(payload.clientId) : '';
             const width = Number(payload && payload.width);
             const height = Number(payload && payload.height);
+            const userAgent = payload && payload.userAgent ? String(payload.userAgent) : '';
             if (cId && Number.isFinite(width) && Number.isFinite(height)) {
-                await this.setObjectNotExistsAsync(`clients.${cId}`, {
-                    type: 'channel',
-                    common: { name: cId.slice(0, 8) },
-                    native: {},
-                });
-                await this.setObjectNotExistsAsync(`clients.${cId}.info`, {
-                    type: 'channel',
-                    common: { name: 'Info' },
-                    native: {},
-                });
-                await this.setObjectNotExistsAsync(`clients.${cId}.info.resolutionWidth`, {
-                    type: 'state',
-                    common: {
-                        name: 'Screen resolution width',
-                        type: 'number',
-                        role: 'value',
-                        unit: 'px',
-                        read: true,
-                        write: true,
-                        def: 0,
-                    },
-                    native: {},
-                });
-                await this.setObjectNotExistsAsync(`clients.${cId}.info.resolutionHeight`, {
-                    type: 'state',
-                    common: {
-                        name: 'Screen resolution height',
-                        type: 'number',
-                        role: 'value',
-                        unit: 'px',
-                        read: true,
-                        write: true,
-                        def: 0,
-                    },
-                    native: {},
-                });
+                // Build the WHOLE client tree here, not just the resolution DPs: this relay
+                // fires on every connect, while the register relay runs once per client and
+                // is skipped for good once info.name carries a value. A client whose
+                // registration never reached the adapter would otherwise be stuck without
+                // navigate.* / popup.* forever (#532).
+                if (await this._ensureClientTree(cId)) await this._syncNavigateTargets();
+                await this.setStateAsync(`clients.${cId}.info.lastSeen`, { val: Date.now(), ack: true });
                 await this.setStateAsync(`clients.${cId}.info.resolutionWidth`, { val: Math.round(width), ack: true });
                 await this.setStateAsync(`clients.${cId}.info.resolutionHeight`, {
                     val: Math.round(height),
                     ack: true,
                 });
+                if (userAgent) {
+                    // Backfill for clients registered before the userAgent DP existed;
+                    // the resolution relay fires on every connect, so this self-heals.
+                    await this.setObjectNotExistsAsync(`clients.${cId}.info.userAgent`, {
+                        type: 'state',
+                        common: { name: 'User agent', type: 'string', role: 'text', read: true, write: true, def: '' },
+                        native: {},
+                    });
+                    await this.setStateAsync(`clients.${cId}.info.userAgent`, { val: userAgent, ack: true });
+                }
             }
             await this.setStateAsync('clients.resolution', '', true);
             return;
@@ -673,10 +662,13 @@ class Aura extends utils.Adapter {
                     `${base}.info.lastSeen`,
                     `${base}.info.resolutionWidth`,
                     `${base}.info.resolutionHeight`,
+                    `${base}.info.userAgent`,
                     `${base}.info`,
                     `${base}.navigate.url`,
                     `${base}.navigate.target`,
                     `${base}.navigate`,
+                    `${base}.popup.open`,
+                    `${base}.popup`,
                     base,
                 ];
                 this.log.info(`[clients] deleting client: ${base}`);
@@ -685,6 +677,14 @@ class Aura extends utils.Adapter {
                         await this.delForeignObjectAsync(objId);
                     } catch {
                         /* ignore missing */
+                    }
+                    // Renaming a half-built client writes info.name via setState even though
+                    // no object exists; delObject leaves that orphan value behind, and the
+                    // stale name would keep the frontend from ever re-registering (#532).
+                    try {
+                        await this.delForeignStateAsync(objId);
+                    } catch {
+                        /* not a state, or already gone */
                     }
                 }
                 this.log.info(`[clients] deleted: ${base}`);
@@ -705,9 +705,50 @@ class Aura extends utils.Adapter {
             return;
         }
 
-        // Dashboard config changed → rebuild the navigate selector dropdowns.
+        // Dashboard config changed → rebuild the navigate selector dropdowns and
+        // the per-layout message datapoints.
         if (id.endsWith('.config.dashboard') && state) {
             await this._syncNavigateTargets();
+            return;
+        }
+
+        // ── Messages (issue #429) ─────────────────────────────────────────────
+        // Presentation defaults changed in Admin → Meldungen. Re-read regardless of
+        // the ack flag: the frontend writes it as an owned config value (ack=true).
+        if (id.endsWith('.config.messageDefaults') && state) {
+            await this._loadMessageDefaults(state.val);
+            return;
+        }
+
+        // Command datapoints, all self-clearing. Only unacknowledged writes count;
+        // our own ack=true confirmations must not re-enter the handlers.
+        if (id.endsWith('.messages.send') && state && !state.ack && state.val) {
+            const rel = id.slice(`${this.namespace}.`.length);
+            let origin = { kind: 'global' };
+            let m = rel.match(/^clients\.([^.]+)\.messages\.send$/);
+            if (m) {
+                origin = { kind: 'client', clientId: m[1] };
+            } else if ((m = rel.match(/^layouts\.([^.]+)\.messages\.send$/))) {
+                // The id segment is the sanitized slug; hand on the original one.
+                const known = this._layoutSlugs && this._layoutSlugs.get(m[1]);
+                origin = { kind: 'layout', slug: known ? known.slug : m[1] };
+            }
+            await this._handleMessageSend(String(state.val), origin, rel);
+            return;
+        }
+
+        if (id.endsWith('.messages.ack') && state && !state.ack && state.val) {
+            await this._handleMessageMark(state.val, 'ack');
+            return;
+        }
+
+        if (id.endsWith('.messages.dismiss') && state && !state.ack && state.val) {
+            await this._handleMessageMark(state.val, 'dismiss');
+            return;
+        }
+
+        if (id.endsWith('.messages.clear') && state && !state.ack && state.val) {
+            await this._handleMessageClear();
             return;
         }
 
@@ -861,6 +902,31 @@ class Aura extends utils.Adapter {
                 return;
             }
             const { pathname } = parsedUrl;
+
+            // MCP endpoint for AI assistants. Off unless enabled in the instance
+            // config, and it refuses everything without a token — this server has
+            // no authentication of its own, so an open /mcp would hand the whole
+            // dashboard configuration to anyone who can reach the port.
+            if (pathname === '/mcp') {
+                if (!this.config.mcpEnabled) {
+                    res.writeHead(404);
+                    res.end('Not found');
+                    return;
+                }
+                handleMcpRequest(req, res, {
+                    adapter: this,
+                    token: this.config.mcpToken,
+                    mode: this.config.mcpMode || 'read',
+                    version: require('./package.json').version || '',
+                }).catch((err) => {
+                    this.log.warn(`aura: MCP request failed — ${err.message}`);
+                    if (!res.headersSent) {
+                        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+                    }
+                    res.end(JSON.stringify({ error: String(err.message || err) }));
+                });
+                return;
+            }
 
             if (pathname === '/proxy') {
                 const urlParam = parsedUrl.searchParams.get('url');
@@ -1073,16 +1139,26 @@ class Aura extends utils.Adapter {
                 return;
             }
 
+            // `/webfs/<path>` transparently forwards to the ioBroker web adapter
+            // backend (the socket backend, default :8082). Adapters like sonos serve
+            // assets (e.g. album art `sonos/coverImage/<ip>.png`) as relative paths
+            // that only exist on the web adapter, NOT on aura's own server. Widgets
+            // resolve such relative image DPs to `/webfs/...` so the browser hits
+            // aura's origin, and aura pipes it through to the web adapter — cookies
+            // and all, so authenticated web instances keep working.
             const webAdapterPrefixes = ['/socket.io', '/echarts', '/lib'];
-            if (webAdapterPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+            const isWebFs = pathname === '/webfs' || pathname.startsWith('/webfs/');
+            if (isWebFs || webAdapterPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
                 const socketLib = socketSecure ? https : http;
                 const fwdHeaders = { ...req.headers, host: socketHostPort };
                 if (socketSendForwardedFor) applyForwardedHeaders(fwdHeaders, req);
+                // Strip the `/webfs` prefix so the backend receives the real web path.
+                const backendPath = isWebFs ? req.url.slice('/webfs'.length) || '/' : req.url;
                 const proxyReq = socketLib.request(
                     {
                         hostname: socketHost,
                         port: socketPort,
-                        path: req.url,
+                        path: backendPath,
                         method: req.method,
                         headers: fwdHeaders,
                         timeout: 30000,
@@ -1237,14 +1313,34 @@ class Aura extends utils.Adapter {
             }
         });
 
-        server.listen(port, () =>
-            this.log.info(`aura: ${httpsActive ? 'HTTPS' : 'HTTP'} server listening on port ${port}`),
-        );
+        // The MCP client block needs the protocol that is actually in use — HTTPS
+        // can fail at startup and fall back to HTTP, so config.secure would lie.
+        this._httpsActive = httpsActive;
+        server.listen(port, () => {
+            this.log.info(`aura: ${httpsActive ? 'HTTPS' : 'HTTP'} server listening on port ${port}`);
+            if (this.config.mcpEnabled) {
+                if (this.config.mcpToken) {
+                    this.log.info(
+                        `aura: MCP endpoint available at /mcp on port ${port} — BETA, an AI assistant can ` +
+                            `change your dashboard through it; every write is backed up to ${this.namespace}.backups`,
+                    );
+                } else {
+                    // Enabled but unusable is worse than disabled, because nothing
+                    // else in this server would refuse the request.
+                    this.log.warn(
+                        'aura: MCP is enabled but no token is set — every request is rejected. ' +
+                            'Set the token in the adapter configuration.',
+                    );
+                }
+            }
+        });
         this._httpServer = server;
     }
 
     // Build the common.states map for the navigate selector from the persisted
-    // dashboard config. Key = "<viewSlug>/<tabSlug>", value = "View / Tab".
+    // dashboard config. Hierarchy: layout → section ("Bereich") → tab.
+    //   multi-section layout → key "<layoutSlug>/<sectionSlug>/<tabSlug>"
+    //   single-section layout → key "<layoutSlug>/<tabSlug>" (shorter form)
     // Disabled tabs are skipped (they are hidden in the frontend anyway).
     _buildNavigateStates(dashboardRaw) {
         const states = {};
@@ -1253,14 +1349,25 @@ class Aura extends utils.Adapter {
             const layouts = parsed && parsed.state && parsed.state.layouts;
             if (!Array.isArray(layouts)) return states;
             for (const layout of layouts) {
-                const viewSlug = layout && layout.slug;
-                if (!viewSlug || !Array.isArray(layout.tabs)) continue;
-                const viewName = layout.name || viewSlug;
-                for (const tab of layout.tabs) {
-                    if (!tab || tab.disabled) continue;
-                    const tabSlug = tab.slug || tab.id;
-                    if (!tabSlug) continue;
-                    states[`${viewSlug}/${tabSlug}`] = `${viewName} / ${tab.name || tabSlug}`;
+                const layoutSlug = layout && layout.slug;
+                if (!layoutSlug || !Array.isArray(layout.sections)) continue;
+                const layoutName = layout.name || layoutSlug;
+                const multi = layout.sections.length > 1;
+                for (const section of layout.sections) {
+                    if (!section || !Array.isArray(section.tabs)) continue;
+                    const sectionSlug = section.slug || section.id;
+                    const sectionName = section.name || sectionSlug;
+                    for (const tab of section.tabs) {
+                        if (!tab || tab.disabled) continue;
+                        const tabSlug = tab.slug || tab.id;
+                        if (!tabSlug) continue;
+                        if (multi) {
+                            states[`${layoutSlug}/${sectionSlug}/${tabSlug}`] =
+                                `${layoutName} / ${sectionName} / ${tab.name || tabSlug}`;
+                        } else {
+                            states[`${layoutSlug}/${tabSlug}`] = `${layoutName} / ${tab.name || tabSlug}`;
+                        }
+                    }
                 }
             }
         } catch {
@@ -1288,48 +1395,765 @@ class Aura extends utils.Adapter {
         await this.setObjectAsync(objId, obj);
     }
 
+    /**
+     * IDs of all known clients, enumerated over the `clients.<id>` channels.
+     * Anchored on the channel — every client has one, whichever relay created it.
+     * The backfills used to enumerate over `.navigate.url` and therefore skipped
+     * exactly the clients that were missing it (#532).
+     */
+    async _listClientIds() {
+        const view = await this.getObjectViewAsync('system', 'channel', {
+            startkey: `${this.namespace}.clients.`,
+            endkey: `${this.namespace}.clients.￿`,
+        });
+        const ids = [];
+        for (const row of (view && view.rows) || []) {
+            // aura.0.clients.<id> — exactly four segments, so the info / navigate /
+            // popup sub-channels of a client are skipped.
+            const parts = row.id.split('.');
+            if (parts.length === 4) ids.push(parts[3]);
+        }
+        return ids;
+    }
+
+    /**
+     * Create the per-client object tree. Idempotent, and called from the register relay,
+     * the resolution relay (every connect) and the startup backfill alike, so a client
+     * always ends up with the full tree even if one of those paths never ran.
+     * Returns true when the tree was incomplete, so callers can skip follow-up work.
+     */
+    async _ensureClientTree(cId, displayName) {
+        const base = `clients.${cId}`;
+        // navigate.url is the sentinel: it is created together with the rest of the tree
+        // and never on its own. Datapoints added later need their own backfill.
+        if (await this.getObjectAsync(`${base}.navigate.url`)) return false;
+        const name = displayName || cId.slice(0, 8);
+
+        await this.setObjectNotExistsAsync(base, { type: 'channel', common: { name }, native: {} });
+        await this.setObjectNotExistsAsync(`${base}.info`, {
+            type: 'channel',
+            common: { name: 'Info' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.info.name`, {
+            type: 'state',
+            common: { name: 'Client Name', type: 'string', role: 'text', read: true, write: true, def: name },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.info.lastSeen`, {
+            type: 'state',
+            common: { name: 'Last Seen', type: 'number', role: 'date', read: true, write: true, def: 0 },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.info.resolutionWidth`, {
+            type: 'state',
+            common: {
+                name: 'Screen resolution width',
+                type: 'number',
+                role: 'value',
+                unit: 'px',
+                read: true,
+                write: true,
+                def: 0,
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.info.resolutionHeight`, {
+            type: 'state',
+            common: {
+                name: 'Screen resolution height',
+                type: 'number',
+                role: 'value',
+                unit: 'px',
+                read: true,
+                write: true,
+                def: 0,
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.info.userAgent`, {
+            type: 'state',
+            common: { name: 'User agent', type: 'string', role: 'text', read: true, write: true, def: '' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.navigate`, {
+            type: 'channel',
+            common: { name: 'Navigation' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.navigate.url`, {
+            type: 'state',
+            common: { name: 'Navigate', type: 'string', role: 'url', read: true, write: true, def: '' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.navigate.target`, {
+            type: 'state',
+            common: {
+                name: 'Navigate to view/tab (select)',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: true,
+                def: '',
+                states: {},
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.popup`, {
+            type: 'channel',
+            common: { name: 'Popups' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.popup.open`, {
+            type: 'state',
+            common: {
+                name: 'Open a popup view (name, id or JSON {view,dp,title})',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: true,
+                def: '',
+            },
+            native: {},
+        });
+        await this._ensureClientMessageDps(cId);
+        this.log.info(`[clients] completed object tree for ${cId}`);
+        return true;
+    }
+
+    /**
+     * Re-derive everything that depends on the dashboard config: the navigate
+     * selector dropdowns, the per-client object trees, and the per-layout message
+     * datapoints. Called on startup, after a client registers, and whenever
+     * config.dashboard changes.
+     */
     async _syncNavigateTargets() {
         try {
             const st = await this.getStateAsync('config.dashboard');
             const raw = st && st.val ? String(st.val) : '';
             const states = this._buildNavigateStates(raw);
             await this._setTargetStates('navigate.target', states);
-            // Enumerate clients via their navigate.url DP (exists for every
-            // client) so we can also create the navigate.target selector for
-            // clients that registered before this DP existed.
-            const view = await this.getObjectViewAsync('system', 'state', {
-                startkey: `${this.namespace}.clients.`,
-                endkey: `${this.namespace}.clients.￿`,
-            });
-            for (const row of (view && view.rows) || []) {
-                if (!row.id.endsWith('.navigate.url')) continue;
-                const rel = row.id.slice(this.namespace.length + 1).replace(/\.navigate\.url$/, '.navigate.target');
+            for (const cId of await this._listClientIds()) {
                 try {
-                    await this.setObjectNotExistsAsync(rel, {
-                        type: 'state',
-                        common: {
-                            name: 'Navigate to view/tab (select)',
-                            type: 'string',
-                            role: 'text',
-                            read: true,
-                            write: true,
-                            def: '',
-                            states: {},
-                        },
-                        native: {},
-                    });
-                    await this._setTargetStates(rel, states);
+                    // Doubles as the backfill for clients whose tree is incomplete.
+                    await this._ensureClientTree(cId);
+                    // Unconditional: _ensureClientTree short-circuits on an existing
+                    // navigate.url, so a client from before the messages channel
+                    // existed would never be reached from there (#429).
+                    await this._ensureClientMessageDps(cId);
+                    await this._setTargetStates(`clients.${cId}.navigate.target`, states);
                 } catch {
                     /* ignore a client object that vanished mid-sync */
                 }
             }
+            await this._syncLayoutMessageDps(raw);
         } catch (e) {
             this.log.warn(`[navigate] sync targets failed: ${e.message}`);
         }
     }
 
+    // ── Messages (issue #429) ─────────────────────────────────────────────────
+
+    /** Archive mechanics — instance settings, edited in the ioBroker instance config. */
+    _messageConfig() {
+        const size = Number(this.config?.messageHistorySize);
+        const days = Number(this.config?.messageRetentionDays);
+        return {
+            historySize:
+                Number.isFinite(size) && size > 0
+                    ? Math.min(size, MESSAGE_HISTORY_SIZE_MAX)
+                    : MESSAGE_HISTORY_SIZE_DEFAULT,
+            retentionDays: Number.isFinite(days) && days >= 0 ? days : MESSAGE_RETENTION_DAYS_DEFAULT,
+        };
+    }
+
+    /**
+     * Presentation defaults for messages that do not spell every field out.
+     *
+     * Lives in the `config.messageDefaults` datapoint rather than in the instance
+     * config: Aura's own admin (Admin → Meldungen) edits it, and both sides read
+     * the same value — the adapter for normalization, the frontend for the one
+     * field that is purely a rendering concern (maxVisible). Cached because
+     * _normalizeMessage runs per message; refreshed by the state subscription.
+     */
+    _messageDefaults() {
+        const d = this._messageDefaultsCache || {};
+        const num = (v, min, max, fallback) => {
+            const n = Number(v);
+            return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
+        };
+        const durations = d.durations && typeof d.durations === 'object' ? d.durations : {};
+        return {
+            position: MESSAGE_POSITIONS.includes(d.position) ? d.position : MESSAGE_DEFAULT_POSITION,
+            durations: {
+                info: num(durations.info, 0, 86400, MESSAGE_DEFAULT_DURATION.info),
+                success: num(durations.success, 0, 86400, MESSAGE_DEFAULT_DURATION.success),
+                warning: num(durations.warning, 0, 86400, MESSAGE_DEFAULT_DURATION.warning),
+                error: num(durations.error, 0, 86400, MESSAGE_DEFAULT_DURATION.error),
+            },
+            width: num(d.width, 0, 4000, 0),
+            transparency: num(d.transparency, 0, 95, 0),
+            appearance: MESSAGE_APPEARANCES.includes(d.appearance) ? d.appearance : 'bar',
+            align: MESSAGE_ALIGNS.includes(d.align) ? d.align : 'left',
+            showTime: d.showTime === true,
+            timeFormat: MESSAGE_TIME_FORMATS.includes(d.timeFormat) ? d.timeFormat : MESSAGE_DEFAULT_TIME_FORMAT,
+            errorsRequireAck: d.errorsRequireAck === true,
+        };
+    }
+
+    /** Re-read config.messageDefaults into the cache. Tolerates a missing/broken DP. */
+    async _loadMessageDefaults(raw) {
+        try {
+            let text = raw;
+            if (text === undefined) {
+                const st = await this.getStateAsync('config.messageDefaults');
+                text = st && st.val ? String(st.val) : '';
+            }
+            const parsed = text ? JSON.parse(String(text)) : {};
+            this._messageDefaultsCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (e) {
+            this.log.warn(`[messages] config.messageDefaults unreadable, using built-in defaults: ${e.message}`);
+            this._messageDefaultsCache = {};
+        }
+    }
+
+    /**
+     * Parse and normalize one payload written to a `messages.send` datapoint.
+     * Returns null when the payload is unusable (the caller still clears the DP).
+     *
+     * A value that does not start with `{` is taken as the message body, so the
+     * simplest case stays a one-liner in Blockly.
+     *
+     * `origin` supplies the implicit target and is one of
+     *   { kind: 'global' } · { kind: 'client', clientId } · { kind: 'layout', slug }
+     * An explicit `target` inside the JSON always wins over the implicit one.
+     */
+    _normalizeMessage(raw, origin = { kind: 'global' }) {
+        const text = typeof raw === 'string' ? raw.trim() : '';
+        if (!text) return null;
+
+        let src;
+        if (text.startsWith('{')) {
+            try {
+                src = JSON.parse(text);
+            } catch (e) {
+                this.log.warn(`[messages] ignoring invalid JSON payload: ${e.message}`);
+                return null;
+            }
+            if (!src || typeof src !== 'object' || Array.isArray(src)) {
+                this.log.warn('[messages] ignoring payload: expected a JSON object');
+                return null;
+            }
+        } else {
+            src = { text };
+        }
+
+        const str = (v, max = MESSAGE_STR_MAX) => {
+            if (typeof v !== 'string') return undefined;
+            const s = v.trim();
+            return s ? s.slice(0, max) : undefined;
+        };
+        const clamp = (v, min, max) => {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return undefined;
+            return Math.max(min, Math.min(max, n));
+        };
+
+        const defaults = this._messageDefaults();
+        const severity = MESSAGE_SEVERITIES.includes(src.severity) ? src.severity : 'info';
+        // "Errors always need confirming" is an admin-wide switch; a payload can opt in
+        // per message but not opt out of it.
+        const requireAck = src.requireAck === true || (defaults.errorsRequireAck && severity === 'error');
+
+        // Auto-close is tri-state: an explicit number wins (0 = stays open), otherwise
+        // the severity default. A message that demands a confirmation never expires.
+        const explicitDuration = clamp(src.durationSec, 0, 86400);
+        const durationSec = requireAck ? 0 : (explicitDuration ?? defaults.durations[severity]);
+
+        const actions = Array.isArray(src.actions)
+            ? src.actions
+                  .slice(0, MESSAGE_ACTIONS_MAX)
+                  .map((a) => {
+                      const label = str(a && a.label, 80);
+                      const dp = str(a && a.dp, 256);
+                      if (!label || !dp) return null;
+                      return {
+                          label,
+                          dp,
+                          // Kept as a string; the frontend parses it to bool/number/string
+                          // exactly like every other "value to write" field in Aura.
+                          value: a.value === undefined || a.value === null ? '' : String(a.value).slice(0, 256),
+                          close: a.close !== false,
+                      };
+                  })
+                  .filter(Boolean)
+            : undefined;
+
+        // Implicit target from the datapoint that was written; explicit wins.
+        const target = {};
+        if (origin.kind === 'client' && origin.clientId) target.clients = [String(origin.clientId)];
+        if (origin.kind === 'layout' && origin.slug) target.layout = String(origin.slug);
+        const rawTarget = src.target && typeof src.target === 'object' && !Array.isArray(src.target) ? src.target : {};
+        if (Array.isArray(rawTarget.clients)) {
+            const clients = rawTarget.clients
+                .map((c) => str(c, 128))
+                .filter(Boolean)
+                .slice(0, MESSAGE_TARGET_CLIENTS_MAX);
+            if (clients.length) target.clients = clients;
+        }
+        if (str(rawTarget.layout, 128)) target.layout = str(rawTarget.layout, 128);
+        if (str(rawTarget.tab, 128)) target.tab = str(rawTarget.tab, 128);
+
+        this._messageSeq = ((this._messageSeq || 0) + 1) % 1e6;
+        const ts = Date.now();
+
+        const msg = {
+            id: str(src.id, MESSAGE_ID_MAX) || `m${ts.toString(36)}-${this._messageSeq.toString(36)}`,
+            ts,
+            severity,
+            read: false,
+            durationSec,
+            requireAck,
+            position: MESSAGE_POSITIONS.includes(src.position) ? src.position : defaults.position,
+            priority: clamp(src.priority, 0, 100) ?? 0,
+            persist: src.persist !== false,
+        };
+
+        const title = str(src.title, MESSAGE_TITLE_MAX);
+        if (title) msg.title = title;
+        const body = str(src.text);
+        if (body) msg.text = body;
+        const html = str(src.html);
+        if (html) msg.html = html;
+        const image = str(src.image, 2000);
+        if (image) msg.image = image;
+        const icon = str(src.icon, 128);
+        if (icon) msg.icon = icon;
+        const view = str(src.view, 128);
+        if (view) msg.view = view;
+        const dp = str(src.dp, 256);
+        if (dp) msg.dp = dp;
+
+        // Size and transparency fall back to the admin defaults; 0 there means
+        // "let the toast decide", so the field simply stays absent.
+        const width = clamp(src.width, 0, 4000) ?? defaults.width;
+        if (width) msg.width = width;
+        const height = clamp(src.height, 0, 4000);
+        if (height) msg.height = height;
+        const transparency = clamp(src.transparency, 0, 95) ?? defaults.transparency;
+        if (transparency) msg.transparency = transparency;
+
+        // Appearance. Defaults apply per field, so a message can take the admin's
+        // look and still override just the colour.
+        msg.appearance = MESSAGE_APPEARANCES.includes(src.appearance) ? src.appearance : defaults.appearance;
+        msg.align = MESSAGE_ALIGNS.includes(src.align) ? src.align : defaults.align;
+        const color = str(src.color, MESSAGE_COLOR_MAX);
+        if (color) msg.color = color;
+        const background = str(src.background, MESSAGE_COLOR_MAX);
+        if (background) msg.background = background;
+        const textColor = str(src.textColor, MESSAGE_COLOR_MAX);
+        if (textColor) msg.textColor = textColor;
+
+        // Timestamp on the card. Tri-state like every other presentation field: an
+        // explicit boolean wins, otherwise the admin default decides. The format is
+        // only carried when the line is actually shown, so a payload that switches
+        // it off stays as small as before.
+        const showTime = typeof src.showTime === 'boolean' ? src.showTime : defaults.showTime;
+        if (showTime) {
+            msg.showTime = true;
+            msg.timeFormat = MESSAGE_TIME_FORMATS.includes(src.timeFormat) ? src.timeFormat : defaults.timeFormat;
+        }
+
+        const ackDp = str(src.ackDp, 256);
+        if (ackDp) {
+            msg.ackDp = ackDp;
+            msg.ackValue =
+                src.ackValue === undefined || src.ackValue === null ? 'true' : String(src.ackValue).slice(0, 256);
+        }
+        if (actions && actions.length) msg.actions = actions;
+        if (Object.keys(target).length) msg.target = target;
+
+        // A message with no visible body at all would render as an empty box.
+        if (!msg.title && !msg.text && !msg.html && !msg.image && !msg.view) {
+            this.log.warn('[messages] ignoring payload without title, text, html, image or view');
+            return null;
+        }
+        return msg;
+    }
+
+    /** Current archive, newest first. Never throws — a corrupt DP starts over. */
+    async _readMessageHistory() {
+        try {
+            const st = await this.getStateAsync('messages.history');
+            if (!st || !st.val) return [];
+            const parsed = JSON.parse(String(st.val));
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            this.log.warn(`[messages] history unreadable, starting a fresh one: ${e.message}`);
+            return [];
+        }
+    }
+
+    /** Apply retention + ring size, then publish history and the unread counter. */
+    async _writeMessageHistory(list) {
+        const { historySize, retentionDays } = this._messageConfig();
+        let out = Array.isArray(list) ? list.filter((m) => m && typeof m === 'object') : [];
+        if (retentionDays > 0) {
+            const cutoff = Date.now() - retentionDays * 86400_000;
+            out = out.filter((m) => Number(m.ts) >= cutoff);
+        }
+        out.sort((a, b) => Number(b.ts) - Number(a.ts));
+        out = out.slice(0, historySize);
+        await this.setStateAsync('messages.history', { val: JSON.stringify(out), ack: true });
+        await this.setStateAsync('messages.unreadCount', { val: out.filter((m) => m.read !== true).length, ack: true });
+        return out;
+    }
+
+    /**
+     * Tell every connected client to close an open toast. Rides on lastMessage —
+     * a close marker carries `dismissed`, which a real message never does, so the
+     * frontend can tell them apart without a second datapoint.
+     */
+    async _broadcastMessageClose(id, read) {
+        await this.setStateAsync('messages.lastMessage', {
+            val: JSON.stringify({ id, ts: Date.now(), dismissed: true, read: read === true }),
+            ack: true,
+        });
+    }
+
+    /**
+     * Normalize → archive → publish. The one path every entry point shares: the
+     * `messages.send` datapoints and the `notify` sendTo command alike.
+     * Returns the delivered message, or null when the payload was unusable.
+     */
+    async _deliverMessage(raw, origin) {
+        const msg = this._normalizeMessage(raw, origin);
+        if (!msg) return null;
+        if (msg.persist) {
+            const history = await this._readMessageHistory();
+            // Same id replaces its predecessor instead of stacking, so a
+            // repeating notice ("washer done") stays a single entry.
+            await this._writeMessageHistory([msg, ...history.filter((m) => m.id !== msg.id)]);
+        }
+        await this.setStateAsync('messages.lastMessage', { val: JSON.stringify(msg), ack: true });
+        this.log.debug(`[messages] ${msg.severity}: ${msg.title || msg.text || msg.id}`);
+        return msg;
+    }
+
+    /** A `messages.send` write: deliver, then clear the datapoint again. */
+    async _handleMessageSend(raw, origin, sendDpId) {
+        try {
+            await this._deliverMessage(raw, origin);
+        } catch (e) {
+            this.log.error(`[messages] send failed: ${e.message}`);
+        } finally {
+            // Always clear, even on a rejected payload — otherwise the same broken
+            // value sits in the DP and re-fires on every adapter restart.
+            await this.setStateAsync(sendDpId, { val: '', ack: true });
+        }
+    }
+
+    /** `messages.ack` / `messages.dismiss`. Id or `*` for all. */
+    async _handleMessageMark(rawId, mode) {
+        const id = String(rawId ?? '').trim();
+        const cmdDp = mode === 'ack' ? 'messages.ack' : 'messages.dismiss';
+        if (!id) {
+            await this.setStateAsync(cmdDp, { val: '', ack: true });
+            return;
+        }
+        try {
+            const history = await this._readMessageHistory();
+            const hit = id === '*' ? history : history.filter((m) => m.id === id);
+            if (hit.length) {
+                const now = Date.now();
+                await this._writeMessageHistory(
+                    history.map((m) =>
+                        id === '*' || m.id === id
+                            ? { ...m, dismissed: true, ...(mode === 'ack' ? { read: true, ackedAt: now } : {}) }
+                            : m,
+                    ),
+                );
+            }
+            await this._broadcastMessageClose(id, mode === 'ack');
+        } catch (e) {
+            this.log.error(`[messages] ${mode} failed: ${e.message}`);
+        } finally {
+            await this.setStateAsync(cmdDp, { val: '', ack: true });
+        }
+    }
+
+    /** `messages.clear` button: wipe the archive. */
+    async _handleMessageClear() {
+        try {
+            await this._writeMessageHistory([]);
+            await this._broadcastMessageClose('*', false);
+            this.log.info('[messages] history cleared');
+        } catch (e) {
+            this.log.error(`[messages] clear failed: ${e.message}`);
+        } finally {
+            await this.setStateAsync('messages.clear', { val: false, ack: true });
+        }
+    }
+
+    /** The `messages.*` channel and its config datapoint. Called once from onReady. */
+    async _ensureMessageTree() {
+        await this.setObjectNotExistsAsync('config.messageDefaults', {
+            type: 'state',
+            common: {
+                name: 'Message presentation defaults (JSON, edited in Admin → Meldungen)',
+                type: 'string',
+                role: 'json',
+                read: true,
+                write: true,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages', {
+            type: 'channel',
+            common: { name: 'Messages (info / warning / error)' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.send', {
+            type: 'state',
+            common: {
+                name: 'Send a message (JSON payload or plain text)',
+                type: 'string',
+                role: 'json',
+                read: true,
+                write: true,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.history', {
+            type: 'state',
+            common: {
+                name: 'Message archive (JSON array, newest first)',
+                type: 'string',
+                role: 'json',
+                read: true,
+                write: false,
+                def: '[]',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.lastMessage', {
+            type: 'state',
+            common: {
+                name: 'Most recent message (JSON)',
+                type: 'string',
+                role: 'json',
+                read: true,
+                write: false,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.unreadCount', {
+            type: 'state',
+            common: {
+                name: 'Unconfirmed messages',
+                type: 'number',
+                role: 'value',
+                read: true,
+                write: false,
+                def: 0,
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.ack', {
+            type: 'state',
+            common: {
+                name: 'Confirm a message (write its id, or * for all)',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: true,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.dismiss', {
+            type: 'state',
+            common: {
+                name: 'Close a message on all clients (write its id, or * for all)',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: true,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('messages.clear', {
+            type: 'state',
+            common: {
+                name: 'Clear the message archive',
+                type: 'boolean',
+                role: 'button',
+                read: false,
+                write: true,
+                def: false,
+            },
+            native: {},
+        });
+    }
+
+    /**
+     * The per-client send datapoint. Split out of _ensureClientTree because that
+     * function short-circuits on its navigate.url sentinel — every datapoint added
+     * after the tree was invented needs its own backfill, or existing installations
+     * would never get it (#532).
+     */
+    async _ensureClientMessageDps(cId) {
+        const base = `clients.${cId}`;
+        await this.setObjectNotExistsAsync(`${base}.messages`, {
+            type: 'channel',
+            common: { name: 'Messages' },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync(`${base}.messages.send`, {
+            type: 'state',
+            common: {
+                name: 'Send a message to this client only (JSON payload or plain text)',
+                type: 'string',
+                role: 'json',
+                read: true,
+                write: true,
+                def: '',
+            },
+            native: {},
+        });
+    }
+
+    /**
+     * Layouts from the dashboard config, keyed by the sanitized id segment used
+     * for their datapoints. The original slug is kept alongside: sanitizing is
+     * lossy, and a message written to `layouts.<segment>.messages.send` must carry
+     * the slug the frontend actually knows.
+     */
+    _buildLayoutSlugs(dashboardRaw) {
+        const out = new Map(); // id segment → { slug, name }
+        try {
+            const parsed = JSON.parse(dashboardRaw);
+            const layouts = parsed && parsed.state && parsed.state.layouts;
+            if (!Array.isArray(layouts)) return out;
+            for (const layout of layouts) {
+                const slug = layout && layout.slug;
+                if (!slug) continue;
+                const seg = sanitizeIdSegment(slug);
+                if (seg && !out.has(seg)) out.set(seg, { slug: String(slug), name: layout.name || String(slug) });
+            }
+        } catch {
+            /* malformed config → no layout datapoints */
+        }
+        return out;
+    }
+
+    /**
+     * One `layouts.<slug>.messages.send` per layout, so a script can address a
+     * single dashboard without spelling out a target filter. Renamed and deleted
+     * layouts have their channel removed again — otherwise every rename would
+     * leave a dead datapoint behind.
+     */
+    async _syncLayoutMessageDps(dashboardRaw) {
+        const wanted = this._buildLayoutSlugs(dashboardRaw);
+        // Cached for _handleMessageSend: it needs the real slug behind an id segment.
+        this._layoutSlugs = wanted;
+        if (wanted.size) {
+            await this.setObjectNotExistsAsync('layouts', {
+                type: 'channel',
+                common: { name: 'Per-layout message inputs' },
+                native: {},
+            });
+        }
+        for (const [seg, { slug, name }] of wanted) {
+            await this.setObjectNotExistsAsync(`layouts.${seg}`, {
+                type: 'channel',
+                common: { name },
+                native: { slug },
+            });
+            await this.setObjectNotExistsAsync(`layouts.${seg}.messages`, {
+                type: 'channel',
+                common: { name: 'Messages' },
+                native: {},
+            });
+            await this.setObjectNotExistsAsync(`layouts.${seg}.messages.send`, {
+                type: 'state',
+                common: {
+                    name: `Send a message to layout "${name}" (JSON payload or plain text)`,
+                    type: 'string',
+                    role: 'json',
+                    read: true,
+                    write: true,
+                    def: '',
+                },
+                native: {},
+            });
+        }
+
+        // Drop orphans. Enumerated over the channel view so a partially created
+        // layout branch is cleaned up too.
+        try {
+            const view = await this.getObjectViewAsync('system', 'channel', {
+                startkey: `${this.namespace}.layouts.`,
+                endkey: `${this.namespace}.layouts.￿`,
+            });
+            const prefix = `${this.namespace}.layouts.`;
+            for (const row of (view && view.rows) || []) {
+                const rest = String(row.id).slice(prefix.length);
+                // Only the layout level itself — the `messages` sub-channel goes
+                // away with its parent.
+                if (!rest || rest.includes('.')) continue;
+                if (wanted.has(rest)) continue;
+                this.log.info(`[messages] removing datapoints of deleted layout "${rest}"`);
+                for (const objId of [`layouts.${rest}.messages.send`, `layouts.${rest}.messages`, `layouts.${rest}`]) {
+                    try {
+                        await this.delObjectAsync(objId);
+                    } catch {
+                        /* already gone */
+                    }
+                }
+            }
+        } catch (e) {
+            this.log.warn(`[messages] layout datapoint cleanup failed: ${e.message}`);
+        }
+    }
+
+    /**
+     * One-time migration for the MCP token.
+     *
+     * `mcpToken` is listed in io-package's `encryptedNative` since 0.52.3, so
+     * js-controller decrypts whatever sits in the instance object — a token
+     * written before that move comes back as noise. A generated token is 32
+     * hex characters, which is a clear enough fingerprint to recognise the
+     * old plaintext and store it encrypted instead. A hand-typed token that
+     * does not match has to be entered once more; nothing else can tell it
+     * apart from garbage.
+     */
+    async migratePlainMcpToken() {
+        try {
+            const obj = await this.getForeignObjectAsync(`system.adapter.${this.namespace}`);
+            const raw = obj && obj.native ? obj.native.mcpToken : null;
+            if (typeof raw !== 'string' || !/^[0-9a-f]{32}$/.test(raw)) {
+                return;
+            }
+            // This run already holds the decrypted noise in config — put the
+            // real token back before anything reads it.
+            this.config.mcpToken = raw;
+            obj.native.mcpToken = this.encrypt(raw);
+            await this.setForeignObjectAsync(obj._id, obj);
+            this.log.info('aura: MCP token was stored in clear text and has been encrypted in place');
+        } catch (e) {
+            this.log.debug(`aura: MCP token migration skipped — ${e.message}`);
+        }
+    }
+
     async onReady() {
         this.log.info('aura adapter started');
+
+        await this.migratePlainMcpToken();
 
         await this.setObjectNotExistsAsync('config', {
             type: 'channel',
@@ -1375,6 +2199,12 @@ class Aura extends utils.Adapter {
             common: { name: 'Zeitschaltuhren (timer widgets)' },
             native: {},
         });
+        await this.setObjectNotExistsAsync('panels', {
+            type: 'channel',
+            common: { name: 'Panels widget slide selectors' },
+            native: {},
+        });
+        await this._ensureMessageTree();
 
         await this.setObjectNotExistsAsync('config.dashboard', {
             type: 'state',
@@ -1388,6 +2218,73 @@ class Aura extends utils.Adapter {
             },
             native: {},
         });
+
+        // ── Active navigation mirror (read-only) ─────────────────────────────
+        // Reflects the layout / section (Bereich) / tab the frontend currently
+        // displays. Written by the frontend on every navigation. This is
+        // per-instance, not per-client: with several tablets open, the last one
+        // to navigate wins. For per-device state use the clients.* channel.
+        await this.setObjectNotExistsAsync('info.activeLayout', {
+            type: 'state',
+            common: {
+                name: 'Currently displayed layout',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: false,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('info.activeSection', {
+            type: 'state',
+            common: {
+                name: 'Currently displayed section (Bereich)',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: false,
+                def: '',
+            },
+            native: {},
+        });
+        await this.setObjectNotExistsAsync('info.activeTab', {
+            type: 'state',
+            common: {
+                name: 'Currently displayed tab',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: false,
+                def: '',
+            },
+            native: {},
+        });
+
+        // ── Installed adapter version ────────────────────────────────────────
+        // Read-only mirror of package.json/io-package common.version so the
+        // running version can be bound anywhere in the frontend (or read by
+        // scripts) without a sendTo round-trip. Written on every start, so an
+        // upgrade updates it as soon as the new instance comes up.
+        await this.setObjectNotExistsAsync('info.version', {
+            type: 'state',
+            common: {
+                name: 'Installed adapter version',
+                type: 'string',
+                role: 'text',
+                read: true,
+                write: false,
+                def: '',
+            },
+            native: {},
+        });
+        let installedVersion = '';
+        try {
+            installedVersion = require('./package.json').version || '';
+        } catch {
+            /* ignore — leave empty */
+        }
+        await this.setStateAsync('info.version', { val: installedVersion, ack: true });
 
         // ── Theme mode DPs ───────────────────────────────────────────────────
         // Independent control: frontend (tablets/users) and admin (editor) each
@@ -1534,6 +2431,7 @@ class Aura extends utils.Adapter {
             { id: 'config.global-settings', name: 'Global settings' },
             { id: 'config.group-defs', name: 'Group widget definitions' },
             { id: 'config.popup-config', name: 'Popup configuration' },
+            { id: 'config.widget-presets', name: 'Widget designer presets' },
         ];
         for (const s of configStates) {
             await this.setObjectNotExistsAsync(s.id, {
@@ -1699,7 +2597,22 @@ class Aura extends utils.Adapter {
         this.subscribeStates('navigate.target');
         this.subscribeStates('clients.*.navigate.target');
         this.subscribeStates('config.dashboard');
+        // Also completes the object tree of every known client (navigate.*, popup.*,
+        // messages.*) and syncs the per-layout message datapoints.
         await this._syncNavigateTargets();
+
+        // ── Messages (issue #429) ─────────────────────────────────────────────
+        this.subscribeStates('messages.send');
+        this.subscribeStates('messages.ack');
+        this.subscribeStates('messages.dismiss');
+        this.subscribeStates('messages.clear');
+        this.subscribeStates('clients.*.messages.send');
+        this.subscribeStates('layouts.*.messages.send');
+        this.subscribeStates('config.messageDefaults');
+        await this._loadMessageDefaults();
+        // Re-publish the counter so a restart cannot leave a stale value behind
+        // (retention may have expired entries while the adapter was down).
+        await this._writeMessageHistory(await this._readMessageHistory());
 
         // ── Timer widget scheduler ─────────────────────────────────────────────
         // Subscribe to per-widget config/enabled DPs and run a tick to evaluate
@@ -1808,6 +2721,11 @@ class Aura extends utils.Adapter {
             socketToFirstState: 'WebSocket connect → first state',
             tabSwitch: 'Tab switch (activation → rendered)',
             longTaskMax: 'Longest long-task in session',
+            ttfb: 'Time to first byte (RTT + server)',
+            transfer: 'Document download (response transfer)',
+            dns: 'DNS lookup',
+            tcp: 'Connection setup (TCP/TLS)',
+            backendPing: 'Backend round-trip time (RTT)',
         };
         this._perfMetricKeys = Object.keys(PERF_METRICS);
         try {
@@ -1876,6 +2794,19 @@ class Aura extends utils.Adapter {
                         changed = true;
                         this.log.info(`localLinks updated to port ${port}${base ? ` (custom URL: ${base})` : ''}`);
                     }
+                    // The generated client block shows the token in full so it can be
+                    // copied; once it has been stored there is no reason for it to
+                    // stay readable on every later visit to the config page.
+                    const maskedMcp = maskClientConfig(obj.native?.mcpClientConfig);
+                    if (maskedMcp) {
+                        obj.native.mcpClientConfig = maskedMcp;
+                        changed = true;
+                        this.log.info(
+                            'aura: MCP client configuration stored — token replaced by a placeholder. ' +
+                                'Generate a new token to see a complete block again.',
+                        );
+                    }
+
                     // Migration: clear legacy webInstance so iobroker.web stops tracking aura
                     if (obj.native?.webInstance !== undefined) {
                         delete obj.native.webInstance;
@@ -2178,6 +3109,62 @@ class Aura extends utils.Adapter {
                 return;
             }
 
+            // ── MCP token generator (config dialog button) ────────────────────
+            // 32 hex chars from the CSPRNG. The admin config writes the returned
+            // `native` back into the form, so the user never has to invent one —
+            // and a self-chosen token is exactly where weak secrets come from.
+            if (msg.command === 'generateMcpToken') {
+                const token = require('node:crypto').randomBytes(16).toString('hex');
+                // The adapter cannot know which address the client will use to reach
+                // it, so a configured customUrl wins and otherwise a placeholder is
+                // left in — better an obvious gap than a confidently wrong host.
+                const snippet = await resolveClientConfig(
+                    {
+                        customUrl: this.config.customUrl,
+                        port: this.config.port,
+                        https: this._httpsActive,
+                    },
+                    token,
+                );
+                reply({
+                    native: { mcpToken: token, mcpClientConfig: snippet },
+                    result: 'MCP token generated',
+                });
+                return;
+            }
+
+            // ── Messages (issue #429) ─────────────────────────────────────────
+            // sendTo('aura.0', 'notify', {...}, cb) — the scripting counterpart to
+            // writing messages.send. Takes an object or a plain string, and replies
+            // with the assigned id so the caller can confirm or close it later.
+            if (msg.command === 'notify' || msg.command === 'message') {
+                const payload = msg.message;
+                if (payload === undefined || payload === null || payload === '') {
+                    reply({ ok: false, error: 'empty payload' });
+                    return;
+                }
+                const raw = typeof payload === 'string' ? payload : JSON.stringify(payload);
+                const delivered = await this._deliverMessage(raw, { kind: 'global' });
+                if (!delivered) {
+                    reply({ ok: false, error: 'payload needs at least a title, text, html, image or view' });
+                    return;
+                }
+                reply({ ok: true, id: delivered.id, ts: delivered.ts });
+                return;
+            }
+
+            // Confirm or close from a script, mirroring messages.ack / .dismiss.
+            if (msg.command === 'notifyAck' || msg.command === 'notifyDismiss') {
+                const id = String(msg.message?.id ?? msg.message ?? '').trim();
+                if (!id) {
+                    reply({ ok: false, error: 'missing message id' });
+                    return;
+                }
+                await this._handleMessageMark(id, msg.command === 'notifyAck' ? 'ack' : 'dismiss');
+                reply({ ok: true, id });
+                return;
+            }
+
             if (msg.command === 'restartAdapter') {
                 const id = String(msg.message?.id || '').trim();
                 if (!id || !/^[a-z0-9_-]+\.\d+$/i.test(id)) {
@@ -2200,8 +3187,8 @@ class Aura extends utils.Adapter {
                 return;
             }
 
-            if (msg.command === 'listTimers' || msg.command === 'listLists') {
-                const ns = msg.command === 'listTimers' ? 'timers' : 'lists';
+            if (msg.command === 'listTimers' || msg.command === 'listLists' || msg.command === 'listPanels') {
+                const ns = msg.command === 'listTimers' ? 'timers' : msg.command === 'listLists' ? 'lists' : 'panels';
                 try {
                     const channels = await this.getChannelsOfAsync(ns);
                     const prefix = `${this.namespace}.${ns}.`;
@@ -2257,6 +3244,31 @@ class Aura extends utils.Adapter {
                     results.channel = e?.message || String(e);
                 }
                 this.log.info(`[lists] deleteList ${this.namespace}.${base} → ${JSON.stringify(results)}`);
+                reply({ ok: true, results });
+                return;
+            }
+
+            if (msg.command === 'deletePanel') {
+                const widgetId = String(msg.message?.widgetId || '').trim();
+                if (!/^[a-zA-Z0-9_-]+$/.test(widgetId)) {
+                    reply({ ok: false, error: `Invalid widgetId: ${widgetId}` });
+                    return;
+                }
+                const base = `panels.${widgetId}`;
+                const results = {};
+                try {
+                    await this.delObjectAsync(`${base}.activeSlide`);
+                    results.activeSlide = 'ok';
+                } catch (e) {
+                    results.activeSlide = e?.message || String(e);
+                }
+                try {
+                    await this.delObjectAsync(base);
+                    results.channel = 'ok';
+                } catch (e) {
+                    results.channel = e?.message || String(e);
+                }
+                this.log.info(`[panels] deletePanel ${this.namespace}.${base} → ${JSON.stringify(results)}`);
                 reply({ ok: true, results });
                 return;
             }
@@ -2325,6 +3337,12 @@ class Aura extends utils.Adapter {
                 let entries = sinceSeq > 0 ? buf.filter((e) => e.seq > sinceSeq) : buf.slice();
                 if (tokens.length > 0) entries = entries.filter((e) => matchesInstance(e.from));
                 reply({ ok: true, entries, latestSeq: this._logSeq || 0 });
+                return;
+            }
+
+            if (msg.command === 'ping') {
+                // No-op round-trip so the frontend can measure network RTT.
+                reply({ ok: true, t: Date.now() });
                 return;
             }
 

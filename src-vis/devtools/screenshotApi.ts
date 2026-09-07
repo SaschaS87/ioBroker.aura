@@ -12,19 +12,55 @@
 //
 // Stripped from production: only imported from main.tsx under import.meta.env.DEV.
 
+import { getInstanceByDom } from 'echarts';
 import {
+    __devInjectObject,
     __devInjectState,
     __devSetHistoryGen,
     __devSetObjectView,
     __devSetSendTo,
+    __devSetGetState,
+    __devSetWriteLog,
+    __devWrites,
+    type DevWrite,
     getStateFromCache,
+    isStateFresh,
+    type HistoryAggregate,
     type HistoryEntry,
 } from '../hooks/useIoBroker';
 import { useDashboardStore, type DashboardLayout } from '../store/dashboardStore';
 import { useGroupDefsStore } from '../store/groupDefsStore';
+import {
+    usePopupConfigStore,
+    BUILTIN_TYPE_DEFAULTS,
+    BUILTIN_VIEWS,
+    type PopupTrigger,
+    type PopupView,
+} from '../store/popupConfigStore';
+import { __devForceDpTriggers } from '../components/widgets/popup/DpPopupTriggers';
+import { __devForceConditionRefresh, __devForceConditionNotify } from '../hooks/useConditionStyle';
+import {
+    useMessagesStore,
+    __devForceMessages,
+    __devSentMessages,
+    __devClearSentMessages,
+    applyMessageHistory,
+    clearSessionHandled,
+    type MessageScope,
+} from '../store/messagesStore';
 import { useThemeStore } from '../store/themeStore';
+import {
+    alignStackedSeries,
+    areaOpacityFor,
+    outlineWidthFor,
+    stackShares,
+    type StackableSeries,
+    type StackDatum,
+    type StackPoint,
+} from '../utils/stackedSeries';
 import { withSuppressedDirty, setScreenshotMode } from '../store/persistManager';
-import type { WidgetConfig, ioBrokerState, ObjectViewResult } from '../types';
+import { NS } from '../utils/namespace';
+import type { AuraMessage, MessageSeverity, WidgetConfig, ioBrokerState, ObjectViewResult } from '../types';
 
 type MockValue = boolean | number | string | null | Partial<ioBrokerState>;
 
@@ -44,9 +80,16 @@ export interface ShowWidgetsOptions {
     gridRowHeight?: number;
     gridSnapX?: number;
     gridGap?: number;
+    /** Presentation settings the widget height depends on — a row grows with the
+     *  font scale, the card chrome with the padding. The height metrics harness
+     *  measures both, so aura_measure can follow the dashboard instead of
+     *  reporting the numbers of a default installation. */
+    fontScale?: number;
+    widgetPadding?: number;
 }
 
 const DEMO_LAYOUT_ID = 'screenshot-demo';
+const DEMO_SECTION_ID = 'screenshot-section';
 const DEMO_TAB_ID = 'screenshot-tab';
 
 // Fabricate a smooth, deterministic history series centred on the datapoint's
@@ -69,6 +112,46 @@ function genHistory(id: string, opts: { start: number; end: number; count?: numb
         out.push({ ts, val: Math.round((center + wobble) * 100) / 100 });
     }
     return out;
+}
+
+// Stand in for what a history adapter does with `step` + `aggregate`: raw records are
+// grouped into fixed windows and each window is reduced to one row — except `minmax`,
+// which emits the window's extremes at their REAL timestamps, so a spike survives a
+// coarse step. Emulated rather than skipped because the difference between the modes is
+// exactly what the documentation screenshots are meant to show.
+function aggregateRaw(
+    raw: HistoryEntry[],
+    start: number,
+    step: number | undefined,
+    aggregate: HistoryAggregate | undefined,
+): HistoryEntry[] {
+    if (!step || !aggregate || aggregate === 'none') return raw;
+    const nums = raw.filter((e): e is { ts: number; val: number } => typeof e.val === 'number');
+    const groups = new Map<number, { ts: number; val: number }[]>();
+    for (const e of nums) {
+        const key = Math.floor((e.ts - start) / step);
+        const g = groups.get(key);
+        if (g) g.push(e);
+        else groups.set(key, [e]);
+    }
+    const out: HistoryEntry[] = [];
+    for (const [key, g] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+        const mid = start + key * step + step / 2;
+        const lo = g.reduce((a, b) => (b.val < a.val ? b : a));
+        const hi = g.reduce((a, b) => (b.val > a.val ? b : a));
+        if (aggregate === 'minmax') {
+            // Both extremes with their own timestamps; a flat window contributes one row.
+            out.push(lo);
+            if (hi.ts !== lo.ts) out.push(hi);
+        } else if (aggregate === 'min') out.push({ ts: mid, val: lo.val });
+        else if (aggregate === 'max') out.push({ ts: mid, val: hi.val });
+        else if (aggregate === 'first') out.push(g[0]);
+        else if (aggregate === 'last') out.push(g[g.length - 1]);
+        else if (aggregate === 'count') out.push({ ts: mid, val: g.length });
+        else if (aggregate === 'total') out.push({ ts: mid, val: g.reduce((sum, e) => sum + e.val, 0) });
+        else out.push({ ts: mid, val: g.reduce((sum, e) => sum + e.val, 0) / g.length });
+    }
+    return out.sort((a, b) => a.ts - b.ts);
 }
 
 function installScreenshotApi(): void {
@@ -98,18 +181,28 @@ function installScreenshotApi(): void {
                 id: DEMO_LAYOUT_ID,
                 name: 'Screenshot',
                 slug: 'screenshot',
-                activeTabId: DEMO_TAB_ID,
+                activeSectionId: DEMO_SECTION_ID,
                 settings: {
                     gridRowHeight: opts.gridRowHeight ?? 20,
                     gridSnapX: opts.gridSnapX ?? opts.gridRowHeight ?? 20,
                     gridGap: opts.gridGap ?? 10,
+                    ...(opts.fontScale !== undefined ? { fontScale: opts.fontScale } : {}),
+                    ...(opts.widgetPadding !== undefined ? { widgetPadding: opts.widgetPadding } : {}),
                 },
-                tabs: [
+                sections: [
                     {
-                        id: DEMO_TAB_ID,
-                        name: opts.tabName ?? 'Demo',
-                        slug: 'demo',
-                        widgets,
+                        id: DEMO_SECTION_ID,
+                        name: 'Screenshot',
+                        slug: 'screenshot',
+                        activeTabId: DEMO_TAB_ID,
+                        tabs: [
+                            {
+                                id: DEMO_TAB_ID,
+                                name: opts.tabName ?? 'Demo',
+                                slug: 'demo',
+                                widgets,
+                            },
+                        ],
                     },
                 ],
             };
@@ -120,6 +213,18 @@ function installScreenshotApi(): void {
                     editMode: opts.editMode ?? false,
                 });
             });
+        },
+
+        /** A widget's current options, straight out of the store. The options panel writes
+         *  nowhere else, so this is how a config-panel test reads back what it wrote. */
+        widgetOptions(widgetId: string): Record<string, unknown> | null {
+            for (const layout of useDashboardStore.getState().layouts)
+                for (const section of layout.sections ?? [])
+                    for (const tab of section.tabs ?? []) {
+                        const found = (tab.widgets ?? []).find((w) => w.id === widgetId);
+                        if (found) return (found.options ?? {}) as Record<string, unknown>;
+                    }
+            return null;
         },
 
         setEditMode(on: boolean): void {
@@ -149,6 +254,37 @@ function installScreenshotApi(): void {
             __devSetHistoryGen(on ? genHistory : null);
         },
 
+        /** Serve an EXPLICIT raw series per datapoint instead of the wobble generator:
+         *  { 'demo.0.pv.total': [[ts, val], …] }, sliced to the requested window and then
+         *  bucketed the way the history adapter would for the requested step/aggregate.
+         *  Needed for anything the generator can't shape — a monotonic counter above all,
+         *  which is what the `delta` aggregation reads — and for showing what the
+         *  aggregation itself does to a series. Unlisted ids fall back to the generator so
+         *  a mixed dashboard still draws. `false` restores the real getHistory path. */
+        mockHistory(byId: Record<string, [number, number][]> | false): void {
+            if (byId === false) {
+                __devSetHistoryGen(null);
+                return;
+            }
+            __devSetHistoryGen((id, opts) => {
+                const points = byId[id];
+                if (!points) return genHistory(id, opts);
+                const raw = points
+                    .filter(([ts]) => ts >= opts.start && ts <= opts.end)
+                    .map(([ts, val]): HistoryEntry => ({ ts, val }));
+                return aggregateRaw(raw, opts.start, opts.step, opts.aggregate);
+            });
+        },
+
+        /** Seed whole objects: { 'demo.0.PV.Ertrag_Gesamt': { common: { custom: { 'history.0': { enabled: true } } } } }.
+         *  Editor fields derived from the object — the history adapters detected in
+         *  `common.custom` above all — then show what a real, logged datapoint would show. */
+        mockObject(byId: Record<string, unknown>): void {
+            for (const [id, obj] of Object.entries(byId)) {
+                __devInjectObject(id, obj as Parameters<typeof __devInjectObject>[1]);
+            }
+        },
+
         /** Stub getObjectView per object type: { instance: [{id,value}], script: [...] }.
          *  Unlisted types resolve empty so nothing real leaks into the demo. */
         mockObjectView(byType: Record<string, { id: string; value: unknown }[]>): void {
@@ -159,6 +295,303 @@ function installScreenshotApi(): void {
          *  Unlisted commands fall through to the real socket. */
         mockSendTo(byCommand: Record<string, unknown>): void {
             __devSetSendTo((_t, command) => (command in byCommand ? byCommand[command] : undefined));
+        },
+
+        /** Define what `getState` returns, i.e. the value the SERVER holds, without
+         *  touching the local cache or emitting a stateChange. That models a datapoint
+         *  which changed while the frontend held no subscription — the case the cache
+         *  freshness check exists for (issue #528). Unlisted IDs fall through to the
+         *  real socket. Pass false to restore it. */
+        mockServerState(byId: Record<string, MockValue> | false): void {
+            __devSetGetState(byId === false ? null : (id) => (id in byId ? toState(byId[id]) : undefined));
+        },
+
+        /** Whether the cached value for `id` is currently considered trustworthy
+         *  without a round-trip (live subscription, or confirmed very recently). */
+        isFresh(id: string): boolean {
+            return isStateFresh(id);
+        },
+
+        /** Seed datapoint popup triggers and arm them (screenshot mode disables
+         *  them by default so a real trigger can't pop into a shot). `false`
+         *  clears and disarms. Reset writes stay blocked in screenshot mode. */
+        dpTriggers(triggers: PopupTrigger[] | false): void {
+            __devForceDpTriggers(triggers !== false);
+            withSuppressedDirty(() => usePopupConfigStore.setState({ triggers: triggers === false ? [] : triggers }));
+        },
+
+        /** Arm condition rules with "reload widget". Off in screenshot mode by
+         *  default — a widget remounting mid-shot would corrupt the image. */
+        conditionRefresh(on = true): void {
+            __devForceConditionRefresh(on);
+        },
+
+        /** Arm condition rules with "send a message". The write stays blocked —
+         *  read what would have gone out with `sentMessages()`. */
+        conditionNotify(on = true): void {
+            __devForceConditionNotify(on);
+            if (on) __devClearSentMessages();
+        },
+
+        /** Datapoint writes the UI performed, oldest first. Call with `true` to
+         *  arm/clear the log first — it stays off until a test asks for it, so
+         *  normal screenshot runs record nothing. Lets a test assert the raw value
+         *  a control converted to (slat angle on a 0…1 or -90…90 datapoint). */
+        writes(reset = false): DevWrite[] {
+            if (reset) {
+                __devSetWriteLog(true);
+                return [];
+            }
+            return __devWrites();
+        },
+
+        /** The most recent datapoint write, or null while the log is not armed. */
+        get lastWrite(): DevWrite | null {
+            const all = __devWrites();
+            return all.length ? all[all.length - 1] : null;
+        },
+
+        /** Payloads that `send()` swallowed because screenshot mode blocks writes. */
+        sentMessages(): unknown[] {
+            return __devSentMessages().map((raw) => {
+                try {
+                    return JSON.parse(raw);
+                } catch {
+                    return raw;
+                }
+            });
+        },
+
+        /** Seed popup views so a `popup-view` action has something to render. */
+        popupViews(views: PopupView[]): void {
+            withSuppressedDirty(() => usePopupConfigStore.setState({ views }));
+        },
+
+        /** Read back what the popup store currently holds (views by id/name plus the
+         *  widget-type assignments), so a test can assert on state instead of DOM. */
+        popupState(): { views: { id: string; name: string }[]; typeDefaults: Record<string, string> } {
+            const s = usePopupConfigStore.getState();
+            return {
+                views: s.views.map((v) => ({ id: v.id, name: v.name })),
+                typeDefaults: { ...s.typeDefaults },
+            };
+        },
+
+        /** Rename a view through the store action, i.e. flagging a built-in as
+         *  user-edited — the state a test needs to check that customised built-ins
+         *  are protected. */
+        popupRename(viewId: string, name: string): void {
+            withSuppressedDirty(() => usePopupConfigStore.getState().updateViewName(viewId, name));
+        },
+
+        /** Reproduce a pre-existing installation: every shipped built-in plus the
+         *  widget-type assignments that used to be seeded automatically. A fresh
+         *  install (which is what the harness boots into) no longer gets them, so
+         *  a test that exercises them has to ask for them. */
+        popupBuiltins(): void {
+            withSuppressedDirty(() =>
+                usePopupConfigStore.setState({
+                    views: BUILTIN_VIEWS.map((v) => ({ ...v, widgets: v.widgets.map((w) => ({ ...w })) })),
+                    typeDefaults: { ...BUILTIN_TYPE_DEFAULTS },
+                }),
+            );
+        },
+
+        /** Arm the message runtime (off in screenshot mode so a real notice can't
+         *  pop into a shot). Writes stay blocked either way. */
+        messages(on = true): void {
+            __devForceMessages(on);
+        },
+
+        /** Push messages straight into the toast queue, skipping the datapoint
+         *  plumbing. `scope` (optional) sets what the target filter is matched
+         *  against; without it every message is in scope. */
+        messageIngest(messages: AuraMessage[], scope?: MessageScope): void {
+            const store = useMessagesStore.getState();
+            if (scope) store.setScope(scope);
+            for (const msg of messages) store.ingest(msg);
+        },
+
+        /** Forget which messages this browser has already shown, so a test can
+         *  replay the same ids. Models a fresh page load, session state included. */
+        messagesReset(): void {
+            clearSessionHandled();
+            useMessagesStore.setState({ seen: {}, lastSeenTs: 0, open: [], history: [], unreadCount: 0 });
+        },
+
+        /** Deliver an archive the way the history datapoint does, so the reload
+         *  restore runs. `firstDelivery` is the priming value right after a
+         *  subscribe — pair it with messagesReset() to model a page load. */
+        messagesDeliverHistory(history: AuraMessage[], firstDelivery = false): void {
+            applyMessageHistory(history, firstDelivery);
+        },
+
+        /** Severities that survive a reload (config.messageDefaults normally
+         *  supplies this). */
+        messagesRestoreSeverities(severities: MessageSeverity[]): void {
+            useMessagesStore.setState({ restoreSeverities: severities });
+        },
+
+        /** Seed the archive mirror (what the Meldungen widget lists) without
+         *  writing the history datapoint. Does NOT raise toasts — use
+         *  messageIngest for that. */
+        messagesHistory(history: AuraMessage[]): void {
+            // Also seed the cache the subscription reads from. Without this the
+            // live datapoint wins the moment it delivers, and on an instance that
+            // actually holds messages the seeded archive is gone before the
+            // assertions run.
+            __devInjectState(`${NS}.messages.history`, toState(JSON.stringify(history)));
+            useMessagesStore.setState({
+                history,
+                unreadCount: history.filter((m) => !m.read).length,
+            });
+        },
+
+        /** Toasts per screen position before the rest queue up (config.messageDefaults
+         *  normally supplies this). */
+        messagesMaxVisible(n: number): void {
+            useMessagesStore.setState({ maxVisible: n });
+        },
+
+        /** Pretend a toast layer is / is not mounted — models a route that only
+         *  reads the archive (admin history, widget editor). */
+        messagesDisplayActive(active: boolean): void {
+            useMessagesStore.setState({ displayActive: active });
+        },
+
+        /** Which message ids this browser has already handled, id → timestamp. */
+        messagesSeen(): Record<string, number> {
+            return useMessagesStore.getState().seen;
+        },
+
+        /** The timeline the advanced chart resamples stacked series onto before echarts
+         *  stacks them by index. Exposed because the stacking itself only exists on a
+         *  canvas, while this is where it can actually be wrong (issue #541). */
+        stackAlign(series: StackableSeries[], data: StackPoint[][]): StackPoint[][] {
+            return alignStackedSeries(series, data);
+        },
+
+        /** Share each stacked value has of its stack total, per series and data index (issue
+         *  #569). Same reason as `stackAlign`: the percentages end up as canvas text, while this
+         *  is where they can actually be wrong. */
+        stackShares(series: StackableSeries[], data: StackDatum[][]): (number | null)[][] {
+            return stackShares(series, data);
+        },
+
+        /** Stroke width the advanced chart gives a series. 0 for a stacked band, whose outline
+         *  would otherwise draw a full-width line wherever the series sits at 0 (issue #541). */
+        seriesLineWidth(series: StackableSeries): number {
+            return outlineWidthFor(series);
+        },
+
+        /** Fill opacity the advanced chart gives an area series. A stacked band is opaque, so it
+         *  shows the colour that was picked instead of a paler mix with the background; the
+         *  series' own `areaOpacity` (percent) overrides that (issue #557). */
+        seriesAreaOpacity(series: StackableSeries): number {
+            return areaOpacityFor(series);
+        },
+
+        /** What the chart on screen actually plots, per series: name, point count, the
+         *  first/last x value and the colour that reached the canvas. Lets a screenshot
+         *  script verify the curve covers the whole window before saving the image — an
+         *  empty tail is invisible in a thumbnail — and lets a test check that a
+         *  configured `var(--token)` arrived resolved (a canvas drops it unresolved). */
+        chartSeries():
+            | {
+                  name: unknown;
+                  points: number;
+                  first: unknown;
+                  last: unknown;
+                  color: unknown;
+              }[]
+            | null {
+            const el = document.querySelector('[_echarts_instance_]');
+            const inst = el instanceof HTMLElement ? getInstanceByDom(el) : undefined;
+            if (!inst) return null;
+            const opt = inst.getOption() as
+                | { series?: { name?: unknown; data?: unknown[]; itemStyle?: { color?: unknown }; color?: unknown }[] }
+                | undefined;
+            // An instance that exists but has no option yet answers undefined —
+            // asking too early must read as "not ready", not throw.
+            if (!opt) return null;
+            return (opt.series ?? []).map((s) => {
+                const data = s.data ?? [];
+                const at = (p: unknown) => (Array.isArray(p) ? p[0] : p);
+                return {
+                    name: s.name,
+                    points: data.length,
+                    first: at(data[0]),
+                    last: at(data[data.length - 1]),
+                    color: s.itemStyle?.color ?? s.color,
+                };
+            });
+        },
+
+        /** grid + axes of the chart currently on screen, as echarts resolved them. The axis
+         *  reserve and the right-axis switch only exist in the rendered option — on the canvas
+         *  they are pixels, and pixels are not what a test should assert on (issue #541).
+         *  `xExtent` is the time window the x axis really frames: `setOption` merges, so a
+         *  min/max the option no longer carries can still be pinning it (issue #594). */
+        chartAxes(): {
+            grid: unknown;
+            yAxis: unknown;
+            xAxis: unknown;
+            legend: unknown;
+            xExtent: [number, number] | null;
+        } | null {
+            const el = document.querySelector('[_echarts_instance_]');
+            const inst = el instanceof HTMLElement ? getInstanceByDom(el) : undefined;
+            if (!inst) return null;
+            // A chart that has just been mounted (or replaced by one with a new widget id) can
+            // answer before it holds an option at all — that is a "not ready yet", not a failure.
+            const opt = inst.getOption() as
+                | { grid?: unknown[]; yAxis?: unknown[]; xAxis?: unknown[]; legend?: unknown[] }
+                | undefined;
+            if (!opt) return null;
+            let xExtent: [number, number] | null = null;
+            try {
+                const axis = (
+                    inst as unknown as {
+                        getModel(): {
+                            getComponent(t: string): { axis: { scale: { getExtent(): [number, number] } } } | undefined;
+                        };
+                    }
+                )
+                    .getModel()
+                    .getComponent('xAxis');
+                xExtent = axis ? axis.axis.scale.getExtent() : null;
+            } catch {
+                xExtent = null;
+            }
+            // Round-trip through JSON so the formatter functions echarts adds are dropped and
+            // the result survives the trip out of the page.
+            return JSON.parse(
+                JSON.stringify({
+                    grid: opt.grid?.[0] ?? null,
+                    yAxis: opt.yAxis ?? null,
+                    xAxis: opt.xAxis?.[0] ?? null,
+                    // The legend is canvas-drawn too, so its colour is worth reading
+                    // back: it carried a token that never resolved.
+                    legend: opt.legend?.[0] ?? null,
+                    xExtent,
+                }),
+            );
+        },
+
+        /** Every text echarts painted, in the order zrender draws it. Axis labels are canvas
+         *  pixels with no DOM node, so this is the only way a test can read what a tick
+         *  actually says — e.g. that it honours the widget's decimals (issue #548). */
+        chartTexts(index = 0): string[] | null {
+            const el = document.querySelectorAll('[_echarts_instance_]')[index];
+            const inst = el instanceof HTMLElement ? getInstanceByDom(el) : undefined;
+            if (!inst) return null;
+            const zr = inst.getZr() as unknown as {
+                storage: { getDisplayList(update?: boolean): { style?: { text?: unknown } }[] };
+            };
+            return zr.storage
+                .getDisplayList(true)
+                .map((d) => d.style?.text)
+                .filter((t): t is string => typeof t === 'string' && t.trim() !== '');
         },
     };
 

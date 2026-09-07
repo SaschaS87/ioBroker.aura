@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, memo } from 'react';
+import { useState, useMemo, useRef, useEffect, memo, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { shallow } from 'zustand/shallow';
@@ -9,7 +9,6 @@ import {
     Edit3,
     Check,
     Database,
-    Wand2,
     Smartphone,
     GripVertical,
     Upload,
@@ -21,27 +20,33 @@ import {
     Download,
     Eye,
     EyeOff,
+    ExternalLink,
+    Shapes,
+    FolderInput,
+    Copy,
 } from 'lucide-react';
 import { ImportWidgetDialog } from '../../components/config/ImportWidgetDialog';
 import { Icon } from '@iconify/react';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { IconPickerModal } from '../../components/config/IconPickerModal';
-import { useDashboardStore } from '../../store/dashboardStore';
+import { useDashboardStore, useActiveSection } from '../../store/dashboardStore';
 import { ConditionEditor } from '../../components/config/ConditionEditor';
 import { BadgeEditor } from '../../components/config/BadgeEditor';
 import { usePortalTarget } from '../../contexts/PortalTargetContext';
-import { useGroupStore } from '../../store/groupStore';
 import { Dashboard } from '../../components/layout/Dashboard';
+import { LayoutDrawer } from '../../components/layout/LayoutDrawer';
 import { FocusedWidgetContext } from '../../contexts/FocusedWidgetContext';
-import { TabWizard } from '../../components/config/TabWizard';
 import { DatapointPicker } from '../../components/config/DatapointPicker';
-import { ColorPicker } from '../../components/common/ColorPicker';
-import type { WidgetConfig, WidgetType, WidgetLayout } from '../../types';
+import type { WidgetConfig, WidgetType, WidgetPreset } from '../../types';
 import { WIDGET_REGISTRY, WIDGET_BY_TYPE, getEffectiveSize } from '../../widgetRegistry';
+import { useWidgetPresetsStore } from '../../store/widgetPresetsStore';
+import { PresetInsertDialog } from '../../components/config/PresetInsertDialog';
+import { FEATURES } from '../../featureFlags';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
 import { useConfigStore } from '../../store/configStore';
 import { useCustomJs } from '../../hooks/useCustomJs';
 import { useCustomCss } from '../../hooks/useCustomCss';
+import { useEffectiveSettings } from '../../hooks/useEffectiveSettings';
 import { useT } from '../../i18n';
 import { ensureDatapointCache } from '../../hooks/useDatapointList';
 import {
@@ -55,10 +60,6 @@ import {
 import { slugify } from '../../utils/slugify';
 import { exportTab } from '../../utils/widgetExportImport';
 import { ExportAnonymizeDialog } from '../../components/config/ExportAnonymizeDialog';
-
-// Layout labels are resolved inside components via t() to support i18n
-const LAYOUT_IDS: WidgetLayout[] = ['default', 'card', 'compact', 'minimal'];
-const CALENDAR_LAYOUT_IDS: WidgetLayout[] = [...LAYOUT_IDS, 'agenda'];
 
 // ── Recently used templates (persisted in localStorage) ──────────────────────
 const RECENT_TEMPLATES_KEY = 'aura-recent-templates';
@@ -86,25 +87,18 @@ function pushRecentTemplate(entry: RecentTemplate) {
 function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => void; onClose: () => void }) {
     const t = useT();
     const widgetDefaults = useConfigStore((s) => s.widgetDefaults);
-    const LAYOUTS = LAYOUT_IDS.map((id) => ({ id, label: t(`editor.layouts.${id}` as never) }));
-    const CALENDAR_LAYOUTS = CALENDAR_LAYOUT_IDS.map((id) => ({ id, label: t(`editor.layouts.${id}` as never) }));
 
-    const [step, setStep] = useState<1 | 2>(1);
     const [type, setType] = useState<WidgetType>('value');
     const [templateId, setTemplateId] = useState<string>('');
     const [typePicked, setTypePicked] = useState(false);
-    const [layout, setLayout] = useState<WidgetLayout>('default');
     const [title, setTitle] = useState('');
     const [datapoint, setDatapoint] = useState('');
-    const [groupId, setGroupId] = useState('');
     const [unit, setUnit] = useState('');
     const [showPicker, setShowPicker] = useState(false);
-    const [icalUrl, setIcalUrl] = useState('');
-    const [calName, setCalName] = useState('');
-    const [calColor, setCalColor] = useState('#3b82f6');
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
     const [recentTemplates, setRecentTemplates] = useState<RecentTemplate[]>(() => getRecentTemplates());
-    const { groups } = useGroupStore();
+    const presets = useWidgetPresetsStore((s) => s.presets);
+    const [insertPreset, setInsertPreset] = useState<WidgetPreset | null>(null);
 
     // Auto-detect type / template / title / unit when the datapoint ID changes
     useEffect(() => {
@@ -150,33 +144,13 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [datapoint, typePicked]);
 
-    // Universal widget only supports the 'custom' layout — keep state in sync.
-    useEffect(() => {
-        if (type === 'universal' && layout !== 'custom') setLayout('custom');
-    }, [type, layout]);
-
-    const def = WIDGET_REGISTRY.find((w) => w.type === type)!;
-    const addMode = WIDGET_BY_TYPE[type].addMode;
-    const isList = addMode === 'group';
-    const isCalendar = type === 'calendar';
-    const isGauge = type === 'gauge';
-    const isChart = type === 'chart';
-    const isUniversal = type === 'universal';
-    const isHeader = type === 'header';
-    const isEchart = type === 'echart';
-    const isEvcc = type === 'evcc';
-    const isWeather = type === 'weather';
-    const isCamera = type === 'camera';
-    const noDatapointNeeded = addMode !== 'datapoint';
-    const canAdd = addMode === 'group' ? !!groupId : addMode === 'wizard-only' ? !!icalUrl.trim() : true;
-
     // Widget types from WIDGET_REGISTRY not covered by any DP_TEMPLATE
     const coveredWidgetTypes = useMemo(() => new Set(DP_TEMPLATES.map((t) => t.widgetType)), []);
     const furtherWidgets = useMemo(
         () =>
             // Sort by the displayed label (de locale) so new widget types are
             // inserted alphabetically automatically – no manual ordering needed.
-            WIDGET_REGISTRY.filter((w) => !coveredWidgetTypes.has(w.type)).sort((a, b) =>
+            WIDGET_REGISTRY.filter((w) => !w.hidden && !coveredWidgetTypes.has(w.type)).sort((a, b) =>
                 a.label.localeCompare(b.label, 'de'),
             ),
         [coveredWidgetTypes],
@@ -184,8 +158,6 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
 
     const selectedTemplate = DP_TEMPLATES.find((tpl) => tpl.id === templateId);
     const selectedFurther = furtherWidgets.find((w) => w.type === type && templateId === w.type);
-    const templateLabel = selectedTemplate?.label ?? selectedFurther?.label ?? def?.label ?? '';
-    const templateIcon = selectedTemplate?.icon ?? null;
 
     const selectTemplate = (tplId: string, widgetType: WidgetType) => {
         setType(widgetType);
@@ -197,34 +169,40 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
         setType(recent.widgetType);
         setTemplateId(recent.templateId);
         setTypePicked(true);
-        setStep(2);
     };
 
-    const handleAdd = async () => {
-        if (!canAdd) return;
+    // widgetType/tplId are passed explicitly so a double-click can select and add
+    // in one go, without waiting for the state update to land.
+    const handleAdd = async (widgetType: WidgetType = type, tplId: string = templateId) => {
+        const meta = WIDGET_BY_TYPE[widgetType];
+        const addMode = meta.addMode;
+        const isCalendar = widgetType === 'calendar';
+        const isEchart = widgetType === 'echart';
+        const isEvcc = widgetType === 'evcc';
+        const isWeather = widgetType === 'weather';
+        const isCamera = widgetType === 'camera';
         // Persist to recently used
-        const activeTpl = DP_TEMPLATES.find((tpl) => tpl.id === templateId);
-        const activeWidget = WIDGET_REGISTRY.find((w) => w.type === type);
+        const activeTpl = DP_TEMPLATES.find((tpl) => tpl.id === tplId);
         pushRecentTemplate({
-            templateId: templateId || type,
-            widgetType: type,
-            label: activeTpl?.label ?? activeWidget?.shortLabel ?? type,
+            templateId: tplId || widgetType,
+            widgetType,
+            label: activeTpl?.label ?? meta.shortLabel ?? widgetType,
             icon: activeTpl?.icon ?? '',
         });
         setRecentTemplates(getRecentTemplates());
-        const selectedGroup = isList ? groups.find((g) => g.id === groupId) : undefined;
-        const dpId = noDatapointNeeded ? '' : isList ? groupId : datapoint.trim();
+        const dpId = addMode !== 'datapoint' ? '' : datapoint.trim();
 
         let finalTitle = title.trim();
         let finalUnit = unit.trim();
 
-        if (dpId && (!finalTitle || ((type === 'value' || type === 'chart') && !finalUnit))) {
+        if (dpId && (!finalTitle || ((widgetType === 'value' || widgetType === 'chart') && !finalUnit))) {
             try {
                 const entries = await ensureDatapointCache();
                 const entry = entries.find((e) => e.id === dpId);
                 if (entry) {
                     if (!finalTitle && entry.name) finalTitle = entry.name;
-                    if ((type === 'value' || type === 'chart') && !finalUnit && entry.unit) finalUnit = entry.unit;
+                    if ((widgetType === 'value' || widgetType === 'chart') && !finalUnit && entry.unit)
+                        finalUnit = entry.unit;
                 }
             } catch {
                 /* ignore */
@@ -233,8 +211,8 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
 
         // Auto-fill secondary DPs using the selected template's sibling patterns
         const activeTemplate =
-            DP_TEMPLATES.find((tpl) => tpl.id === templateId && tpl.secondaryDps.length > 0) ??
-            DP_TEMPLATES.find((tpl) => tpl.widgetType === type && tpl.secondaryDps.length > 0);
+            DP_TEMPLATES.find((tpl) => tpl.id === tplId && tpl.secondaryDps.length > 0) ??
+            DP_TEMPLATES.find((tpl) => tpl.widgetType === widgetType && tpl.secondaryDps.length > 0);
         const secondaryDpOptions: Record<string, unknown> = {};
         if (dpId) {
             try {
@@ -269,26 +247,19 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
 
         onAdd({
             id: `w-${Date.now()}`,
-            type,
-            layout: type === 'universal' ? 'custom' : layout,
-            title: finalTitle || (isList && selectedGroup ? selectedGroup.name : templateLabel || def.label),
+            type: widgetType,
+            layout: widgetType === 'universal' ? 'custom' : 'default',
+            title: finalTitle || activeTpl?.label || meta.label,
             datapoint: dpId,
-            gridPos: { x: 0, y: 9999, ...getEffectiveSize(type, widgetDefaults) },
+            gridPos: { x: 0, y: 9999, ...getEffectiveSize(widgetType, widgetDefaults) },
             options: {
-                icon: def.iconName,
+                icon: meta.iconName,
                 ...(activeTemplate?.defaultOptions ?? {}),
                 ...secondaryDpOptions,
                 ...(isCalendar
                     ? {
-                          calendars: [
-                              {
-                                  id: Date.now().toString(),
-                                  url: icalUrl.trim(),
-                                  name: calName.trim() || 'Kalender',
-                                  color: calColor,
-                                  showName: true,
-                              },
-                          ],
+                          // Calendar sources are configured afterwards in the widget editor.
+                          calendars: [],
                           refreshInterval: 30,
                           daysAhead: 14,
                           maxEvents: 5,
@@ -324,7 +295,7 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
                             }
                           : isCamera
                             ? { streamUrl: '', refreshInterval: 5, fitMode: 'cover', showTitle: true }
-                            : type === 'gauge'
+                            : widgetType === 'gauge'
                               ? {
                                     minValue: 0,
                                     maxValue: 100,
@@ -333,7 +304,7 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
                                     showMinMax: true,
                                     colorZones: false,
                                 }
-                              : type === 'knob'
+                              : widgetType === 'knob'
                                 ? {
                                       minValue: 0,
                                       maxValue: 100,
@@ -363,395 +334,12 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
         border: '1px solid var(--app-border)',
     };
 
-    // ── STEP 1: type selection ─────────────────────────────────────────────────
-    if (step === 1) {
-        return (
-            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                <div
-                    className="rounded-xl w-full max-w-5xl shadow-2xl flex flex-col"
-                    style={{
-                        maxHeight: '96vh',
-                        background: 'linear-gradient(var(--app-surface), var(--app-surface)), var(--app-bg)',
-                        border: '1px solid var(--app-border)',
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {/* Header */}
-                    <div
-                        className="flex items-center justify-between px-6 pt-5 pb-4"
-                        style={{ borderBottom: '1px solid var(--app-border)' }}
-                    >
-                        <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
-                            {t('editor.manual.title')}
-                        </h2>
-                        <div className="flex items-center gap-2">
-                            <span
-                                className="text-xs font-medium px-2 py-0.5 rounded-full"
-                                style={{ background: 'var(--app-bg)', color: 'var(--text-secondary)' }}
-                            >
-                                1 / 2
-                            </span>
-                            <button
-                                onClick={onClose}
-                                className="hover:opacity-60"
-                                style={{ color: 'var(--text-secondary)' }}
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* DP field */}
-                    <div className="px-6 pt-4 pb-2">
-                        <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                            Datenpunkt{' '}
-                            <span className="font-normal opacity-60">(optional – Typ wird automatisch erkannt)</span>
-                        </label>
-                        <div className="flex gap-1.5">
-                            <input
-                                value={datapoint}
-                                onChange={(e) => setDatapoint(e.target.value)}
-                                placeholder="z.B. hm-rpc.0.ABC123.LEVEL"
-                                className={`flex-1 font-mono min-w-0 ${inputCls}`}
-                                style={inputStyle}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPicker(true)}
-                                className="px-3 rounded-xl hover:opacity-80 shrink-0"
-                                style={{
-                                    background: 'var(--app-bg)',
-                                    color: 'var(--text-secondary)',
-                                    border: '1px solid var(--app-border)',
-                                }}
-                            >
-                                <Database size={15} />
-                            </button>
-                        </div>
-                        <p
-                            className="mt-1.5 text-xs flex items-center gap-1"
-                            style={{
-                                color: 'var(--accent)',
-                                visibility: templateId && selectedTemplate ? 'visible' : 'hidden',
-                            }}
-                        >
-                            <Check size={11} />
-                            Erkannt als: <strong>{selectedTemplate?.label ?? ' '}</strong>
-                        </p>
-                    </div>
-
-                    {/* Recently used */}
-                    {recentTemplates.length > 0 && (
-                        <div className="px-6 pt-3 pb-1">
-                            <p
-                                className="text-[10px] font-semibold uppercase tracking-wider mb-2"
-                                style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
-                            >
-                                {t('editor.manual.recentlyUsed')}
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
-                                {recentTemplates.map((recent) => {
-                                    const meta = WIDGET_REGISTRY.find((w) => w.type === recent.widgetType);
-                                    if (!meta) return null;
-                                    const isActive = templateId === recent.templateId;
-                                    return (
-                                        <button
-                                            key={recent.templateId}
-                                            type="button"
-                                            onClick={() => selectRecent(recent)}
-                                            title="Direkt zu Schritt 2"
-                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium hover:opacity-80 transition-opacity"
-                                            style={{
-                                                background: isActive ? `${meta.color}22` : 'var(--app-bg)',
-                                                color: isActive ? meta.color : 'var(--text-secondary)',
-                                                border: `1px solid ${isActive ? meta.color : 'var(--app-border)'}`,
-                                            }}
-                                        >
-                                            {recent.icon ? (
-                                                <span style={{ fontSize: 12, lineHeight: 1 }}>{recent.icon}</span>
-                                            ) : (
-                                                <meta.Icon size={11} />
-                                            )}
-                                            {recent.label}
-                                            <span style={{ fontSize: 9, opacity: 0.6 }}>→ 2</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Category filter tabs */}
-                    <div className="px-6 pt-3 pb-1">
-                        <div className="flex flex-wrap gap-1.5">
-                            <button
-                                type="button"
-                                onClick={() => setCategoryFilter('all')}
-                                className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
-                                style={{
-                                    background: categoryFilter === 'all' ? 'var(--accent)' : 'var(--app-bg)',
-                                    color: categoryFilter === 'all' ? 'white' : 'var(--text-secondary)',
-                                    border: '1px solid var(--app-border)',
-                                }}
-                            >
-                                {t('common.all')}
-                            </button>
-                            {DP_TEMPLATE_CATEGORIES.map((cat) => (
-                                <button
-                                    key={cat.id}
-                                    type="button"
-                                    onClick={() => setCategoryFilter(cat.id)}
-                                    className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
-                                    style={{
-                                        background: categoryFilter === cat.id ? 'var(--accent)' : 'var(--app-bg)',
-                                        color: categoryFilter === cat.id ? 'white' : 'var(--text-secondary)',
-                                        border: '1px solid var(--app-border)',
-                                    }}
-                                >
-                                    {cat.label}
-                                </button>
-                            ))}
-                            <button
-                                type="button"
-                                onClick={() => setCategoryFilter('further')}
-                                className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
-                                style={{
-                                    background: categoryFilter === 'further' ? 'var(--accent)' : 'var(--app-bg)',
-                                    color: categoryFilter === 'further' ? 'white' : 'var(--text-secondary)',
-                                    border: '1px solid var(--app-border)',
-                                }}
-                            >
-                                Weitere
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Template grid */}
-                    <div className="px-6 pb-2 overflow-y-auto flex-1">
-                        <div className="py-2 space-y-3">
-                            {/* "Alle"-Ansicht: Kategorien nebeneinander, je eine Spalte mit vertikaler Template-Liste */}
-                            {categoryFilter === 'all' && (
-                                <div className="grid grid-cols-4 gap-x-4 gap-y-4">
-                                    {DP_TEMPLATE_CATEGORIES.map((cat) => {
-                                        const catTpls = DP_TEMPLATES.filter((tpl) => tpl.category === cat.id).sort(
-                                            (a, b) => a.label.localeCompare(b.label),
-                                        );
-                                        if (!catTpls.length) return null;
-                                        return (
-                                            <div key={cat.id} className="flex flex-col gap-1">
-                                                <p
-                                                    className="text-[10px] font-semibold uppercase tracking-wider mb-1"
-                                                    style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
-                                                >
-                                                    {cat.label}
-                                                </p>
-                                                {catTpls.map((tpl) => {
-                                                    const active = templateId === tpl.id;
-                                                    return (
-                                                        <button
-                                                            key={tpl.id}
-                                                            type="button"
-                                                            onClick={() => selectTemplate(tpl.id, tpl.widgetType)}
-                                                            onDoubleClick={() => {
-                                                                selectTemplate(tpl.id, tpl.widgetType);
-                                                                setStep(2);
-                                                            }}
-                                                            className="flex items-center gap-2 rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-left w-full"
-                                                            style={{
-                                                                padding: '7px 10px',
-                                                                background: active
-                                                                    ? 'var(--accent)1a'
-                                                                    : 'var(--app-bg)',
-                                                                border: `1.5px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
-                                                                boxShadow: active
-                                                                    ? '0 0 0 3px var(--accent)22'
-                                                                    : 'none',
-                                                            }}
-                                                        >
-                                                            <span
-                                                                style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}
-                                                            >
-                                                                {tpl.icon}
-                                                            </span>
-                                                            <span
-                                                                className="leading-tight font-medium truncate"
-                                                                style={{
-                                                                    fontSize: 12,
-                                                                    color: active
-                                                                        ? 'var(--accent)'
-                                                                        : 'var(--text-secondary)',
-                                                                }}
-                                                            >
-                                                                {tpl.label}
-                                                            </span>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-
-                            {/* Einzelne Kategorie gefiltert */}
-                            {categoryFilter !== 'all' && categoryFilter !== 'further' && (
-                                <div className="grid grid-cols-3 gap-2">
-                                    {DP_TEMPLATES.filter((tpl) => tpl.category === categoryFilter)
-                                        .sort((a, b) => a.label.localeCompare(b.label))
-                                        .map((tpl) => {
-                                            const active = templateId === tpl.id;
-                                            return (
-                                                <button
-                                                    key={tpl.id}
-                                                    type="button"
-                                                    onClick={() => selectTemplate(tpl.id, tpl.widgetType)}
-                                                    onDoubleClick={() => {
-                                                        selectTemplate(tpl.id, tpl.widgetType);
-                                                        setStep(2);
-                                                    }}
-                                                    className="flex items-center gap-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-left"
-                                                    style={{
-                                                        padding: '8px 12px',
-                                                        background: active ? 'var(--accent)1a' : 'var(--app-bg)',
-                                                        border: `1.5px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
-                                                        boxShadow: active ? '0 0 0 3px var(--accent)22' : 'none',
-                                                    }}
-                                                >
-                                                    <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>
-                                                        {tpl.icon}
-                                                    </span>
-                                                    <span
-                                                        className="leading-tight font-medium truncate"
-                                                        style={{
-                                                            fontSize: 12,
-                                                            color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                                                        }}
-                                                    >
-                                                        {tpl.label}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                </div>
-                            )}
-
-                            {/* Weitere Widgets */}
-                            {(categoryFilter === 'all' || categoryFilter === 'further') && (
-                                <div>
-                                    <p
-                                        className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
-                                        style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
-                                    >
-                                        Weitere Widgets
-                                    </p>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {furtherWidgets.map((w) => {
-                                            const active = templateId === w.type;
-                                            return (
-                                                <button
-                                                    key={w.type}
-                                                    type="button"
-                                                    title={w.hint}
-                                                    onClick={() => selectTemplate(w.type, w.type)}
-                                                    onDoubleClick={() => {
-                                                        selectTemplate(w.type, w.type);
-                                                        setStep(2);
-                                                    }}
-                                                    className="flex items-center gap-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-left"
-                                                    style={{
-                                                        padding: '8px 12px',
-                                                        background: active ? 'var(--accent)1a' : 'var(--app-bg)',
-                                                        border: `1.5px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
-                                                        boxShadow: active ? '0 0 0 3px var(--accent)22' : 'none',
-                                                    }}
-                                                >
-                                                    <w.Icon
-                                                        size={18}
-                                                        color={active ? 'var(--accent)' : w.color}
-                                                        style={{ flexShrink: 0 }}
-                                                    />
-                                                    <span
-                                                        className="leading-tight font-medium truncate"
-                                                        style={{
-                                                            fontSize: 12,
-                                                            color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                                                        }}
-                                                    >
-                                                        {w.label}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Hint for selected further-widget – outside scroll area to prevent layout shift */}
-                    <div className="px-6 pb-2" style={{ minHeight: '2rem' }}>
-                        <p
-                            className="text-xs rounded-lg px-3 py-1.5"
-                            style={{
-                                visibility: (selectedTemplate?.hint ?? selectedFurther?.hint) ? 'visible' : 'hidden',
-                                color: 'var(--text-secondary)',
-                                background: 'var(--app-bg)',
-                                border: '1px solid var(--app-border)',
-                            }}
-                        >
-                            {selectedTemplate?.hint ?? selectedFurther?.hint ?? ' '}
-                        </p>
-                    </div>
-
-                    {/* Footer */}
-                    <div
-                        className="flex items-center justify-between px-6 py-4"
-                        style={{ borderTop: '1px solid var(--app-border)' }}
-                    >
-                        <button
-                            onClick={onClose}
-                            className="px-4 py-2 rounded-xl text-sm hover:opacity-80"
-                            style={{
-                                background: 'var(--app-bg)',
-                                color: 'var(--text-secondary)',
-                                border: '1px solid var(--app-border)',
-                            }}
-                        >
-                            {t('editor.manual.cancel')}
-                        </button>
-                        <button
-                            onClick={() => setStep(2)}
-                            disabled={!templateId}
-                            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold hover:opacity-80 disabled:opacity-30 transition-opacity"
-                            style={{ background: 'var(--accent)', color: '#fff' }}
-                        >
-                            Weiter
-                            <span style={{ fontSize: 14 }}>→</span>
-                        </button>
-                    </div>
-                </div>
-
-                {showPicker && (
-                    <DatapointPicker
-                        currentValue={datapoint}
-                        onSelect={(id, dpUnit, dpName) => {
-                            setDatapoint(id);
-                            if (!title.trim() && dpName) setTitle(applyDpNameFilter(dpName));
-                            if (!unit.trim() && dpUnit) setUnit(dpUnit);
-                        }}
-                        onClose={() => setShowPicker(false)}
-                    />
-                )}
-            </div>
-        );
-    }
-
-    // ── STEP 2: details ────────────────────────────────────────────────────────
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
             <div
-                className="rounded-xl w-full max-w-xl shadow-2xl"
+                className="rounded-xl w-full max-w-5xl shadow-2xl flex flex-col"
                 style={{
+                    maxHeight: '96vh',
                     background: 'linear-gradient(var(--app-surface), var(--app-surface)), var(--app-bg)',
                     border: '1px solid var(--app-border)',
                 }}
@@ -759,211 +347,354 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
             >
                 {/* Header */}
                 <div
-                    className="flex items-center gap-3 px-6 pt-5 pb-4"
+                    className="flex items-center justify-between px-6 pt-5 pb-4"
                     style={{ borderBottom: '1px solid var(--app-border)' }}
                 >
-                    <button
-                        onClick={() => setStep(1)}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+                    <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+                        {t('editor.manual.title')}
+                    </h2>
+                    <button onClick={onClose} className="hover:opacity-60" style={{ color: 'var(--text-secondary)' }}>
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* DP field */}
+                <div className="px-6 pt-4 pb-2">
+                    <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                        Datenpunkt{' '}
+                        <span className="font-normal opacity-60">(optional – Typ wird automatisch erkannt)</span>
+                    </label>
+                    <div className="flex gap-1.5">
+                        <input
+                            value={datapoint}
+                            onChange={(e) => setDatapoint(e.target.value)}
+                            placeholder="z.B. hm-rpc.0.ABC123.LEVEL"
+                            className={`flex-1 font-mono min-w-0 ${inputCls}`}
+                            style={inputStyle}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPicker(true)}
+                            className="px-3 rounded-xl hover:opacity-80 shrink-0"
+                            style={{
+                                background: 'var(--app-bg)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        >
+                            <Database size={15} />
+                        </button>
+                    </div>
+                    <p
+                        className="mt-1.5 text-xs flex items-center gap-1"
                         style={{
-                            background: 'var(--app-bg)',
-                            color: 'var(--text-secondary)',
-                            border: '1px solid var(--app-border)',
+                            color: 'var(--accent)',
+                            visibility: templateId && selectedTemplate ? 'visible' : 'hidden',
                         }}
                     >
-                        <span>←</span>
-                        {templateIcon && <span>{templateIcon}</span>}
-                        {templateLabel}
-                    </button>
-                    <div className="flex items-center gap-2 ml-auto">
-                        <span
-                            className="text-xs font-medium px-2 py-0.5 rounded-full"
-                            style={{ background: 'var(--app-bg)', color: 'var(--text-secondary)' }}
+                        <Check size={11} />
+                        Erkannt als: <strong>{selectedTemplate?.label ?? ' '}</strong>
+                    </p>
+                </div>
+
+                {/* Recently used */}
+                {recentTemplates.length > 0 && (
+                    <div className="px-6 pt-3 pb-1">
+                        <p
+                            className="text-[10px] font-semibold uppercase tracking-wider mb-2"
+                            style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
                         >
-                            2 / 2
-                        </span>
+                            {t('editor.manual.recentlyUsed')}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {recentTemplates.map((recent) => {
+                                const meta = WIDGET_REGISTRY.find((w) => w.type === recent.widgetType);
+                                if (!meta) return null;
+                                const isActive = templateId === recent.templateId;
+                                return (
+                                    <button
+                                        key={recent.templateId}
+                                        type="button"
+                                        onClick={() => selectRecent(recent)}
+                                        onDoubleClick={() => {
+                                            selectRecent(recent);
+                                            void handleAdd(recent.widgetType, recent.templateId);
+                                        }}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium hover:opacity-80 transition-opacity"
+                                        style={{
+                                            background: isActive ? `${meta.color}22` : 'var(--app-bg)',
+                                            color: isActive ? meta.color : 'var(--text-secondary)',
+                                            border: `1px solid ${isActive ? meta.color : 'var(--app-border)'}`,
+                                        }}
+                                    >
+                                        {recent.icon ? (
+                                            <span style={{ fontSize: 12, lineHeight: 1 }}>{recent.icon}</span>
+                                        ) : (
+                                            <meta.Icon size={11} />
+                                        )}
+                                        {recent.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* My presets (Widget-Designer) */}
+                {FEATURES.widgetDesigner && presets.length > 0 && (
+                    <div className="px-6 pt-3 pb-1">
+                        <p
+                            className="text-[10px] font-semibold uppercase tracking-wider mb-2"
+                            style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
+                        >
+                            {t('preset.mine')}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {presets.map((preset) => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    onClick={() => setInsertPreset(preset)}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium hover:opacity-80 transition-opacity"
+                                    style={{
+                                        background: 'var(--app-bg)',
+                                        color: 'var(--text-secondary)',
+                                        border: '1px solid var(--app-border)',
+                                    }}
+                                >
+                                    {preset.icon ? (
+                                        <span style={{ fontSize: 12, lineHeight: 1 }}>{preset.icon}</span>
+                                    ) : (
+                                        <Shapes size={11} />
+                                    )}
+                                    {preset.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Category filter tabs */}
+                <div className="px-6 pt-3 pb-1">
+                    <div className="flex flex-wrap gap-1.5">
                         <button
-                            onClick={onClose}
-                            className="hover:opacity-60"
-                            style={{ color: 'var(--text-secondary)' }}
+                            type="button"
+                            onClick={() => setCategoryFilter('all')}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
+                            style={{
+                                background: categoryFilter === 'all' ? 'var(--accent)' : 'var(--app-bg)',
+                                color: categoryFilter === 'all' ? 'white' : 'var(--text-secondary)',
+                                border: '1px solid var(--app-border)',
+                            }}
                         >
-                            <X size={18} />
+                            {t('common.all')}
+                        </button>
+                        {DP_TEMPLATE_CATEGORIES.map((cat) => (
+                            <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => setCategoryFilter(cat.id)}
+                                className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
+                                style={{
+                                    background: categoryFilter === cat.id ? 'var(--accent)' : 'var(--app-bg)',
+                                    color: categoryFilter === cat.id ? 'white' : 'var(--text-secondary)',
+                                    border: '1px solid var(--app-border)',
+                                }}
+                            >
+                                {cat.label}
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            onClick={() => setCategoryFilter('further')}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
+                            style={{
+                                background: categoryFilter === 'further' ? 'var(--accent)' : 'var(--app-bg)',
+                                color: categoryFilter === 'further' ? 'white' : 'var(--text-secondary)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        >
+                            Weitere
                         </button>
                     </div>
                 </div>
 
-                {/* Body */}
-                <div className="flex gap-5 px-6 py-5">
-                    {/* Fields */}
-                    <div className="flex-1 space-y-3.5 min-w-0">
-                        {/* Datapoint (for datapoint-mode widgets) */}
-                        {addMode === 'datapoint' && (
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                    {t('editor.manual.datapointId')}
-                                </label>
-                                <div className="flex gap-1.5">
-                                    <input
-                                        value={datapoint}
-                                        onChange={(e) => setDatapoint(e.target.value)}
-                                        placeholder="z.B. hm-rpc.0.ABC123.LEVEL"
-                                        className={`flex-1 font-mono min-w-0 ${inputCls}`}
-                                        style={inputStyle}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPicker(true)}
-                                        className="px-3 rounded-xl hover:opacity-80 shrink-0"
-                                        style={{
-                                            background: 'var(--app-bg)',
-                                            color: 'var(--text-secondary)',
-                                            border: '1px solid var(--app-border)',
-                                        }}
-                                    >
-                                        <Database size={15} />
-                                    </button>
-                                </div>
+                {/* Template grid */}
+                <div className="px-6 pb-2 overflow-y-auto flex-1">
+                    <div className="py-2 space-y-3">
+                        {/* "Alle"-Ansicht: Kategorien nebeneinander, je eine Spalte mit vertikaler Template-Liste */}
+                        {categoryFilter === 'all' && (
+                            <div className="grid grid-cols-4 gap-x-4 gap-y-4">
+                                {DP_TEMPLATE_CATEGORIES.map((cat) => {
+                                    const catTpls = DP_TEMPLATES.filter((tpl) => tpl.category === cat.id).sort((a, b) =>
+                                        a.label.localeCompare(b.label),
+                                    );
+                                    if (!catTpls.length) return null;
+                                    return (
+                                        <div key={cat.id} className="flex flex-col gap-1">
+                                            <p
+                                                className="text-[10px] font-semibold uppercase tracking-wider mb-1"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
+                                            >
+                                                {cat.label}
+                                            </p>
+                                            {catTpls.map((tpl) => {
+                                                const active = templateId === tpl.id;
+                                                return (
+                                                    <button
+                                                        key={tpl.id}
+                                                        type="button"
+                                                        onClick={() => selectTemplate(tpl.id, tpl.widgetType)}
+                                                        onDoubleClick={() => {
+                                                            selectTemplate(tpl.id, tpl.widgetType);
+                                                            void handleAdd(tpl.widgetType, tpl.id);
+                                                        }}
+                                                        className="flex items-center gap-2 rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-left w-full"
+                                                        style={{
+                                                            padding: '7px 10px',
+                                                            background: active ? 'var(--accent)1a' : 'var(--app-bg)',
+                                                            border: `1.5px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                            boxShadow: active ? '0 0 0 3px var(--accent)22' : 'none',
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>
+                                                            {tpl.icon}
+                                                        </span>
+                                                        <span
+                                                            className="leading-tight font-medium truncate"
+                                                            style={{
+                                                                fontSize: 12,
+                                                                color: active
+                                                                    ? 'var(--accent)'
+                                                                    : 'var(--text-secondary)',
+                                                            }}
+                                                        >
+                                                            {tpl.label}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
 
-                        {/* Calendar URL */}
-                        {isCalendar && (
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                    {t('editor.manual.icalUrl')}
-                                </label>
-                                <input
-                                    value={icalUrl}
-                                    onChange={(e) => setIcalUrl(e.target.value)}
-                                    placeholder="https://calendar.google.com/…"
-                                    className={`font-mono ${inputCls}`}
-                                    style={inputStyle}
-                                />
-                                <div className="flex gap-2">
-                                    <input
-                                        value={calName}
-                                        onChange={(e) => setCalName(e.target.value)}
-                                        placeholder={t('editor.manual.calName')}
-                                        className={`flex-1 min-w-0 ${inputCls}`}
-                                        style={inputStyle}
-                                    />
-                                    <ColorPicker
-                                        value={calColor}
-                                        onChange={(v) => setCalColor(v)}
-                                        className="w-10 h-10 rounded-xl cursor-pointer border-0 p-0.5 shrink-0"
-                                        style={{ border: '1px solid var(--app-border)' }}
-                                    />
-                                </div>
-                                <p className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
-                                    {t('editor.manual.moreCalendars')}
+                        {/* Einzelne Kategorie gefiltert */}
+                        {categoryFilter !== 'all' && categoryFilter !== 'further' && (
+                            <div className="grid grid-cols-3 gap-2">
+                                {DP_TEMPLATES.filter((tpl) => tpl.category === categoryFilter)
+                                    .sort((a, b) => a.label.localeCompare(b.label))
+                                    .map((tpl) => {
+                                        const active = templateId === tpl.id;
+                                        return (
+                                            <button
+                                                key={tpl.id}
+                                                type="button"
+                                                onClick={() => selectTemplate(tpl.id, tpl.widgetType)}
+                                                onDoubleClick={() => {
+                                                    selectTemplate(tpl.id, tpl.widgetType);
+                                                    void handleAdd(tpl.widgetType, tpl.id);
+                                                }}
+                                                className="flex items-center gap-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-left"
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    background: active ? 'var(--accent)1a' : 'var(--app-bg)',
+                                                    border: `1.5px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                    boxShadow: active ? '0 0 0 3px var(--accent)22' : 'none',
+                                                }}
+                                            >
+                                                <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>
+                                                    {tpl.icon}
+                                                </span>
+                                                <span
+                                                    className="leading-tight font-medium truncate"
+                                                    style={{
+                                                        fontSize: 12,
+                                                        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                                                    }}
+                                                >
+                                                    {tpl.label}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                            </div>
+                        )}
+
+                        {/* Weitere Widgets */}
+                        {(categoryFilter === 'all' || categoryFilter === 'further') && (
+                            <div>
+                                <p
+                                    className="text-[10px] font-semibold uppercase tracking-wider mb-1.5"
+                                    style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
+                                >
+                                    Weitere Widgets
                                 </p>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {furtherWidgets.map((w) => {
+                                        const active = templateId === w.type;
+                                        return (
+                                            <button
+                                                key={w.type}
+                                                type="button"
+                                                title={w.hint}
+                                                onClick={() => selectTemplate(w.type, w.type)}
+                                                onDoubleClick={() => {
+                                                    selectTemplate(w.type, w.type);
+                                                    void handleAdd(w.type, w.type);
+                                                }}
+                                                className="flex items-center gap-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-left"
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    background: active ? 'var(--accent)1a' : 'var(--app-bg)',
+                                                    border: `1.5px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                    boxShadow: active ? '0 0 0 3px var(--accent)22' : 'none',
+                                                }}
+                                            >
+                                                <w.Icon
+                                                    size={18}
+                                                    color={active ? 'var(--accent)' : w.color}
+                                                    style={{ flexShrink: 0 }}
+                                                />
+                                                <span
+                                                    className="leading-tight font-medium truncate"
+                                                    style={{
+                                                        fontSize: 12,
+                                                        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                                                    }}
+                                                >
+                                                    {w.label}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
-
-                        {/* Group selector (list widget) */}
-                        {isList && (
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                    {t('editor.manual.group')}
-                                </label>
-                                {groups.length === 0 ? (
-                                    <p className="text-xs rounded-xl px-3 py-2.5" style={inputStyle}>
-                                        {t('editor.manual.noGroups')}
-                                    </p>
-                                ) : (
-                                    <select
-                                        value={groupId}
-                                        onChange={(e) => setGroupId(e.target.value)}
-                                        className={inputCls}
-                                        style={inputStyle}
-                                    >
-                                        <option value="">{t('editor.manual.selectGroup')}</option>
-                                        {groups.map((g) => (
-                                            <option key={g.id} value={g.id}>
-                                                {g.name} ({t('endpoints.dp.count', { count: g.datapoints.length })})
-                                            </option>
-                                        ))}
-                                    </select>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Title */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                {t('editor.manual.titleField')}
-                            </label>
-                            <input
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                placeholder={def.label}
-                                className={inputCls}
-                                style={inputStyle}
-                            />
-                        </div>
-
-                        {/* Unit (value / chart only) */}
-                        {(type === 'value' || type === 'chart') && (
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                    {t('editor.manual.unit')}
-                                </label>
-                                <input
-                                    value={unit}
-                                    onChange={(e) => setUnit(e.target.value)}
-                                    placeholder="z.B. °C, %, W"
-                                    className={inputCls}
-                                    style={inputStyle}
-                                />
-                            </div>
-                        )}
-
-                        {/* Layout selection */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                Layout
-                            </label>
-                            <div className="flex flex-wrap gap-1.5">
-                                {(isCalendar ? CALENDAR_LAYOUTS : LAYOUTS)
-                                    .filter((l) => {
-                                        if (isGauge && l.id !== 'default') return false;
-                                        if (isChart && (l.id === 'compact' || l.id === 'minimal')) return false;
-                                        if (isHeader && l.id === 'card') return false;
-                                        if (isUniversal && l.id !== 'custom') return false;
-                                        return true;
-                                    })
-                                    .map((l) => (
-                                        <button
-                                            key={l.id}
-                                            onClick={() => setLayout(l.id)}
-                                            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-80"
-                                            style={{
-                                                background: layout === l.id ? 'var(--accent)22' : 'var(--app-bg)',
-                                                color: layout === l.id ? 'var(--accent)' : 'var(--text-secondary)',
-                                                border: `1px solid ${layout === l.id ? 'var(--accent)66' : 'var(--app-border)'}`,
-                                            }}
-                                        >
-                                            {l.label}
-                                        </button>
-                                    ))}
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="flex items-center gap-2 px-6 py-4" style={{ borderTop: '1px solid var(--app-border)' }}>
-                    <button
-                        onClick={() => setStep(1)}
-                        className="px-4 py-2 rounded-xl text-sm hover:opacity-80"
+                {/* Hint for selected further-widget – outside scroll area to prevent layout shift */}
+                <div className="px-6 pb-2" style={{ minHeight: '2rem' }}>
+                    <p
+                        className="text-xs rounded-lg px-3 py-1.5"
                         style={{
-                            background: 'var(--app-bg)',
+                            visibility: (selectedTemplate?.hint ?? selectedFurther?.hint) ? 'visible' : 'hidden',
                             color: 'var(--text-secondary)',
+                            background: 'var(--app-bg)',
                             border: '1px solid var(--app-border)',
                         }}
                     >
-                        ← Zurück
-                    </button>
+                        {selectedTemplate?.hint ?? selectedFurther?.hint ?? ' '}
+                    </p>
+                </div>
+
+                {/* Footer */}
+                <div
+                    className="flex items-center justify-between px-6 py-4"
+                    style={{ borderTop: '1px solid var(--app-border)' }}
+                >
                     <button
                         onClick={onClose}
                         className="px-4 py-2 rounded-xl text-sm hover:opacity-80"
@@ -977,10 +708,11 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
                     </button>
                     <button
                         onClick={() => void handleAdd()}
-                        disabled={!canAdd}
-                        className="flex-1 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-80 disabled:opacity-30 transition-opacity"
-                        style={{ background: 'var(--accent)' }}
+                        disabled={!templateId}
+                        className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold hover:opacity-80 disabled:opacity-30 transition-opacity"
+                        style={{ background: 'var(--accent)', color: '#fff' }}
                     >
+                        <Plus size={15} />
                         {t('editor.manual.add')}
                     </button>
                 </div>
@@ -991,10 +723,22 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
                     currentValue={datapoint}
                     onSelect={(id, dpUnit, dpName) => {
                         setDatapoint(id);
-                        if (!title.trim() && dpName) setTitle(dpName);
+                        if (!title.trim() && dpName) setTitle(applyDpNameFilter(dpName));
                         if (!unit.trim() && dpUnit) setUnit(dpUnit);
                     }}
                     onClose={() => setShowPicker(false)}
+                />
+            )}
+
+            {insertPreset && (
+                <PresetInsertDialog
+                    preset={insertPreset}
+                    onInsert={(widget) => {
+                        onAdd(widget);
+                        setInsertPreset(null);
+                        onClose();
+                    }}
+                    onCancel={() => setInsertPreset(null)}
                 />
             )}
         </div>
@@ -1006,10 +750,16 @@ function ManualWidgetDialog({ onAdd, onClose }: { onAdd: (w: WidgetConfig) => vo
 function MobileOrderPanel({ layoutId }: { layoutId: string }) {
     const t = useT();
     const { layouts, updateWidgetInTab } = useDashboardStore();
-    const activeTabId = useDashboardStore(
-        (s) => (s.layouts.find((l) => l.id === layoutId) ?? s.layouts[0])?.activeTabId ?? '',
-    );
-    const tab = layouts.find((l) => l.id === layoutId)?.tabs.find((t) => t.id === activeTabId);
+    const activeTabId = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === layoutId) ?? s.layouts[0];
+        const sec = l?.sections.find((x) => x.id === l.activeSectionId) ?? l?.sections[0];
+        return sec?.activeTabId ?? '';
+    });
+    const tab = (() => {
+        const l = layouts.find((x) => x.id === layoutId);
+        const sec = l?.sections.find((x) => x.id === l.activeSectionId) ?? l?.sections[0];
+        return sec?.tabs.find((t) => t.id === activeTabId);
+    })();
 
     const [dragIdx, setDragIdx] = useState<number | null>(null);
     const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -1147,6 +897,311 @@ function MobileOrderPanel({ layoutId }: { layoutId: string }) {
     );
 }
 
+// ── SectionSwitcher ─────────────────────────────────────────────────────────────
+// Switch between the sections ("Bereiche") of the active layout while editing, and
+// add new ones inline. Full section management (rename, icon, delete, reorder) lives
+// on the Layouts admin page.
+const SectionSwitcher = memo(function SectionSwitcher() {
+    const t = useT();
+    // Portal into the admin container, not document.body: only there does the
+    // popover inherit the admin theme's CSS variables. Rendered to the body it
+    // picks up the frontend theme and shows up dark inside a light admin.
+    const portalTarget = usePortalTarget();
+    const sections = useStoreWithEqualityFn(
+        useDashboardStore,
+        (s) => {
+            const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+            return l.sections.map((sec) => ({ id: sec.id, name: sec.name }));
+        },
+        (a, b) => a.length === b.length && a.every((x, i) => x.id === b[i].id && x.name === b[i].name),
+    );
+    const activeSectionId = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        return l.activeSectionId;
+    });
+    const layoutId = useDashboardStore((s) => (s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0]).id);
+    const setActiveSection = useDashboardStore((s) => s.setActiveSection);
+    const addSection = useDashboardStore((s) => s.addSection);
+    const updateSection = useDashboardStore((s) => s.updateSection);
+    const [adding, setAdding] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [settingsSectionId, setSettingsSectionId] = useState<string | null>(null);
+    const [badgesOpen, setBadgesOpen] = useState(false);
+    const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
+    const gearRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+    // Full data for the section whose settings popover is open (badges/aggregate).
+    const openSection = useDashboardStore((s) => {
+        if (!settingsSectionId) return null;
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        return l.sections.find((sec) => sec.id === settingsSectionId) ?? null;
+    });
+
+    const create = () => {
+        if (newName.trim()) addSection(newName.trim());
+        setNewName('');
+        setAdding(false);
+    };
+
+    const openSettings = (id: string) => {
+        const btn = gearRefs.current.get(id);
+        if (!btn) return;
+        setBadgesOpen(false);
+        const rect = btn.getBoundingClientRect();
+        const panelW = 340;
+        setPanelPos({ top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - panelW - 12)) });
+        setSettingsSectionId((prev) => (prev === id ? null : id));
+    };
+
+    return (
+        <div
+            className="flex items-center gap-1.5 px-3 py-1.5 overflow-x-auto"
+            style={{ background: 'var(--app-bg)', borderBottom: '1px solid var(--app-border)' }}
+        >
+            <a
+                href={`#/admin/layouts?expand=${layoutId}`}
+                title={t('sections.manage')}
+                className="text-[10px] font-semibold shrink-0 mr-1 inline-flex items-center gap-0.5 hover:underline"
+                style={{ color: 'var(--text-secondary)' }}
+            >
+                {t('sections.title')}:
+                <ExternalLink size={9} />
+            </a>
+            {sections.map((sec) => {
+                const isActive = sec.id === activeSectionId;
+                return (
+                    <div
+                        key={sec.id}
+                        className="shrink-0 flex items-center gap-0.5 rounded-full pl-2.5 pr-1 py-0.5 transition-colors"
+                        style={{
+                            background: isActive ? 'var(--accent)' : 'var(--app-surface)',
+                            border: `1px solid ${isActive ? 'var(--accent)' : 'var(--app-border)'}`,
+                        }}
+                    >
+                        <button
+                            onClick={() => setActiveSection(sec.id)}
+                            className="text-xs font-medium"
+                            style={{ color: isActive ? '#fff' : 'var(--text-secondary)' }}
+                        >
+                            {sec.name}
+                        </button>
+                        <button
+                            ref={(el) => {
+                                if (el) gearRefs.current.set(sec.id, el);
+                                else gearRefs.current.delete(sec.id);
+                            }}
+                            onClick={() => openSettings(sec.id)}
+                            title={t('tabBar.badges')}
+                            className="p-0.5 rounded-full hover:opacity-70 flex items-center shrink-0"
+                            style={{
+                                color: isActive
+                                    ? '#fff'
+                                    : settingsSectionId === sec.id
+                                      ? 'var(--accent)'
+                                      : 'var(--text-secondary)',
+                            }}
+                        >
+                            <Settings size={11} />
+                        </button>
+                    </div>
+                );
+            })}
+            {adding ? (
+                <input
+                    autoFocus
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') create();
+                        if (e.key === 'Escape') {
+                            setNewName('');
+                            setAdding(false);
+                        }
+                    }}
+                    onBlur={create}
+                    placeholder={t('sections.placeholder')}
+                    className="shrink-0 text-xs rounded-full px-2.5 py-1 focus:outline-none w-40"
+                    style={{
+                        background: 'var(--app-bg)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--accent)',
+                    }}
+                />
+            ) : (
+                <button
+                    onClick={() => setAdding(true)}
+                    className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded-full hover:opacity-80"
+                    style={{
+                        background: 'var(--app-surface)',
+                        color: 'var(--text-secondary)',
+                        border: '1px dashed var(--app-border)',
+                    }}
+                    title={t('sections.newSection')}
+                >
+                    <Plus size={12} /> {t('sections.newSection')}
+                </button>
+            )}
+
+            {settingsSectionId &&
+                openSection &&
+                panelPos &&
+                createPortal(
+                    <>
+                        <div className="fixed inset-0 z-[998]" onClick={() => setSettingsSectionId(null)} />
+                        <div
+                            className="fixed z-[999] rounded-xl p-3 shadow-2xl"
+                            style={{
+                                top: panelPos.top,
+                                left: panelPos.left,
+                                width: 340,
+                                background: 'var(--app-surface)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        >
+                            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                {t('pin.field')}
+                            </p>
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                placeholder={t('pin.placeholder')}
+                                value={openSection.pin ?? ''}
+                                onChange={(e) => updateSection(openSection.id, { pin: e.target.value || undefined })}
+                                className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                                style={{
+                                    background: 'var(--app-bg)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--app-border)',
+                                }}
+                            />
+                            {openSection.pin ? (
+                                <div className="flex items-center justify-between mt-2">
+                                    <div>
+                                        <p className="text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                                            {t('pin.keepUnlocked')}
+                                        </p>
+                                        <p className="text-[9px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                                            {t('pin.keepUnlockedHint')}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() =>
+                                            updateSection(openSection.id, {
+                                                pinRelock: openSection.pinRelock === 'session' ? undefined : 'session',
+                                            })
+                                        }
+                                        className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                        style={{
+                                            background:
+                                                openSection.pinRelock === 'session'
+                                                    ? 'var(--accent)'
+                                                    : 'var(--app-border)',
+                                        }}
+                                    >
+                                        <span
+                                            className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                            style={{ left: openSection.pinRelock === 'session' ? '18px' : '2px' }}
+                                        />
+                                    </button>
+                                </div>
+                            ) : (
+                                <p className="text-[9px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('pin.hint')}
+                                </p>
+                            )}
+
+                            {/* ── Badges section (collapsed, like the tab panel) ──────────── */}
+                            <div
+                                className="rounded-lg px-2.5 py-2 mt-3"
+                                style={{
+                                    background: 'color-mix(in srgb, #6366f1 7%, var(--app-bg))',
+                                    border: '1px solid color-mix(in srgb, #6366f1 26%, var(--app-border))',
+                                }}
+                            >
+                                <button
+                                    className="flex items-center gap-1.5 w-full text-left hover:opacity-80"
+                                    onClick={() => setBadgesOpen((o) => !o)}
+                                >
+                                    <span style={{ color: 'var(--text-secondary)' }}>
+                                        {badgesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                    </span>
+                                    <span
+                                        className="text-[11px] font-medium"
+                                        style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                        {t('tabBar.badges')}
+                                        {(openSection.badges?.length ?? 0) > 0 && (
+                                            <span
+                                                className="ml-1.5 px-1 rounded-full text-[9px]"
+                                                style={{ background: 'var(--accent)22', color: 'var(--accent)' }}
+                                            >
+                                                {openSection.badges!.length}
+                                            </span>
+                                        )}
+                                    </span>
+                                </button>
+
+                                {badgesOpen && (
+                                    <div className="mt-2 space-y-2">
+                                        <BadgeEditor
+                                            badges={openSection.badges ?? []}
+                                            onChange={(next) => updateSection(openSection.id, { badges: next })}
+                                            style={{ width: '100%', padding: 0 }}
+                                        />
+                                        <div
+                                            className="flex items-center justify-between pt-2 border-t"
+                                            style={{ borderColor: 'var(--app-border)' }}
+                                        >
+                                            <div>
+                                                <p
+                                                    className="text-[11px] font-medium"
+                                                    style={{ color: 'var(--text-primary)' }}
+                                                >
+                                                    {t('badge.sectionAggregate')}
+                                                </p>
+                                                <p
+                                                    className="text-[9px] mt-0.5"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    {t('badge.sectionAggregateHint')}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() =>
+                                                    updateSection(openSection.id, {
+                                                        badgeAggregate: {
+                                                            ...openSection.badgeAggregate,
+                                                            enabled: !(openSection.badgeAggregate?.enabled ?? false),
+                                                        },
+                                                    })
+                                                }
+                                                className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                                style={{
+                                                    background: openSection.badgeAggregate?.enabled
+                                                        ? 'var(--accent)'
+                                                        : 'var(--app-border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{
+                                                        left: openSection.badgeAggregate?.enabled ? '18px' : '2px',
+                                                    }}
+                                                />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </>,
+                    portalTarget,
+                )}
+        </div>
+    );
+});
+
 // ── TabBar ─────────────────────────────────────────────────────────────────────
 // Isolated component so AdminEditor does NOT re-render on tab switch.
 // Key insight: patchLayout does { ...l, activeTabId: id } which preserves the
@@ -1156,22 +1211,62 @@ const TabBar = memo(function TabBar() {
     const t = useT();
     const portalTarget = usePortalTarget();
 
-    const tabs = useDashboardStore((s) => (s.layouts.find((l) => l.id === s.activeLayoutId) ?? s.layouts[0]).tabs);
-    const activeTabId = useDashboardStore(
-        (s) => (s.layouts.find((l) => l.id === s.activeLayoutId) ?? s.layouts[0]).activeTabId,
+    const tabs = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        const sec = l.sections.find((x) => x.id === l.activeSectionId) ?? l.sections[0];
+        return sec.tabs;
+    });
+    const activeTabId = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        const sec = l.sections.find((x) => x.id === l.activeSectionId) ?? l.sections[0];
+        return sec.activeTabId;
+    });
+    const { addTab, setActiveTab, renameTab, removeTab, setTabSlug, updateTab, reorderTabs, moveTabToSection } =
+        useStoreWithEqualityFn(
+            useDashboardStore,
+            (s) => ({
+                addTab: s.addTab,
+                setActiveTab: s.setActiveTab,
+                renameTab: s.renameTab,
+                removeTab: s.removeTab,
+                setTabSlug: s.setTabSlug,
+                updateTab: s.updateTab,
+                reorderTabs: s.reorderTabs,
+                moveTabToSection: s.moveTabToSection,
+            }),
+            shallow,
+        );
+
+    // Current layout/section of the edited tabs — used to flag the tab's own section
+    // in the move/copy target list and to build a fully-qualified label per section.
+    const currentLayoutId = useDashboardStore(
+        (s) => (s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0]).id,
     );
-    const { addTab, setActiveTab, renameTab, removeTab, setTabSlug, updateTab, reorderTabs } = useStoreWithEqualityFn(
+    const currentSectionId = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        return (l.sections.find((x) => x.id === l.activeSectionId) ?? l.sections[0]).id;
+    });
+    const multiLayout = useDashboardStore((s) => s.layouts.length > 1);
+    const sectionTargets = useStoreWithEqualityFn(
         useDashboardStore,
-        (s) => ({
-            addTab: s.addTab,
-            setActiveTab: s.setActiveTab,
-            renameTab: s.renameTab,
-            removeTab: s.removeTab,
-            setTabSlug: s.setTabSlug,
-            updateTab: s.updateTab,
-            reorderTabs: s.reorderTabs,
-        }),
-        shallow,
+        (s) =>
+            s.layouts.flatMap((l) =>
+                l.sections.map((sec) => ({
+                    layoutId: l.id,
+                    layoutName: l.name,
+                    sectionId: sec.id,
+                    sectionName: sec.name,
+                })),
+            ),
+        (a, b) =>
+            a.length === b.length &&
+            a.every(
+                (x, i) =>
+                    x.layoutId === b[i].layoutId &&
+                    x.sectionId === b[i].sectionId &&
+                    x.layoutName === b[i].layoutName &&
+                    x.sectionName === b[i].sectionName,
+            ),
     );
 
     const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -1183,6 +1278,8 @@ const TabBar = memo(function TabBar() {
     const [tabBadgesOpen, setTabBadgesOpen] = useState(false);
     const [iconPickerTabId, setIconPickerTabId] = useState<string | null>(null);
     const [showTabExport, setShowTabExport] = useState(false);
+    // Encodes the chosen move/copy target as `${layoutId}::${sectionId}` ('' = none).
+    const [moveTarget, setMoveTarget] = useState('');
     const settingsBtnRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const [tabDragIdx, setTabDragIdx] = useState<number | null>(null);
     const [tabDragOverIdx, setTabDragOverIdx] = useState<number | null>(null);
@@ -1211,12 +1308,34 @@ const TabBar = memo(function TabBar() {
             if (prev !== tabId) {
                 setConditionsOpen(false);
                 setTabBadgesOpen(false);
+                setMoveTarget('');
             }
             return prev === tabId ? null : tabId;
         });
     };
 
     const settingsTab = tabs.find((t) => t.id === settingsTabId);
+
+    const currentTargetKey = `${currentLayoutId}::${currentSectionId}`;
+    const runTabMove = (mode: 'move' | 'copy') => {
+        if (!settingsTabId || !moveTarget) return;
+        if (mode === 'move' && moveTarget === currentTargetKey) return;
+        const [layoutId, sectionId] = moveTarget.split('::');
+        moveTabToSection(settingsTabId, currentLayoutId, currentSectionId, layoutId, sectionId, mode);
+        setSettingsTabId(null);
+    };
+    // Group the flat target list by layout so the dropdown can use <optgroup>.
+    const targetsByLayout = sectionTargets.reduce<
+        { layoutId: string; layoutName: string; sections: { sectionId: string; sectionName: string }[] }[]
+    >((acc, tgt) => {
+        let grp = acc.find((g) => g.layoutId === tgt.layoutId);
+        if (!grp) {
+            grp = { layoutId: tgt.layoutId, layoutName: tgt.layoutName, sections: [] };
+            acc.push(grp);
+        }
+        grp.sections.push({ sectionId: tgt.sectionId, sectionName: tgt.sectionName });
+        return acc;
+    }, []);
 
     // Re-clamp left against the panel's *current* width so expanding the conditions
     // (256 → 500px) on a far-right tab can't push the rules off the right edge.
@@ -1605,6 +1724,66 @@ const TabBar = memo(function TabBar() {
                                 </button>
                             </div>
 
+                            {/* ── PIN gate ────────────────────────────────────────────────── */}
+                            <div className="border-t pt-2" style={{ borderColor: 'var(--app-border)' }}>
+                                <label className="text-[11px] block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('pin.field')}
+                                </label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    placeholder={t('pin.placeholder')}
+                                    value={settingsTab.pin ?? ''}
+                                    onChange={(e) => updateTab(settingsTabId, { pin: e.target.value || undefined })}
+                                    className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                                    style={{
+                                        background: 'var(--app-bg)',
+                                        color: 'var(--text-primary)',
+                                        border: '1px solid var(--app-border)',
+                                    }}
+                                />
+                                {settingsTab.pin ? (
+                                    <div className="flex items-center justify-between mt-2">
+                                        <div>
+                                            <p
+                                                className="text-[11px] font-medium"
+                                                style={{ color: 'var(--text-primary)' }}
+                                            >
+                                                {t('pin.keepUnlocked')}
+                                            </p>
+                                            <p className="text-[9px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                                                {t('pin.keepUnlockedHint')}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() =>
+                                                updateTab(settingsTabId, {
+                                                    pinRelock:
+                                                        settingsTab.pinRelock === 'session' ? undefined : 'session',
+                                                })
+                                            }
+                                            className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                            style={{
+                                                background:
+                                                    settingsTab.pinRelock === 'session'
+                                                        ? 'var(--accent)'
+                                                        : 'var(--app-border)',
+                                            }}
+                                        >
+                                            <span
+                                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                style={{ left: settingsTab.pinRelock === 'session' ? '18px' : '2px' }}
+                                            />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-[9px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                        {t('pin.hint')}
+                                    </p>
+                                )}
+                            </div>
+
                             {/* ── Export tab ──────────────────────────────────────────────── */}
                             <div className="border-t pt-2" style={{ borderColor: 'var(--app-border)' }}>
                                 <button
@@ -1619,6 +1798,78 @@ const TabBar = memo(function TabBar() {
                                     <Download size={11} />
                                     {t('tabBar.exportTab')}
                                 </button>
+                            </div>
+
+                            {/* ── Move / copy tab to another section ──────────────────────── */}
+                            <div className="border-t pt-2 space-y-1.5" style={{ borderColor: 'var(--app-border)' }}>
+                                <div
+                                    className="flex items-center gap-1.5 text-[11px] font-medium"
+                                    style={{ color: 'var(--text-secondary)' }}
+                                >
+                                    <FolderInput size={11} />
+                                    {t('tabBar.moveTitle')}
+                                </div>
+                                <select
+                                    value={moveTarget}
+                                    onChange={(e) => setMoveTarget(e.target.value)}
+                                    className="w-full text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                                    style={{
+                                        background: 'var(--app-bg)',
+                                        color: 'var(--text-primary)',
+                                        border: '1px solid var(--app-border)',
+                                    }}
+                                >
+                                    <option value="">{t('tabBar.moveTargetPlaceholder')}</option>
+                                    {targetsByLayout.map((grp) => {
+                                        const opts = grp.sections.map((sec) => {
+                                            const key = `${grp.layoutId}::${sec.sectionId}`;
+                                            const label =
+                                                key === currentTargetKey
+                                                    ? `${sec.sectionName} (${t('tabBar.moveCurrentSuffix')})`
+                                                    : sec.sectionName;
+                                            return (
+                                                <option key={key} value={key}>
+                                                    {label}
+                                                </option>
+                                            );
+                                        });
+                                        return multiLayout ? (
+                                            <optgroup key={grp.layoutId} label={grp.layoutName}>
+                                                {opts}
+                                            </optgroup>
+                                        ) : (
+                                            <Fragment key={grp.layoutId}>{opts}</Fragment>
+                                        );
+                                    })}
+                                </select>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        onClick={() => runTabMove('move')}
+                                        disabled={!moveTarget || moveTarget === currentTargetKey}
+                                        className="flex items-center justify-center gap-1.5 flex-1 px-2.5 py-1.5 rounded-lg text-xs hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                                        style={{
+                                            background: 'var(--app-bg)',
+                                            border: '1px solid var(--app-border)',
+                                            color: 'var(--text-secondary)',
+                                        }}
+                                    >
+                                        <FolderInput size={11} />
+                                        {t('tabBar.move')}
+                                    </button>
+                                    <button
+                                        onClick={() => runTabMove('copy')}
+                                        disabled={!moveTarget}
+                                        className="flex items-center justify-center gap-1.5 flex-1 px-2.5 py-1.5 rounded-lg text-xs hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                                        style={{
+                                            background: 'var(--app-bg)',
+                                            border: '1px solid var(--app-border)',
+                                            color: 'var(--text-secondary)',
+                                        }}
+                                    >
+                                        <Copy size={11} />
+                                        {t('tabBar.copy')}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* ── Conditions section (highlighted, like widget Darstellung) ── */}
@@ -1784,15 +2035,21 @@ export function AdminEditor() {
     );
     // tabs reference is stable on tab switch (patchLayout spreads { ...l, activeTabId }
     // which preserves the l.tabs array reference) — needed only for ImportWidgetDialog
-    const tabs = useDashboardStore((s) => (s.layouts.find((l) => l.id === s.activeLayoutId) ?? s.layouts[0]).tabs);
-    const importActiveTabId = useDashboardStore(
-        (s) => (s.layouts.find((l) => l.id === s.activeLayoutId) ?? s.layouts[0]).activeTabId,
-    );
+    const tabs = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        const sec = l.sections.find((x) => x.id === l.activeSectionId) ?? l.sections[0];
+        return sec.tabs;
+    });
+    const importActiveTabId = useDashboardStore((s) => {
+        const l = s.layouts.find((x) => x.id === s.activeLayoutId) ?? s.layouts[0];
+        const sec = l.sections.find((x) => x.id === l.activeSectionId) ?? l.sections[0];
+        return sec.activeTabId;
+    });
+    const activeSectionForEditor = useActiveSection();
     // Stable action references — never cause re-renders
     const setActiveLayout = useDashboardStore((s) => s.setActiveLayout);
     const setActiveLayoutAndTab = useDashboardStore((s) => s.setActiveLayoutAndTab);
     const addWidget = useDashboardStore((s) => s.addWidget);
-    const addTab = useDashboardStore((s) => s.addTab);
     const addTabFromImportOuter = useDashboardStore((s) => s.addTabFromImport);
 
     // Deep-link support: ?layout=<id>&tab=<id>&focus=<widgetId>
@@ -1821,11 +2078,51 @@ export function AdminEditor() {
     const { frontend, updateFrontend } = useConfigStore();
     const guidelinesEnabled = frontend.guidelinesEnabled ?? false;
 
+    // Effective settings for the edited layout/section so the editor preview honors
+    // per-layout overrides (e.g. a layout that enables the menu while global is off).
+    const editorSettings = useEffectiveSettings(activeLayoutId, activeSectionForEditor?.id);
+
+    // Mirror the frontend's mobile behavior: a docked sidebar menu collapses on narrow
+    // viewports (App.tsx). Without this the editor keeps rendering the full-width menu
+    // preview on a phone, eating most of the already-narrow editing area.
+    const [viewportWidth, setViewportWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 0));
+    useEffect(() => {
+        const onResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            window.removeEventListener('orientationchange', onResize);
+        };
+    }, []);
+    const isMobileViewport = viewportWidth > 0 && viewportWidth < (editorSettings.mobileBreakpoint ?? 600);
+
+    // Docked-sidebar layout menu: mirror the frontend so the editor preview reserves
+    // the same horizontal space the menu occupies in the frontend. Without this the
+    // preview would be full-width while the frontend dashboard is (device − menu),
+    // so designs wouldn't match. Rendered as a non-interactive preview (see below).
+    const drawerSidebarPreview =
+        (editorSettings.layoutDrawerEnabled ?? false) &&
+        (editorSettings.layoutDrawerPlacement ?? 'floating') === 'sidebar' &&
+        // On a narrow editor window the frontend only keeps the docked sidebar when the
+        // mobile placement explicitly says so — otherwise it becomes a hamburger there.
+        (!isMobileViewport || (editorSettings.layoutDrawerMobilePlacement ?? 'auto') === 'sidebar') &&
+        activeSectionForEditor &&
+        ((useDashboardStore
+            .getState()
+            .layouts.find((l) => l.id === activeLayoutId)
+            ?.sections.filter((s) => !s.hidden).length ?? 0) > 1 ||
+            (editorSettings.layoutDrawerShowSingle ?? false));
+    const drawerWidth = editorSettings.layoutDrawerWidth ?? 240;
+
+    // Horizontal section bar (top/bottom placement) is intentionally NOT previewed in the
+    // editor — only the docked "sidebar" placement is mirrored (see drawerSidebarPreview),
+    // because it reserves horizontal design space. Top/bottom bars are a frontend-only strip.
+
     // Run custom JS inside the editor preview when `customJSInEditor` is enabled.
-    useCustomJs(activeLayoutId, true);
+    useCustomJs(activeLayoutId, activeSectionForEditor.id, true);
     // Apply custom CSS inside the editor preview when `customCSSInEditor` is enabled.
-    useCustomCss(activeLayoutId, true);
-    const [showTabWizard, setShowTabWizard] = useState(false);
+    useCustomCss(activeLayoutId, activeSectionForEditor.id, true);
     const [showManual, setShowManual] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [showMobileOrder, setShowMobileOrder] = useState(false);
@@ -1901,13 +2198,6 @@ export function AdminEditor() {
                     <Plus size={15} /> Neues Widget
                 </button>
                 <button
-                    onClick={() => setShowTabWizard(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white hover:opacity-80"
-                    style={{ background: 'var(--accent-purple, #8b5cf6)' }}
-                >
-                    <Wand2 size={15} /> {t('editor.tab.addTab')}
-                </button>
-                <button
                     onClick={() => setShowImport(true)}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium hover:opacity-80"
                     style={{
@@ -1944,12 +2234,63 @@ export function AdminEditor() {
                 </button>
             </div>
 
-            {/* Tab bar — isolated memoized component, does not cause AdminEditor to re-render on tab switch */}
+            {/* Section switcher — pick/add the "Bereich" being edited */}
+            <SectionSwitcher />
+
+            {/* Tab bar — isolated memoized component, does not cause AdminEditor to re-render on tab switch.
+                Always rendered at the top in the editor: the footer ('bottom') position is a
+                frontend-only concern, so the design surface keeps the tab strip on top. */}
             <TabBar />
 
             {/* Dashboard preview with edit mode */}
             <div className="flex-1 flex overflow-hidden" style={{ background: 'var(--app-bg)' }}>
-                <div className="flex-1 flex flex-col overflow-hidden">
+                {drawerSidebarPreview && (
+                    // Greyed, non-interactive preview of the docked sidebar so the design
+                    // area matches the frontend. A hint overlay explains why it appears and
+                    // links to the setting that controls it.
+                    <div className="shrink-0 relative flex" style={{ width: drawerWidth }}>
+                        <div
+                            className="flex w-full"
+                            style={{ pointerEvents: 'none', filter: 'grayscale(1)', opacity: 0.45 }}
+                            aria-hidden
+                        >
+                            <LayoutDrawer
+                                activeLayoutId={activeLayoutId}
+                                activeSectionId={activeSectionForEditor?.id}
+                                variant="sidebar"
+                                width={drawerWidth}
+                                showTitle={editorSettings.layoutDrawerShowTitle ?? true}
+                                drawerTitle={editorSettings.layoutDrawerTitle ?? ''}
+                                entryStyle={editorSettings.layoutDrawerEntryStyle ?? 'iconAndName'}
+                                entryHeight={editorSettings.layoutDrawerEntryHeight ?? 48}
+                                indicatorStyle={editorSettings.layoutDrawerIndicatorStyle ?? 'filled'}
+                                fontSize={editorSettings.layoutDrawerFontSize ?? 14}
+                                iconSize={editorSettings.layoutDrawerIconSize ?? 16}
+                                items={editorSettings.layoutDrawerItems ?? []}
+                            />
+                        </div>
+                        <div
+                            className="absolute inset-x-2 bottom-2 rounded-lg p-2.5 space-y-1.5 shadow-lg"
+                            style={{
+                                background: 'var(--app-surface)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        >
+                            <p className="text-[11px] leading-snug" style={{ color: 'var(--text-secondary)' }}>
+                                {t('editor.dockedMenuPreview.hint')}
+                            </p>
+                            <a
+                                href={`#/admin/design?ctx=${activeLayoutId}&tab=menu`}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium hover:opacity-80"
+                                style={{ color: 'var(--accent)' }}
+                            >
+                                {t('editor.dockedMenuPreview.link')}
+                                <ExternalLink size={11} />
+                            </a>
+                        </div>
+                    </div>
+                )}
+                <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
                     <FocusedWidgetContext.Provider value={focusedWidgetId}>
                         <Dashboard editMode={true} />
                     </FocusedWidgetContext.Provider>
@@ -1957,16 +2298,6 @@ export function AdminEditor() {
                 {showMobileOrder && <MobileOrderPanel layoutId={activeLayoutId} />}
             </div>
 
-            {showTabWizard && (
-                <TabWizard
-                    onAdd={(name, widgets) => {
-                        addTab(name);
-                        widgets.forEach(addWidget);
-                        setShowTabWizard(false);
-                    }}
-                    onClose={() => setShowTabWizard(false)}
-                />
-            )}
             {showManual && <ManualWidgetDialog onAdd={addWidget} onClose={() => setShowManual(false)} />}
             {showImport && (
                 <ImportWidgetDialog
@@ -1976,7 +2307,10 @@ export function AdminEditor() {
                         const state = useDashboardStore.getState();
                         const activeLayout =
                             state.layouts.find((l) => l.id === state.activeLayoutId) ?? state.layouts[0];
-                        if (tabId && tabId !== activeLayout?.activeTabId) state.setActiveTab(tabId);
+                        const activeSec =
+                            activeLayout?.sections.find((se) => se.id === activeLayout.activeSectionId) ??
+                            activeLayout?.sections[0];
+                        if (tabId && tabId !== activeSec?.activeTabId) state.setActiveTab(tabId);
                         addWidget(widget);
                     }}
                     onAddTab={addTabFromImportOuter}

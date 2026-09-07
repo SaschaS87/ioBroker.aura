@@ -1,8 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { resolveHtmlAssets } from '../../utils/assetUrl';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Settings, X, GripVertical, ChevronDown, ChevronRight, Download, Upload } from 'lucide-react';
-import { useDashboardStore, useActiveLayout, resolveTabBarSettings } from '../../store/dashboardStore';
+import { Settings, X, GripVertical, ChevronDown, ChevronRight, Download, Upload, Lock } from 'lucide-react';
+import {
+    useDashboardStore,
+    useActiveLayout,
+    useActiveSection,
+    resolveTabBarSettings,
+} from '../../store/dashboardStore';
 import type { Tab, TabBarItem, TabBarSettings, DashboardLayout } from '../../store/dashboardStore';
 import { exportTab, importTab } from '../../utils/widgetExportImport';
 import { ExportAnonymizeDialog } from '../config/ExportAnonymizeDialog';
@@ -12,10 +18,14 @@ import { IconPickerModal } from '../config/IconPickerModal';
 import { useT } from '../../i18n';
 import { subscribeDpValue } from '../../hooks/useIoBroker';
 import { applyCustomFormat, fmtTime, fmtDate } from '../../utils/clockUtils';
+import { tabBarShowsOnOwn } from '../../utils/tabBarVisible';
+import { hasPin, tabPinKey } from '../../utils/pinLock';
+import { usePinStore } from '../../store/pinStore';
 import { useTabConditionStyle } from '../../hooks/useTabConditionStyle';
 import { useBadges, useTabBadgeAggregate } from '../../hooks/useBadges';
 import { ConditionEditor } from '../config/ConditionEditor';
 import { BadgeEditor } from '../config/BadgeEditor';
+import { ScrollRow } from './ScrollRow';
 import { BadgeOverlay } from '../widgets/BadgeOverlay';
 import type { BadgeCorner, BadgeSize } from '../../types';
 import type { ResolvedBadge } from '../../hooks/useBadges';
@@ -27,6 +37,8 @@ interface TabBarProps {
     onViewTabClick?: (tab: Tab) => void;
     layoutUrlBase?: string;
     layoutId?: string;
+    /** Active section id — the tab bar renders the tabs of this section. */
+    sectionId?: string;
     /** Optional leading slot rendered before any left items / tabs (used for inline LayoutDrawer). */
     headerSlot?: React.ReactNode;
 }
@@ -102,7 +114,7 @@ function TabBarDatapointItem({ item }: { item: TabBarItem }) {
             <span
                 className="text-sm font-medium shrink-0"
                 style={{ color: 'var(--text-primary)' }}
-                dangerouslySetInnerHTML={{ __html: item.datapointTemplate.replace(/\{dp\}/g, val) }}
+                dangerouslySetInnerHTML={{ __html: resolveHtmlAssets(item.datapointTemplate.replace(/\{dp\}/g, val)) }}
             />
         );
     }
@@ -157,6 +169,14 @@ function tabStyle(isActive: boolean, settings: TabBarSettings | undefined): Reac
         };
     }
 
+    if (style === 'text') {
+        // Colored text only — no underline, no background.
+        return {
+            color: isActive ? `var(--tab-accent, ${activeClr})` : `var(--tab-text, ${inactiveClr})`,
+            borderBottom: 'none',
+        };
+    }
+
     // underline (default)
     return {
         borderBottomColor: isActive ? `var(--tab-accent, ${activeClr})` : 'transparent',
@@ -198,43 +218,6 @@ function TabBadges({ tab }: { tab: Tab }) {
     return <BadgeOverlay badges={badges} />;
 }
 
-// ── Scrollable tab row ──────────────────────────────────────────────────────
-// Wraps a horizontally scrolling row. On mobile the native scrollbar is
-// hidden (it flickers on some browsers and sits at the padding edge, reading
-// like a rendering glitch) — the row still scrolls the same way via touch,
-// just without a visible scrollbar chrome. See .aura-tab-scroll--mobile in
-// index.css. A custom position-thumb used to replace the hidden native
-// scrollbar here; removed 13.08.2026 at Sascha's request (looked odd for the
-// small, often-imperceptible overflow this row tends to have).
-
-function TabScrollRow({
-    isMobile,
-    outerClassName = '',
-    scrollClassName = '',
-    children,
-}: {
-    isMobile: boolean;
-    outerClassName?: string;
-    scrollClassName?: string;
-    children: React.ReactNode;
-}) {
-    // Outer must be a flex container so the scroll row is stretched to the bar height
-    // via align-items:stretch. The scroll row carries .aura-badge-room (padding 14 /
-    // margin -14 so corner badges aren't clipped); when stretched, that yields a content
-    // box equal to the bar height, so its inner `items-center` centers the tabs. A fixed
-    // height (h-full) would shrink the content box by the 28px padding and break both the
-    // centering and clip the vertical axis — do not add one.
-    return (
-        <div className={`relative flex ${outerClassName}`}>
-            <div
-                className={`aura-scroll aura-badge-room overflow-x-auto ${isMobile ? 'aura-tab-scroll--mobile' : ''} ${scrollClassName}`}
-            >
-                {children}
-            </div>
-        </div>
-    );
-}
-
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function TabBar({
@@ -244,21 +227,40 @@ export function TabBar({
     onViewTabClick,
     layoutUrlBase = '',
     layoutId,
+    sectionId,
     headerSlot,
 }: TabBarProps) {
     const t = useT();
     const activeLayout = useActiveLayout();
+    const activeSection = useActiveSection();
     const specificLayout = useDashboardStore((s) =>
         layoutId ? (s.layouts.find((l) => l.id === layoutId) ?? null) : null,
     ) as DashboardLayout | null;
     const layout = specificLayout ?? activeLayout;
+    // Resolve the section whose tabs + tab-bar settings this bar renders.
+    const specificSection = sectionId ? (layout.sections.find((sec) => sec.id === sectionId) ?? null) : null;
+    const section =
+        specificSection ??
+        (specificLayout
+            ? (specificLayout.sections.find((sec) => sec.id === specificLayout.activeSectionId) ??
+              specificLayout.sections[0])
+            : activeSection);
     const { setActiveTab, addTab, addTabFromImport, removeTab, renameTab, updateTab, reorderTabs, editMode } =
         useDashboardStore();
 
-    const tabs = viewTabs ?? layout.tabs;
-    const activeTabId = viewActiveTabId ?? layout.activeTabId;
+    const tabs = viewTabs ?? section.tabs;
+    const activeTabId = viewActiveTabId ?? section.activeTabId;
+    // A PIN-protected tab wears a padlock until it was unlocked, so the viewer sees
+    // why the tab does not simply open. In the editor the padlock always shows.
+    const unlockedPins = usePinStore((s) => s.unlocked);
+    const tabLocked = (tab: Tab): boolean =>
+        hasPin(tab) && (!readonly || !(tabPinKey(section.id, tab.id) in unlockedPins));
     const globalTabBar = useConfigStore((s) => s.frontend.tabBar);
-    const tbSettings = resolveTabBarSettings(globalTabBar, layout.settings?.tabBar);
+    // Tab-bar settings cascade global → layout → section (section wins).
+    const tbSettings = resolveTabBarSettings(
+        resolveTabBarSettings(globalTabBar, layout.settings?.tabBar),
+        section.settings?.tabBar,
+    );
     const items = tbSettings?.items ?? [];
 
     const leftItems = items.filter((i) => i.position === 'left');
@@ -358,7 +360,11 @@ export function TabBar({
         setSettingsTabId((prev) => (prev === tabId ? null : tabId));
     };
 
-    if (tabs.length <= 1 && readonly && !headerSlot) return null;
+    // Hide the bar only when there is genuinely nothing to show: a single tab and
+    // no extra items. Tab-bar items (clock / datapoint / text) — global, layout or
+    // section scope — must render even when the section has just one tab, and so
+    // must an injected headerSlot (the section-menu hamburger placed in the bar).
+    if (readonly && !headerSlot && !tabBarShowsOnOwn(tabs.length, tbSettings)) return null;
 
     const settingsTab = tabs.find((t) => t.id === settingsTabId);
 
@@ -368,8 +374,19 @@ export function TabBar({
     const tabIconSize = tbSettings?.iconSize ?? 14;
     const containerStyle: React.CSSProperties = {
         background: barBg,
-        borderBottom: '1px solid var(--app-border)',
+        // Divider faces the dashboard: below the bar when it sits at the top, above the
+        // bar when it is a footer — so a footer bar keeps its subtle separating line
+        // instead of losing it to the invisible screen edge.
+        [tbSettings?.position === 'bottom' ? 'borderTop' : 'borderBottom']: '1px solid var(--app-border)',
         fontSize: resolveTabBarFontSize(tbSettings?.fontSize),
+        // Lift the bar into its own stacking context above the dashboard content.
+        // Bottom-corner tab badges overflow downward past the bar (see .aura-badge-room);
+        // without this, the following-sibling content — especially opaque iframe widgets —
+        // paints over that overflow and hides the badge. The dashboard's grid wrapper is
+        // itself z-index:10, so the bar must sit strictly above that (but below the
+        // edit-mode guideline overlays at z-index 40+) to win the overlap.
+        position: 'relative',
+        zIndex: 20,
         ...(barHeight ? { minHeight: `${barHeight}px` } : {}),
     };
 
@@ -377,7 +394,7 @@ export function TabBar({
     const renderTabs = () =>
         tabs.map((tab, idx) => (
             <TabConditionWrapper key={tab.id} tab={tab}>
-                {({ cssVars, effect, hidden }) => {
+                {({ cssVars, bold, italic, effect, hidden }) => {
                     // Frontend or readonly preview: hide disabled / hidden / condition-hidden tabs
                     // (hidden tabs stay reachable via their direct slug URL — they are only
                     //  removed from the tab bar, not from the layout)
@@ -393,7 +410,7 @@ export function TabBar({
 
                     return (
                         <div
-                            className={`group relative flex items-center gap-1.5 px-3 cursor-pointer transition-colors whitespace-nowrap select-none ${indicatorStyle === 'underline' ? 'py-2.5 border-b-2' : 'py-1.5'}`}
+                            className={`group relative flex items-center gap-1.5 px-3 cursor-pointer transition-colors whitespace-nowrap select-none ${indicatorStyle === 'underline' ? 'py-2.5 border-b-2' : 'py-1.5'} ${bold ? 'aura-cond-bold' : ''} ${italic ? 'aura-cond-italic' : ''} ${!editMode && effect === 'border' ? 'aura-cond-ring' : ''}`}
                             style={{
                                 ...(cssVars as React.CSSProperties),
                                 ...ts,
@@ -464,6 +481,8 @@ export function TabBar({
                                     <GripVertical size={12} />
                                 </span>
                             )}
+
+                            {tabLocked(tab) && <Lock size={tabIconSize} style={{ flexShrink: 0, opacity: 0.8 }} />}
 
                             {tab.icon && (
                                 <span
@@ -886,7 +905,11 @@ export function TabBar({
 
     // ── Render ───────────────────────────────────────────────────────────────────
 
-    const tabsAlignment = isMobile ? 'left' : (tbSettings?.tabsAlignment ?? 'left');
+    // Honour the configured alignment on every viewport. The 3-zone grid + ScrollRow
+    // handle narrow screens (horizontal scroll + mobile indicator), so there is no
+    // need to force left on mobile — doing so ignored a center/right setting there.
+    const tabsAlignment = tbSettings?.tabsAlignment ?? 'left';
+    const hideMobileScrollbar = tbSettings?.hideMobileScrollbar ?? false;
     const needsGrid = hasExtras || tabsAlignment !== 'left';
 
     const addTabBtn = !readonly && editMode && (
@@ -922,8 +945,9 @@ export function TabBar({
                     }}
                 >
                     {/* Zone 1: left items + tabs when alignment=left */}
-                    <TabScrollRow
+                    <ScrollRow
                         isMobile={isMobile}
+                        hideIndicator={hideMobileScrollbar}
                         outerClassName="min-w-0"
                         scrollClassName="flex items-center w-full"
                     >
@@ -939,10 +963,14 @@ export function TabBar({
                             {tabsAlignment === 'left' && renderTabs()}
                             {tabsAlignment === 'left' && addTabBtn}
                         </div>
-                    </TabScrollRow>
+                    </ScrollRow>
 
                     {/* Zone 2: center items + tabs when alignment=center */}
-                    <TabScrollRow isMobile={isMobile} scrollClassName="flex items-center justify-center w-full">
+                    <ScrollRow
+                        isMobile={isMobile}
+                        hideIndicator={hideMobileScrollbar}
+                        scrollClassName="flex items-center justify-center w-full"
+                    >
                         <div className="flex items-center gap-1 px-2">
                             {tabsAlignment === 'center' && renderTabs()}
                             {tabsAlignment === 'center' && addTabBtn}
@@ -954,11 +982,12 @@ export function TabBar({
                             )}
                             {centerItems.map(renderTabBarItem)}
                         </div>
-                    </TabScrollRow>
+                    </ScrollRow>
 
                     {/* Zone 3: right items + tabs when alignment=right */}
-                    <TabScrollRow
+                    <ScrollRow
                         isMobile={isMobile}
+                        hideIndicator={hideMobileScrollbar}
                         outerClassName="min-w-0"
                         scrollClassName="flex items-center justify-end w-full"
                     >
@@ -973,7 +1002,7 @@ export function TabBar({
                             )}
                             {rightItems.map(renderTabBarItem)}
                         </div>
-                    </TabScrollRow>
+                    </ScrollRow>
                 </div>
                 {settingsPanel}
                 {iconPickerModal}
@@ -985,8 +1014,9 @@ export function TabBar({
     return (
         <>
             <div className="aura-tabs shrink-0 flex" style={containerStyle}>
-                <TabScrollRow
+                <ScrollRow
                     isMobile={isMobile}
+                    hideIndicator={hideMobileScrollbar}
                     outerClassName="flex-1 min-w-0"
                     scrollClassName="flex items-center w-full"
                 >
@@ -1002,7 +1032,7 @@ export function TabBar({
                         {renderTabs()}
                         {addTabBtn}
                     </div>
-                </TabScrollRow>
+                </ScrollRow>
             </div>
             {settingsPanel}
             {iconPickerModal}

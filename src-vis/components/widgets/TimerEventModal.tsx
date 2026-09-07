@@ -7,9 +7,10 @@
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Clock as ClockIcon, Sunrise, CalendarRange, Calendar } from 'lucide-react';
+import { X, Trash2, Clock as ClockIcon, Sunrise, CalendarRange, Calendar, Power, PowerOff } from 'lucide-react';
 import type { TimerEvent, TimerWeekday, TimerTrigger, TimerFilter, TimerAstroEvent } from '../../types';
 import { usePortalTarget, usePortalThemeVars } from '../../contexts/PortalTargetContext';
+import { DateTimeInput } from '../common/DateTimeInput';
 
 interface Props {
     initial: TimerEvent;
@@ -188,11 +189,12 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                         </div>
 
                         {t.kind === 'time' && (
-                            <input
-                                type="time"
+                            <DateTimeInput
+                                kind="time"
+                                wrapClassName="w-full"
                                 value={`${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`}
-                                onChange={(e) => {
-                                    const [h, m] = e.target.value.split(':').map((x) => Number(x) || 0);
+                                onValue={(v) => {
+                                    const [h, m] = v.split(':').map((x) => Number(x) || 0);
                                     patch({ trigger: { kind: 'time', hour: h, minute: m } });
                                 }}
                                 className={inputCls}
@@ -235,10 +237,11 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                         )}
 
                         {t.kind === 'once' && (
-                            <input
-                                type="datetime-local"
+                            <DateTimeInput
+                                kind="datetime-local"
+                                wrapClassName="w-full"
                                 value={t.iso}
-                                onChange={(e) => patch({ trigger: { kind: 'once', iso: e.target.value } })}
+                                onValue={(v) => patch({ trigger: { kind: 'once', iso: v } })}
                                 className={inputCls}
                                 style={inputStyle}
                             />
@@ -253,10 +256,11 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                                     >
                                         Von
                                     </label>
-                                    <input
-                                        type="datetime-local"
+                                    <DateTimeInput
+                                        kind="datetime-local"
+                                        wrapClassName="w-full"
                                         value={t.fromIso}
-                                        onChange={(e) => patch({ trigger: { ...t, fromIso: e.target.value } })}
+                                        onValue={(v) => patch({ trigger: { ...t, fromIso: v } })}
                                         className={inputCls}
                                         style={inputStyle}
                                     />
@@ -268,10 +272,11 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                                     >
                                         Bis
                                     </label>
-                                    <input
-                                        type="datetime-local"
+                                    <DateTimeInput
+                                        kind="datetime-local"
+                                        wrapClassName="w-full"
                                         value={t.toIso}
-                                        onChange={(e) => patch({ trigger: { ...t, toIso: e.target.value } })}
+                                        onValue={(v) => patch({ trigger: { ...t, toIso: v } })}
                                         className={inputCls}
                                         style={inputStyle}
                                     />
@@ -343,10 +348,11 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                                     >
                                         Sperre von
                                     </label>
-                                    <input
-                                        type="time"
+                                    <DateTimeInput
+                                        kind="time"
+                                        wrapClassName="w-full"
                                         value={minutesToHHMM(event.blockFromMin ?? 0)}
-                                        onChange={(e) => patch({ blockFromMin: hhmmToMinutes(e.target.value) })}
+                                        onValue={(v) => patch({ blockFromMin: hhmmToMinutes(v) })}
                                         className={inputCls}
                                         style={inputStyle}
                                     />
@@ -358,10 +364,11 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                                     >
                                         Sperre bis
                                     </label>
-                                    <input
-                                        type="time"
+                                    <DateTimeInput
+                                        kind="time"
+                                        wrapClassName="w-full"
                                         value={minutesToHHMM(event.blockToMin ?? 0)}
-                                        onChange={(e) => patch({ blockToMin: hhmmToMinutes(e.target.value) })}
+                                        onValue={(v) => patch({ blockToMin: hhmmToMinutes(v) })}
                                         className={inputCls}
                                         style={inputStyle}
                                     />
@@ -376,16 +383,42 @@ export function TimerEventModal({ initial, allowValue, defaultValue, onSave, onC
                             <label className={labelCls} style={labelStyle}>
                                 Wert beim Auslösen
                             </label>
+                            {/* Ein / Aus quick-select — free text below still allowed */}
+                            <div className="flex gap-1.5 mb-1.5">
+                                {(
+                                    [
+                                        { v: 'true', label: 'Ein', Icon: Power, color: 'var(--accent-green)' },
+                                        { v: 'false', label: 'Aus', Icon: PowerOff, color: 'var(--accent-red)' },
+                                    ] as const
+                                ).map(({ v, label, Icon, color }) => {
+                                    const active = (event.value ?? '').trim().toLowerCase() === v;
+                                    return (
+                                        <button
+                                            key={v}
+                                            onClick={() => patch({ value: active ? '' : v })}
+                                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] rounded-lg transition-colors"
+                                            style={{
+                                                background: active ? color : 'var(--app-bg)',
+                                                color: active ? '#fff' : 'var(--text-secondary)',
+                                                border: `1px solid ${active ? color : 'var(--app-border)'}`,
+                                            }}
+                                        >
+                                            <Icon size={12} /> {label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                             <input
                                 type="text"
                                 value={event.value ?? ''}
                                 onChange={(e) => patch({ value: e.target.value })}
-                                placeholder={defaultValue ? `Standard: ${defaultValue}` : 'true / false / 50 / Text'}
+                                placeholder={defaultValue ? `Standard: ${defaultValue}` : 'eigener Wert: 50 / Text'}
                                 className={inputCls}
                                 style={inputStyle}
                             />
                             <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
-                                Leer lassen, um den Standardwert zu verwenden. Wird als Boolean / Zahl / Text geparst.
+                                Ein/Aus wählen oder eigenen Wert (Zahl / Text) eingeben. Leer = Standardwert
+                                {defaultValue ? ` (${defaultValue})` : ''}.
                             </p>
                         </div>
                     )}

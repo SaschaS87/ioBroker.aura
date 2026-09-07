@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import {
     useDashboardStore,
     resolveTabBarSettings,
@@ -9,6 +9,10 @@ import {
 import { useConfigStore } from '../../../../store/configStore';
 import { useT } from '../../../../i18n';
 import { ColorPicker } from '../../../../components/common/ColorPicker';
+import { DatapointPicker } from '../../../../components/config/DatapointPicker';
+import { AutoGrowTextarea } from '../shared/SettingControls';
+import { ResetDefaultsButton } from '../shared/ResetDefaultsButton';
+import { canMoveMenuItem, moveMenuItem } from '../../../../utils/menuItemOrder';
 
 // ── OverrideDot ───────────────────────────────────────────────────────────────
 // Small marker shown next to a field that overrides the global value (layout scope).
@@ -86,14 +90,21 @@ function TabBarItemRow({
     item,
     onUpdate,
     onRemove,
+    onMove,
+    canMoveUp,
+    canMoveDown,
     t,
 }: {
     item: TabBarItem;
     onUpdate: (patch: Partial<TabBarItem>) => void;
     onRemove: () => void;
+    onMove: (dir: -1 | 1) => void;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
     t: ReturnType<typeof useT>;
 }) {
     const [expanded, setExpanded] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
     const posLabels: Record<string, string> = {
         left: t('settings.tabBar.posLeft'),
         center: t('settings.tabBar.posCenter'),
@@ -131,6 +142,24 @@ function TabBarItemRow({
                 <span className="text-xs flex-1 font-medium" style={{ color: 'var(--text-primary)' }}>
                     {typeLabel}
                 </span>
+                <button
+                    onClick={() => onMove(-1)}
+                    disabled={!canMoveUp}
+                    title={t('common.moveUp')}
+                    className="shrink-0 disabled:opacity-25 hover:opacity-70"
+                    style={{ color: 'var(--text-secondary)' }}
+                >
+                    <ArrowUp size={12} />
+                </button>
+                <button
+                    onClick={() => onMove(1)}
+                    disabled={!canMoveDown}
+                    title={t('common.moveDown')}
+                    className="shrink-0 disabled:opacity-25 hover:opacity-70"
+                    style={{ color: 'var(--text-secondary)' }}
+                >
+                    <ArrowDown size={12} />
+                </button>
                 <button
                     onClick={() => setExpanded((e) => !e)}
                     className="text-[10px] px-1.5 py-0.5 rounded hover:opacity-70"
@@ -243,27 +272,53 @@ function TabBarItemRow({
                                 <p className="text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>
                                     {t('settings.tabBar.datapointId')}
                                 </p>
-                                <input
-                                    type="text"
-                                    value={item.datapointId ?? ''}
-                                    onChange={(e) => onUpdate({ datapointId: e.target.value || undefined })}
-                                    placeholder="hm-rpc.0.ABC.1.TEMPERATURE"
-                                    className="w-full text-xs rounded-lg px-2 py-1.5 focus:outline-none font-mono"
-                                    style={iSty}
-                                />
+                                <div className="flex items-center gap-1.5">
+                                    <input
+                                        type="text"
+                                        value={item.datapointId ?? ''}
+                                        onChange={(e) => onUpdate({ datapointId: e.target.value || undefined })}
+                                        placeholder="hm-rpc.0.ABC.1.TEMPERATURE"
+                                        className="flex-1 min-w-0 text-xs rounded-lg px-2 py-1.5 focus:outline-none font-mono"
+                                        style={iSty}
+                                    />
+                                    <button
+                                        onClick={() => setPickerOpen(true)}
+                                        title={t('dp.picker.title')}
+                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80"
+                                        style={{
+                                            background: 'var(--app-bg)',
+                                            color: 'var(--text-secondary)',
+                                            border: '1px solid var(--app-border)',
+                                        }}
+                                    >
+                                        <Search size={13} />
+                                    </button>
+                                </div>
+                                {pickerOpen && (
+                                    <DatapointPicker
+                                        currentValue={item.datapointId ?? ''}
+                                        onSelect={(id) => onUpdate({ datapointId: id || undefined })}
+                                        onClose={() => setPickerOpen(false)}
+                                    />
+                                )}
                             </div>
                             <div>
                                 <p className="text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>
                                     {t('settings.tabBar.datapointTemplate')}
                                 </p>
-                                <input
-                                    type="text"
+                                <AutoGrowTextarea
                                     value={item.datapointTemplate ?? ''}
-                                    onChange={(e) => onUpdate({ datapointTemplate: e.target.value || undefined })}
+                                    onChange={(v) => onUpdate({ datapointTemplate: v || undefined })}
                                     placeholder="{dp} °C"
                                     className="w-full text-xs rounded-lg px-2 py-1.5 focus:outline-none font-mono"
                                     style={iSty}
                                 />
+                                <p
+                                    className="text-[10px] mt-1"
+                                    style={{ color: 'var(--text-secondary)', opacity: 0.8 }}
+                                >
+                                    {t('settings.tabBar.datapointTemplateHint')}
+                                </p>
                             </div>
                         </>
                     )}
@@ -299,15 +354,24 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
     const layouts = useDashboardStore((s) => s.layouts);
     const updateLayoutSettings = useDashboardStore((s) => s.updateLayoutSettings);
     const clearLayoutSettings = useDashboardStore((s) => s.clearLayoutSettings);
+    const updateSectionSettings = useDashboardStore((s) => s.updateSectionSettings);
+    const clearSectionSettings = useDashboardStore((s) => s.clearSectionSettings);
     // Older persisted configs predate the global tabBar key → fall back to {}.
     const globalTb = useConfigStore((s) => s.frontend.tabBar) ?? {};
     const updateFrontend = useConfigStore((s) => s.updateFrontend);
 
     const isGlobal = contextId === null;
-    const layout = contextId ? layouts.find((l) => l.id === contextId) : null;
+    // contextId is either a layout id (per-layout override) or a section id.
+    const asLayout = contextId ? layouts.find((l) => l.id === contextId) : undefined;
+    const asSection =
+        !asLayout && contextId
+            ? layouts
+                  .flatMap((l) => l.sections.map((sec) => ({ layoutId: l.id, section: sec })))
+                  .find(({ section }) => section.id === contextId)
+            : undefined;
 
-    // Layout selected but no longer exists → nothing to edit.
-    if (!isGlobal && !layout) {
+    // Selected scope no longer exists → nothing to edit.
+    if (!isGlobal && !asLayout && !asSection) {
         return (
             <div
                 className="rounded-xl p-6 text-center"
@@ -320,25 +384,30 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
         );
     }
 
-    const layoutTb = layout?.settings?.tabBar;
-    // Effective settings shown in the editor: global as base, layout override on top.
-    const tbs: TabBarSettings = isGlobal ? globalTb : resolveTabBarSettings(globalTb, layoutTb);
-    // True when the given field is overridden by the layout (only meaningful in layout scope).
-    const ov = (key: keyof TabBarSettings) => !isGlobal && layoutTb?.[key] !== undefined;
+    // Own override at this scope + the inherited base it sits on top of
+    // (section inherits global → layout; layout inherits global).
+    const ownTb = asLayout ? asLayout.settings?.tabBar : asSection?.section.settings?.tabBar;
+    const parentLayoutTb = asSection ? layouts.find((l) => l.id === asSection.layoutId)?.settings?.tabBar : undefined;
+    const inheritedTb: TabBarSettings = asSection ? resolveTabBarSettings(globalTb, parentLayoutTb) : globalTb;
+    const tbs: TabBarSettings = isGlobal ? globalTb : resolveTabBarSettings(inheritedTb, ownTb);
+    // True when the given field is overridden at this scope.
+    const ov = (key: keyof TabBarSettings) => !isGlobal && ownTb?.[key] !== undefined;
     const ovTitle = t('layouts.scope.layoutHint');
 
     const update = (patch: Partial<TabBarSettings>) => {
-        if (isGlobal) {
-            updateFrontend({ tabBar: { ...globalTb, ...patch } });
-        } else if (layout) {
-            updateLayoutSettings(layout.id, { tabBar: { ...(layoutTb ?? {}), ...patch } });
-        }
+        if (isGlobal) updateFrontend({ tabBar: { ...globalTb, ...patch } });
+        else if (asLayout) updateLayoutSettings(asLayout.id, { tabBar: { ...(ownTb ?? {}), ...patch } });
+        else if (asSection)
+            updateSectionSettings(asSection.layoutId, asSection.section.id, { tabBar: { ...(ownTb ?? {}), ...patch } });
     };
     const updateItem = (id: string, patch: Partial<TabBarItem>) => {
         update({ items: (tbs.items ?? []).map((it) => (it.id === id ? { ...it, ...patch } : it)) });
     };
     const removeItem = (id: string) => {
         update({ items: (tbs.items ?? []).filter((it) => it.id !== id) });
+    };
+    const moveItem = (id: string, dir: -1 | 1) => {
+        update({ items: moveMenuItem(tbs.items ?? [], id, dir) });
     };
     const addItem = (type: TabBarItem['type']) => {
         const newItem: TabBarItem = {
@@ -351,11 +420,13 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
     };
     const clearAll = () => {
         if (isGlobal) updateFrontend({ tabBar: {} });
-        else if (layout) clearLayoutSettings(layout.id, 'tabBar');
+        else if (asLayout) clearLayoutSettings(asLayout.id, 'tabBar');
+        else if (asSection) clearSectionSettings(asSection.layoutId, asSection.section.id, 'tabBar');
     };
-    const hasOverride = isGlobal ? Object.keys(globalTb).length > 0 : !!layoutTb && Object.keys(layoutTb).length > 0;
+    const hasOverride = isGlobal ? Object.keys(globalTb).length > 0 : !!ownTb && Object.keys(ownTb).length > 0;
 
     const styleOptions: Array<{ key: TabBarSettings['indicatorStyle']; label: string }> = [
+        { key: 'text', label: t('settings.tabBar.styleText') },
         { key: 'underline', label: t('settings.tabBar.styleUnderline') },
         { key: 'filled', label: t('settings.tabBar.styleFilled') },
         { key: 'pills', label: t('settings.tabBar.stylePills') },
@@ -385,15 +456,7 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
                         {isGlobal ? t('layouts.context.hintGlobal') : t('layouts.context.hintLayout')}
                     </p>
                 </div>
-                {hasOverride && (
-                    <button
-                        onClick={clearAll}
-                        className="text-[10px] px-1.5 py-0.5 rounded hover:opacity-70 shrink-0"
-                        style={{ color: 'var(--text-secondary)' }}
-                    >
-                        {isGlobal ? t('settings.tabBar.clearAll') : t('layouts.scope.resetToGlobal')}
-                    </button>
-                )}
+                <ResetDefaultsButton onReset={clearAll} disabled={!hasOverride} scoped={!isGlobal} />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -631,6 +694,36 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
 
                     <div>
                         <p className="text-sm mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                            {t('settings.tabBar.position')}
+                            <OverrideDot show={ov('position')} title={ovTitle} />
+                        </p>
+                        <div className="flex gap-1.5">
+                            {(['top', 'bottom'] as const).map((key) => {
+                                const active = (tbs.position ?? 'top') === key;
+                                return (
+                                    <button
+                                        key={key}
+                                        onClick={() => update({ position: key })}
+                                        className="flex-1 py-1.5 rounded-lg text-xs font-medium hover:opacity-80"
+                                        style={{
+                                            background: active ? 'var(--accent)' : 'var(--app-bg)',
+                                            color: active ? '#fff' : 'var(--text-secondary)',
+                                            border: `1px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                        }}
+                                    >
+                                        {t(
+                                            key === 'top'
+                                                ? 'settings.tabBar.positionTop'
+                                                : 'settings.tabBar.positionBottom',
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-sm mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
                             {t('settings.tabBar.tabsAlignment')}
                             <OverrideDot show={ov('tabsAlignment')} title={ovTitle} />
                         </p>
@@ -653,6 +746,40 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
                                 );
                             })}
                         </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                            {t('settings.tabBar.hideMobileScrollbar')}
+                            <OverrideDot show={ov('hideMobileScrollbar')} title={ovTitle} />
+                        </p>
+                        <button
+                            onClick={() => update({ hideMobileScrollbar: !tbs.hideMobileScrollbar })}
+                            className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                            style={{ background: tbs.hideMobileScrollbar ? 'var(--accent)' : 'var(--app-border)' }}
+                        >
+                            <span
+                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                style={{ left: tbs.hideMobileScrollbar ? '18px' : '2px' }}
+                            />
+                        </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                            {t('settings.tabBar.showSingle')}
+                            <OverrideDot show={ov('showSingle')} title={ovTitle} />
+                        </p>
+                        <button
+                            onClick={() => update({ showSingle: !tbs.showSingle })}
+                            className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                            style={{ background: tbs.showSingle ? 'var(--accent)' : 'var(--app-border)' }}
+                        >
+                            <span
+                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                style={{ left: tbs.showSingle ? '18px' : '2px' }}
+                            />
+                        </button>
                     </div>
                 </div>
 
@@ -694,6 +821,9 @@ export function TabBarSection({ contextId }: TabBarSectionProps) {
                                 item={item}
                                 onUpdate={(patch) => updateItem(item.id, patch)}
                                 onRemove={() => removeItem(item.id)}
+                                onMove={(dir) => moveItem(item.id, dir)}
+                                canMoveUp={canMoveMenuItem(tbs.items ?? [], item.id, -1)}
+                                canMoveDown={canMoveMenuItem(tbs.items ?? [], item.id, 1)}
                                 t={t}
                             />
                         ))}

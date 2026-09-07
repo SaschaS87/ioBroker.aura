@@ -4,7 +4,7 @@ import { useActiveLayout } from '../../store/dashboardStore';
 
 import { useConnectionStore } from '../../store/connectionStore';
 import { useConfigStore } from '../../store/configStore';
-import { useAdminPrefsStore } from '../../store/adminPrefsStore';
+import { useAdminPrefsStore, MAX_BACKUP_COUNT } from '../../store/adminPrefsStore';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
 
 import { applyRaw, rehydrateAll } from '../../utils/configLoader';
@@ -26,15 +26,19 @@ import {
     AlertTriangle,
     RefreshCw,
     Tablet,
+    Smartphone,
+    Monitor,
     Edit3,
     Check,
     X,
     Trash2,
     History,
     Download,
+    Copy,
 } from 'lucide-react';
 import { useT, type TranslationKey } from '../../i18n';
 import { NS } from '../../utils/namespace';
+import { BehaviorSection } from './layouts/sections/BehaviorSection';
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
@@ -90,6 +94,7 @@ const BACKUP_SYNC_KEYS = [
     'aura-global-settings',
     'aura-group-defs',
     'aura-popup-config',
+    'aura-widget-presets',
 ] as const;
 
 interface BackupEntry {
@@ -133,9 +138,17 @@ function applyBackupPayload(payload: Record<string, unknown>): boolean {
     return true;
 }
 
+/** Stepper granularity: single backups while the ring is small, coarser above —
+ *  otherwise walking from 20 to the 100 maximum would take eighty clicks. */
+function backupStep(current: number): number {
+    if (current >= 50) return 10;
+    if (current >= 20) return 5;
+    return 1;
+}
+
 function BackupCard() {
     const t = useT();
-    const tabs = useActiveLayout().tabs;
+    const tabs = useActiveLayout().sections.flatMap((s) => s.tabs);
     const { backupCount, setBackupCount } = useAdminPrefsStore();
     const [backups, setBackups] = useState<BackupEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -329,7 +342,7 @@ function BackupCard() {
                 </span>
                 <div className="flex items-center gap-1">
                     <button
-                        onClick={() => setBackupCount(backupCount - 1)}
+                        onClick={() => setBackupCount(backupCount - backupStep(backupCount - 1))}
                         disabled={backupCount <= 1}
                         className="w-6 h-6 rounded flex items-center justify-center text-sm font-bold hover:opacity-80 disabled:opacity-30"
                         style={{
@@ -340,12 +353,12 @@ function BackupCard() {
                     >
                         −
                     </button>
-                    <span className="w-6 text-center text-xs font-mono font-bold" style={{ color: 'var(--accent)' }}>
+                    <span className="w-8 text-center text-xs font-mono font-bold" style={{ color: 'var(--accent)' }}>
                         {backupCount}
                     </span>
                     <button
-                        onClick={() => setBackupCount(backupCount + 1)}
-                        disabled={backupCount >= 20}
+                        onClick={() => setBackupCount(backupCount + backupStep(backupCount))}
+                        disabled={backupCount >= MAX_BACKUP_COUNT}
                         className="w-6 h-6 rounded flex items-center justify-center text-sm font-bold hover:opacity-80 disabled:opacity-30"
                         style={{
                             background: 'var(--app-bg)',
@@ -504,16 +517,89 @@ interface ClientInfo {
     clientId: string;
     name: string;
     lastSeen: number;
+    userAgent: string;
+    resW: number;
+    resH: number;
+}
+
+type DeviceKind = 'phone' | 'tablet' | 'desktop';
+
+// Derive a human-readable device fingerprint from the user-agent string so a
+// phone/tablet/desktop can be told apart at a glance. Resolution width is used
+// as a tie-breaker when the UA is ambiguous (e.g. desktop-mode tablets).
+function parseUA(ua: string, resW: number): { kind: DeviceKind; label: string } {
+    const s = ua.toLowerCase();
+
+    const os = /iphone|ipod/.test(s)
+        ? 'iPhone'
+        : /ipad/.test(s)
+          ? 'iPad'
+          : /android/.test(s)
+            ? 'Android'
+            : /windows/.test(s)
+              ? 'Windows'
+              : /macintosh|mac os x/.test(s)
+                ? 'macOS'
+                : /linux/.test(s)
+                  ? 'Linux'
+                  : '';
+
+    const browser = /edg\//.test(s)
+        ? 'Edge'
+        : /samsungbrowser/.test(s)
+          ? 'Samsung Internet'
+          : /firefox|fxios/.test(s)
+            ? 'Firefox'
+            : /chrome|crios/.test(s)
+              ? 'Chrome'
+              : /safari/.test(s)
+                ? 'Safari'
+                : '';
+
+    let kind: DeviceKind;
+    if (/iphone|ipod|windows phone/.test(s) || (/android/.test(s) && /mobile/.test(s))) {
+        kind = 'phone';
+    } else if (/ipad|tablet/.test(s) || (/android/.test(s) && !/mobile/.test(s))) {
+        kind = 'tablet';
+    } else if (resW > 0 && resW < 500) {
+        kind = 'phone';
+    } else {
+        kind = 'desktop';
+    }
+
+    const label = [os, browser].filter(Boolean).join(' · ');
+    return { kind, label };
+}
+
+function DeviceIcon({ kind, ...props }: { kind: DeviceKind } & React.ComponentProps<typeof Tablet>) {
+    if (kind === 'phone') return <Smartphone {...props} />;
+    if (kind === 'desktop') return <Monitor {...props} />;
+    return <Tablet {...props} />;
 }
 
 function ClientsCard() {
     const t = useT();
     const { clientId: myClientId, clientName: myClientName, setClientName } = useConnectionStore();
+    const { showClientIdBadge, setShowClientIdBadge } = useGlobalSettingsStore();
     const [clients, setClients] = useState<ClientInfo[]>([]);
     const [loading, setLoading] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    // Copy the raw client ID so a user standing at the phone/tablet can read (and
+    // paste) exactly which ID this device was assigned. clipboard needs a secure
+    // context (the instances are HTTPS); fall back silently if unavailable.
+    const copyId = (id: string) => {
+        void navigator.clipboard?.writeText(id).then(
+            () => {
+                setCopiedId(id);
+                setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+            },
+            () => {},
+        );
+    };
     // Scroll the expanded confirm/edit row into view: for devices near the bottom of the
     // scroll container the inline panel would otherwise open below the fold and go unnoticed.
     const expandedRef = useRef<HTMLDivElement | null>(null);
@@ -534,18 +620,27 @@ function ClientsCard() {
                     clientId: myClientId,
                     name: 'Wohnzimmer-Tablet',
                     lastSeen: now,
+                    userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605 Safari/604',
+                    resW: 1024,
+                    resH: 768,
                 },
                 {
                     channelId: `${NS}.clients.kitchen`,
                     clientId: 'kitchen',
                     name: 'K\u00fcche-Tablet',
                     lastSeen: now - 2 * 3600_000,
+                    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605 Safari/604',
+                    resW: 390,
+                    resH: 844,
                 },
                 {
                     channelId: `${NS}.clients.office`,
                     clientId: 'office',
                     name: 'B\u00fcro-PC',
                     lastSeen: now - 26 * 3600_000,
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537 Chrome/120 Safari/537',
+                    resW: 1920,
+                    resH: 1080,
                 },
             ]);
             setLoading(false);
@@ -559,15 +654,21 @@ function ClientsCard() {
             const data = await Promise.all(
                 channelRows.map(async (row) => {
                     const cId = row.id.split('.')[3];
-                    const [nameState, lastSeenState] = await Promise.all([
+                    const [nameState, lastSeenState, uaState, resWState, resHState] = await Promise.all([
                         getStateDirect(`${row.id}.info.name`),
                         getStateDirect(`${row.id}.info.lastSeen`),
+                        getStateDirect(`${row.id}.info.userAgent`),
+                        getStateDirect(`${row.id}.info.resolutionWidth`),
+                        getStateDirect(`${row.id}.info.resolutionHeight`),
                     ]);
                     return {
                         channelId: row.id,
                         clientId: cId,
                         name: nameState?.val ? String(nameState.val) : cId.slice(0, 8),
                         lastSeen: lastSeenState?.val ? Number(lastSeenState.val) : 0,
+                        userAgent: uaState?.val ? String(uaState.val) : '',
+                        resW: resWState?.val ? Number(resWState.val) : 0,
+                        resH: resHState?.val ? Number(resHState.val) : 0,
                     };
                 }),
             );
@@ -648,6 +749,12 @@ function ClientsCard() {
                 </button>
             </div>
 
+            <ToggleRow
+                label={t('settings.clients.showIdBadge')}
+                value={showClientIdBadge}
+                onChange={setShowClientIdBadge}
+            />
+
             {clients.length === 0 ? (
                 <p className="text-xs text-center py-3" style={{ color: 'var(--text-secondary)' }}>
                     {loading ? '…' : t('settings.clients.none')}
@@ -660,6 +767,9 @@ function ClientsCard() {
                     {clients.map((c) => {
                         const isMine = c.clientId === myClientId;
                         const isEditing = editingId === c.clientId;
+                        const { kind, label: uaLabel } = parseUA(c.userAgent, c.resW);
+                        const resLabel = c.resW && c.resH ? `${c.resW} × ${c.resH}` : '';
+                        const deviceInfo = [uaLabel, resLabel].filter(Boolean).join(' · ');
                         return (
                             <div
                                 key={c.clientId}
@@ -671,8 +781,9 @@ function ClientsCard() {
                                     className="flex items-center gap-2.5 px-3 py-2.5"
                                     style={{ background: 'var(--app-bg)' }}
                                 >
-                                    <Tablet
-                                        size={13}
+                                    <DeviceIcon
+                                        kind={kind}
+                                        size={15}
                                         style={{
                                             color: isMine ? 'var(--accent)' : 'var(--text-secondary)',
                                             flexShrink: 0,
@@ -695,12 +806,38 @@ function ClientsCard() {
                                                 </span>
                                             )}
                                         </div>
-                                        <p
-                                            className="text-[10px] font-mono truncate"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                        >
-                                            {c.channelId}.navigate.url
-                                        </p>
+                                        {deviceInfo && (
+                                            <p
+                                                className="text-[11px] truncate"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                                title={c.userAgent}
+                                            >
+                                                {deviceInfo}
+                                            </p>
+                                        )}
+                                        <div className="flex items-center gap-1">
+                                            <p
+                                                className="text-[10px] font-mono truncate"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                title={`${c.channelId}.navigate.url`}
+                                            >
+                                                ID: {c.clientId}
+                                            </p>
+                                            <button
+                                                onClick={() => copyId(c.clientId)}
+                                                className="hover:opacity-70 shrink-0"
+                                                style={{
+                                                    color:
+                                                        copiedId === c.clientId
+                                                            ? 'var(--accent-green)'
+                                                            : 'var(--text-secondary)',
+                                                    opacity: 0.7,
+                                                }}
+                                                title={t('settings.clients.copyId')}
+                                            >
+                                                {copiedId === c.clientId ? <Check size={11} /> : <Copy size={11} />}
+                                            </button>
+                                        </div>
                                     </div>
                                     <span className="text-xs shrink-0" style={{ color: 'var(--text-secondary)' }}>
                                         {fmtLastSeen(c.lastSeen)}
@@ -805,89 +942,6 @@ function ClientsCard() {
                     })}
                 </div>
             )}
-        </Card>
-    );
-}
-
-// ── Default Decimals ────────────────────────────────────────────────────────────
-
-function DefaultDecimalsCard() {
-    const { defaultDecimals, setDefaultDecimals } = useGlobalSettingsStore();
-    return (
-        <Card title="Dezimalstellen (global)">
-            <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-                Standardwert für alle Widgets. Einzelne Widgets können diesen Wert überschreiben.
-            </p>
-            <div className="flex items-center gap-3">
-                <input
-                    type="number"
-                    min={0}
-                    max={6}
-                    value={defaultDecimals}
-                    onChange={(e) => setDefaultDecimals(Math.min(6, Math.max(0, Number(e.target.value))))}
-                    className="w-20 rounded-lg px-3 py-2 text-sm focus:outline-none text-center"
-                    style={{
-                        background: 'var(--app-bg)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--app-border)',
-                    }}
-                />
-                <div className="flex gap-1.5">
-                    {[0, 1, 2, 3].map((n) => (
-                        <button
-                            key={n}
-                            onClick={() => setDefaultDecimals(n)}
-                            className="w-8 h-8 rounded-lg text-sm font-medium hover:opacity-80"
-                            style={{
-                                background: defaultDecimals === n ? 'var(--accent)' : 'var(--app-bg)',
-                                color: defaultDecimals === n ? '#fff' : 'var(--text-secondary)',
-                                border: `1px solid ${defaultDecimals === n ? 'var(--accent)' : 'var(--app-border)'}`,
-                            }}
-                        >
-                            {n}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        </Card>
-    );
-}
-
-// ── DP Name Filter ─────────────────────────────────────────────────────────────
-
-function DpNameFilterCard() {
-    const { dpNameSuffixes, dpNameReplaceDots, setDpNameSuffixes, setDpNameReplaceDots } = useGlobalSettingsStore();
-    return (
-        <Card title="DP-Namen bereinigen">
-            <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-                Gilt global überall wo DP-Namen angezeigt werden.
-            </p>
-            <div className="space-y-3">
-                <div>
-                    <label className="text-xs block mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        Suffixe entfernen (kommagetrennt)
-                    </label>
-                    <input
-                        value={dpNameSuffixes}
-                        onChange={(e) => setDpNameSuffixes(e.target.value)}
-                        placeholder=".STATE, .LEVEL, :1, :2, :3"
-                        className="w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none"
-                        style={{
-                            background: 'var(--app-bg)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--app-border)',
-                        }}
-                    />
-                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
-                        Wird am Ende des Namens abgeschnitten (Groß-/Kleinschreibung egal)
-                    </p>
-                </div>
-                <ToggleRow
-                    label="Punkte durch Leerzeichen ersetzen"
-                    value={dpNameReplaceDots}
-                    onChange={setDpNameReplaceDots}
-                />
-            </div>
         </Card>
     );
 }
@@ -1118,11 +1172,14 @@ export function AdminSettings() {
                 </Card>
             </div>
 
-            {/* Row 2: Admin Base URL + DP-Namen + Decimals (equal height) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Row 2: Admin Base URL */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <AdminBaseUrlCard />
-                <DpNameFilterCard />
-                <DefaultDecimalsCard />
+            </div>
+
+            {/* Row 2b: Frontend behavior (idle-return, optimistic updates) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <BehaviorSection />
             </div>
 
             {/* Row 3: Clients + Backup (both list-heavy, equal height) */}

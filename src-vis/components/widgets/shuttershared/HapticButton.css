@@ -1,0 +1,44 @@
+/* Grundgeruest der spuerbaren Taste.
+   Die Optik (Rahmen, Farbe, Groesse) kommt weiterhin aus ShutterRow.css bzw.
+   ShutterSheet.css – hier steht nur, was den Schalter unsichtbar ueber die
+   ganze Flaeche legt. */
+
+.haptic-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Der Schalter deckt die Taste vollstaendig ab: Der Finger trifft ihn, nicht
+   die Beschriftung. Nicht opacity:0 auf einem display:none-Element – der
+   Schalter muss wirklich da sein, sonst gibt es keine Beruehrung und damit
+   keine Haptik. */
+.haptic-btn-switch {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  /* Safari zeichnet den Schalter sonst in seiner Standardgroesse und
+     verschiebt damit das Layout, bevor opacity greift. */
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.haptic-btn.is-disabled,
+.haptic-btn-switch:disabled {
+  cursor: not-allowed;
+}
+
+.haptic-btn:has(.haptic-btn-switch:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

@@ -1,8 +1,24 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { useIoBroker, getStateFromCache } from './useIoBroker';
+import { useIoBroker, getStateFromCache, readValueDirect } from './useIoBroker';
 import { splitDpRef, resolveDpValue } from '../utils/dpRef';
-import { evaluateCondition, conditionHides } from '../utils/conditionEval';
-import type { WidgetCondition, ConditionStyle } from '../types';
+import { conditionHides } from '../utils/conditionEval';
+import {
+    applySourceValues,
+    clauseSourceRefs,
+    evaluateConditionWithSource,
+    hasChangedClause,
+    hasListAnyClause,
+    matchingListRefs,
+    sourceCtxKey,
+    type DpSourceCtx,
+} from '../utils/conditionSources';
+import { bumpWidgetRefresh } from '../store/widgetRefreshStore';
+import { useMessagesStore } from '../store/messagesStore';
+import { draftToPayload } from '../components/config/MessageBuilder';
+import { freezeDraftTokens, resolveDraftForRow } from '../utils/notifyTemplate';
+import { isScreenshotMode } from '../store/persistManager';
+import { EMPTY_SET } from '../utils/conditionSet';
+import type { WidgetCondition, ConditionStyle, ConditionSet, ConditionPart, ConditionElement } from '../types';
 
 // ── Debug logging ─────────────────────────────────────────────────────────────
 // End-user opt-in. Enable from DevTools console:
@@ -77,6 +93,10 @@ function styleToVars(style: ConditionStyle): Record<string, string> {
     if (style.accent) v['--accent'] = style.accent;
     if (style.bg) v['--widget-bg'] = style.bg;
     if (style.border) v['--widget-border'] = style.border;
+    if (style.ringColor) v['--cond-ring'] = style.ringColor;
+    if (style.borderWidth) v['--widget-border-width'] = style.borderWidth;
+    if (style.radius) v['--widget-radius'] = style.radius;
+    if (style.opacity) v['--widget-opacity'] = style.opacity;
     if (style.textPrimary) v['--text-primary'] = style.textPrimary;
     if (style.textSecondary) v['--text-secondary'] = style.textSecondary;
     return v;
@@ -162,54 +182,170 @@ export function useConditionReflowIds(): Set<string> {
 
 export interface ConditionResult {
     cssVars: Record<string, string>;
-    effect: 'pulse' | 'blink' | null;
+    /** Config values the matching rules override — see utils/conditionSet. */
+    set: ConditionSet;
+    /** Whole-card text style — applied as a class, not as a variable. */
+    bold: boolean;
+    italic: boolean;
+    /** Per-element appearance, keyed by element. */
+    parts: Partial<Record<ConditionPart, ElementLook>>;
+    effect: 'pulse' | 'blink' | 'border' | null;
     hidden: boolean; // widget should be hidden
     reflow: boolean; // remove from grid so others slide up
 }
 
-// Module-level constant – same reference every time, lets React bail out of re-renders
-const EMPTY_RESULT: ConditionResult = { cssVars: {}, effect: null, hidden: false, reflow: false };
+/** The half of a ConditionElement that becomes a class on the frame root. */
+export interface ElementLook {
+    color?: string;
+    bold?: boolean;
+    italic?: boolean;
+    /** Text size in px — rides the same class + variable channel as `color`. */
+    fontSize?: number;
+    hide?: boolean;
+}
 
-function collectUniqueIds(conditions: WidgetCondition[]): string[] {
+const EMPTY_PARTS: Partial<Record<ConditionPart, ElementLook>> = {};
+
+/** Which ConditionSet keys an element feeds. */
+const SET_KEYS: Record<ConditionPart, { show: keyof ConditionSet; text?: keyof ConditionSet }> = {
+    title: { show: 'showTitle', text: 'title' },
+    icon: { show: 'showIcon' },
+    value: { show: 'showValue', text: 'valueText' },
+};
+
+// Module-level constant – same reference every time, lets React bail out of re-renders
+const EMPTY_RESULT: ConditionResult = {
+    cssVars: {},
+    set: EMPTY_SET,
+    bold: false,
+    italic: false,
+    parts: EMPTY_PARTS,
+    effect: null,
+    hidden: false,
+    reflow: false,
+};
+
+// Shared "nothing changed" set for every evaluation that is not driven by a live
+// value arriving (initial load, getState resolution, manual recompute).
+const NO_CHANGES: ReadonlySet<string> = new Set<string>();
+
+// A widget remounting mid-shot would corrupt documentation screenshots, so the
+// reload rules are off in screenshot mode; `__auraShot.conditionRefresh(true)`
+// re-arms them for the tests that exercise this path on purpose.
+let devRefreshForced = false;
+export function __devForceConditionRefresh(on: boolean): void {
+    devRefreshForced = on;
+}
+
+// Same for the "send a message" effect — off in screenshot mode so a rule cannot
+// drop a real notice into the user's archive mid-shot. When armed, the write is
+// still blocked; messagesStore records the payload instead (__devSentMessages).
+let devNotifyForced = false;
+export function __devForceConditionNotify(on: boolean): void {
+    devNotifyForced = on;
+}
+
+/** May a condition send a message right now? Shared with the row-level rules
+ *  (useElementConditionStyles), so both obey the same screenshot-mode block. */
+export function conditionNotifyArmed(): boolean {
+    return !isScreenshotMode() || devNotifyForced;
+}
+
+// Real state IDs behind all clauses — token refs ('{dp}', '{list:…}') are
+// expanded to the widget's own / list datapoints via the source context.
+function collectUniqueIds(conditions: WidgetCondition[], ctx?: DpSourceCtx): string[] {
     return [
-        ...new Set(
-            conditions
-                .flatMap((c) =>
-                    c.clauses.flatMap((cl) => {
-                        const ids = [cl.datapoint];
-                        if (cl.valueType === 'datapoint' && cl.value) ids.push(cl.value);
-                        return ids;
-                    }),
-                )
-                .filter(Boolean),
-        ),
+        ...new Set(conditions.flatMap((c) => c.clauses.flatMap((cl) => clauseSourceRefs(cl, ctx))).filter(Boolean)),
     ];
 }
 
-function computeResult(conditions: WidgetCondition[], values: Map<string, unknown>): ConditionResult {
+function computeResult(
+    conditions: WidgetCondition[],
+    values: Map<string, unknown>,
+    ctx?: DpSourceCtx,
+): ConditionResult {
     const merged: Record<string, string> = {};
-    let effect: 'pulse' | 'blink' | null = null;
+    // Every matching rule is applied in order and later ones win per field — the
+    // same sparse-merge the cell rules use, so "rot wenn Alarm" and "anderes Icon
+    // wenn offline" can stack instead of cancelling each other out.
+    let set: ConditionSet | null = null;
+    let bold = false;
+    let italic = false;
+    let parts: Partial<Record<ConditionPart, ElementLook>> | null = null;
+    let effect: 'pulse' | 'blink' | 'border' | null = null;
     let hidden = false;
     let reflow = false;
+    applySourceValues(values, ctx);
     for (const cond of conditions) {
-        const matched = evaluateCondition(cond, values);
+        const matched = evaluateConditionWithSource(cond, values, ctx);
         if (matched) {
             Object.assign(merged, styleToVars(cond.style));
-            if (cond.effect && cond.effect !== 'none') effect = cond.effect as 'pulse' | 'blink';
+            if (cond.style.bold !== undefined) bold = cond.style.bold;
+            if (cond.style.italic !== undefined) italic = cond.style.italic;
+            for (const [part, el] of Object.entries(cond.elements ?? {}) as [ConditionPart, ConditionElement][]) {
+                if (!el) continue;
+                const keys = SET_KEYS[part];
+                // Half of an element drives the render copy of the config …
+                if (el.show !== undefined) (set ??= {})[keys.show] = el.show as never;
+                if (el.text !== undefined && keys.text) (set ??= {})[keys.text] = el.text as never;
+                if (part === 'icon') {
+                    if (el.icon !== undefined) (set ??= {}).icon = el.icon;
+                    if (el.iconSize !== undefined) (set ??= {}).iconSize = el.iconSize;
+                }
+                // … the other half becomes a class on the frame root.
+                const look: ElementLook = {};
+                if (el.color) look.color = el.color;
+                if (el.bold !== undefined) look.bold = el.bold;
+                if (el.italic !== undefined) look.italic = el.italic;
+                if (el.fontSize !== undefined) look.fontSize = el.fontSize;
+                if (el.show === false) look.hide = true;
+                if (Object.keys(look).length) {
+                    parts ??= {};
+                    Object.assign((parts[part] ??= {}), look);
+                }
+            }
+            if (cond.effect && cond.effect !== 'none') effect = cond.effect as 'pulse' | 'blink' | 'border';
         }
+        // Hiding is absorbing: once a rule hides the widget, no later rule brings it back.
         if (conditionHides(cond, matched)) {
             hidden = true;
             if (cond.reflow) reflow = true;
         }
     }
-    return { cssVars: merged, effect, hidden, reflow };
+    return {
+        cssVars: merged,
+        set: set ?? EMPTY_SET,
+        bold,
+        italic,
+        parts: parts ?? EMPTY_PARTS,
+        effect,
+        hidden,
+        reflow,
+    };
 }
 
-export function useConditionStyle(conditions: WidgetCondition[], widgetId?: string): ConditionResult {
+export function useConditionStyle(
+    conditions: WidgetCondition[],
+    widgetId?: string,
+    ctx?: DpSourceCtx,
+): ConditionResult {
     const { subscribe, getState } = useIoBroker();
     const valuesRef = useRef<Map<string, unknown>>(new Map());
+    // The context object identity is up to the caller — key the effect on its
+    // content instead and read the latest object through a ref.
+    const ctxRef = useRef<DpSourceCtx | undefined>(ctx);
+    ctxRef.current = ctx;
+    const ctxKey = sourceCtxKey(ctx);
     const mountedAtRef = useRef<number>(typeof performance !== 'undefined' ? performance.now() : 0);
     const mountCountRef = useRef<number>(0);
+    // Last verdict per refresh rule — a rule without a 'changed' clause reloads on
+    // the rising edge only, so it must remember whether it already matched.
+    const refreshMatchRef = useRef<Map<string, boolean>>(new Map());
+    // Same bookkeeping for the "send a message" effect (issue #429) — but one
+    // verdict PER ROW: a `{list:any}` rule fires once per entry, so every entry
+    // needs its own edge (issue #605). The key is the entry's datapoint, or '' for
+    // a rule that speaks about the widget as a whole.
+    const notifyMatchRef = useRef<Map<string, Map<string, boolean>>>(new Map());
     // Cache-aware initial state: on remount (e.g. when a widget moves between the
     // visible grid and the off-screen reflow container) the global stateCache
     // already has the DP values — compute the correct result synchronously so the
@@ -217,7 +353,7 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
     // On the very first page load nothing is cached yet, so we fall back to the
     // pessimistic "hidden=true" state to avoid a flash.
     const [result, setResult] = useState<ConditionResult>(() => {
-        const uniqueIds = collectUniqueIds(conditions);
+        const uniqueIds = collectUniqueIds(conditions, ctx);
         // Populate valuesRef from whatever the cache already has (even partial).
         // The cache check below decides whether we can compute synchronously.
         let cacheHits = 0;
@@ -232,7 +368,7 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
             }
         });
         if (uniqueIds.length > 0 && cacheHits === uniqueIds.length) {
-            const r = computeResult(conditions, valuesRef.current);
+            const r = computeResult(conditions, valuesRef.current, ctx);
             condLog('init (cache hit)', {
                 widgetId,
                 dps: uniqueIds,
@@ -250,7 +386,16 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
         // remount cycle on initial paint (and inside group widgets, an actual
         // flicker loop: see issue #281).
         const initial: ConditionResult = mayHide
-            ? { cssVars: {}, effect: null, hidden: true, reflow: false }
+            ? {
+                  cssVars: {},
+                  set: EMPTY_SET,
+                  bold: false,
+                  italic: false,
+                  parts: EMPTY_PARTS,
+                  effect: null,
+                  hidden: true,
+                  reflow: false,
+              }
             : EMPTY_RESULT;
         condLog('init (cache miss/partial — pessimistic in-place hide)', {
             widgetId,
@@ -274,7 +419,7 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
             return;
         }
 
-        const uniqueIds = collectUniqueIds(conditions);
+        const uniqueIds = collectUniqueIds(conditions, ctxRef.current);
 
         if (!uniqueIds.length) {
             setResult(EMPTY_RESULT);
@@ -305,18 +450,139 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
 
         const pessimistic = (): ConditionResult => {
             const mayHide = conditions.some((c) => c.hideWidget);
-            return mayHide ? { cssVars: {}, effect: null, hidden: true, reflow: false } : EMPTY_RESULT;
+            return mayHide
+                ? {
+                      cssVars: {},
+                      set: EMPTY_SET,
+                      bold: false,
+                      italic: false,
+                      parts: EMPTY_PARTS,
+                      effect: null,
+                      hidden: true,
+                      reflow: false,
+                  }
+                : EMPTY_RESULT;
         };
 
-        const recompute = (trigger: string, dp?: string) => {
+        // ── "Widget neu laden" rules (issue #537) ────────────────────────────
+        // Kept out of computeResult: that one is pure and also runs in the useState
+        // initializer, where a reload side effect must never fire.
+        const refreshConds = conditions.filter((c) => c.refreshWidget);
+        // A rule re-entering the set must re-prime instead of firing against a stale
+        // verdict from a previous mount.
+        for (const id of [...refreshMatchRef.current.keys()]) {
+            if (!refreshConds.some((c) => c.id === id)) refreshMatchRef.current.delete(id);
+        }
+
+        const fireRefresh = (changed: ReadonlySet<string>) => {
+            if (!refreshConds.length || !widgetId) return;
+            if (isScreenshotMode() && !devRefreshForced) return;
+            for (const cond of refreshConds) {
+                const matched = evaluateConditionWithSource(cond, valuesRef.current, ctxRef.current, changed);
+                const prev = refreshMatchRef.current.get(cond.id);
+                refreshMatchRef.current.set(cond.id, matched);
+                if (!matched) continue;
+                // A 'changed' clause only matches on an actual value arrival, so every
+                // match is a fresh event — no edge detection needed (and none possible:
+                // the verdict falls back to false on the very next evaluation).
+                if (hasChangedClause(cond)) {
+                    condLog('refresh (changed)', { widgetId, rule: cond.id, changed: [...changed] });
+                    bumpWidgetRefresh(widgetId);
+                    continue;
+                }
+                // State rules reload on the rising edge. `undefined` is the baseline
+                // evaluation — firing there would reload on every page load.
+                if (prev === undefined || prev) continue;
+                condLog('refresh (rising edge)', { widgetId, rule: cond.id });
+                bumpWidgetRefresh(widgetId);
+            }
+        };
+
+        // ── "Meldung senden" rules (issue #429) ──────────────────────────────
+        // Deliberately the same edge rules as fireRefresh: a state rule fires once
+        // on the rising edge, a 'changed' clause fires on every arrival. Anything
+        // else would spam the archive on every re-evaluation.
+        const notifyConds = conditions.filter((c) => c.notify);
+        for (const id of [...notifyMatchRef.current.keys()]) {
+            if (!notifyConds.some((c) => c.id === id)) notifyMatchRef.current.delete(id);
+        }
+
+        const fireNotify = (changed: ReadonlySet<string>) => {
+            if (!notifyConds.length) return;
+            // The screenshot harness runs against a real instance — a rule firing
+            // here would write a genuine message into the user's archive.
+            if (!conditionNotifyArmed()) return;
+
+            const send = (cond: WidgetCondition, rowDp?: string) => {
+                // `{{dp}}` & co. resolve against the row that triggered, or — for a
+                // rule without a list source — the widget's own datapoint. The `[[dp]]`
+                // values are then frozen at the edge: a message is a record, so its
+                // text must not drift with the datapoint after it was sent.
+                const draft = resolveDraftForRow(cond.notify!, rowDp);
+                void freezeDraftTokens(draft, readValueDirect).then((frozen) => {
+                    const payload = draftToPayload(frozen);
+                    condLog('notify', { widgetId, rule: cond.id, row: rowDp, payload });
+                    useMessagesStore.getState().send(JSON.stringify(payload));
+                });
+            };
+
+            for (const cond of notifyConds) {
+                const matched = evaluateConditionWithSource(cond, valuesRef.current, ctxRef.current, changed);
+                let seen = notifyMatchRef.current.get(cond.id);
+                if (!seen) {
+                    seen = new Map();
+                    notifyMatchRef.current.set(cond.id, seen);
+                }
+                const onChange = hasChangedClause(cond);
+                const listRefs = ctxRef.current?.listRefs ?? [];
+                const perRow = listRefs.length > 0 && hasListAnyClause(cond);
+
+                // ── One message per triggering entry (issue #605) ─────────────
+                if (perRow) {
+                    const hits = new Set(
+                        matched ? matchingListRefs(cond, valuesRef.current, ctxRef.current, changed) : [],
+                    );
+                    // An entry that left the list forgets its verdict, so re-appearing
+                    // re-primes instead of firing against a stale one.
+                    for (const key of [...seen.keys()]) if (!listRefs.includes(key)) seen.delete(key);
+                    for (const ref of listRefs) {
+                        const prev = seen.get(ref);
+                        seen.set(ref, hits.has(ref));
+                        if (!hits.has(ref)) continue;
+                        if (!onChange && (prev === undefined || prev)) continue;
+                        send(cond, ref);
+                    }
+                    continue;
+                }
+
+                const prev = seen.get('');
+                seen.set('', matched);
+                if (!matched) continue;
+                if (!onChange && (prev === undefined || prev)) continue;
+                send(cond, ctxRef.current?.ownDp);
+            }
+        };
+
+        const recompute = (trigger: string, dp?: string, changed: ReadonlySet<string> = NO_CHANGES) => {
             const allKnown = uniqueIds.every((id) => loadedIds.has(id));
-            const next = allKnown ? computeResult(conditions, valuesRef.current) : pessimistic();
+            const next = allKnown ? computeResult(conditions, valuesRef.current, ctxRef.current) : pessimistic();
+            // computeResult resolved the source tokens into valuesRef, so the refresh
+            // rules see the same values the style verdict was built from. Skipped while
+            // values are still loading — a half-known state is not a real transition.
+            if (allKnown) {
+                fireRefresh(changed);
+                fireNotify(changed);
+            }
             setResult((prev) => {
                 if (
                     prev.effect === next.effect &&
+                    prev.bold === next.bold &&
+                    prev.italic === next.italic &&
+                    JSON.stringify(prev.parts) === JSON.stringify(next.parts) &&
                     prev.hidden === next.hidden &&
                     prev.reflow === next.reflow &&
-                    JSON.stringify(prev.cssVars) === JSON.stringify(next.cssVars)
+                    JSON.stringify(prev.cssVars) === JSON.stringify(next.cssVars) &&
+                    JSON.stringify(prev.set) === JSON.stringify(next.set)
                 ) {
                     condLog('recompute (no change)', { widgetId, trigger, dp, allKnown });
                     return prev;
@@ -365,7 +631,9 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
                 loadedIds.add(ref);
                 valuesRef.current.set(ref, resolveDpValue(state?.val, path));
                 condLog('subscribe event', { widgetId, dp: ref, val: state?.val });
-                recompute('subscribe', ref);
+                // Only a live value counts as a change — a getState resolution is the
+                // initial load, and reloading the widget there would fire on every mount.
+                recompute('subscribe', ref, new Set([ref]));
             });
         });
 
@@ -380,7 +648,7 @@ export function useConditionStyle(conditions: WidgetCondition[], widgetId?: stri
             });
             unsubscribers.forEach((fn) => fn());
         };
-    }, [conditions, subscribe, getState, widgetId]);
+    }, [conditions, subscribe, getState, widgetId, ctxKey]);
 
     return result;
 }

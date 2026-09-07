@@ -1,9 +1,17 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore, Suspense } from 'react';
-import { lazyWithReload } from '../../utils/lazyWithReload';
+import React, {
+    useState,
+    useRef,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useCallback,
+    useSyncExternalStore,
+    Suspense,
+} from 'react';
 import { recordWidgetRender, recordWidgetReady, isWidgetTrackingEnabled } from '../../utils/perfBreakdown';
 import { createPortal } from 'react-dom';
 import { usePortalTarget } from '../../contexts/PortalTargetContext';
-import { useT } from '../../i18n';
+import { useT, t } from '../../i18n';
 import {
     X,
     Pencil,
@@ -21,29 +29,41 @@ import {
     Smartphone,
     GripVertical,
     MousePointerClick,
+    ExternalLink,
+    ArrowUpRight,
     FolderOpen,
     BadgeCheck,
+    Shapes,
+    CopyPlus,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { setDragBridge } from '../../utils/dragBridge';
 import { verticalCompact } from '../../utils/gridCompact';
+import { groupRows } from '../../utils/groupLayout';
+import { useAutoHeightStore } from '../../store/autoHeightStore';
 import { exportWidget } from '../../utils/widgetExportImport';
 import { ExportAnonymizeDialog } from '../config/ExportAnonymizeDialog';
+import { SavePresetDialog } from '../config/SavePresetDialog';
+import { FEATURES } from '../../featureFlags';
 import { unpublishTimerForWidget } from '../../utils/publishTimerConfig';
+import { panelActiveStateId } from '../../utils/publishPanelState';
 import { useFocusedWidgetId } from '../../contexts/FocusedWidgetContext';
 import { copyToClipboard } from '../../utils/clipboard';
+import { clampModalPos, usePersistedModalSize } from '../../utils/modalGeometry';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { type ColorThreshold } from '../../utils/colorThresholds';
+import { ColorThresholdsEditor } from '../config/ColorThresholdsEditor';
 import { SANDBOX_PRESETS, type SandboxPreset } from '../../utils/iframeSandbox';
+import { IFRAME_INTERACTION_MODES, resolveIframeInteractionMode } from '../../utils/iframeInteraction';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
 import { baseDpId } from '../../utils/dpRef';
-import { formatLastChange } from '../../utils/formatLastChange';
+import { isInteractiveTarget } from '../../utils/interactiveTargets';
 import { JsonPathButton } from '../config/JsonPathButton';
 import { ColorPicker } from '../common/ColorPicker';
-import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { useDashboardStore, useActiveLayout } from '../../store/dashboardStore';
+import { useDashboardStore, useActiveSection, useActiveLayout } from '../../store/dashboardStore';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
-import { cloneGroupDef, useGroupDefsStore } from '../../store/groupDefsStore';
-import { useConfigStore } from '../../store/configStore';
+import { useGroupDefsStore } from '../../store/groupDefsStore';
+import { copyWidget, freshWidgetId } from '../../utils/widgetCopy';
 import { useActiveLayoutId } from '../../contexts/ActiveLayoutContext';
 import { useEffectiveSettings } from '../../hooks/useEffectiveSettings';
 import type {
@@ -57,16 +77,20 @@ import type {
     WidgetLayout,
 } from '../../types';
 import { DEFAULT_CUSTOM_GRID, DEFAULT_UNIVERSAL_GRID, normalizeGrid } from '../widgets/CustomGridView';
-import { DEFAULT_KNOB_GRID, KnobWidget } from '../widgets/KnobWidget';
+import { DEFAULT_KNOB_GRID } from '../widgets/KnobWidget';
+import { OVER_COLOR as FILL_OVER_COLOR } from '../widgets/FillWidget';
 import { DatapointPicker } from '../config/DatapointPicker';
+import { ScaleBoundsRow } from '../config/ScaleBoundsRow';
 import { ConditionEditor } from '../config/ConditionEditor';
+import { CellConditionEditor } from '../config/CellConditionEditor';
 import { BadgeEditor } from '../config/BadgeEditor';
+import { ImagePathHint } from '../config/ImagePathHint';
 import { BadgeOverlay } from '../widgets/BadgeOverlay';
 import { useBadges } from '../../hooks/useBadges';
-import { getObjectDirect, subscribeStateDirect, getStateDirect } from '../../hooks/useIoBroker';
+import { getObjectDirect, subscribeStateDirect, getStateDirect, getObjectViewDirect } from '../../hooks/useIoBroker';
 import { lookupDatapointEntry, ensureDatapointCache } from '../../hooks/useDatapointList';
 import { detectMediaDevices, type DetectedMediaDevice } from '../../utils/mediaDeviceDetectors';
-import { WIDGET_REGISTRY, WIDGET_GROUPS, WIDGET_BY_TYPE } from '../../widgetRegistry';
+import { WIDGET_REGISTRY, WIDGET_GROUPS, WIDGET_BY_TYPE, conditionSlotsFor } from '../../widgetRegistry';
 import { detectType } from '../../utils/widgetDetection';
 import { DP_TEMPLATES, findMainDpForSecondary, autoDetectStatusDps, autoDetectLightDps } from '../../utils/dpTemplates';
 import { AutoListConfig } from '../config/AutoListConfig';
@@ -74,7 +98,6 @@ import { StatusOverviewConfig } from '../config/StatusOverviewConfig';
 import { EnergiebilanzConfig } from '../config/EnergiebilanzConfig';
 import { StaticListConfig } from '../config/StaticListConfig';
 import { GroupActionConfig } from '../config/GroupActionConfig';
-import { ShutterRoomsConfig } from '../config/ShutterRoomsConfig';
 import {
     listGroupCandidates,
     groupGroupCandidates,
@@ -96,108 +119,52 @@ import {
     type DetectedAdapter,
 } from '../../hooks/useChartHistory';
 import { useConditionStyle, notifyHiddenState } from '../../hooks/useConditionStyle';
-import { SwitchWidget } from '../widgets/SwitchWidget';
-import { ValueWidget } from '../widgets/ValueWidget';
-import { DimmerWidget } from '../widgets/DimmerWidget';
-import { ThermostatWidget } from '../widgets/ThermostatWidget';
-import { RainStationWidget, type RainStationDef } from '../widgets/RainStationWidget';
-import { RainDailyWidget } from '../widgets/RainDailyWidget';
-// Chart widgets are heavy (recharts ~380 KB, echarts ~1.1 MB) and only used on
-// dashboards that actually have chart widgets — lazy-loaded so they don't
-// block first paint of the rest of the dashboard.
-const ChartWidget = lazyWithReload(() => import('../widgets/ChartWidget').then((m) => ({ default: m.ChartWidget })));
-const ClimateWidget = lazyWithReload(() =>
-    import('../widgets/ClimateWidget').then((m) => ({ default: m.ClimateWidget })),
-);
-// HeatingWidget will pull in echarts for its detail chart later — lazy from the start.
-const HeatingWidget = lazyWithReload(() =>
-    import('../widgets/HeatingWidget').then((m) => ({ default: m.HeatingWidget })),
-);
-// WeatherForecastStripWidget pulls in echarts for its detail chart.
-const WeatherForecastStripWidget = lazyWithReload(() =>
-    import('../widgets/WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
-);
-// ShutterRoomsWidget is a specialized widget for TaHoma roller shutters, grouped by room.
-const ShutterRoomsWidget = lazyWithReload(() =>
-    import('../widgets/shutterrooms/ShutterRoomsWidget').then((m) => ({ default: m.ShutterRoomsWidget })),
-);
-// ShutterFloorsWidget is a specialized widget for TaHoma roller shutters, grouped by floor.
-const ShutterFloorsWidget = lazyWithReload(() =>
-    import('../widgets/shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
-);
-const EChartWidget = lazyWithReload(() => import('../widgets/EChartWidget').then((m) => ({ default: m.EChartWidget })));
-const EChartsPresetWidget = lazyWithReload(() =>
-    import('../widgets/EChartsPresetWidget').then((m) => ({ default: m.EChartsPresetWidget })),
-);
-// Map widget pulls in Leaflet (~150 KB + CSS) — lazy-load so only dashboards with a
-// map widget pay for it.
-const MapWidget = lazyWithReload(() => import('../widgets/MapWidget').then((m) => ({ default: m.MapWidget })));
-// LoadTimesWidget pulls in recharts — lazy-load like the other chart widgets.
-const LoadTimesWidget = lazyWithReload(() =>
-    import('../widgets/LoadTimesWidget').then((m) => ({ default: m.LoadTimesWidget })),
-);
-import { ListWidget } from '../widgets/ListWidget';
-import { ClockWidget } from '../widgets/ClockWidget';
-import { CalendarWidget, getSources, DEFAULT_CAL_COLORS, type CalendarSource } from '../widgets/CalendarWidget';
-import { HeaderWidget } from '../widgets/HeaderWidget';
-// Static on purpose: RoomClimateWidget is light (it defers its own
-// echarts-backed detail views), so the Wohnklima bars paint with the tab instead
-// of waiting for a separate chunk to arrive — a wait long enough over VPN to
-// show the whole tab as collapsed strips.
-import { RoomClimateWidget } from '../widgets/RoomClimateWidget';
-// GroupWidget imports WidgetFrame (circular) — safe because it only uses WidgetFrame
-// inside its render function, never at module-init time.
-import { GroupWidget } from '../widgets/GroupWidget';
+import { widgetSourceCtx } from '../../utils/conditionSources';
+import { applyConditionSet, stripRenderOverrides } from '../../utils/conditionSet';
+import {
+    getSources,
+    extractCalNames,
+    DEFAULT_CAL_COLORS,
+    type CalendarSource,
+    type CalendarSourceType,
+} from '../widgets/CalendarWidget';
 import { EChartConfig } from '../config/EChartConfig';
-import { EvccWidget, EvccConfig } from '../widgets/EvccWidget';
+import { EvccConfig } from '../widgets/EvccWidget';
 
-import { WeatherWidget, buildWeatherCustomGrid } from '../widgets/WeatherWidget';
-import { GaugeWidget } from '../widgets/GaugeWidget';
-import { CameraWidget } from '../widgets/CameraWidget';
-import { ImageWidget } from '../widgets/ImageWidget';
-import { IframeWidget } from '../widgets/IframeWidget';
-import { FillWidget } from '../widgets/FillWidget';
-import { TrashWidget, TrashConfig } from '../widgets/TrashWidget';
-import { TrashScheduleWidget, TrashScheduleConfig } from '../widgets/TrashScheduleWidget';
-import { AutoListWidget } from '../widgets/AutoListWidget';
-import { StatusOverviewWidget } from '../widgets/StatusOverviewWidget';
-import { EnergiebilanzWidget } from '../widgets/EnergiebilanzWidget';
-import { ShutterWidget } from '../widgets/ShutterWidget';
-import { JsonTableWidget } from '../widgets/JsonTableWidget';
-import { WindowContactWidget, WC_PRESETS, WC_PRESET_LABELS } from '../widgets/WindowContactWidget';
-import { BinarySensorWidget, BINARY_SENSOR_PRESETS } from '../widgets/BinarySensorWidget';
-import { StateImageWidget } from '../widgets/StateImageWidget';
+import { buildWeatherCustomGrid } from '../widgets/WeatherWidget';
+import { TrashConfig } from '../widgets/TrashWidget';
+import { TrashScheduleConfig } from '../widgets/TrashScheduleWidget';
+// Single source of truth for type → component. WidgetFrame, the mirror widget and the
+// popup/tab embeds all render through this one map, so a new widget type works everywhere.
+import { getWidgetMap } from '../widgets/widgetMap';
+import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
+import type { RainStationDef } from '../widgets/RainStationWidget';
+import { MirrorConfig } from '../config/MirrorConfig';
+import { AirControlConfig } from '../config/AirControlConfig';
+import { WC_PRESETS, WC_PRESET_LABELS } from '../widgets/WindowContactWidget';
+import { BINARY_SENSOR_PRESETS } from '../widgets/BinarySensorWidget';
 import { EChartsPresetConfig } from '../config/EChartsPresetConfig';
 import { JsonTableConfig } from '../config/JsonTableConfig';
 import { ValueTransformButton } from '../config/ValueTransformButton';
-import { HtmlWidget } from '../widgets/HtmlWidget';
+import { ValueFormatRow } from '../config/ValueFormatRow';
+import type { NumberFormat } from '../../utils/formatValue';
 import { HtmlConfig } from '../config/HtmlConfig';
 import { MapConfig } from '../config/MapConfig';
-import { DatePickerWidget, FORMAT_LABELS, type DateOutputFormat } from '../widgets/DatePickerWidget';
+import { FORMAT_LABELS, DATE_PATTERN_TOKENS, DEFAULT_DATE_PATTERN, type DateOutputFormat } from '../../utils/dateValue';
 import { CustomCellEditor, CELL_LABELS } from './CustomCellEditor';
-import { MediaplayerWidget } from '../widgets/MediaplayerWidget';
-import { SliderWidget } from '../widgets/SliderWidget';
-import { ChipsWidget } from '../widgets/ChipsWidget';
-import { HttpRequestWidget } from '../widgets/HttpRequestWidget';
-import { ButtonWidget } from '../widgets/ButtonWidget';
-import { UniversalWidget } from '../widgets/UniversalWidget';
-import { EnumWidget } from '../widgets/EnumWidget';
-import { LightWidget } from '../widgets/LightWidget';
-import { CarouselWidget } from '../widgets/CarouselWidget';
-import { PanelsWidget } from '../widgets/PanelsWidget';
+import { MultiSelect } from '../config/MultiSelect';
+import { ToggleRow } from '../../pages/admin/layouts/shared/SettingControls';
 
-import { TimerWidget } from '../widgets/TimerWidget';
-import { AdapterStatusWidget } from '../widgets/AdapterStatusWidget';
-import { ScriptStatusWidget } from '../widgets/ScriptStatusWidget';
-import { AdapterLogsWidget } from '../widgets/AdapterLogsWidget';
-import { InputWidget } from '../widgets/InputWidget';
-import { AlarmWidget, AlarmConfig } from '../widgets/AlarmWidget';
+import { AlarmConfig } from '../widgets/AlarmWidget';
 import { TimerConfig } from '../config/TimerConfig';
+import { NumberListInput } from '../config/NumberListInput';
 import { IconPickerModal } from '../config/IconPickerModal';
 import { ClickActionEditor, defaultActionForConfig } from '../config/ClickActionEditor';
 import { WidgetClickPopup } from '../widgets/popup/WidgetClickPopup';
+import { useResolvedTitle } from '../widgets/DynamicTitle';
 import { useNavigationStore } from '../../store/navigationStore';
 import { usePopupConfigStore, BUILTIN_VIEW_IDS } from '../../store/popupConfigStore';
+import { useWidgetRefreshNonce } from '../../store/widgetRefreshStore';
 
 // Stable empty array – avoids creating a new reference on every render when no conditions are set
 const NO_CONDITIONS: WidgetCondition[] = [];
@@ -208,11 +175,9 @@ const NO_BADGES: BadgeDef[] = [];
 // the Darstellung block". Adding a new widget type only needs an entry here
 // (or nothing — empty = just showTitle/showIcon).
 const VIS_FIELDS_PER_TYPE: Partial<Record<WidgetType, { key: string; label: string }[]>> = {
-    shutter: [
-        { key: 'showValue', label: 'Position %' },
-        { key: 'showControls', label: 'Steuerknöpfe' },
-        { key: 'showSlider', label: 'Schieberegler' },
-    ],
+    // shutter: Position %/Steuerknöpfe/Schieberegler live in the shutter settings
+    // block (Sichtbare Felder), right below the size sliders they belong to —
+    // kept out of the generic Darstellung block.
     switch: [{ key: 'showLabel', label: 'Status (AN/AUS)' }],
     dimmer: [
         { key: 'showValue', label: 'Prozentwert' },
@@ -224,29 +189,22 @@ const VIS_FIELDS_PER_TYPE: Partial<Record<WidgetType, { key: string; label: stri
         { key: 'showUnit', label: 'Einheit' },
         { key: 'showMinMax', label: 'Min/Max-Beschriftung' },
     ],
-    thermostat: [
-        { key: 'showSetpoint', label: 'Solltemperatur' },
-        { key: 'showActualTemp', label: 'Isttemperatur' },
-        { key: 'showControls', label: 'Tasten ±' },
-    ],
+    // thermostat: visibility toggles live in the thermostat settings block
+    // (Soll/Ist/Tasten/Schnellwahl) — kept out of the generic Darstellung block.
     value: [
         { key: 'showValue', label: 'Wert' },
         { key: 'showUnit', label: 'Einheit' },
     ],
     // enum: current-selection / dropdown / display-mode toggles live in EnumConfig
     // (below the entries), matching the universal widget's DP-Auswahlfeld cell editor.
-    climate: [
-        { key: 'showActualTemp', label: 'Ist-Temperatur' },
-        { key: 'showTargetTemp', label: 'Soll-Temperatur' },
-        { key: 'showHumidity', label: 'Luftfeuchtigkeit' },
-        { key: 'showComfort', label: 'Komfortzone' },
-        { key: 'showChart', label: 'Temperaturverlauf' },
-    ],
+    // climate: Ist/Soll/Luftfeuchtigkeit/Komfortzone/Temperaturverlauf toggles live
+    // in the Raumklima settings block (ClimateConfig) — kept out of the generic Darstellung block.
     windowcontact: [{ key: 'showLabel', label: 'Status-Text' }],
     binarysensor: [{ key: 'showLabel', label: 'Status-Text' }],
     stateimage: [{ key: 'showLabel', label: 'Status-Text' }],
     calendar: [
         { key: 'showCalName', label: 'Kalender-Name' },
+        { key: 'showCalIcon', label: 'Kalender-Icon' },
         { key: 'showSummary', label: 'Terminname' },
         { key: 'showDate', label: 'Datum / Uhrzeit' },
         { key: 'showLocation', label: 'Ort' },
@@ -293,6 +251,7 @@ const NO_CUSTOM_LAYOUT_TYPES: WidgetType[] = [
     'alarm',
     'map',
     'statusoverview',
+    'messages',
 ];
 
 // ── Global custom-cell clipboard (shared across all WidgetFrames) ───────────
@@ -364,70 +323,6 @@ function ProfiledWidget({
     return <>{children}</>;
 }
 
-// Defined as a function so it's evaluated lazily, avoiding circular-init issues.
-function getWidgetMap() {
-    return {
-        switch: SwitchWidget,
-        value: ValueWidget,
-        dimmer: DimmerWidget,
-        thermostat: ThermostatWidget,
-        chart: ChartWidget,
-        list: ListWidget,
-        clock: ClockWidget,
-        calendar: CalendarWidget,
-        header: HeaderWidget,
-        group: GroupWidget,
-        echart: EChartWidget,
-        evcc: EvccWidget,
-        weather: WeatherWidget,
-        gauge: GaugeWidget,
-        camera: CameraWidget,
-        autolist: AutoListWidget,
-        image: ImageWidget,
-        iframe: IframeWidget,
-        fill: FillWidget,
-        trash: TrashWidget,
-        trashSchedule: TrashScheduleWidget,
-        shutter: ShutterWidget,
-        shutterrooms: ShutterRoomsWidget,
-        shutterfloors: ShutterFloorsWidget,
-        jsontable: JsonTableWidget,
-        html: HtmlWidget,
-        windowcontact: WindowContactWidget,
-        binarysensor: BinarySensorWidget,
-        stateimage: StateImageWidget,
-        echartsPreset: EChartsPresetWidget,
-        datepicker: DatePickerWidget,
-        mediaplayer: MediaplayerWidget,
-        slider: SliderWidget,
-        chips: ChipsWidget,
-        httpRequest: HttpRequestWidget,
-        button: ButtonWidget,
-        climate: ClimateWidget,
-        roomclimate: RoomClimateWidget,
-        rainstation: RainStationWidget,
-        raindaily: RainDailyWidget,
-        heating: HeatingWidget,
-        weatherforecaststrip: WeatherForecastStripWidget,
-        universal: UniversalWidget,
-        enum: EnumWidget,
-        light: LightWidget,
-        carousel: CarouselWidget,
-        panels: PanelsWidget,
-        knob: KnobWidget,
-        timer: TimerWidget,
-        adapterstatus: AdapterStatusWidget,
-        scriptstatus: ScriptStatusWidget,
-        adapterlogs: AdapterLogsWidget,
-        input: InputWidget,
-        alarm: AlarmWidget,
-        map: MapWidget,
-        statusoverview: StatusOverviewWidget,
-        energiebilanz: EnergiebilanzWidget,
-        loadtimes: LoadTimesWidget,
-    } as const;
-}
-
 // ── CalendarEditPanel ──────────────────────────────────────────────────────
 
 const REFRESH_OPTIONS = [
@@ -454,10 +349,55 @@ function CalendarEditPanel({
     const o = config.options ?? {};
     const sources = getSources(o);
     const [adding, setAdding] = useState(false);
+    const [newType, setNewType] = useState<CalendarSourceType>('url');
     const [newUrl, setNewUrl] = useState('');
+    const [newDp, setNewDp] = useState('');
+    const [newFilter, setNewFilter] = useState('');
     const [newName, setNewName] = useState('');
     const [newColor, setNewColor] = useState(DEFAULT_CAL_COLORS[sources.length % DEFAULT_CAL_COLORS.length]);
+    const [icalDps, setIcalDps] = useState<string[]>([]);
+    const [icalDpsLoading, setIcalDpsLoading] = useState(false);
+    const [calNames, setCalNames] = useState<string[]>([]);
     const [importantIconPickerOpen, setImportantIconPickerOpen] = useState(false);
+    /** Id of the source whose icon picker is open, or null. */
+    const [calIconPickerId, setCalIconPickerId] = useState<string | null>(null);
+
+    // Discover the table states of all ioBroker.ical instances
+    useEffect(() => {
+        if (!adding || newType !== 'adapter') return;
+        let cancelled = false;
+        setIcalDpsLoading(true);
+        void (async () => {
+            const res = await getObjectViewDirect('instance', 'system.adapter.ical.', 'system.adapter.ical.香');
+            const dps = (res.rows ?? [])
+                .map((r) => r.id.replace(/^system\.adapter\./, ''))
+                .filter((id) => /^ical\.\d+$/.test(id))
+                .sort()
+                .map((id) => `${id}.data.table`);
+            if (cancelled) return;
+            setIcalDps(dps);
+            setIcalDpsLoading(false);
+            setNewDp((cur) => cur || dps[0] || '');
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [adding, newType]);
+
+    // Offer the calendar names the selected table currently contains
+    useEffect(() => {
+        if (newType !== 'adapter' || !newDp) {
+            setCalNames([]);
+            return;
+        }
+        let cancelled = false;
+        void getStateDirect(newDp).then((st) => {
+            if (!cancelled) setCalNames(extractCalNames(st?.val));
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [newType, newDp]);
 
     const setOpts = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
 
@@ -466,20 +406,34 @@ function CalendarEditPanel({
 
     const removeSource = (id: string) => setOpts({ calendars: sources.filter((s) => s.id !== id) });
 
-    const confirmAdd = () => {
-        if (!newUrl.trim()) return;
-        const next: CalendarSource = {
-            id: Date.now().toString(),
-            url: newUrl.trim(),
-            name: newName.trim() || 'Kalender',
-            color: newColor,
-            showName: true,
-        };
-        setOpts({ calendars: [...sources, next] });
+    const resetAddForm = () => {
         setNewUrl('');
+        setNewDp('');
+        setNewFilter('');
         setNewName('');
-        setNewColor(DEFAULT_CAL_COLORS[(sources.length + 1) % DEFAULT_CAL_COLORS.length]);
         setAdding(false);
+    };
+
+    const addTargetSet = newType === 'adapter' ? !!newDp : !!newUrl.trim();
+
+    const confirmAdd = () => {
+        if (!addTargetSet) return;
+        const base = { id: Date.now().toString(), color: newColor, showName: true };
+        const next: CalendarSource =
+            newType === 'adapter'
+                ? {
+                      ...base,
+                      type: 'adapter',
+                      url: '',
+                      datapoint: newDp,
+                      calFilter: newFilter,
+                      // Blank name = fall back to the calendar name of each table row
+                      name: newName.trim() || newFilter,
+                  }
+                : { ...base, type: 'url', url: newUrl.trim(), name: newName.trim() || 'Kalender' };
+        setOpts({ calendars: [...sources, next] });
+        setNewColor(DEFAULT_CAL_COLORS[(sources.length + 1) % DEFAULT_CAL_COLORS.length]);
+        resetAddForm();
     };
 
     return (
@@ -499,6 +453,27 @@ function CalendarEditPanel({
                                 className="w-5 h-5 rounded cursor-pointer border-0 p-0 shrink-0"
                                 title={t('wf.cal.changeColor')}
                             />
+                            {(() => {
+                                // Optional per-calendar icon; the placeholder keeps the
+                                // row width steady while no icon is chosen.
+                                const SrcIcon = src.icon
+                                    ? getWidgetIcon(src.icon, (() => null) as unknown as LucideIcon)
+                                    : null;
+                                return (
+                                    <button
+                                        onClick={() => setCalIconPickerId(src.id)}
+                                        className="w-5 h-5 rounded flex items-center justify-center hover:opacity-70 shrink-0"
+                                        style={{
+                                            background: 'var(--app-surface)',
+                                            border: '1px solid var(--app-border)',
+                                            color: src.color,
+                                        }}
+                                        title={t('wf.cal.srcIcon')}
+                                    >
+                                        {SrcIcon ? <SrcIcon size={12} /> : <Shapes size={11} opacity={0.5} />}
+                                    </button>
+                                );
+                            })()}
                             <input
                                 type="text"
                                 value={src.name}
@@ -527,7 +502,9 @@ function CalendarEditPanel({
                             </button>
                         </div>
                         <p className="text-[9px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-                            {src.url}
+                            {src.type === 'adapter'
+                                ? `${src.datapoint}${src.calFilter ? ` · ${src.calFilter}` : ''}`
+                                : src.url}
                         </p>
                     </div>
                 ))}
@@ -539,15 +516,73 @@ function CalendarEditPanel({
                     className="rounded-lg p-2 space-y-1.5"
                     style={{ background: 'var(--app-bg)', border: '1px solid var(--app-border)' }}
                 >
-                    <input
-                        type="url"
-                        value={newUrl}
-                        onChange={(e) => setNewUrl(e.target.value)}
-                        placeholder={t('wf.cal.calUrl')}
-                        autoFocus
-                        className={`${inputCls} font-mono`}
-                        style={inputStyle}
-                    />
+                    {/* source kind: own fetch of an iCal URL, or read a ical adapter table */}
+                    <div className="flex gap-1">
+                        {(['adapter', 'url'] as CalendarSourceType[]).map((k) => (
+                            <button
+                                key={k}
+                                onClick={() => setNewType(k)}
+                                className="flex-1 py-1 text-[10px] rounded-md hover:opacity-80"
+                                style={{
+                                    background: newType === k ? 'var(--accent)' : 'var(--app-surface)',
+                                    color: newType === k ? '#fff' : 'var(--text-secondary)',
+                                    border: '1px solid var(--app-border)',
+                                }}
+                            >
+                                {t(k === 'adapter' ? 'wf.cal.srcAdapter' : 'wf.cal.srcUrl')}
+                            </button>
+                        ))}
+                    </div>
+                    {newType === 'adapter' ? (
+                        <>
+                            {icalDps.length === 0 ? (
+                                <p className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                                    {t(icalDpsLoading ? 'wf.cal.icalLoading' : 'wf.cal.noIcalInstance')}
+                                </p>
+                            ) : (
+                                <select
+                                    value={newDp}
+                                    onChange={(e) => {
+                                        setNewDp(e.target.value);
+                                        setNewFilter('');
+                                    }}
+                                    className={inputCls}
+                                    style={inputStyle}
+                                >
+                                    {icalDps.map((dp) => (
+                                        <option key={dp} value={dp}>
+                                            {dp}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            {/* one ical instance can serve several calendars */}
+                            <select
+                                value={newFilter}
+                                onChange={(e) => setNewFilter(e.target.value)}
+                                className={inputCls}
+                                style={inputStyle}
+                                disabled={!newDp}
+                            >
+                                <option value="">{t('wf.cal.allCalendars')}</option>
+                                {calNames.map((n) => (
+                                    <option key={n} value={n}>
+                                        {n}
+                                    </option>
+                                ))}
+                            </select>
+                        </>
+                    ) : (
+                        <input
+                            type="url"
+                            value={newUrl}
+                            onChange={(e) => setNewUrl(e.target.value)}
+                            placeholder={t('wf.cal.calUrl')}
+                            autoFocus
+                            className={`${inputCls} font-mono`}
+                            style={inputStyle}
+                        />
+                    )}
                     <div className="flex gap-1.5">
                         <ColorPicker
                             value={newColor}
@@ -558,7 +593,7 @@ function CalendarEditPanel({
                             type="text"
                             value={newName}
                             onChange={(e) => setNewName(e.target.value)}
-                            placeholder={t('wf.cal.calName')}
+                            placeholder={t(newType === 'adapter' ? 'wf.cal.calNameAuto' : 'wf.cal.calName')}
                             className={inputCls}
                             style={inputStyle}
                         />
@@ -566,18 +601,14 @@ function CalendarEditPanel({
                     <div className="flex gap-1.5">
                         <button
                             onClick={confirmAdd}
-                            disabled={!newUrl.trim()}
+                            disabled={!addTargetSet}
                             className="flex-1 py-1.5 text-xs rounded-lg text-white hover:opacity-80 disabled:opacity-30"
                             style={{ background: 'var(--accent)' }}
                         >
                             {t('wf.cal.add')}
                         </button>
                         <button
-                            onClick={() => {
-                                setAdding(false);
-                                setNewUrl('');
-                                setNewName('');
-                            }}
+                            onClick={resetAddForm}
                             className="px-3 py-1.5 text-xs rounded-lg hover:opacity-80"
                             style={{
                                 background: 'var(--app-surface)',
@@ -645,13 +676,107 @@ function CalendarEditPanel({
                 <input
                     type="number"
                     min={1}
-                    max={20}
+                    max={100}
                     value={(o.maxEvents as number) ?? 5}
                     onChange={(e) => setOpts({ maxEvents: Number(e.target.value) })}
                     className={inputCls}
                     style={inputStyle}
                 />
             </div>
+            {/* ── Kalenderwoche ── */}
+            <div>
+                <div className="flex items-center justify-between">
+                    <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                        Kalenderwoche anzeigen
+                    </span>
+                    <button
+                        onClick={() => setOpts({ showWeek: !o.showWeek })}
+                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                        style={{ background: o.showWeek ? 'var(--accent)' : 'var(--app-border)' }}
+                    >
+                        <span
+                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                            style={{ left: o.showWeek ? '14px' : '2px' }}
+                        />
+                    </button>
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    In Default und Agenda steht die KW jeweils am ersten Termin der Woche, in Card und Compact am
+                    angezeigten Termin.
+                </p>
+            </div>
+
+            {/* -- Endzeit -- */}
+            <div>
+                <div className="flex items-center justify-between">
+                    <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                        Endzeit anzeigen
+                    </span>
+                    <button
+                        onClick={() => setOpts({ showEndTime: !o.showEndTime })}
+                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                        style={{ background: o.showEndTime ? 'var(--accent)' : 'var(--app-border)' }}
+                    >
+                        <span
+                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                            style={{ left: o.showEndTime ? '14px' : '2px' }}
+                        />
+                    </button>
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Hängt bei Terminen mit Uhrzeit die bis-Zeit an das Datum an (Morgen, 09:00 - 10:30). Ganztägige und
+                    mehrtägige Termine bleiben unverändert.
+                </p>
+            </div>
+
+            {/* -- Kalendername bei nur einer Quelle -- */}
+            <div>
+                <div className="flex items-center justify-between">
+                    <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                        Kalendername immer anzeigen
+                    </span>
+                    <button
+                        onClick={() => setOpts({ calNameAlways: !o.calNameAlways })}
+                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                        style={{ background: o.calNameAlways ? 'var(--accent)' : 'var(--app-border)' }}
+                    >
+                        <span
+                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                            style={{ left: o.calNameAlways ? '14px' : '2px' }}
+                        />
+                    </button>
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Default blendet den Namen aus, solange es nur einen Kalender gibt. Agenda, Card und Compact zeigen
+                    ihn ohnehin immer.
+                </p>
+            </div>
+
+            {/* agenda layout only: width of the calendar-name column */}
+            {config.layout === 'agenda' && (
+                <div>
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                            {t('wf.cal.nameWidth')}
+                        </label>
+                        <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                            {((o.calNameWidth as number) || 0) === 0
+                                ? t('wf.cal.nameWidthAuto')
+                                : `${o.calNameWidth as number} %`}
+                        </span>
+                    </div>
+                    <input
+                        type="range"
+                        min={0}
+                        max={60}
+                        step={1}
+                        value={(o.calNameWidth as number) || 0}
+                        onChange={(e) => setOpts({ calNameWidth: Number(e.target.value) })}
+                        className="w-full h-1"
+                        style={{ accentColor: 'var(--accent)' }}
+                    />
+                </div>
+            )}
             <div>
                 <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
@@ -671,6 +796,86 @@ function CalendarEditPanel({
                     className="w-full h-1"
                     style={{ accentColor: 'var(--accent)' }}
                 />
+            </div>
+
+            {/* ── Höhe automatisch an Inhalt anpassen ── */}
+            {config.layout !== 'custom' && (
+                <div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                            Höhe automatisch an Inhalt anpassen
+                        </span>
+                        <button
+                            onClick={() => setOpts({ autoHeight: !o.autoHeight })}
+                            className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                            style={{ background: o.autoHeight ? 'var(--accent)' : 'var(--app-border)' }}
+                        >
+                            <span
+                                className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                style={{ left: o.autoHeight ? '14px' : '2px' }}
+                            />
+                        </button>
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        Das Widget wird so hoch wie sein Inhalt, statt eine feste Höhe zu füllen. Die eingestellte Höhe
+                        wird dann automatisch überschrieben und lässt sich nicht mehr manuell ändern.
+                    </p>
+                </div>
+            )}
+
+            {/* ── Mehrtägige Termine ── */}
+            <div>
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Mehrtägige Termine
+                </label>
+                <div className="flex gap-1">
+                    {(
+                        [
+                            ['off', 'Aus'],
+                            ['span', 'Spanne'],
+                            ['badge', 'Badge'],
+                            ['both', 'Beides'],
+                        ] as const
+                    ).map(([val, lbl]) => {
+                        const active = ((o.multiDayDisplay as string) ?? 'both') === val;
+                        return (
+                            <button
+                                key={val}
+                                onClick={() => setOpts({ multiDayDisplay: val })}
+                                className="flex-1 text-[11px] py-1 rounded transition-colors"
+                                style={{
+                                    background: active ? 'var(--accent)' : 'var(--app-bg)',
+                                    color: active ? '#fff' : 'var(--text-primary)',
+                                    border: `1px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                }}
+                            >
+                                {lbl}
+                            </button>
+                        );
+                    })}
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Spanne = Start – Ende, Badge = {'„läuft“'} / {'„noch N T“'} bei laufenden Terminen.
+                </p>
+                <div className="flex items-center justify-between mt-2">
+                    <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                        Jeden Tag einzeln
+                    </span>
+                    <button
+                        onClick={() => setOpts({ multiDaySplit: !o.multiDaySplit })}
+                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                        style={{ background: o.multiDaySplit ? 'var(--accent)' : 'var(--app-border)' }}
+                    >
+                        <span
+                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                            style={{ left: o.multiDaySplit ? '14px' : '2px' }}
+                        />
+                    </button>
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Ein mehrtägiger Termin wird zu einem Eintrag je Tag. Das Badge zeigt dann {'„Tag 2/5“'} statt der
+                    Restlaufzeit; die Einträge zählen einzeln gegen {'„Max. Einträge“'}.
+                </p>
             </div>
 
             {/* separator */}
@@ -834,16 +1039,29 @@ function CalendarEditPanel({
                     </div>
                 )}
             </div>
+
+            {calIconPickerId !== null && (
+                <IconPickerModal
+                    current={sources.find((s) => s.id === calIconPickerId)?.icon ?? ''}
+                    onSelect={(name) => {
+                        updateSource(calIconPickerId, { icon: name || undefined });
+                        setCalIconPickerId(null);
+                    }}
+                    onClose={() => setCalIconPickerId(null)}
+                />
+            )}
         </>
     );
 }
 
 const STYLE_FIELDS: { key: string; labelKey: string; type: 'color' | 'text' }[] = [
     { key: 'bg', labelKey: 'wf.edit.style.bg', type: 'color' },
+    { key: 'border', labelKey: 'wf.edit.style.border', type: 'color' },
+    { key: 'borderWidth', labelKey: 'wf.edit.style.borderWidth', type: 'text' },
+    { key: 'radius', labelKey: 'wf.edit.style.radius', type: 'text' },
     { key: 'accent', labelKey: 'wf.edit.style.accent', type: 'color' },
     { key: 'textPrimary', labelKey: 'wf.edit.style.text', type: 'color' },
     { key: 'textSecondary', labelKey: 'wf.edit.style.textSec', type: 'color' },
-    { key: 'radius', labelKey: 'wf.edit.style.radius', type: 'text' },
 ];
 
 // ── ChartHistoryConfig ────────────────────────────────────────────────────────
@@ -1086,6 +1304,18 @@ function ChartHistoryConfig({
                             {t('wf.history.showXAxis')}
                         </span>
                     </label>
+                    {/* Horizontale Hilfslinien */}
+                    <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={(o.showGridLines as boolean | undefined) ?? false}
+                            onChange={(e) => set({ showGridLines: e.target.checked })}
+                            className="rounded"
+                        />
+                        <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                            {t('wf.history.gridLines')}
+                        </span>
+                    </label>
                 </div>
             )}
 
@@ -1150,13 +1380,13 @@ function ClimateConfig({
 }: {
     config: WidgetConfig;
     onConfigChange: (c: WidgetConfig) => void;
-    onPickerOpen: (target: 'climate_humidityDp' | 'climate_targetDp') => void;
+    onPickerOpen: (target: 'climate_humidityDp' | 'climate_targetDp' | 'climate_pressureDp') => void;
 }) {
     const [humidityIconPickerOpen, setHumidityIconPickerOpen] = useState(false);
+    const [pressureIconPickerOpen, setPressureIconPickerOpen] = useState(false);
 
     const o = config.options ?? {};
     const set = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
-    const { defaultDecimals } = useGlobalSettingsStore();
     const inputCls = 'flex-1 text-xs rounded-lg px-2.5 py-2 font-mono focus:outline-none min-w-0';
     const inputStyle = {
         background: 'var(--app-bg)',
@@ -1174,6 +1404,11 @@ function ClimateConfig({
         ? getWidgetIcon(humidityIconName, (() => null) as unknown as LucideIcon)
         : null;
 
+    const pressureIconName = o.pressureIcon as string | undefined;
+    const PressureIconPreview = pressureIconName
+        ? getWidgetIcon(pressureIconName, (() => null) as unknown as LucideIcon)
+        : null;
+
     const autoFill = async () => {
         if (!config.datapoint) return;
         const parts = config.datapoint.split('.');
@@ -1185,6 +1420,19 @@ function ClimateConfig({
         const patch: Record<string, unknown> = {};
         const hv = find('HUMIDITY', 'humidity', 'Humidity', 'relative_humidity', 'RELATIVE_HUMIDITY');
         if (hv) patch.humidityDatapoint = hv;
+        const pv = find(
+            'PRESSURE',
+            'pressure',
+            'Pressure',
+            'AIR_PRESSURE',
+            'air_pressure',
+            'airPressure',
+            'BAROMETER',
+            'barometer',
+            'LUFTDRUCK',
+            'luftdruck',
+        );
+        if (pv) patch.pressureDatapoint = pv;
         const tv = find(
             'SET_POINT_TEMPERATURE',
             'setPointTemperature',
@@ -1202,6 +1450,40 @@ function ClimateConfig({
 
     return (
         <>
+            {/* Darstellung — moved here from the generic VIS_FIELDS_PER_TYPE block. */}
+            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Darstellung
+            </p>
+            {(
+                [
+                    { key: 'showActualTemp', label: 'Ist-Temperatur', def: true },
+                    { key: 'showTargetTemp', label: 'Soll-Temperatur', def: true },
+                    { key: 'showHumidity', label: 'Luftfeuchtigkeit', def: true },
+                    { key: 'showPressure', label: 'Luftdruck', def: true },
+                    { key: 'showComfort', label: 'Komfortzone', def: false },
+                    { key: 'showChart', label: 'Temperaturverlauf', def: true },
+                ] as const
+            ).map(({ key, label, def }) => {
+                const val = def ? o[key] !== false : o[key] === true;
+                return (
+                    <div key={key} className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                            {label}
+                        </span>
+                        <button
+                            onClick={() => set({ [key]: !val })}
+                            className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                            style={{ background: val ? 'var(--accent)' : 'var(--app-border)' }}
+                        >
+                            <span
+                                className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                style={{ left: val ? '14px' : '2px' }}
+                            />
+                        </button>
+                    </div>
+                );
+            })}
+
             <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
             <div className="flex items-center justify-between mb-1.5">
                 <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
@@ -1311,6 +1593,72 @@ function ClimateConfig({
                 )}
             </div>
 
+            {/* Luftdruck DP */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    Luftdruck (optional)
+                </label>
+                <div className="flex gap-1">
+                    <input
+                        type="text"
+                        value={(o.pressureDatapoint as string) ?? ''}
+                        onChange={(e) => set({ pressureDatapoint: e.target.value || undefined })}
+                        placeholder="optional"
+                        className={inputCls}
+                        style={inputStyle}
+                    />
+                    <button
+                        onClick={() => onPickerOpen('climate_pressureDp')}
+                        className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                        style={btnStyle}
+                        title="Aus ioBroker wählen"
+                    >
+                        <Database size={13} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Luftdruck-Icon */}
+            <div className="mb-2">
+                <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>
+                    Luftdruck-Icon
+                </label>
+                <button
+                    onClick={() => setPressureIconPickerOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors w-full text-left"
+                    style={{
+                        background: 'var(--app-bg)',
+                        border: '1px solid var(--app-border)',
+                        color: 'var(--text-primary)',
+                    }}
+                >
+                    {PressureIconPreview ? (
+                        <PressureIconPreview size={14} style={{ flexShrink: 0 }} />
+                    ) : (
+                        <span style={{ width: 14, height: 14, display: 'inline-block', flexShrink: 0 }} />
+                    )}
+                    <span
+                        className="flex-1 truncate"
+                        style={{ color: pressureIconName ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                    >
+                        {pressureIconName ?? 'Icon auswählen… (Standard: Gauge)'}
+                    </span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                        ›
+                    </span>
+                </button>
+                {pressureIconPickerOpen && (
+                    <IconPickerModal
+                        current={pressureIconName ?? ''}
+                        onSelect={(name) => {
+                            set({ pressureIcon: name || undefined });
+                            setPressureIconPickerOpen(false);
+                        }}
+                        onClose={() => setPressureIconPickerOpen(false)}
+                    />
+                )}
+            </div>
+
             {/* Einheiten */}
             <div className="h-px my-1" style={{ background: 'var(--app-border)' }} />
             <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
@@ -1342,44 +1690,45 @@ function ClimateConfig({
                     />
                 </div>
             </div>
-
-            {/* Dezimalstellen */}
-            <div className="mb-2">
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                    Dezimalstellen
-                </label>
-                <div className="flex gap-1">
+            <div className="flex gap-2 mb-2">
+                <div className="flex-1">
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                        Luftdruck
+                    </label>
+                    <input
+                        type="text"
+                        value={(o.pressureUnit as string) ?? 'hPa'}
+                        onChange={(e) => set({ pressureUnit: e.target.value || 'hPa' })}
+                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                        style={inputStyle}
+                    />
+                </div>
+                <div className="flex-1">
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                        Nachkommastellen Druck
+                    </label>
                     <input
                         type="number"
                         min={0}
                         max={4}
-                        disabled={o.decimals === undefined}
-                        value={(o.decimals as number) ?? defaultDecimals}
-                        onChange={(e) => set({ decimals: Number(e.target.value) })}
+                        value={(o.pressureDecimals as number | undefined) ?? 0}
+                        onChange={(e) => {
+                            const n = parseInt(e.target.value, 10);
+                            set({ pressureDecimals: Number.isFinite(n) ? Math.max(0, Math.min(4, n)) : 0 });
+                        }}
                         className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
-                        style={{
-                            background: 'var(--app-bg)',
-                            color: 'var(--text-primary)',
-                            border: '1px solid var(--app-border)',
-                            opacity: o.decimals === undefined ? 0.5 : 1,
-                        }}
+                        style={inputStyle}
                     />
-                    <button
-                        onClick={() => set({ decimals: o.decimals === undefined ? defaultDecimals : undefined })}
-                        title={
-                            o.decimals === undefined
-                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                : 'Auf globale Einstellung zurücksetzen'
-                        }
-                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                        style={{
-                            background: o.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
-                            color: o.decimals === undefined ? '#fff' : 'var(--text-secondary)',
-                        }}
-                    >
-                        Global
-                    </button>
                 </div>
+            </div>
+
+            {/* Dezimalstellen + 1000er-Trennzeichen */}
+            <div className="mb-2">
+                <ValueFormatRow
+                    decimals={o.decimals as number | undefined}
+                    numberFormat={o.numberFormat as NumberFormat | undefined}
+                    onChange={set}
+                />
             </div>
 
             {/* Diagrammfarbe */}
@@ -1999,31 +2348,17 @@ function CenteredModal({
     const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
     const dragOrigin = useRef<{ mx: number; my: number; rx: number; ry: number } | null>(null);
 
-    // Persisted size (only used when storageKey is set)
-    const [size, setSize] = useState<{ w: number; h: number } | null>(() => {
-        if (!storageKey) return null;
-        try {
-            const raw = localStorage.getItem(storageKey);
-            if (!raw) return null;
-            const parsed = JSON.parse(raw);
-            if (typeof parsed?.w === 'number' && typeof parsed?.h === 'number') {
-                return { w: parsed.w, h: parsed.h };
-            }
-        } catch {
-            /* ignore */
-        }
-        return null;
-    });
+    // Persisted size (only used when storageKey is set) - clamped to the current window,
+    // so a height remembered from a bigger screen cannot push the title bar out of view.
+    const [size, setSize] = usePersistedModalSize(storageKey);
     const resizeOrigin = useRef<{ mx: number; my: number; w: number; h: number } | null>(null);
 
+    // A dialog left open across a resolution change must stay grabbable.
     useEffect(() => {
-        if (!storageKey || !size) return;
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(size));
-        } catch {
-            /* ignore */
-        }
-    }, [storageKey, size]);
+        const onResize = () => setPos((p) => (p ? clampModalPos(p, modalRef.current) : p));
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -2041,11 +2376,10 @@ function CenteredModal({
         dragOrigin.current = { mx: e.clientX, my: e.clientY, rx: rect.left, ry: rect.top };
 
         const onMove = (ev: MouseEvent) => {
-            if (!dragOrigin.current) return;
-            setPos({
-                x: dragOrigin.current.rx + ev.clientX - dragOrigin.current.mx,
-                y: dragOrigin.current.ry + ev.clientY - dragOrigin.current.my,
-            });
+            const o = dragOrigin.current;
+            if (!o) return;
+            // Keep the title bar on screen - a modal dragged fully off would be unreachable.
+            setPos(clampModalPos({ x: o.rx + ev.clientX - o.mx, y: o.ry + ev.clientY - o.my }, modalRef.current));
         };
         const onUp = () => {
             dragOrigin.current = null;
@@ -2095,7 +2429,7 @@ function CenteredModal({
         <div className="fixed inset-0 z-[9999] pointer-events-none">
             <div
                 ref={modalRef}
-                className={`pointer-events-auto flex flex-col rounded-xl shadow-2xl relative ${sizeClasses}`}
+                className={`aura-widget-edit-modal pointer-events-auto flex flex-col rounded-xl shadow-2xl relative ${sizeClasses}`}
                 style={{
                     background: 'var(--app-surface)',
                     border: '1px solid var(--app-border)',
@@ -2281,6 +2615,12 @@ function PortalDropdown({
                 background: 'var(--app-surface)',
                 border: '1px solid var(--app-border)',
                 visibility: 'hidden',
+                // Never grow past the viewport: with many sections/tabs the copy/move
+                // submenu can be taller than the screen. Cap the height and let the
+                // panel scroll instead of pushing entries off-screen unreachably.
+                maxHeight: 'calc(100vh - 8px)',
+                overflowY: 'auto',
+                overflowX: 'hidden',
             }}
             onMouseDown={(e) => e.stopPropagation()}
         >
@@ -2984,6 +3324,96 @@ function WeatherConfigSection({ o, set, onOpenPicker, onOpenAdapterPicker, layou
     );
 }
 
+function formatLastChange(ts: number): string {
+    const diffSec = Math.round((Date.now() - ts) / 1000);
+
+    if (diffSec < 10) return t('lc.lessThan10s');
+    if (diffSec < 20) return t('lc.lessThan20s');
+    if (diffSec < 30) return t('lc.lessThan30s');
+    if (diffSec < 45) return t('lc.halfMinute');
+    if (diffSec < 90) return t('lc.lessThan1Min');
+
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 45) return diffMin === 1 ? t('lc.1Min') : t('lc.nMin', { n: diffMin });
+
+    const diffHour = Math.round(diffSec / 3_600);
+    if (diffHour < 24) return diffHour === 1 ? t('lc.1Hour') : t('lc.nHours', { n: diffHour });
+
+    const diffDay = Math.round(diffSec / 86_400);
+    if (diffDay < 30) return diffDay === 1 ? t('lc.1Day') : t('lc.nDays', { n: diffDay });
+
+    const diffMonth = Math.round(diffDay / 30);
+    if (diffMonth < 12) return diffMonth === 1 ? t('lc.1Month') : t('lc.nMonths', { n: diffMonth });
+
+    const diffYear = Math.round(diffDay / 365);
+    return diffYear === 1 ? t('lc.1Year') : t('lc.nYears', { n: diffYear });
+}
+
+// ── iFrame interaction selector (iFrame + camera config) ─────────────────────
+/**
+ * Interaction vs. click action is a genuine either/or: a click inside the embedded
+ * document never reaches Aura. Spelling the three outcomes out beats a boolean that
+ * silently disables the configured click action. (issue #527)
+ *
+ * The same mode decides whether the embedded page keeps its own scrollbars — a page
+ * nobody can operate has no use for them (see `iframeScrollingAttr`, issue #529).
+ */
+function IframeInteractionSelect({
+    o,
+    set,
+    sty,
+    hasClickAction,
+}: {
+    o: Record<string, unknown>;
+    set: (patch: Record<string, unknown>) => void;
+    sty: React.CSSProperties;
+    hasClickAction: boolean;
+}) {
+    const mode = resolveIframeInteractionMode(o);
+    return (
+        <div>
+            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                Interaktion
+            </label>
+            <select
+                value={mode}
+                onChange={(e) =>
+                    set({
+                        interactionMode: e.target.value,
+                        // Kept in sync so exports, backups and older docs referring to
+                        // allowInteraction stay valid.
+                        allowInteraction: e.target.value !== 'action',
+                    })
+                }
+                className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                style={sty}
+            >
+                {IFRAME_INTERACTION_MODES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                        {m.label}
+                    </option>
+                ))}
+            </select>
+            {mode === 'contentOnly' && hasClickAction && (
+                <p className="text-[10px] mt-1" style={{ color: '#f59e0b' }}>
+                    Klicks gehen in die eingebettete Seite — die Klick-Aktion wird nicht ausgelöst.
+                </p>
+            )}
+            {mode === 'content' && !hasClickAction && (
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
+                    Ohne Klick-Aktion wird kein Aktions-Button eingeblendet.
+                </p>
+            )}
+            {mode !== 'action' && (
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
+                    Bedienbarer Inhalt darf scrollen — passt die Seite nicht exakt, zeigt der Desktop-Browser dafür eine
+                    Scrollleiste. {'„Nur Klick-Aktion“'} blendet sie aus.
+                </p>
+            )}
+        </div>
+    );
+}
+
 // ── Camera slot editor row (used in Standard and Custom Grid config) ──────────
 
 interface CameraSlotEditorRowProps {
@@ -2998,10 +3428,14 @@ interface CameraSlotEditorRowProps {
 }
 
 function CameraSlotEditorRow({ slot, idx, label, cCls, cSty, onChange, onRemove, onPickDp }: CameraSlotEditorRowProps) {
-    const hasDP = ['battery', 'temperature', 'armed', 'motion', 'datapoint'].includes(slot.type);
+    const [showIcon, setShowIcon] = useState(false);
+    const isAction = ['toggle', 'button'].includes(slot.type);
+    const hasDP = ['battery', 'temperature', 'armed', 'motion', 'datapoint'].includes(slot.type) || isAction;
     const hasValue = ['text', 'manufacturer'].includes(slot.type);
-    const hasBool = ['armed', 'motion'].includes(slot.type);
+    const hasBool = ['armed', 'motion', 'toggle'].includes(slot.type);
     const sec: React.CSSProperties = { color: 'var(--text-secondary)' };
+    const displayOpts = SLOT_TYPE_OPTIONS.filter((o) => o.value !== 'empty' && o.group !== 'action');
+    const actionOpts = SLOT_TYPE_OPTIONS.filter((o) => o.group === 'action');
 
     return (
         <div className="flex flex-col gap-1 p-2 rounded-lg" style={{ border: '1px solid var(--app-border)' }}>
@@ -3027,11 +3461,21 @@ function CameraSlotEditorRow({ slot, idx, label, cCls, cSty, onChange, onRemove,
                     onChange(idx, { type: e.target.value as CameraSlotType, datapoint: undefined, value: undefined })
                 }
             >
-                {SLOT_TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                    </option>
-                ))}
+                <option value="empty">– Leer –</option>
+                <optgroup label="Anzeige (nur lesen)">
+                    {displayOpts.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                        </option>
+                    ))}
+                </optgroup>
+                <optgroup label="Aktion (schreibt)">
+                    {actionOpts.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                        </option>
+                    ))}
+                </optgroup>
             </select>
             {slot.type !== 'empty' && (
                 <input
@@ -3077,12 +3521,131 @@ function CameraSlotEditorRow({ slot, idx, label, cCls, cSty, onChange, onRemove,
                     </button>
                 </div>
             )}
+            {isAction && (
+                <>
+                    <div className="flex gap-1">
+                        <button
+                            type="button"
+                            onClick={() => setShowIcon(true)}
+                            className={`${cCls} flex-1 text-left flex items-center gap-1.5 min-w-0`}
+                            style={cSty}
+                        >
+                            {(() => {
+                                const Ico = slot.icon ? getWidgetIcon(slot.icon, null) : null;
+                                return Ico ? <Ico size={13} /> : <Shapes size={13} style={{ opacity: 0.5 }} />;
+                            })()}
+                            <span className="truncate" style={slot.icon ? undefined : { opacity: 0.5 }}>
+                                {slot.icon || 'Icon (optional)'}
+                            </span>
+                        </button>
+                        {slot.icon && (
+                            <button
+                                type="button"
+                                onClick={() => onChange(idx, { icon: undefined })}
+                                className="px-2 rounded-lg shrink-0"
+                                style={{
+                                    background: 'var(--app-bg)',
+                                    color: 'var(--text-secondary)',
+                                    border: '1px solid var(--app-border)',
+                                }}
+                                title="Icon entfernen"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+                    {slot.type === 'toggle' ? (
+                        <div className="grid grid-cols-2 gap-1">
+                            <input
+                                type="text"
+                                value={slot.onValue ?? ''}
+                                placeholder="Wert AN (true)"
+                                className={`${cCls} font-mono min-w-0`}
+                                style={cSty}
+                                onChange={(e) => onChange(idx, { onValue: e.target.value || undefined })}
+                            />
+                            <input
+                                type="text"
+                                value={slot.offValue ?? ''}
+                                placeholder="Wert AUS (false)"
+                                className={`${cCls} font-mono min-w-0`}
+                                style={cSty}
+                                onChange={(e) => onChange(idx, { offValue: e.target.value || undefined })}
+                            />
+                        </div>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 gap-1">
+                                <input
+                                    type="text"
+                                    value={slot.pulseLabel ?? ''}
+                                    placeholder="Button-Text (Auslösen)"
+                                    className={`${cCls} min-w-0`}
+                                    style={cSty}
+                                    onChange={(e) => onChange(idx, { pulseLabel: e.target.value || undefined })}
+                                />
+                                <input
+                                    type="text"
+                                    value={slot.pulseValue ?? ''}
+                                    placeholder="Wert (true)"
+                                    className={`${cCls} font-mono min-w-0`}
+                                    style={cSty}
+                                    onChange={(e) => onChange(idx, { pulseValue: e.target.value || undefined })}
+                                />
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={slot.pulseReset ?? false}
+                                    onChange={(e) => onChange(idx, { pulseReset: e.target.checked || undefined })}
+                                    className="rounded"
+                                />
+                                <span className="text-[11px]" style={sec}>
+                                    Wert danach zurücksetzen
+                                </span>
+                            </label>
+                            {slot.pulseReset && (
+                                <>
+                                    <span className="text-[10px]" style={{ ...sec, opacity: 0.7 }}>
+                                        Reset-Wert und Verzögerung (ms)
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-1">
+                                        <input
+                                            type="text"
+                                            value={slot.pulseResetValue ?? ''}
+                                            placeholder="Reset-Wert (false)"
+                                            className={`${cCls} font-mono min-w-0`}
+                                            style={cSty}
+                                            onChange={(e) =>
+                                                onChange(idx, { pulseResetValue: e.target.value || undefined })
+                                            }
+                                        />
+                                        <input
+                                            type="number"
+                                            min={50}
+                                            step={50}
+                                            value={slot.pulseDelay ?? 500}
+                                            className={`${cCls} min-w-0`}
+                                            style={cSty}
+                                            onChange={(e) =>
+                                                onChange(idx, { pulseDelay: Number(e.target.value) || 500 })
+                                            }
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </>
+                    )}
+                </>
+            )}
             {hasBool && (
                 <>
                     <input
                         type="text"
                         value={slot.trueLabel ?? ''}
-                        placeholder="Text wenn aktiv (z.B. Scharf)"
+                        placeholder={
+                            slot.type === 'toggle' ? 'Text wenn AN (leer = Schalter)' : 'Text wenn aktiv (z.B. Scharf)'
+                        }
                         className={cCls}
                         style={cSty}
                         onChange={(e) => onChange(idx, { trueLabel: e.target.value || undefined })}
@@ -3090,12 +3653,49 @@ function CameraSlotEditorRow({ slot, idx, label, cCls, cSty, onChange, onRemove,
                     <input
                         type="text"
                         value={slot.falseLabel ?? ''}
-                        placeholder="Text wenn inaktiv (z.B. Aus)"
+                        placeholder={
+                            slot.type === 'toggle' ? 'Text wenn AUS (leer = Schalter)' : 'Text wenn inaktiv (z.B. Aus)'
+                        }
                         className={cCls}
                         style={cSty}
                         onChange={(e) => onChange(idx, { falseLabel: e.target.value || undefined })}
                     />
                 </>
+            )}
+            {isAction && (
+                <>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={slot.confirm ?? false}
+                            onChange={(e) => onChange(idx, { confirm: e.target.checked || undefined })}
+                            className="rounded"
+                        />
+                        <span className="text-[11px]" style={sec}>
+                            Rückfrage vor dem Schalten
+                        </span>
+                    </label>
+                    {slot.confirm && (
+                        <input
+                            type="text"
+                            value={slot.confirmText ?? ''}
+                            placeholder="Rückfrage-Text (optional)"
+                            className={cCls}
+                            style={cSty}
+                            onChange={(e) => onChange(idx, { confirmText: e.target.value || undefined })}
+                        />
+                    )}
+                </>
+            )}
+            {showIcon && (
+                <IconPickerModal
+                    current={slot.icon ?? ''}
+                    onSelect={(name) => {
+                        onChange(idx, { icon: name || undefined });
+                        setShowIcon(false);
+                    }}
+                    onClose={() => setShowIcon(false)}
+                />
             )}
         </div>
     );
@@ -3867,6 +4467,7 @@ function MediaplayerEditPanel({
                     {dpRow('mp.dp.artist', 'artistDp')}
                     {dpRow('mp.dp.album', 'albumDp')}
                     {dpRow('mp.dp.cover', 'coverDp')}
+                    <ImagePathHint className="pl-1" />
                     {dpRow('mp.dp.source', 'sourceDp')}
                     {dpRow('mp.dp.playState', 'playStateDp')}
                     {dpRow('mp.dp.volume', 'volumeDp')}
@@ -4126,7 +4727,289 @@ function MediaplayerEditPanel({
 
 // ── ChipsEditPanel ────────────────────────────────────────────────────────────
 
-type CwChip = { id: string; label: string; icon?: string; dp: string; value?: string; activeValue?: string };
+type CwChip = {
+    id: string;
+    label: string;
+    icon?: string;
+    dp: string;
+    value?: string;
+    activeValue?: string;
+    bg?: string;
+    fg?: string;
+};
+
+// Compact colour control: swatch + free-text field (accepts hex, CSS vars,
+// named colours) + reset button. Shared by the global layout colours and the
+// per-chip background/text colours.
+function CwColorField({
+    label,
+    value,
+    swatchFallback,
+    resetTitle,
+    onChange,
+}: {
+    label: string;
+    value?: string;
+    swatchFallback: string;
+    resetTitle: string;
+    onChange: (v: string | undefined) => void;
+}) {
+    const hex = value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : swatchFallback;
+    return (
+        <div>
+            <label className="text-[11px] mb-1 block truncate" style={{ color: 'var(--text-secondary)' }}>
+                {label}
+            </label>
+            <div className="flex items-center gap-1">
+                <input
+                    type="color"
+                    value={hex}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="w-8 h-8 rounded shrink-0 cursor-pointer bg-transparent p-0 border"
+                    style={{ borderColor: 'var(--app-border)' }}
+                    title={label}
+                />
+                <input
+                    type="text"
+                    value={value ?? ''}
+                    onChange={(e) => onChange(e.target.value || undefined)}
+                    placeholder="#…"
+                    className="flex-1 min-w-0 text-xs rounded-lg px-2 py-2 focus:outline-none font-mono"
+                    style={{
+                        background: 'var(--app-bg)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--app-border)',
+                    }}
+                />
+                {value && (
+                    <button
+                        onClick={() => onChange(undefined)}
+                        className="px-1.5 rounded-lg hover:opacity-80 shrink-0"
+                        style={{
+                            background: 'var(--app-bg)',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--app-border)',
+                        }}
+                        title={resetTitle}
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function MenuEditPanel({
+    config,
+    onConfigChange,
+}: {
+    config: WidgetConfig;
+    onConfigChange: (c: WidgetConfig) => void;
+}) {
+    const o = config.options ?? {};
+    const setO = (patch: Record<string, unknown>) => onConfigChange({ ...config, options: { ...o, ...patch } });
+    const tHook = useT();
+
+    const selCls = 'w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none';
+    const sInputStyle = {
+        background: 'var(--app-bg)',
+        color: 'var(--text-primary)',
+        border: '1px solid var(--app-border)',
+    };
+
+    const menuMode = (o.menuMode as string) ?? 'section';
+    const variant = (o.variant as string) ?? 'hbar';
+    const indicatorStyle = (o.indicatorStyle as string) ?? 'underline';
+    const hiddenItems = (o.hiddenItems as string[] | undefined) ?? [];
+
+    // Editor context — list the sections of the active layout (section mode) or the
+    // tabs of the active section (tab mode) so the user can de-select entries.
+    const layout = useActiveLayout();
+    const section = useActiveSection();
+    const rawItems = (menuMode === 'section' ? (layout?.sections ?? []) : (section?.tabs ?? [])).filter(
+        (it) => !it.hidden,
+    );
+
+    // Build stable key ↔ display-label maps; disambiguate duplicate names so the
+    // MultiSelect (which is label-keyed) never collapses two distinct entries.
+    const allKeys: string[] = [];
+    const labelToKey = new Map<string, string>();
+    const keyToLabel = new Map<string, string>();
+    const seen = new Map<string, number>();
+    rawItems.forEach((it) => {
+        const key = it.slug ?? it.id;
+        let label = it.name || key;
+        const n = (seen.get(label) ?? 0) + 1;
+        seen.set(label, n);
+        if (n > 1) label = `${label} (${n})`;
+        allKeys.push(key);
+        labelToKey.set(label, key);
+        keyToLabel.set(key, label);
+    });
+    const optionLabels = allKeys.map((k) => keyToLabel.get(k) ?? k);
+    const selectedLabels = allKeys.filter((k) => !hiddenItems.includes(k)).map((k) => keyToLabel.get(k) ?? k);
+
+    const summaryCls = 'flex items-center justify-between cursor-pointer list-none select-none mb-1';
+    const summaryTextCls = 'text-[11px] font-medium';
+
+    return (
+        <>
+            <details className="group" open>
+                <summary className={summaryCls}>
+                    <span className={summaryTextCls} style={{ color: 'var(--text-secondary)' }}>
+                        {tHook('menu.mode.title')}
+                    </span>
+                    <ChevronDown
+                        size={12}
+                        className="transition-transform group-open:rotate-180"
+                        style={{ color: 'var(--text-secondary)' }}
+                    />
+                </summary>
+                <div className="space-y-3">
+                    {/* Menu type — section vs tab */}
+                    <div className="flex gap-1">
+                        {(['section', 'tab'] as const).map((val) => {
+                            const active = menuMode === val;
+                            return (
+                                <button
+                                    key={val}
+                                    type="button"
+                                    // Switching mode invalidates the de-selection keys, so reset them.
+                                    onClick={() => setO({ menuMode: val, hiddenItems: [] })}
+                                    className="flex-1 text-[11px] py-1.5 rounded-lg transition-colors"
+                                    style={{
+                                        background: active ? 'var(--accent)' : 'var(--app-bg)',
+                                        color: active ? '#fff' : 'var(--text-secondary)',
+                                        border: `1px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                    }}
+                                >
+                                    {tHook(val === 'section' ? 'menu.mode.section' : 'menu.mode.tab')}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Visible entries */}
+                    <MultiSelect
+                        label={tHook('menu.items')}
+                        options={optionLabels}
+                        selected={selectedLabels}
+                        placeholder={tHook('menu.items')}
+                        onChange={(selLabels) => {
+                            const selKeys = selLabels
+                                .map((l) => labelToKey.get(l))
+                                .filter((k): k is string => Boolean(k));
+                            setO({ hiddenItems: allKeys.filter((k) => !selKeys.includes(k)) });
+                        }}
+                    />
+                </div>
+            </details>
+
+            <details className="group mt-2" open>
+                <summary className={summaryCls}>
+                    <span className={summaryTextCls} style={{ color: 'var(--text-secondary)' }}>
+                        {tHook('menu.variant.title')}
+                    </span>
+                    <ChevronDown
+                        size={12}
+                        className="transition-transform group-open:rotate-180"
+                        style={{ color: 'var(--text-secondary)' }}
+                    />
+                </summary>
+                <div className="space-y-3">
+                    <select
+                        value={variant}
+                        onChange={(e) => setO({ variant: e.target.value })}
+                        className={selCls}
+                        style={sInputStyle}
+                    >
+                        <option value="hbar">{tHook('menu.variant.hbar')}</option>
+                        <option value="vlist">{tHook('menu.variant.vlist')}</option>
+                        <option value="grid">{tHook('menu.variant.grid')}</option>
+                        <option value="pills">{tHook('menu.variant.pills')}</option>
+                    </select>
+
+                    <div>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            {tHook('menu.indicator.title')}
+                        </label>
+                        <select
+                            value={indicatorStyle}
+                            onChange={(e) => setO({ indicatorStyle: e.target.value })}
+                            className={selCls}
+                            style={sInputStyle}
+                        >
+                            <option value="text">text</option>
+                            <option value="underline">underline</option>
+                            <option value="filled">filled</option>
+                            <option value="pills">pills</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            {tHook('menu.align')}
+                        </label>
+                        <select
+                            value={(o.align as string) ?? 'start'}
+                            onChange={(e) => setO({ align: e.target.value })}
+                            className={selCls}
+                            style={sInputStyle}
+                        >
+                            <option value="start">{tHook('menu.align.left')}</option>
+                            <option value="center">{tHook('menu.align.center')}</option>
+                            <option value="end">{tHook('menu.align.right')}</option>
+                        </select>
+                    </div>
+
+                    {variant === 'grid' && (
+                        <div>
+                            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                                {tHook('menu.gridCols')}
+                            </label>
+                            <input
+                                type="number"
+                                min={1}
+                                max={12}
+                                value={(o.gridCols as number) ?? 3}
+                                onChange={(e) => setO({ gridCols: Math.max(1, Number(e.target.value) || 1) })}
+                                className={selCls}
+                                style={sInputStyle}
+                            />
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            {tHook('menu.iconSize')}
+                        </label>
+                        <input
+                            type="number"
+                            min={8}
+                            max={64}
+                            value={(o.iconSize as number) ?? 18}
+                            onChange={(e) => setO({ iconSize: Math.max(8, Number(e.target.value) || 18) })}
+                            className={selCls}
+                            style={sInputStyle}
+                        />
+                    </div>
+
+                    <ToggleRow
+                        label={tHook('menu.showIcons')}
+                        value={o.showIcons !== false}
+                        onChange={(v) => setO({ showIcons: v })}
+                    />
+                    <ToggleRow
+                        label={tHook('menu.showLabels')}
+                        value={o.showLabels !== false}
+                        onChange={(v) => setO({ showLabels: v })}
+                    />
+                </div>
+            </details>
+        </>
+    );
+}
 
 function ChipsEditPanel({
     config,
@@ -4195,8 +5078,9 @@ function ChipsEditPanel({
                         style={{ color: 'var(--text-secondary)' }}
                     />
                 </summary>
-                <div className="space-y-2">
-                    <div>
+                <div className="grid grid-cols-6 items-end gap-x-2 gap-y-2">
+                    {/* Row 1 (3 cols): Anordnung · Ausrichtung · Vertikale Position */}
+                    <div className="col-span-2">
                         <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('cw.layout.mode' as never)}
                         </label>
@@ -4212,41 +5096,22 @@ function ChipsEditPanel({
                             <option value="grid">{tHook('cw.layout.grid' as never)}</option>
                         </select>
                     </div>
-                    {(layout === 'row' || layout === 'wrap' || layout === 'grid') && (
-                        <div>
-                            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                {tHook('cw.layout.align' as never)}
-                            </label>
-                            <select
-                                value={(o.align as string) ?? 'start'}
-                                onChange={(e) => setO({ align: e.target.value })}
-                                className={selCls}
-                                style={sInputStyle}
-                            >
-                                <option value="start">Start</option>
-                                <option value="center">Mitte</option>
-                                <option value="end">Ende</option>
-                            </select>
-                        </div>
-                    )}
-                    {layout === 'column' && (
-                        <div>
-                            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                {tHook('cw.layout.align' as never)}
-                            </label>
-                            <select
-                                value={(o.align as string) ?? 'start'}
-                                onChange={(e) => setO({ align: e.target.value })}
-                                className={selCls}
-                                style={sInputStyle}
-                            >
-                                <option value="start">Links</option>
-                                <option value="center">Mitte</option>
-                                <option value="end">Rechts</option>
-                            </select>
-                        </div>
-                    )}
-                    <div>
+                    <div className="col-span-2">
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            {tHook('cw.layout.align' as never)}
+                        </label>
+                        <select
+                            value={(o.align as string) ?? 'start'}
+                            onChange={(e) => setO({ align: e.target.value })}
+                            className={selCls}
+                            style={sInputStyle}
+                        >
+                            <option value="start">{layout === 'column' ? 'Links' : 'Start'}</option>
+                            <option value="center">Mitte</option>
+                            <option value="end">{layout === 'column' ? 'Rechts' : 'Ende'}</option>
+                        </select>
+                    </div>
+                    <div className="col-span-2">
                         <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('cw.layout.valign' as never)}
                         </label>
@@ -4261,13 +5126,15 @@ function ChipsEditPanel({
                             <option value="bottom">Unten</option>
                         </select>
                     </div>
-                    <div>
+
+                    {/* Row 2 (2 cols): Chip-Größe · Eckenradius */}
+                    <div className="col-span-3">
                         <label
-                            className="text-[11px] mb-1 block flex items-center justify-between"
+                            className="text-[11px] mb-1 flex items-center justify-between gap-1"
                             style={{ color: 'var(--text-secondary)' }}
                         >
-                            <span>{tHook('cw.layout.chipSize' as never)}</span>
-                            <span style={{ color: 'var(--text-primary)' }}>
+                            <span className="truncate">{tHook('cw.layout.chipSize' as never)}</span>
+                            <span className="shrink-0" style={{ color: 'var(--text-primary)' }}>
                                 {(() => {
                                     const raw = o.chipSize as string | number | undefined;
                                     const n =
@@ -4289,7 +5156,34 @@ function ChipsEditPanel({
                             className="w-full"
                         />
                     </div>
-                    <div>
+                    <div className="col-span-3">
+                        <label
+                            className="text-[11px] mb-1 flex items-center justify-between gap-1"
+                            style={{ color: 'var(--text-secondary)' }}
+                        >
+                            <span className="truncate">{tHook('cw.layout.chipRadius' as never)}</span>
+                            <span className="shrink-0" style={{ color: 'var(--text-primary)' }}>
+                                {(() => {
+                                    const raw = o.chipRadius as number | undefined;
+                                    return raw === undefined || raw >= 40
+                                        ? tHook('cw.radius.full' as never)
+                                        : `${raw}px`;
+                                })()}
+                            </span>
+                        </label>
+                        <input
+                            type="range"
+                            min={0}
+                            max={40}
+                            step={1}
+                            value={(o.chipRadius as number | undefined) ?? 40}
+                            onChange={(e) => setO({ chipRadius: Number(e.target.value) })}
+                            className="w-full"
+                        />
+                    </div>
+
+                    {/* Row 3 (2–3 cols): Chip-Stil · Spalten (nur Raster) · Abstand */}
+                    <div className={layout === 'grid' ? 'col-span-2' : 'col-span-3'}>
                         <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('cw.layout.chipStyle' as never)}
                         </label>
@@ -4305,7 +5199,7 @@ function ChipsEditPanel({
                         </select>
                     </div>
                     {layout === 'grid' && (
-                        <div>
+                        <div className="col-span-2">
                             <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                                 {tHook('cw.layout.wrapCols' as never)}
                             </label>
@@ -4315,13 +5209,13 @@ function ChipsEditPanel({
                                 max={12}
                                 value={(o.wrapCols as number) ?? 2}
                                 onChange={(e) => setO({ wrapCols: Number(e.target.value) || 2 })}
-                                className="text-xs rounded-lg px-2 py-1.5 focus:outline-none"
-                                style={{ ...sInputStyle, width: '72px' }}
+                                className="w-full text-xs rounded-lg px-2 py-2 focus:outline-none"
+                                style={sInputStyle}
                             />
                         </div>
                     )}
-                    <div className="flex items-center gap-2">
-                        <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                    <div className={layout === 'grid' ? 'col-span-2' : 'col-span-3'}>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('cw.layout.gap' as never)}
                         </label>
                         <input
@@ -4330,8 +5224,28 @@ function ChipsEditPanel({
                             max={96}
                             value={(o.gap as number) ?? 6}
                             onChange={(e) => setO({ gap: Number(e.target.value) })}
-                            className="text-xs rounded-lg px-2 py-1.5 focus:outline-none"
-                            style={{ ...sInputStyle, width: '72px' }}
+                            className="w-full text-xs rounded-lg px-2 py-2 focus:outline-none"
+                            style={sInputStyle}
+                        />
+                    </div>
+
+                    {/* Row 4 (2 cols): globale Hintergrund- · Schriftfarbe */}
+                    <div className="col-span-3">
+                        <CwColorField
+                            label={tHook('cw.layout.bgColor' as never)}
+                            value={o.chipBgColor as string | undefined}
+                            swatchFallback="#1e293b"
+                            resetTitle={tHook('common.reset' as never)}
+                            onChange={(v) => setO({ chipBgColor: v })}
+                        />
+                    </div>
+                    <div className="col-span-3">
+                        <CwColorField
+                            label={tHook('cw.layout.textColor' as never)}
+                            value={o.chipTextColor as string | undefined}
+                            swatchFallback="#e2e8f0"
+                            resetTitle={tHook('common.reset' as never)}
+                            onChange={(v) => setO({ chipTextColor: v })}
                         />
                     </div>
                 </div>
@@ -4491,6 +5405,22 @@ function ChipsEditPanel({
                                     style={sInputStyle}
                                 />
                             </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <CwColorField
+                                    label={tHook('cw.chips.bg' as never)}
+                                    value={chip.bg}
+                                    swatchFallback="#3b82f6"
+                                    resetTitle={tHook('common.reset' as never)}
+                                    onChange={(v) => updateChip(chip.id, { bg: v })}
+                                />
+                                <CwColorField
+                                    label={tHook('cw.chips.fg' as never)}
+                                    value={chip.fg}
+                                    swatchFallback="#ffffff"
+                                    resetTitle={tHook('common.reset' as never)}
+                                    onChange={(v) => updateChip(chip.id, { fg: v })}
+                                />
+                            </div>
                             {(o.checkDp as string) && (
                                 <div>
                                     <label
@@ -4619,6 +5549,10 @@ type CarouselItemEdit = {
     value?: string;
     /** Optional explicit "off" value for boolean-style items. */
     inactiveValue?: string;
+    /** Optional label shown while the item is active (falls back to `label`). */
+    labelActive?: string;
+    /** Optional label shown while the item is inactive (falls back to `label`). */
+    labelInactive?: string;
     /** Kept for backwards-compat with older configs; new UI no longer surfaces it. */
     activeValue?: string;
     clickAction?: ClickAction;
@@ -4660,7 +5594,7 @@ function CarouselEditPanel({
     const [addingItem, setAddingItem] = useState(false);
     const [newItemLabel, setNewItemLabel] = useState('');
     const [itemIconPickerIdx, setItemIconPickerIdx] = useState<number | null>(null);
-    const allWidgets = layouts.flatMap((l) => l.tabs.flatMap((t) => t.widgets));
+    const allWidgets = layouts.flatMap((l) => l.sections.flatMap((s) => s.tabs.flatMap((t) => t.widgets)));
 
     const confirmAddItem = () => {
         if (!newItemLabel.trim()) return;
@@ -4701,9 +5635,10 @@ function CarouselEditPanel({
                         style={{ color: 'var(--text-secondary)' }}
                     />
                 </summary>
-                <div className="space-y-2">
-                    <div>
-                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                <div className="grid grid-cols-6 items-end gap-x-2 gap-y-2">
+                    {/* Row 1: Modus · Ausrichtung · Vertikale Position */}
+                    <div className="col-span-2">
+                        <label className="text-[11px] mb-1 block truncate" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('carousel.opt.mode' as never)}
                         </label>
                         <select
@@ -4716,8 +5651,8 @@ function CarouselEditPanel({
                             <option value="single">{tHook('carousel.opt.mode.single' as never)}</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    <div className="col-span-2">
+                        <label className="text-[11px] mb-1 block truncate" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('cw.layout.align' as never)}
                         </label>
                         <select
@@ -4731,8 +5666,8 @@ function CarouselEditPanel({
                             <option value="end">Ende</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                    <div className="col-span-2">
+                        <label className="text-[11px] mb-1 block truncate" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('cw.layout.valign' as never)}
                         </label>
                         <select
@@ -4746,8 +5681,10 @@ function CarouselEditPanel({
                             <option value="bottom">Unten</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+
+                    {/* Row 2: Textausrichtung · Chip-Stil */}
+                    <div className="col-span-3">
+                        <label className="text-[11px] mb-1 block truncate" style={{ color: 'var(--text-secondary)' }}>
                             {tHook('carousel.opt.labelAlign' as never)}
                         </label>
                         <select
@@ -4761,13 +5698,30 @@ function CarouselEditPanel({
                             <option value="right">Rechts</option>
                         </select>
                     </div>
-                    <div>
+                    <div className="col-span-3">
+                        <label className="text-[11px] mb-1 block truncate" style={{ color: 'var(--text-secondary)' }}>
+                            {tHook('cw.layout.chipStyle' as never)}
+                        </label>
+                        <select
+                            value={(o.chipStyle as string) ?? 'outlined'}
+                            onChange={(e) => setO({ chipStyle: e.target.value })}
+                            className={selCls}
+                            style={sInputStyle}
+                        >
+                            <option value="outlined">{tHook('cw.style.outlined' as never)}</option>
+                            <option value="filled">{tHook('cw.style.filled' as never)}</option>
+                            <option value="ghost">{tHook('cw.style.ghost' as never)}</option>
+                        </select>
+                    </div>
+
+                    {/* Row 3: Chip-Größe · Eckenradius */}
+                    <div className="col-span-3">
                         <label
-                            className="text-[11px] mb-1 block flex items-center justify-between"
+                            className="text-[11px] mb-1 flex items-center justify-between gap-1"
                             style={{ color: 'var(--text-secondary)' }}
                         >
-                            <span>{tHook('cw.layout.chipSize' as never)}</span>
-                            <span style={{ color: 'var(--text-primary)' }}>
+                            <span className="truncate">{tHook('cw.layout.chipSize' as never)}</span>
+                            <span className="shrink-0" style={{ color: 'var(--text-primary)' }}>
                                 {(() => {
                                     const raw = o.chipSize as string | number | undefined;
                                     const n =
@@ -4789,28 +5743,42 @@ function CarouselEditPanel({
                             className="w-full"
                         />
                     </div>
-                    <div>
-                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                            {tHook('cw.layout.chipStyle' as never)}
-                        </label>
-                        <select
-                            value={(o.chipStyle as string) ?? 'outlined'}
-                            onChange={(e) => setO({ chipStyle: e.target.value })}
-                            className={selCls}
-                            style={sInputStyle}
-                        >
-                            <option value="outlined">{tHook('cw.style.outlined' as never)}</option>
-                            <option value="filled">{tHook('cw.style.filled' as never)}</option>
-                            <option value="ghost">{tHook('cw.style.ghost' as never)}</option>
-                        </select>
-                    </div>
-                    <div>
+                    <div className="col-span-3">
                         <label
-                            className="text-[11px] mb-1 block flex items-center justify-between"
+                            className="text-[11px] mb-1 flex items-center justify-between gap-1"
                             style={{ color: 'var(--text-secondary)' }}
                         >
-                            <span>{tHook('carousel.opt.gap' as never)}</span>
-                            <span style={{ color: 'var(--text-primary)' }}>{(o.gap as number) ?? 8}px</span>
+                            <span className="truncate">{tHook('cw.layout.chipRadius' as never)}</span>
+                            <span className="shrink-0" style={{ color: 'var(--text-primary)' }}>
+                                {(() => {
+                                    const raw = o.chipRadius as number | undefined;
+                                    return raw === undefined || raw >= 40
+                                        ? tHook('cw.radius.full' as never)
+                                        : `${raw}px`;
+                                })()}
+                            </span>
+                        </label>
+                        <input
+                            type="range"
+                            min={0}
+                            max={40}
+                            step={1}
+                            value={(o.chipRadius as number | undefined) ?? 40}
+                            onChange={(e) => setO({ chipRadius: Number(e.target.value) })}
+                            className="w-full"
+                        />
+                    </div>
+
+                    {/* Row 4: Abstand · Max. Chip-Breite */}
+                    <div className="col-span-3">
+                        <label
+                            className="text-[11px] mb-1 flex items-center justify-between gap-1"
+                            style={{ color: 'var(--text-secondary)' }}
+                        >
+                            <span className="truncate">{tHook('carousel.opt.gap' as never)}</span>
+                            <span className="shrink-0" style={{ color: 'var(--text-primary)' }}>
+                                {(o.gap as number) ?? 8}px
+                            </span>
                         </label>
                         <input
                             type="range"
@@ -4822,13 +5790,13 @@ function CarouselEditPanel({
                             className="w-full"
                         />
                     </div>
-                    <div>
+                    <div className="col-span-3">
                         <label
-                            className="text-[11px] mb-1 block flex items-center justify-between"
+                            className="text-[11px] mb-1 flex items-center justify-between gap-1"
                             style={{ color: 'var(--text-secondary)' }}
                         >
-                            <span>{tHook('carousel.opt.maxItemWidth' as never)}</span>
-                            <span style={{ color: 'var(--text-primary)' }}>
+                            <span className="truncate">{tHook('carousel.opt.maxItemWidth' as never)}</span>
+                            <span className="shrink-0" style={{ color: 'var(--text-primary)' }}>
                                 {(o.maxItemWidth as number | undefined)
                                     ? `${o.maxItemWidth}px`
                                     : tHook('common.auto' as never)}
@@ -4847,6 +5815,28 @@ function CarouselEditPanel({
                             className="w-full"
                         />
                     </div>
+
+                    {/* Row 5: globale Hintergrund- · Schriftfarbe */}
+                    <div className="col-span-3">
+                        <CwColorField
+                            label={tHook('cw.layout.bgColor' as never)}
+                            value={o.chipBgColor as string | undefined}
+                            swatchFallback="#1e293b"
+                            resetTitle={tHook('common.reset' as never)}
+                            onChange={(v) => setO({ chipBgColor: v })}
+                        />
+                    </div>
+                    <div className="col-span-3">
+                        <CwColorField
+                            label={tHook('cw.layout.textColor' as never)}
+                            value={o.chipTextColor as string | undefined}
+                            swatchFallback="#e2e8f0"
+                            resetTitle={tHook('common.reset' as never)}
+                            onChange={(v) => setO({ chipTextColor: v })}
+                        />
+                    </div>
+                </div>
+                <div className="space-y-2 mt-2">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
                             type="checkbox"
@@ -5115,11 +6105,12 @@ function CarouselEditPanel({
                                                 setItemAction(item.id, { kind: 'popup-view', viewId: '' });
                                             } else {
                                                 const firstLayout = layouts[0];
-                                                const firstTab = firstLayout?.tabs[0];
+                                                const firstSec = firstLayout?.sections[0];
                                                 setItemAction(item.id, {
                                                     kind: 'link-tab',
                                                     layoutId: firstLayout?.id ?? '',
-                                                    tabId: firstTab?.id ?? '',
+                                                    sectionId: firstSec?.id,
+                                                    tabId: firstSec?.tabs[0]?.id ?? '',
                                                 });
                                             }
                                         }}
@@ -5136,144 +6127,6 @@ function CarouselEditPanel({
                                         <option value="link-tab">{tHook('carousel.action.linkTab' as never)}</option>
                                     </select>
                                 </div>
-
-                                {/* DP write – only when action is none (default DP-toggle behavior) */}
-                                {(!item.clickAction || item.clickAction.kind === 'none') && (
-                                    <>
-                                        <div>
-                                            <label
-                                                className="text-[10px] mb-0.5 block"
-                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                            >
-                                                {tHook('carousel.items.dp' as never)}
-                                            </label>
-                                            <div className="flex gap-1">
-                                                <input
-                                                    type="text"
-                                                    value={item.dp}
-                                                    onChange={(e) => updateItem(item.id, { dp: e.target.value })}
-                                                    placeholder="z.B. 0_userdata.0.scenes.relaxing"
-                                                    className={`flex-1 ${sInputCls} min-w-0`}
-                                                    style={sInputStyle}
-                                                />
-                                                <button
-                                                    onClick={() => onOpenItemDpPicker(idx)}
-                                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
-                                                    style={{
-                                                        background: 'var(--app-bg)',
-                                                        color: 'var(--text-secondary)',
-                                                        border: '1px solid var(--app-border)',
-                                                    }}
-                                                    title={tHook('wf.edit.fromIoBroker')}
-                                                >
-                                                    <Database size={13} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {/* Aktiv-Wert + Aktiv-Farben (BG/Text) in einer Zeile */}
-                                        <div>
-                                            <label
-                                                className="text-[10px] mb-0.5 block"
-                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                            >
-                                                {tHook('carousel.items.value' as never)}
-                                            </label>
-                                            <div className="flex gap-1 items-center">
-                                                <input
-                                                    type="text"
-                                                    value={item.value ?? ''}
-                                                    onChange={(e) =>
-                                                        updateItem(item.id, { value: e.target.value || undefined })
-                                                    }
-                                                    placeholder="z.B. true"
-                                                    className={`flex-1 ${sInputCls} min-w-0`}
-                                                    style={sInputStyle}
-                                                />
-                                                <ColorPicker
-                                                    value={item.bgColor ?? '#000000'}
-                                                    onChange={(v) => updateItem(item.id, { bgColor: v })}
-                                                    title={tHook('carousel.items.bgColor' as never)}
-                                                    className="w-7 h-7 rounded cursor-pointer p-0 border-0 shrink-0"
-                                                    style={{ background: 'var(--app-bg)' }}
-                                                />
-                                                <ColorPicker
-                                                    value={item.textColor ?? '#ffffff'}
-                                                    onChange={(v) => updateItem(item.id, { textColor: v })}
-                                                    title={tHook('carousel.items.textColor' as never)}
-                                                    className="w-7 h-7 rounded cursor-pointer p-0 border-0 shrink-0"
-                                                    style={{ background: 'var(--app-bg)' }}
-                                                />
-                                                {(item.bgColor || item.textColor) && (
-                                                    <button
-                                                        onClick={() =>
-                                                            updateItem(item.id, {
-                                                                bgColor: undefined,
-                                                                textColor: undefined,
-                                                            })
-                                                        }
-                                                        className="text-[10px] px-1 shrink-0 hover:opacity-70"
-                                                        style={{ color: 'var(--text-secondary)' }}
-                                                        title={tHook('carousel.items.resetColor' as never)}
-                                                    >
-                                                        ↩
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                        {/* Inaktiv-Wert + Inaktiv-Farben (BG/Text) in einer Zeile */}
-                                        <div>
-                                            <label
-                                                className="text-[10px] mb-0.5 block"
-                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
-                                            >
-                                                {tHook('carousel.items.inactiveValue' as never)}
-                                            </label>
-                                            <div className="flex gap-1 items-center">
-                                                <input
-                                                    type="text"
-                                                    value={item.inactiveValue ?? ''}
-                                                    onChange={(e) =>
-                                                        updateItem(item.id, {
-                                                            inactiveValue: e.target.value || undefined,
-                                                        })
-                                                    }
-                                                    placeholder="z.B. false"
-                                                    className={`flex-1 ${sInputCls} min-w-0`}
-                                                    style={sInputStyle}
-                                                />
-                                                <ColorPicker
-                                                    value={item.bgColorInactive ?? '#000000'}
-                                                    onChange={(v) => updateItem(item.id, { bgColorInactive: v })}
-                                                    title={tHook('carousel.items.bgColor' as never)}
-                                                    className="w-7 h-7 rounded cursor-pointer p-0 border-0 shrink-0"
-                                                    style={{ background: 'var(--app-bg)' }}
-                                                />
-                                                <ColorPicker
-                                                    value={item.textColorInactive ?? '#ffffff'}
-                                                    onChange={(v) => updateItem(item.id, { textColorInactive: v })}
-                                                    title={tHook('carousel.items.textColor' as never)}
-                                                    className="w-7 h-7 rounded cursor-pointer p-0 border-0 shrink-0"
-                                                    style={{ background: 'var(--app-bg)' }}
-                                                />
-                                                {(item.bgColorInactive || item.textColorInactive) && (
-                                                    <button
-                                                        onClick={() =>
-                                                            updateItem(item.id, {
-                                                                bgColorInactive: undefined,
-                                                                textColorInactive: undefined,
-                                                            })
-                                                        }
-                                                        className="text-[10px] px-1 shrink-0 hover:opacity-70"
-                                                        style={{ color: 'var(--text-secondary)' }}
-                                                        title={tHook('carousel.items.resetColor' as never)}
-                                                    >
-                                                        ↩
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
 
                                 {/* popup-widget: target widget selector */}
                                 {item.clickAction?.kind === 'popup-widget' &&
@@ -5345,11 +6198,195 @@ function CarouselEditPanel({
                                         );
                                     })()}
 
+                                {/* DP write – only when action is none (default DP-toggle behavior) */}
+                                {(!item.clickAction || item.clickAction.kind === 'none') && (
+                                    <>
+                                        <div>
+                                            <label
+                                                className="text-[10px] mb-0.5 block"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {tHook('carousel.items.dp' as never)}
+                                            </label>
+                                            <div className="flex gap-1">
+                                                <input
+                                                    type="text"
+                                                    value={item.dp}
+                                                    onChange={(e) => updateItem(item.id, { dp: e.target.value })}
+                                                    placeholder="z.B. 0_userdata.0.scenes.relaxing"
+                                                    className={`flex-1 ${sInputCls} min-w-0`}
+                                                    style={sInputStyle}
+                                                />
+                                                <button
+                                                    onClick={() => onOpenItemDpPicker(idx)}
+                                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                                    style={{
+                                                        background: 'var(--app-bg)',
+                                                        color: 'var(--text-secondary)',
+                                                        border: '1px solid var(--app-border)',
+                                                    }}
+                                                    title={tHook('wf.edit.fromIoBroker')}
+                                                >
+                                                    <Database size={13} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {/* Aktiv-Wert */}
+                                        <div>
+                                            <label
+                                                className="text-[10px] mb-0.5 block"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {tHook('carousel.items.value' as never)}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={item.value ?? ''}
+                                                onChange={(e) =>
+                                                    updateItem(item.id, { value: e.target.value || undefined })
+                                                }
+                                                placeholder="z.B. true"
+                                                className={`w-full ${sInputCls}`}
+                                                style={sInputStyle}
+                                            />
+                                        </div>
+                                        {/* Aktiv-Beschriftung — leer = Beschriftung oben */}
+                                        <div>
+                                            <label
+                                                className="text-[10px] mb-0.5 block"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {tHook('carousel.items.labelActive' as never)}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={item.labelActive ?? ''}
+                                                onChange={(e) =>
+                                                    updateItem(item.id, { labelActive: e.target.value || undefined })
+                                                }
+                                                placeholder={item.label}
+                                                className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                                                style={sInputStyle}
+                                            />
+                                        </div>
+                                        {/* Aktiv-Farben (BG/Text) */}
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <CwColorField
+                                                label={tHook('carousel.items.bgColor' as never)}
+                                                value={item.bgColor}
+                                                swatchFallback="#3b82f6"
+                                                resetTitle={tHook('carousel.items.resetColor' as never)}
+                                                onChange={(v) => updateItem(item.id, { bgColor: v })}
+                                            />
+                                            <CwColorField
+                                                label={tHook('carousel.items.textColor' as never)}
+                                                value={item.textColor}
+                                                swatchFallback="#ffffff"
+                                                resetTitle={tHook('carousel.items.resetColor' as never)}
+                                                onChange={(v) => updateItem(item.id, { textColor: v })}
+                                            />
+                                        </div>
+                                        {/* Inaktiv-Wert */}
+                                        <div>
+                                            <label
+                                                className="text-[10px] mb-0.5 block"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {tHook('carousel.items.inactiveValue' as never)}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={item.inactiveValue ?? ''}
+                                                onChange={(e) =>
+                                                    updateItem(item.id, {
+                                                        inactiveValue: e.target.value || undefined,
+                                                    })
+                                                }
+                                                placeholder="z.B. false"
+                                                className={`w-full ${sInputCls}`}
+                                                style={sInputStyle}
+                                            />
+                                        </div>
+                                        {/* Inaktiv-Beschriftung — leer = Beschriftung oben */}
+                                        <div>
+                                            <label
+                                                className="text-[10px] mb-0.5 block"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {tHook('carousel.items.labelInactive' as never)}
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={item.labelInactive ?? ''}
+                                                onChange={(e) =>
+                                                    updateItem(item.id, { labelInactive: e.target.value || undefined })
+                                                }
+                                                placeholder={item.label}
+                                                className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                                                style={sInputStyle}
+                                            />
+                                        </div>
+                                        {/* Inaktiv-Farben (BG/Text) */}
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <CwColorField
+                                                label={tHook('carousel.items.bgColor' as never)}
+                                                value={item.bgColorInactive}
+                                                swatchFallback="#3b82f6"
+                                                resetTitle={tHook('carousel.items.resetColor' as never)}
+                                                onChange={(v) => updateItem(item.id, { bgColorInactive: v })}
+                                            />
+                                            <CwColorField
+                                                label={tHook('carousel.items.textColor' as never)}
+                                                value={item.textColorInactive}
+                                                swatchFallback="#ffffff"
+                                                resetTitle={tHook('carousel.items.resetColor' as never)}
+                                                onChange={(v) => updateItem(item.id, { textColorInactive: v })}
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Per-element colours for non-DP items (popup / link).
+                                    These items never toggle, so they render in the base
+                                    (inactive) state — writing bgColorInactive/textColorInactive
+                                    lets each element override the global colour. */}
+                                {item.clickAction && item.clickAction.kind !== 'none' && (
+                                    <div>
+                                        <label
+                                            className="text-[10px] mb-0.5 block"
+                                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                        >
+                                            {tHook('carousel.items.colors' as never)}
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <CwColorField
+                                                label={tHook('carousel.items.bgColor' as never)}
+                                                value={item.bgColorInactive}
+                                                swatchFallback="#3b82f6"
+                                                resetTitle={tHook('carousel.items.resetColor' as never)}
+                                                onChange={(v) => updateItem(item.id, { bgColorInactive: v })}
+                                            />
+                                            <CwColorField
+                                                label={tHook('carousel.items.textColor' as never)}
+                                                value={item.textColorInactive}
+                                                swatchFallback="#ffffff"
+                                                resetTitle={tHook('carousel.items.resetColor' as never)}
+                                                onChange={(v) => updateItem(item.id, { textColorInactive: v })}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* link-tab: layout + tab */}
                                 {item.clickAction?.kind === 'link-tab' &&
                                     (() => {
                                         const cur = item.clickAction;
-                                        const tabsForLayout = layouts.find((l) => l.id === cur.layoutId)?.tabs ?? [];
+                                        const layObj = layouts.find((l) => l.id === cur.layoutId);
+                                        // Flatten tabs across sections; remember each tab's section.
+                                        const tabsForLayout = (layObj?.sections ?? []).flatMap((sec) =>
+                                            sec.tabs.map((t) => ({ tab: t, sectionId: sec.id, sectionName: sec.name })),
+                                        );
+                                        const multiSection = (layObj?.sections.length ?? 0) > 1;
                                         return (
                                             <div className="grid grid-cols-2 gap-1.5">
                                                 <div>
@@ -5363,10 +6400,12 @@ function CarouselEditPanel({
                                                         value={cur.layoutId}
                                                         onChange={(e) => {
                                                             const lay = layouts.find((l) => l.id === e.target.value);
+                                                            const firstSec = lay?.sections[0];
                                                             setItemAction(item.id, {
                                                                 kind: 'link-tab',
                                                                 layoutId: e.target.value,
-                                                                tabId: lay?.tabs[0]?.id ?? '',
+                                                                sectionId: firstSec?.id,
+                                                                tabId: firstSec?.tabs[0]?.id ?? '',
                                                             });
                                                         }}
                                                         className={selCls}
@@ -5388,19 +6427,25 @@ function CarouselEditPanel({
                                                     </label>
                                                     <select
                                                         value={cur.tabId}
-                                                        onChange={(e) =>
+                                                        onChange={(e) => {
+                                                            const sel = tabsForLayout.find(
+                                                                (x) => x.tab.id === e.target.value,
+                                                            );
                                                             setItemAction(item.id, {
                                                                 kind: 'link-tab',
                                                                 layoutId: cur.layoutId,
+                                                                sectionId: sel?.sectionId,
                                                                 tabId: e.target.value,
-                                                            })
-                                                        }
+                                                            });
+                                                        }}
                                                         className={selCls}
                                                         style={sInputStyle}
                                                     >
-                                                        {tabsForLayout.map((t) => (
-                                                            <option key={t.id} value={t.id}>
-                                                                {t.name}
+                                                        {tabsForLayout.map(({ tab, sectionName }) => (
+                                                            <option key={tab.id} value={tab.id}>
+                                                                {multiSection
+                                                                    ? `${sectionName} · ${tab.name}`
+                                                                    : tab.name}
                                                             </option>
                                                         ))}
                                                     </select>
@@ -5536,7 +6581,6 @@ export function WidgetFrame({
     inGroup,
 }: WidgetFrameProps) {
     const t = useT();
-    const { defaultDecimals } = useGlobalSettingsStore();
     const focusedWidgetId = useFocusedWidgetId();
     const isFocused = focusedWidgetId === config.id;
     const focusRef = useRef<HTMLDivElement>(null);
@@ -5554,19 +6598,30 @@ export function WidgetFrame({
     const [showCopyMenu, setShowCopyMenu] = useState(false);
     const [showGroupTypePicker, setShowGroupTypePicker] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
+    const [showSavePresetDialog, setShowSavePresetDialog] = useState(false);
     const { addWidgetToLayoutTab, removeWidgetFromLayoutTab } = useDashboardStore();
     const activeLayoutId = useDashboardStore((s) => s.activeLayoutId);
-    const { activeTabId, tabs: activeTabs } = useActiveLayout();
-    // Stable across widget-only mutations: only changes when tabs/layouts are added, removed, or renamed.
+    const { activeTabId, tabs: activeTabs } = useActiveSection();
+    // Stable across widget-only mutations: only changes when tabs/sections/layouts are added, removed, or renamed.
     const moveTargets = useStoreWithEqualityFn(
         useDashboardStore,
         (s) => {
             const aid = s.activeLayoutId;
-            const atid = s.layouts.find((l) => l.id === aid)?.activeTabId;
+            const al = s.layouts.find((l) => l.id === aid);
+            const asid = al?.activeSectionId;
+            const atid = al?.sections.find((sec) => sec.id === asid)?.activeTabId;
             return s.layouts.flatMap((l) =>
-                l.tabs
-                    .filter((t) => !(l.id === aid && t.id === atid))
-                    .map((t) => ({ layoutId: l.id, layoutName: l.name, tabId: t.id, tabName: t.name })),
+                l.sections.flatMap((sec) =>
+                    sec.tabs
+                        .filter((t) => !(l.id === aid && sec.id === asid && t.id === atid))
+                        .map((t) => ({
+                            layoutId: l.id,
+                            sectionId: sec.id,
+                            layoutName: l.sections.length > 1 ? `${l.name} · ${sec.name}` : l.name,
+                            tabId: t.id,
+                            tabName: t.name,
+                        })),
+                ),
             );
         },
         (a, b) =>
@@ -5574,12 +6629,27 @@ export function WidgetFrame({
             a.every(
                 (ai, i) =>
                     ai.layoutId === b[i].layoutId &&
+                    ai.sectionId === b[i].sectionId &&
                     ai.tabId === b[i].tabId &&
                     ai.layoutName === b[i].layoutName &&
                     ai.tabName === b[i].tabName,
             ),
     );
-    const moveLayoutCount = new Set(moveTargets.map((m) => m.layoutId)).size;
+    // Layout list for pickers that only need to name a layout (messages widget's
+    // "only this layout" filter). Identity-only selector so a widget mutation
+    // anywhere in the dashboard does not re-render every frame.
+    const layoutChoices = useStoreWithEqualityFn(
+        useDashboardStore,
+        (s) => s.layouts.map((l) => ({ id: l.id, slug: l.slug, name: l.name })),
+        (a, b) =>
+            a.length === b.length &&
+            a.every((ai, i) => ai.id === b[i].id && ai.slug === b[i].slug && ai.name === b[i].name),
+    );
+    // Group targets per layout *section* (not just per layout): sections default to a
+    // single "Dashboard" tab, so a layout with several sections would otherwise render
+    // multiple identically-named tabs under one header with no way to tell them apart.
+    const moveGroupKey = (m: { layoutId: string; sectionId: string }) => `${m.layoutId}::${m.sectionId}`;
+    const moveGroupCount = new Set(moveTargets.map(moveGroupKey)).size;
 
     const addWidgetToView = usePopupConfigStore((s) => s.addWidgetToView);
     // Custom (non-builtin) popup views the widget can be copied/moved into. Built-ins
@@ -5592,15 +6662,22 @@ export function WidgetFrame({
     );
 
     // When the widget can be copied/moved into many tabs, a single-column submenu
-    // grows taller than the viewport and the lower entries become unreachable.
-    // Lay the targets out in 2–3 columns (wider menu) once there are enough of them.
-    const targetCount = moveTargets.length + popupViewTargets.length;
-    const targetCols = targetCount > 6 ? 3 : 1;
+    // grows taller than the viewport. Lay the targets out in a grid whose column
+    // count follows the *busiest* group (a section's tabs, or the popup-view list),
+    // so that group renders its entries side-by-side. Capped at 5 columns.
+    const perGroupTabCount = new Map<string, number>();
+    for (const m of moveTargets) {
+        const k = moveGroupKey(m);
+        perGroupTabCount.set(k, (perGroupTabCount.get(k) ?? 0) + 1);
+    }
+    const widestGroup = Math.max(0, ...perGroupTabCount.values(), popupViewTargets.length);
+    const targetCols = Math.min(5, Math.max(1, widestGroup));
     const targetGridStyle: React.CSSProperties =
-        targetCols > 1 ? { display: 'grid', gridTemplateColumns: `repeat(${targetCols}, minmax(120px, 1fr))` } : {};
+        targetCols > 1 ? { display: 'grid', gridTemplateColumns: `repeat(${targetCols}, minmax(110px, 1fr))` } : {};
     // Section header (per layout / popup-views): accent top rule + tint so the groups
-    // visually stand apart from one another in the copy/move submenu. Layouts use the
-    // blue accent, popup-views a green one so the two kinds of target are distinct.
+    // visually stand apart from one another in the copy/move submenu. Each distinct
+    // layout gets its own colour so its sections are easy to tell apart at a glance,
+    // while popup-views stay green so the two kinds of target remain distinct.
     const makeHeaderStyle = (c: string): React.CSSProperties => ({
         gridColumn: '1 / -1',
         background: `${c}1a`,
@@ -5608,41 +6685,45 @@ export function WidgetFrame({
         borderTop: `2px solid ${c}`,
         borderBottom: '1px solid var(--app-border)',
     });
-    const targetHeaderStyle = makeHeaderStyle('var(--accent)');
+    // Palette for distinguishing layouts. First entry is the theme accent so a
+    // single-layout setup looks unchanged; the rest are fixed, theme-independent
+    // hues (green is intentionally omitted — it is reserved for popup views).
+    const LAYOUT_HEADER_COLORS = [
+        'var(--accent)',
+        '#a855f7',
+        '#f97316',
+        '#ec4899',
+        '#14b8a6',
+        '#eab308',
+        '#ef4444',
+        '#6366f1',
+    ];
+    const layoutHeaderColor = new Map<string, string>();
+    for (const m of moveTargets) {
+        if (!layoutHeaderColor.has(m.layoutId)) {
+            layoutHeaderColor.set(
+                m.layoutId,
+                LAYOUT_HEADER_COLORS[layoutHeaderColor.size % LAYOUT_HEADER_COLORS.length],
+            );
+        }
+    }
+    const headerStyleForLayout = (layoutId: string) =>
+        makeHeaderStyle(layoutHeaderColor.get(layoutId) ?? 'var(--accent)');
     const popupHeaderStyle = makeHeaderStyle('var(--accent-green)');
 
     // Stable reference: never create a new [] on every render (would cause infinite effect loop)
     const conditions = (config.options?.conditions as WidgetCondition[] | undefined) ?? NO_CONDITIONS;
 
-    // GROUP widgets: create a fresh defId + clone children so copies are independent
-    function copyConfig(src: WidgetConfig): WidgetConfig {
-        if ((src.type === 'group' || src.type === 'panels') && src.options?.defId) {
-            return { ...src, options: { ...src.options, defId: cloneGroupDef(src.options.defId as string) } };
-        }
-        // TIMER widgets: deep-clone options + regenerate event IDs so the copy is independent
-        // from the original (otherwise events array reference + event ids are shared, which
-        // breaks editing and makes the stateBaseId fixup race with modal saves).
-        if (src.type === 'timer' && src.options) {
-            const o = src.options as Record<string, unknown>;
-            const rawEvents = (o.events as Array<Record<string, unknown>> | undefined) ?? [];
-            const events = rawEvents.map((e) => ({
-                ...e,
-                id: `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            }));
-            const nextOpts = { ...o, events } as Record<string, unknown>;
-            // stateBaseId will be re-set by TimerWidget's useLayoutEffect against the new widget id
-            delete nextOpts.stateBaseId;
-            return { ...src, options: nextOpts };
-        }
-        return src;
-    }
+    // Value sources conditions / badges may reference without naming a DP:
+    // the widget's main datapoint and — for list widgets — its entries.
+    const sourceCtx = useMemo(() => widgetSourceCtx(config), [config]);
 
     // Evaluate conditions against live ioBroker values
-    const conditionResult = useConditionStyle(conditions, config.id);
+    const conditionResult = useConditionStyle(conditions, config.id, sourceCtx);
 
     // Badges (overlay indicators) — stable reference like conditions above
     const badges = (config.options?.badges as BadgeDef[] | undefined) ?? NO_BADGES;
-    const resolvedBadges = useBadges(badges);
+    const resolvedBadges = useBadges(badges, sourceCtx);
 
     // Register/release this widget in the panel coordinator.
     // NOTE: do NOT clean the reflow-hidden registry here — when a widget moves
@@ -5691,9 +6772,14 @@ export function WidgetFrame({
         | 'shutter_stopDp'
         | 'shutter_openDp'
         | 'shutter_closeDp'
+        | 'shutter_actualPositionDp'
+        | 'shutter_tiltDp'
+        | 'shutter_actualTiltDp'
         | 'dimmer_switchDp'
         | 'gauge_pointer2Dp'
         | 'gauge_pointer3Dp'
+        | 'scale_minDp'
+        | 'scale_maxDp'
         | 'windowcontact_batteryDp'
         | 'wc_lockDp'
         | 'status_batteryDp'
@@ -5709,9 +6795,11 @@ export function WidgetFrame({
         | 'chips_checkDp'
         | 'carousel_item'
         | 'carousel_checkDp'
+        | 'panels_activeDp'
         | 'http_response_dp'
         | 'climate_humidityDp'
         | 'climate_targetDp'
+        | 'climate_pressureDp'
         | 'rainstation_dp'
         | 'heating_dp'
         | 'iframe_urlDp'
@@ -5733,6 +6821,8 @@ export function WidgetFrame({
         | null
     >(null);
     const [imageFilePicker, setImageFilePicker] = useState(false);
+    // Switch widget: picker for the optional read-back datapoint (#567).
+    const [switchStatusDpPicker, setSwitchStatusDpPicker] = useState(false);
     const [pendingTypeChange, setPendingTypeChange] = useState<{
         suggestedType: WidgetType;
         currentType: WidgetType;
@@ -5793,11 +6883,13 @@ export function WidgetFrame({
     );
     const cellClipboard = useCellClipboard();
     const widgetFramePortalTarget = usePortalTarget();
-    const [customCellPickerOpen, setCustomCellPickerOpen] = useState(false);
+    // Which cell field the datapoint picker fills: the cell's own DP or the switch read-back DP (#567).
+    const [customCellPickerOpen, setCustomCellPickerOpen] = useState<'dpId' | 'statusDpId' | null>(null);
     const [customCellImagePickerOpen, setCustomCellImagePickerOpen] = useState(false);
     const [customCellIconPicker, setCustomCellIconPicker] = useState<'iconName' | 'trueIcon' | 'falseIcon' | null>(
         null,
     );
+    const [customCellCondOpen, setCustomCellCondOpen] = useState(false);
     const [draftIconSize, setDraftIconSize] = useState<number | null>(null);
     const [draftTransparency, setDraftTransparency] = useState<number | null>(null);
 
@@ -5903,17 +6995,67 @@ export function WidgetFrame({
 
     const menuBtnRef = useRef<HTMLButtonElement>(null);
     const Widget = getWidgetMap()[config.type as keyof ReturnType<typeof getWidgetMap>];
+    // Bumped by a condition rule with "reload widget" — mixed into the body's key so
+    // embedded documents (iframe, camera, image) actually re-fetch (issue #537).
+    const refreshNonce = useWidgetRefreshNonce(config.id);
+    // `[[dp]]` tokens in the name resolve here, at the render boundary, so every widget
+    // type shows live values without wiring anything up itself. Only the rendered copy
+    // is substituted — the edit dialog and every onConfigChange keep the raw title.
+    // A condition's title override goes in first, so it may carry live tokens too.
+    const resolvedTitle = useResolvedTitle(conditionResult.set.title ?? config.title);
+    // The body renders from a derived config: resolved title plus whatever the
+    // matching rules override (icon, size, value text — issue #96). Everything the
+    // body writes back is stripped of those again, so a rule that currently paints a
+    // different icon can never persist it into the layout.
+    const renderConfig = useMemo(
+        () => applyConditionSet(config, resolvedTitle, conditionResult.set),
+        [config, resolvedTitle, conditionResult.set],
+    );
+    const onBodyConfigChange = useCallback(
+        (next: WidgetConfig) => onConfigChange(stripRenderOverrides(next, config, renderConfig)),
+        [onConfigChange, config, renderConfig],
+    );
+    // Which override slots this widget type honours — the editor offers only these.
+    const conditionSlots = useMemo(() => conditionSlotsFor(config.type), [config.type]);
     const currentLayout = config.layout ?? 'default';
     const overrides = config.options?.styleOverride as Record<string, string> | undefined;
 
-    // Last-change timestamp overlay
-    const showLastChange = !!config.options?.showLastChange;
-    const lastChangePos = (config.options?.lastChangePosition as string | undefined) ?? 'left';
+    // A mirror widget takes its frame-level appearance (title/icon/size are handled
+    // by the mirrored inner component; last-change is a frame overlay) from its
+    // source. Resolve that source so the last-change overlay below reflects it.
+    const mirrorLcSource = useDashboardStore((s) => {
+        if (config.type !== 'mirror') return undefined;
+        const tid = config.options?.targetWidgetId as string | undefined;
+        if (!tid) return undefined;
+        for (const l of s.layouts)
+            for (const sec of l.sections)
+                for (const tb of sec.tabs) {
+                    const found = tb.widgets.find((w) => w.id === tid);
+                    if (found) return found;
+                }
+        return undefined;
+    });
+
+    // Last-change timestamp overlay (sourced from the mirror's target when applicable)
+    const lcConfig = mirrorLcSource ?? config;
+    const showLastChange = !!lcConfig.options?.showLastChange;
+    const lastChangePos = (lcConfig.options?.lastChangePosition as string | undefined) ?? 'left';
     const [lastChangedTs, setLastChangedTs] = useState<number>(0);
     const [, forceRedraw] = useState(0);
 
+    // Widgets whose body is a foreign document (iframe) report that the frame click
+    // can never reach them, so the click action needs its own button. The reported
+    // type is stored alongside the flag: switching a widget's type keeps the same
+    // frame mounted, and a stale `true` would leave a button with nothing behind it.
+    const [actionButtonReq, setActionButtonReq] = useState<{ type: string; needs: boolean } | null>(null);
+    const requestActionButton = useCallback(
+        (needs: boolean) => setActionButtonReq({ type: config.type, needs }),
+        [config.type],
+    );
+    const needsActionButton = actionButtonReq?.type === config.type && actionButtonReq.needs;
+
     useEffect(() => {
-        const id = baseDpId((config.options?.lastChangeDatapoint as string | undefined) || config.datapoint);
+        const id = baseDpId((lcConfig.options?.lastChangeDatapoint as string | undefined) || lcConfig.datapoint);
         if (!id) return;
 
         getStateDirect(id).then((s) => {
@@ -5923,7 +7065,7 @@ export function WidgetFrame({
         return subscribeStateDirect(id, (s) => {
             if (s) setLastChangedTs(s.lc > 0 ? s.lc : s.ts);
         });
-    }, [config.datapoint, config.options?.lastChangeDatapoint]);
+    }, [lcConfig.datapoint, lcConfig.options?.lastChangeDatapoint]);
 
     // Periodically redraw the relative-time string
     useEffect(() => {
@@ -5932,27 +7074,61 @@ export function WidgetFrame({
         return () => clearInterval(iv);
     }, [showLastChange, lastChangedTs]);
 
+    // Per-element styling rides on classes + variables the .aura-cond-* rules read.
+    const partClasses = Object.entries(conditionResult.parts)
+        .flatMap(([part, st]) =>
+            [
+                st.color ? `aura-cond-${part}-color` : '',
+                st.bold ? `aura-cond-${part}-bold` : '',
+                st.italic ? `aura-cond-${part}-italic` : '',
+                st.fontSize ? `aura-cond-${part}-size` : '',
+                st.hide ? `aura-cond-${part}-hide` : '',
+            ].filter(Boolean),
+        )
+        .join(' ');
+    const partVars = Object.fromEntries(
+        Object.entries(conditionResult.parts).flatMap(([part, st]) => [
+            ...(st.color ? [[`--cond-${part}-color`, st.color]] : []),
+            // px, not em: the widget's own size is what the rule replaces, and an em
+            // would compound with whatever the parent already scaled.
+            ...(st.fontSize ? [[`--cond-${part}-size`, `${st.fontSize}px`]] : []),
+        ]),
+    );
+
     const cssOverride = Object.fromEntries(
         Object.entries({
             // Static style overrides from options.styleOverride
             '--widget-bg': overrides?.bg,
             '--widget-border': overrides?.border,
+            '--widget-border-width': overrides?.borderWidth,
             '--widget-radius': overrides?.radius,
             '--text-primary': overrides?.textPrimary,
             '--text-secondary': overrides?.textSecondary,
             '--accent': overrides?.accent,
             // Condition-driven overrides (higher priority, applied on top)
             ...conditionResult.cssVars,
+            ...partVars,
+            // Unless the rule names a ring colour, the ring follows the colours it
+            // does set: the border first, then the accent — a rule that flags
+            // something usually sets one of the two.
+            '--cond-ring':
+                conditionResult.effect === 'border'
+                    ? (conditionResult.cssVars['--cond-ring'] ??
+                      conditionResult.cssVars['--widget-border'] ??
+                      conditionResult.cssVars['--accent'] ??
+                      'var(--accent)')
+                    : undefined,
         }).filter(([, v]) => v !== undefined && v !== ''),
     ) as React.CSSProperties;
 
     // ── Click action (3-level resolution) ─────────────────────────────────────
     // Ebene 3: explicit widget-level action (stored in options.clickAction)
     // Ebene 2: admin-configured type default (popupConfigStore) — dynamic
-    // Ebene 1: built-in default for known widget types (dimmer, thermostat, …)
+    // Ebene 1: hardcoded fallback, nowadays only 'slider' → popup-widget. The
+    //          built-in popup views the known device types used to resolve to
+    //          live in Ebene 2 as real type defaults instead.
     const popupTypeDefaults = usePopupConfigStore((s) => s.typeDefaults);
     const popupTypeDefaultLayouts = usePopupConfigStore((s) => s.typeDefaultLayouts);
-    const popupRemovedTypeDefaults = usePopupConfigStore((s) => s.removedBuiltinTypeDefaults);
     const storedClickAction = config.options?.clickAction as ClickAction | undefined;
     const rawClickAction = storedClickAction ?? { kind: 'none' as const };
     const clickAction: ClickAction = (() => {
@@ -5965,10 +7141,11 @@ export function WidgetFrame({
                     return { kind: 'popup-view', viewId };
                 }
             }
-            // Ebene 1 only applies while the admin hasn't explicitly removed the
-            // builtin type default — otherwise removing it in the backend would
-            // have no effect (the hardcoded fallback would keep re-linking it).
-            if (!popupRemovedTypeDefaults.includes(config.type)) {
+            // An explicit empty type default ('— keine View —') means "no popup".
+            // It must suppress the hardcoded fallback below — otherwise choosing it
+            // in the backend has no effect (the fallback keeps opening).
+            const explicitNoView = config.type in popupTypeDefaults && !viewId;
+            if (!explicitNoView) {
                 const builtIn = defaultActionForConfig(config);
                 if (builtIn) return builtIn;
             }
@@ -5977,24 +7154,9 @@ export function WidgetFrame({
     })();
     const hasClickAction = clickAction.kind !== 'none';
 
-    const handleWidgetClick = (e: React.MouseEvent) => {
-        if (editMode || !hasClickAction) return;
-        // Portal backdrop clicks bubble through the React tree back here — ignore while popup is open
-        if (popupOpen) return;
-        // Walk up from target — closest match wins. Interactive controls (button, input, …)
-        // suppress the popup so their own onClick can act alone. `data-allow-popup` is an
-        // explicit escape hatch to re-enable popup-on-click inside an interactive subtree.
-        {
-            let el: HTMLElement | null = e.target as HTMLElement;
-            const container = e.currentTarget as HTMLElement;
-            while (el && el !== container) {
-                if (el.matches('[data-allow-popup]')) break;
-                if (el.matches('button, input, select, textarea, a, [data-widget-interactive], [data-no-popup]'))
-                    return;
-                el = el.parentElement;
-            }
-        }
-        e.stopPropagation();
+    // Shared by the frame click and the action button that iframe-bodied widgets
+    // need (a click inside a foreign document never reaches us — issue #527).
+    const runClickAction = () => {
         switch (clickAction.kind) {
             case 'link-external':
                 if (clickAction.newTab) window.open(clickAction.url, '_blank', 'noopener');
@@ -6004,17 +7166,33 @@ export function WidgetFrame({
                 const tab = useDashboardStore
                     .getState()
                     .layouts.find((l) => l.id === clickAction.layoutId)
-                    ?.tabs.find((t) => t.id === clickAction.tabId);
+                    ?.sections.flatMap((s) => s.tabs)
+                    .find((t) => t.id === clickAction.tabId);
                 if (tab?.disabled) return;
-                useNavigationStore.getState().navigateTo(clickAction.layoutId, clickAction.tabId);
+                useNavigationStore
+                    .getState()
+                    .navigateTo(clickAction.layoutId, clickAction.tabId, undefined, clickAction.sectionId);
                 return;
             }
             case 'link-widget':
-                useNavigationStore.getState().navigateTo(clickAction.layoutId, clickAction.tabId, clickAction.widgetId);
+                useNavigationStore
+                    .getState()
+                    .navigateTo(clickAction.layoutId, clickAction.tabId, clickAction.widgetId, clickAction.sectionId);
                 return;
             default:
                 setPopupOpen(true);
         }
+    };
+
+    const handleWidgetClick = (e: React.MouseEvent) => {
+        if (editMode || !hasClickAction) return;
+        // Portal backdrop clicks bubble through the React tree back here — ignore while popup is open
+        if (popupOpen) return;
+        // Interactive controls (button, input, …) and rows that open their own popup
+        // (data-no-popup) suppress the widget popup so their own onClick acts alone.
+        if (isInteractiveTarget(e.target, e.currentTarget as HTMLElement)) return;
+        e.stopPropagation();
+        runClickAction();
     };
 
     // Verhindert Drag bei Klick auf Controls
@@ -6024,18 +7202,44 @@ export function WidgetFrame({
     const isGroup = config.type === 'group';
     const isButton = config.type === 'button';
     const isTransparent = !!config.options?.transparent;
+    // A group with title + icon off and no master switch renders no header bar.
+    // In the editor its config controls float in on hover (top-left toolbar) so
+    // children can sit flush to the top without a reserved strip. (collapsible is
+    // frontend-only, so it never applies to this editor-only chrome.)
+    const isHeaderlessGroup =
+        editMode &&
+        isGroup &&
+        !(
+            (config.options?.showTitle !== false && !!config.title) ||
+            config.options?.showIcon !== false ||
+            !!config.options?.groupSwitch
+        );
+    // The menu widget has no title/icon header and its whole body is `nodrag`, so
+    // there is no surface to grab for a grid move. Give it the same hover-reveal
+    // toolbar with a dedicated grab grip as a headerless group.
+    const isHeaderlessMenu = editMode && config.type === 'menu';
+    const isHeaderlessChrome = isHeaderlessGroup || isHeaderlessMenu;
     // Card bg/border: group children > button widget > plain widget. Each element
     // var falls back to the base widget var so the default look is unchanged.
-    const cardBg = inGroup
-        ? 'var(--widget-in-group-bg, var(--widget-bg))'
-        : isButton
-          ? 'var(--button-bg, var(--widget-bg))'
-          : 'var(--widget-bg)';
-    const cardBorderColor = inGroup
-        ? 'var(--widget-in-group-border, var(--widget-border))'
-        : isButton
-          ? 'var(--button-border, var(--widget-border))'
-          : 'var(--widget-border)';
+    // A condition that paints the background/border has to win over the group's and
+    // the button's shared colour var — those are set on an ancestor, so the fallback
+    // chain would swallow the rule and it would silently do nothing inside a group.
+    const condBg = !!conditionResult.cssVars['--widget-bg'];
+    const condBorder = !!conditionResult.cssVars['--widget-border'];
+    const cardBg = condBg
+        ? 'var(--widget-bg)'
+        : inGroup
+          ? 'var(--widget-in-group-bg, var(--widget-bg))'
+          : isButton
+            ? 'var(--button-bg, var(--widget-bg))'
+            : 'var(--widget-bg)';
+    const cardBorderColor = condBorder
+        ? 'var(--widget-border)'
+        : inGroup
+          ? 'var(--widget-in-group-border, var(--widget-border))'
+          : isButton
+            ? 'var(--button-border, var(--widget-border))'
+            : 'var(--widget-border)';
     const transparencyStrength = isTransparent
         ? Math.max(0, Math.min(100, Number(config.options?.transparency ?? 100)))
         : 100;
@@ -6066,17 +7270,28 @@ export function WidgetFrame({
                 )
               : [];
     void dpCacheReady; // referenced so the checklist re-renders once names load
-    const groupCellSize = useConfigStore((s) => s.frontend.gridRowHeight ?? 80);
-    const groupGridGap = useConfigStore((s) => s.frontend.gridGap ?? 10);
+    const activeLayoutIdCtx = useActiveLayoutId();
+    const effectiveSettings = useEffectiveSettings(activeLayoutIdCtx);
+    // Same pitch the Dashboard sizes the group box with (and GroupWidget lays its
+    // children out on): effective settings, not the raw global ones — otherwise a
+    // layout/section grid override makes the fitted height too small and the group
+    // scrolls.
+    const groupCellSize = effectiveSettings.gridRowHeight ?? 20;
+    const groupGridGap = effectiveSettings.gridGap ?? 10;
 
     const fitGroupHeight = () => {
         if (!groupDefId || groupChildren.length === 0) return;
         const maxBottom = Math.max(...groupChildren.map((c) => c.gridPos.y + c.gridPos.h));
-        const innerH = maxBottom * (groupCellSize + groupGridGap) - groupGridGap;
-        // In editMode the title bar is always rendered (min-height 36px); +1 for its border-bottom when titled.
-        // +10 = 8 (p-1 padding top+bottom) + 2 (widget border-width, 1px each side).
-        const titleBarH = config.title ? (isTransparent ? 36 : 37) : 36;
-        const newH = Math.ceil((titleBarH + innerH + 10 + groupGridGap) / (groupCellSize + groupGridGap));
+        const hasHeader = !isHeaderlessGroup;
+        const titled = config.options?.showTitle !== false && !!config.title;
+        const newH = groupRows(
+            maxBottom,
+            hasHeader,
+            titled,
+            groupCellSize,
+            groupGridGap,
+            useAutoHeightStore.getState().groupHeaders[config.id],
+        );
         onConfigChange({ ...config, gridPos: { ...config.gridPos, h: newH } });
     };
 
@@ -6094,43 +7309,59 @@ export function WidgetFrame({
         };
         const next = verticalCompact([...groupChildren, newChild]);
         useGroupDefsStore.getState().setDef(groupDefId, next);
-        // auto-fit height using compacted positions
+        // Auto-fit height using the compacted positions — via groupRows, the same
+        // math the Dashboard and GroupWidget use. Rolling its own formula here (with
+        // the outer gridGap between children instead of GROUP_GAP) produced a height
+        // that disagreed with the rendered layout.
         const maxBottom = Math.max(...next.map((c) => c.gridPos.y + c.gridPos.h));
-        const innerH = maxBottom * (groupCellSize + groupGridGap) - groupGridGap;
-        const titleBarH = config.title ? (isTransparent ? 36 : 37) : 36;
-        const newH = Math.ceil((titleBarH + innerH + 10 + groupGridGap) / (groupCellSize + groupGridGap));
+        const titled = config.options?.showTitle !== false && !!config.title;
+        const newH = groupRows(
+            maxBottom,
+            !isHeaderlessGroup,
+            titled,
+            groupCellSize,
+            groupGridGap,
+            useAutoHeightStore.getState().groupHeaders[config.id],
+        );
         onConfigChange({ ...config, gridPos: { ...config.gridPos, h: newH } });
         setShowGroupTypePicker(false);
         openPanelFor(null);
     };
     // ──────────────────────────────────────────────────────────────────────────
 
-    const activeLayoutIdCtx = useActiveLayoutId();
-    const effectiveSettings = useEffectiveSettings(activeLayoutIdCtx);
     const widgetPadding = effectiveSettings.widgetPadding ?? 16;
+    // A mirror renders its source inside the frame, so its outer padding must
+    // follow the SOURCE's type — not 'mirror'. Otherwise a mirrored group (which
+    // needs to be edge-to-edge) gets the default widget padding, shrinking the
+    // group box so GroupWidget rescales the children smaller and clips their
+    // right-edge badges (issue #502). For a mirror of a normal widget this keeps
+    // the same padding the source has, so the mirror matches it.
+    const framingType = config.type === 'mirror' && mirrorLcSource ? mirrorLcSource.type : config.type;
     const isNoPad =
         isHeader ||
-        isGroup ||
-        config.type === 'panels' ||
-        isTransparent ||
-        config.type === 'iframe' ||
-        config.type === 'map' ||
-        config.type === 'echartsPreset' ||
+        framingType === 'group' ||
+        framingType === 'panels' ||
+        framingType === 'iframe' ||
+        framingType === 'map' ||
+        framingType === 'echartsPreset' ||
         // roomclimate pads itself: horizontal = widgetPadding (stays aligned with
         // other widgets), vertical fixed compact for the slim collapsed bar.
-        config.type === 'roomclimate' ||
+        framingType === 'roomclimate' ||
         // heating: no outer frame (transparent) + no frame padding, so the inner
         // status card and tiles span the full column width — each its own card.
-        config.type === 'heating' ||
+        framingType === 'heating' ||
         // weatherforecaststrip: same idea — the strip+detail shell is its own
         // full-width card.
-        config.type === 'weatherforecaststrip' ||
-        // shutterrooms: no outer frame (transparent) + no frame padding, so the
-        // room list spans the full column width, just like heating.
-        config.type === 'shutterrooms' ||
+        framingType === 'weatherforecaststrip' ||
         // shutterfloors: no outer frame (transparent) + no frame padding, so the
         // floor list spans the full column width, just like heating.
-        config.type === 'shutterfloors';
+        framingType === 'shutterfloors';
+    // Publish the padding that is actually applied, so widget content can align to
+    // the card edge instead of assuming the default. Scrolling lists whose rows
+    // bleed into this gutter need it to stay inside the card (.aura-bleed-* in
+    // index.css) — with a small "Innenabstand der Widgets" a fixed bleed would
+    // push the rows and the scrollbar past the card border (#590).
+    const padVar = { '--aura-widget-pad': `${isHeader || isNoPad ? 0 : widgetPadding}px` } as React.CSSProperties;
 
     // Height the Suspense placeholder has to reserve while a lazy widget's chunk
     // is still downloading. 'h-full' alone is not enough: in the mobile stack the
@@ -6150,25 +7381,31 @@ export function WidgetFrame({
     return (
         <div
             ref={focusRef}
-            className={`aura-widget aura-widget-${config.id} aura-widget-type-${config.type} relative h-full transition-all overflow-visible ${isHeader ? 'px-2 py-0' : isNoPad ? 'p-0' : ''} ${editMode ? 'ring-2 ring-accent/40 rounded-xl' : ''} ${!editMode && conditionResult.effect === 'pulse' ? 'animate-pulse' : ''} ${!editMode && conditionResult.effect === 'blink' ? 'animate-[blink_1s_step-end_infinite]' : ''} ${isFocused ? 'aura-widget-focused' : ''}`}
+            className={`aura-widget aura-widget-${config.id} aura-widget-type-${config.type} relative h-full transition-all overflow-visible ${isHeader ? 'px-2 py-0' : isNoPad ? 'p-0' : ''} ${editMode ? 'ring-2 ring-accent/40 rounded-xl' : ''} ${!editMode && conditionResult.effect === 'pulse' ? 'animate-pulse' : ''} ${!editMode && conditionResult.effect === 'blink' ? 'animate-[blink_1s_step-end_infinite]' : ''} ${!editMode && conditionResult.effect === 'border' ? 'aura-cond-ring' : ''} ${conditionResult.bold ? 'aura-cond-bold' : ''} ${conditionResult.italic ? 'aura-cond-italic' : ''} ${partClasses} ${isFocused ? 'aura-widget-focused' : ''}`}
             onClick={handleWidgetClick}
             style={
                 isHeader || isTransparent
                     ? {
+                          ...padVar,
                           background: isHeader ? 'var(--header-bg, transparent)' : transparentBg,
-                          borderRadius: isTransparent && editMode ? 'var(--widget-radius)' : 0,
+                          borderRadius:
+                              isTransparent && (editMode || transparencyStrength < 100) ? 'var(--widget-radius)' : 0,
                           boxShadow: 'none',
                           backdropFilter: 'none',
-                          borderWidth: isTransparent && editMode ? 1 : 0,
+                          borderWidth: isHeader ? 0 : editMode ? 1 : 'var(--widget-border-width)',
                           borderStyle: 'dashed',
                           borderColor: isTransparent && editMode ? 'var(--app-border)' : 'transparent',
+                          padding: isHeader || isNoPad ? undefined : widgetPadding,
                           cursor: !editMode && hasClickAction ? 'pointer' : undefined,
+                          // Inert at 1 — only a condition's "Deckkraft" effect sets the var.
+                          opacity: 'var(--widget-opacity, 1)',
                           ...cssOverride,
                           ...(!editMode && conditionResult.hidden && !conditionResult.reflow
                               ? { visibility: 'hidden', pointerEvents: 'none' }
                               : {}),
                       }
                     : {
+                          ...padVar,
                           background: cardBg,
                           borderRadius: 'var(--widget-radius)',
                           boxShadow: 'var(--widget-shadow)',
@@ -6178,6 +7415,8 @@ export function WidgetFrame({
                           borderColor: cardBorderColor,
                           padding: isNoPad ? undefined : widgetPadding,
                           cursor: !editMode && hasClickAction ? 'pointer' : undefined,
+                          // Inert at 1 — only a condition's "Deckkraft" effect sets the var.
+                          opacity: 'var(--widget-opacity, 1)',
                           ...cssOverride,
                           ...(!editMode && conditionResult.hidden && !conditionResult.reflow
                               ? { visibility: 'hidden', pointerEvents: 'none' }
@@ -6215,20 +7454,44 @@ export function WidgetFrame({
             )}
 
             {editMode && (
+                // Header-less group: the chrome becomes a hover-reveal toolbar at
+                // top-left (see .aura-group-toolbar) with a dedicated grab grip, so
+                // children sit flush and the group's buttons never collide with the
+                // first child's (which live top-right). The grip carries no `nodrag`
+                // and no stopDrag so its mousedown reaches the outer grid and starts
+                // a move; every button keeps `nodrag` + stopDrag so it never drags.
                 <div
-                    className="aura-edit-chrome nodrag absolute top-1.5 right-1.5 z-10 flex items-center gap-1"
-                    onMouseDown={stopDrag}
-                    onPointerDown={stopDrag}
+                    className={
+                        isHeaderlessChrome
+                            ? `aura-group-toolbar absolute top-1.5 ${isHeaderlessMenu ? 'right-1.5' : 'left-1.5'} z-10 flex items-center gap-1`
+                            : 'aura-edit-chrome nodrag absolute top-1.5 right-1.5 z-10 flex items-center gap-1'
+                    }
+                    {...(isHeaderlessChrome ? {} : { onMouseDown: stopDrag, onPointerDown: stopDrag })}
                 >
+                    {isHeaderlessChrome && (
+                        <div
+                            className="cursor-move w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80"
+                            title={t('wf.menu.move')}
+                            style={{
+                                background: 'var(--app-bg)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--app-border)',
+                            }}
+                        >
+                            <GripVertical size={13} />
+                        </div>
+                    )}
                     <div
                         draggable
+                        onMouseDown={stopDrag}
+                        onPointerDown={stopDrag}
                         onDragStart={(e) => {
                             e.stopPropagation();
                             setDragBridge({ widget: config, remove: onRemove });
                             e.dataTransfer.effectAllowed = 'move';
                         }}
                         onDragEnd={() => setDragBridge(null)}
-                        className="cursor-grab w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80"
+                        className="nodrag cursor-grab w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80"
                         title={t(onDuplicate ? 'wf.menu.dragOutOfGroup' : 'wf.menu.dragToGroup')}
                         style={{
                             background: 'var(--app-bg)',
@@ -6241,7 +7504,9 @@ export function WidgetFrame({
                     {isGroup && (
                         <button
                             onClick={fitGroupHeight}
-                            className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80"
+                            onMouseDown={stopDrag}
+                            onPointerDown={stopDrag}
+                            className="nodrag w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80"
                             title={t('group.fitHeight')}
                             style={{
                                 background: 'var(--app-bg)',
@@ -6254,11 +7519,13 @@ export function WidgetFrame({
                     )}
                     <button
                         ref={menuBtnRef}
+                        onMouseDown={stopDrag}
+                        onPointerDown={stopDrag}
                         onClick={() => {
                             openPanelFor(openPanel === 'menu' ? null : 'menu');
                             setConfirmDelete(false);
                         }}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg transition-opacity hover:opacity-80 relative"
+                        className="nodrag w-7 h-7 flex items-center justify-center rounded-lg transition-opacity hover:opacity-80 relative"
                         style={{
                             background: openPanel ? 'var(--accent)' : 'var(--app-bg)',
                             color: openPanel ? '#fff' : 'var(--text-secondary)',
@@ -6286,6 +7553,33 @@ export function WidgetFrame({
                 </div>
             )}
 
+            {/* Editor-only marker so a mirror is recognisable at a glance and shows
+                which widget it reflects. Hidden in the frontend (a mirror should be
+                indistinguishable from the source there). */}
+            {editMode && config.type === 'mirror' && (
+                <div
+                    className="nodrag absolute top-1.5 left-1.5 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium pointer-events-none max-w-[85%]"
+                    style={{
+                        background: 'color-mix(in srgb, var(--accent) 18%, var(--app-bg))',
+                        color: 'var(--accent)',
+                        border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+                        opacity: 0.6,
+                    }}
+                    title={
+                        mirrorLcSource
+                            ? t('wf.mirrorBadgeOf', { title: mirrorLcSource.title || mirrorLcSource.type })
+                            : t('wf.mirrorBadge')
+                    }
+                >
+                    <CopyPlus size={11} className="shrink-0" />
+                    <span className="truncate">
+                        {mirrorLcSource
+                            ? t('wf.mirrorBadgeOf', { title: mirrorLcSource.title || mirrorLcSource.type })
+                            : t('wf.mirrorBadge')}
+                    </span>
+                </div>
+            )}
+
             {Widget ? (
                 <Suspense
                     fallback={
@@ -6301,10 +7595,12 @@ export function WidgetFrame({
                         enabled={!editMode && isWidgetTrackingEnabled()}
                     >
                         <Widget
-                            config={config.options?.hideTitle ? { ...config, title: '' } : config}
+                            key={`r${refreshNonce}`}
+                            config={renderConfig}
                             editMode={editMode}
-                            onConfigChange={onConfigChange}
+                            onConfigChange={onBodyConfigChange}
                             onLastChange={setLastChangedTs}
+                            onNeedsActionButton={requestActionButton}
                         />
                     </ProfiledWidget>
                 </Suspense>
@@ -6327,7 +7623,7 @@ export function WidgetFrame({
             {showLastChange &&
                 lastChangedTs > 0 &&
                 (() => {
-                    const text = formatLastChange(t as (k: string, v?: Record<string, string | number>) => string, lastChangedTs);
+                    const text = formatLastChange(lastChangedTs);
                     // Anchor across the full widget width (left+right) so the relative-time
                     // string wraps inside the widget instead of overflowing nowrap and being
                     // clipped/covered by an adjacent widget — common on narrow widgets like
@@ -6350,8 +7646,55 @@ export function WidgetFrame({
                     );
                 })()}
 
+            {/* Action button for iframe-bodied widgets. Their content is a separate
+                document, so a click on it never enters this document's event path —
+                no z-index or capture trick changes that. This button is the only
+                host-side surface left for the click action. Deliberately always
+                visible (not hover-revealed): wall tablets have no hover. (issue #527) */}
+            {needsActionButton &&
+                hasClickAction &&
+                !editMode &&
+                (() => {
+                    const ActionIcon =
+                        clickAction.kind === 'link-external'
+                            ? ExternalLink
+                            : clickAction.kind === 'link-tab' || clickAction.kind === 'link-widget'
+                              ? ArrowUpRight
+                              : MousePointerClick;
+                    // The iframe widget's own fullscreen button sits top-right of the
+                    // frame BODY, i.e. below the title row — no collision while that
+                    // row exists. With title and icon both off there is no row, so the
+                    // two would stack: step aside in that case only.
+                    const shifted =
+                        config.type === 'iframe' &&
+                        !!config.options?.fullscreenButton &&
+                        config.options?.showTitle === false &&
+                        config.options?.showIcon === false;
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                runClickAction();
+                            }}
+                            className="nodrag absolute top-1.5 w-7 h-7 flex items-center justify-center rounded-md opacity-75 hover:opacity-100 transition-opacity"
+                            style={{
+                                right: shifted ? 38 : 6,
+                                zIndex: 4,
+                                background: 'rgba(0,0,0,0.55)',
+                                color: '#fff',
+                                backdropFilter: 'blur(4px)',
+                            }}
+                            title={t('wf.embedAction')}
+                            aria-label={t('wf.embedAction')}
+                            data-embed-action=""
+                        >
+                            <ActionIcon size={13} />
+                        </button>
+                    );
+                })()}
+
             {/* Badge overlay — sits on the widget edge/corner */}
-            <BadgeOverlay badges={resolvedBadges} />
+            <BadgeOverlay badges={resolvedBadges} clampWidth />
 
             {/* Options Menu Dropdown */}
             {openPanel === 'menu' && menuBtnRef.current && (
@@ -6483,7 +7826,8 @@ export function WidgetFrame({
                                             // wizard-only types like calendar) and sort by the displayed
                                             // label so the picker stays alphabetical as widgets are added.
                                             const types = WIDGET_REGISTRY.filter(
-                                                (m) => m.widgetGroup === g.id && m.addMode !== 'wizard-only',
+                                                (m) =>
+                                                    m.widgetGroup === g.id && m.addMode !== 'wizard-only' && !m.hidden,
                                             )
                                                 .slice()
                                                 .sort((a, b) => a.shortLabel.localeCompare(b.shortLabel, 'de'));
@@ -6547,6 +7891,21 @@ export function WidgetFrame({
                             {t('wf.menu.export')}
                         </button>
 
+                        {/* Als Vorlage speichern (Widget-Designer) */}
+                        {FEATURES.widgetDesigner && (
+                            <button
+                                onClick={() => {
+                                    setShowSavePresetDialog(true);
+                                    openPanelFor(null);
+                                }}
+                                className="flex items-center gap-2.5 px-3 py-2 text-sm rounded-md text-left hover:opacity-80 transition-opacity"
+                                style={{ color: 'var(--text-primary)' }}
+                            >
+                                <Shapes size={13} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                                {t('wf.menu.saveAsPreset')}
+                            </button>
+                        )}
+
                         {/* Kopieren */}
                         {onDuplicate ? (
                             <button
@@ -6565,8 +7924,7 @@ export function WidgetFrame({
                                 onClick={() => {
                                     // Popup-view editor: duplicate within the same popup view only.
                                     onCopy({
-                                        ...copyConfig(config),
-                                        id: `pw-${Date.now()}`,
+                                        ...copyWidget(config, freshWidgetId('pw-')),
                                         gridPos: { ...config.gridPos, y: 9999 },
                                     });
                                     openPanelFor(null);
@@ -6583,8 +7941,7 @@ export function WidgetFrame({
                                     if (moveTargets.length === 0 && popupViewTargets.length === 0) {
                                         // No other tabs / popup views – duplicate directly on same tab
                                         addWidgetToLayoutTab(activeLayoutId, activeTabId, {
-                                            ...copyConfig(config),
-                                            id: `w-${Date.now()}`,
+                                            ...copyWidget(config),
                                             gridPos: { ...config.gridPos, y: 9999 },
                                         });
                                         openPanelFor(null);
@@ -6619,8 +7976,7 @@ export function WidgetFrame({
                                 <button
                                     onClick={() => {
                                         addWidgetToLayoutTab(activeLayoutId, activeTabId, {
-                                            ...copyConfig(config),
-                                            id: `w-${Date.now()}`,
+                                            ...copyWidget(config),
                                             gridPos: { ...config.gridPos, y: 9999 },
                                         });
                                         openPanelFor(null);
@@ -6637,15 +7993,16 @@ export function WidgetFrame({
                                     {t('wf.menu.copyHere')}
                                 </button>
                                 {/* Other tabs – grouped by layout, derived from moveTargets (no layouts subscription needed) */}
-                                {[...new Map(moveTargets.map((m) => [m.layoutId, m.layoutName])).entries()].map(
-                                    ([layoutId, layoutName]) => {
-                                        const targets = moveTargets.filter((m) => m.layoutId === layoutId);
+                                {[...new Map(moveTargets.map((m) => [moveGroupKey(m), m])).entries()].map(
+                                    ([groupKey, first]) => {
+                                        const targets = moveTargets.filter((m) => moveGroupKey(m) === groupKey);
+                                        const layoutName = first.layoutName;
                                         return (
-                                            <React.Fragment key={layoutId}>
-                                                {moveLayoutCount > 1 && (
+                                            <React.Fragment key={groupKey}>
+                                                {moveGroupCount > 1 && (
                                                     <p
                                                         className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider"
-                                                        style={targetHeaderStyle}
+                                                        style={headerStyleForLayout(first.layoutId)}
                                                     >
                                                         {layoutName}
                                                     </p>
@@ -6655,8 +8012,7 @@ export function WidgetFrame({
                                                         key={m.tabId}
                                                         onClick={() => {
                                                             addWidgetToLayoutTab(m.layoutId, m.tabId, {
-                                                                ...copyConfig(config),
-                                                                id: `w-${Date.now()}`,
+                                                                ...copyWidget(config),
                                                                 gridPos: { ...config.gridPos, y: 9999 },
                                                             });
                                                             openPanelFor(null);
@@ -6689,8 +8045,7 @@ export function WidgetFrame({
                                                 key={pv.id}
                                                 onClick={() => {
                                                     addWidgetToView(pv.id, {
-                                                        ...copyConfig(config),
-                                                        id: `pw-${Date.now()}`,
+                                                        ...copyWidget(config, freshWidgetId('pw-')),
                                                         gridPos: { ...config.gridPos, y: 9999 },
                                                     });
                                                     openPanelFor(null);
@@ -6737,15 +8092,16 @@ export function WidgetFrame({
                                         className="mx-1 mb-0.5 rounded-md overflow-hidden"
                                         style={{ border: '1px solid var(--app-border)', ...targetGridStyle }}
                                     >
-                                        {[...new Map(moveTargets.map((m) => [m.layoutId, m.layoutName])).entries()].map(
-                                            ([layoutId, layoutName]) => {
-                                                const targets = moveTargets.filter((m) => m.layoutId === layoutId);
+                                        {[...new Map(moveTargets.map((m) => [moveGroupKey(m), m])).entries()].map(
+                                            ([groupKey, first]) => {
+                                                const targets = moveTargets.filter((m) => moveGroupKey(m) === groupKey);
+                                                const layoutName = first.layoutName;
                                                 return (
-                                                    <React.Fragment key={layoutId}>
-                                                        {moveLayoutCount > 1 && (
+                                                    <React.Fragment key={groupKey}>
+                                                        {moveGroupCount > 1 && (
                                                             <p
                                                                 className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider"
-                                                                style={targetHeaderStyle}
+                                                                style={headerStyleForLayout(first.layoutId)}
                                                             >
                                                                 {layoutName}
                                                             </p>
@@ -6919,6 +8275,12 @@ export function WidgetFrame({
                                     border: '1px solid var(--app-border)',
                                 }}
                             />
+                            <p
+                                className="text-[10px] mt-1 leading-tight"
+                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                            >
+                                {t('wf.edit.nameDpToken')}
+                            </p>
                         </div>
                         <div>
                             <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
@@ -6938,7 +8300,7 @@ export function WidgetFrame({
                             >
                                 {WIDGET_GROUPS.map((g) => (
                                     <optgroup key={g.id} label={g.label}>
-                                        {WIDGET_REGISTRY.filter((m) => m.widgetGroup === g.id)
+                                        {WIDGET_REGISTRY.filter((m) => m.widgetGroup === g.id && !m.hidden)
                                             .slice()
                                             .sort((a, b) => a.label.localeCompare(b.label, 'de'))
                                             .map((m) => (
@@ -6961,6 +8323,9 @@ export function WidgetFrame({
                             config.type !== 'adapterlogs' &&
                             config.type !== 'alarm' &&
                             config.type !== 'map' &&
+                            config.type !== 'mirror' &&
+                            config.type !== 'menu' &&
+                            config.type !== 'aircontrol' &&
                             config.type !== 'energiebilanz' &&
                             (() => {
                                 const activeLayout = config.layout ?? 'default';
@@ -7189,6 +8554,12 @@ export function WidgetFrame({
                                                                                           ),
                                                                                       },
                                                                                       {
+                                                                                          value: 'dial',
+                                                                                          label: t(
+                                                                                              'wf.edit.layout.dial',
+                                                                                          ),
+                                                                                      },
+                                                                                      {
                                                                                           value: 'custom',
                                                                                           label: 'Custom',
                                                                                       },
@@ -7263,6 +8634,10 @@ export function WidgetFrame({
                                                                                               {
                                                                                                   value: 'list',
                                                                                                   label: 'Liste',
+                                                                                              },
+                                                                                              {
+                                                                                                  value: 'compact',
+                                                                                                  label: 'Kompakt',
                                                                                               },
                                                                                           ]
                                                                                         : config.type === 'evcc'
@@ -7355,62 +8730,76 @@ export function WidgetFrame({
                                                                                                         label: 'Anzahl',
                                                                                                     },
                                                                                                 ]
-                                                                                              : [
-                                                                                                    {
-                                                                                                        value: 'default',
-                                                                                                        label: t(
-                                                                                                            'wf.edit.layout.standard',
-                                                                                                        ),
-                                                                                                    },
-                                                                                                    {
-                                                                                                        value: 'card',
-                                                                                                        label: t(
-                                                                                                            'wf.edit.layout.card',
-                                                                                                        ),
-                                                                                                    },
-                                                                                                    {
-                                                                                                        value: 'compact',
-                                                                                                        label: t(
-                                                                                                            'wf.edit.layout.compact',
-                                                                                                        ),
-                                                                                                    },
-                                                                                                    {
-                                                                                                        value: 'minimal',
-                                                                                                        label: t(
-                                                                                                            'wf.edit.layout.minimal',
-                                                                                                        ),
-                                                                                                    },
-                                                                                                    ...(config.type ===
-                                                                                                    'calendar'
-                                                                                                        ? [
-                                                                                                              {
-                                                                                                                  value: 'agenda',
-                                                                                                                  label: t(
-                                                                                                                      'wf.edit.layout.agenda',
-                                                                                                                  ),
-                                                                                                              },
-                                                                                                          ]
-                                                                                                        : []),
-                                                                                                    ...(config.type ===
-                                                                                                    'autolist'
-                                                                                                        ? [
-                                                                                                              {
-                                                                                                                  value: 'count',
-                                                                                                                  label: 'Anzahl',
-                                                                                                              },
-                                                                                                          ]
-                                                                                                        : []),
-                                                                                                    ...(!NO_CUSTOM_LAYOUT_TYPES.includes(
-                                                                                                        config.type,
-                                                                                                    )
-                                                                                                        ? [
-                                                                                                              {
-                                                                                                                  value: 'custom',
-                                                                                                                  label: 'Custom',
-                                                                                                              },
-                                                                                                          ]
-                                                                                                        : []),
-                                                                                                ];
+                                                                                              : config.type ===
+                                                                                                  'messages'
+                                                                                                ? [
+                                                                                                      {
+                                                                                                          value: 'default',
+                                                                                                          label: t(
+                                                                                                              'wf.edit.layout.standard',
+                                                                                                          ),
+                                                                                                      },
+                                                                                                      {
+                                                                                                          value: 'count',
+                                                                                                          label: 'Anzahl',
+                                                                                                      },
+                                                                                                  ]
+                                                                                                : [
+                                                                                                      {
+                                                                                                          value: 'default',
+                                                                                                          label: t(
+                                                                                                              'wf.edit.layout.standard',
+                                                                                                          ),
+                                                                                                      },
+                                                                                                      {
+                                                                                                          value: 'card',
+                                                                                                          label: t(
+                                                                                                              'wf.edit.layout.card',
+                                                                                                          ),
+                                                                                                      },
+                                                                                                      {
+                                                                                                          value: 'compact',
+                                                                                                          label: t(
+                                                                                                              'wf.edit.layout.compact',
+                                                                                                          ),
+                                                                                                      },
+                                                                                                      {
+                                                                                                          value: 'minimal',
+                                                                                                          label: t(
+                                                                                                              'wf.edit.layout.minimal',
+                                                                                                          ),
+                                                                                                      },
+                                                                                                      ...(config.type ===
+                                                                                                      'calendar'
+                                                                                                          ? [
+                                                                                                                {
+                                                                                                                    value: 'agenda',
+                                                                                                                    label: t(
+                                                                                                                        'wf.edit.layout.agenda',
+                                                                                                                    ),
+                                                                                                                },
+                                                                                                            ]
+                                                                                                          : []),
+                                                                                                      ...(config.type ===
+                                                                                                      'autolist'
+                                                                                                          ? [
+                                                                                                                {
+                                                                                                                    value: 'count',
+                                                                                                                    label: 'Anzahl',
+                                                                                                                },
+                                                                                                            ]
+                                                                                                          : []),
+                                                                                                      ...(!NO_CUSTOM_LAYOUT_TYPES.includes(
+                                                                                                          config.type,
+                                                                                                      )
+                                                                                                          ? [
+                                                                                                                {
+                                                                                                                    value: 'custom',
+                                                                                                                    label: 'Custom',
+                                                                                                                },
+                                                                                                            ]
+                                                                                                          : []),
+                                                                                                  ];
                                 return (
                                     <div className="flex items-center gap-1 flex-wrap">
                                         <span
@@ -7554,7 +8943,7 @@ export function WidgetFrame({
                                     />
                                 </summary>
                                 <div className="mt-2.5 space-y-2.5">
-                                    {config.type !== 'mediaplayer' && (
+                                    {config.type !== 'mediaplayer' && config.type !== 'mirror' && (
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
                                                 Titel
@@ -7686,7 +9075,7 @@ export function WidgetFrame({
                                             </div>
                                         );
                                     })}
-                                    {config.type !== 'stateimage' && (
+                                    {config.type !== 'stateimage' && config.type !== 'mirror' && (
                                         <>
                                             <div className="h-px" style={{ background: 'var(--app-border)' }} />
                                             <div className="flex items-center justify-between">
@@ -7883,8 +9272,10 @@ export function WidgetFrame({
                                                 </div>
                                             );
                                         })()}
-                                    {/* "Last change" makes no sense for a map (no single value) — hide it. */}
-                                    {config.type !== 'map' && (
+                                    {/* "Last change" makes no sense for a map (no single value) — hide it.
+                                        The mirror inherits its source's last-change setting, so hide the
+                                        toggle here too (see the mirror-source resolution above). */}
+                                    {config.type !== 'map' && config.type !== 'mirror' && (
                                         <>
                                             <div className="h-px" style={{ background: 'var(--app-border)' }} />
                                             <div className="flex items-center justify-between">
@@ -8127,6 +9518,7 @@ export function WidgetFrame({
                         (() => {
                             const o = config.options ?? {};
                             const autoShrink = !!o.autoShrink;
+                            const defaultCollapsed = !!o.defaultCollapsed;
                             return (
                                 <div
                                     className="space-y-2.5 rounded-lg px-3 py-3"
@@ -8174,6 +9566,39 @@ export function WidgetFrame({
                                             />
                                         </button>
                                     </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div>
+                                            <label
+                                                className="text-[11px] font-medium"
+                                                style={{ color: 'var(--text-primary)' }}
+                                            >
+                                                {t('wf.edit.group.defaultCollapsed')}
+                                            </label>
+                                            <p
+                                                className="text-[10px] mt-0.5"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                {t('wf.edit.group.defaultCollapsedHint')}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() =>
+                                                onConfigChange({
+                                                    ...config,
+                                                    options: { ...o, defaultCollapsed: !defaultCollapsed },
+                                                })
+                                            }
+                                            className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                            style={{
+                                                background: defaultCollapsed ? 'var(--accent)' : 'var(--app-border)',
+                                            }}
+                                        >
+                                            <span
+                                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                style={{ left: defaultCollapsed ? '18px' : '2px' }}
+                                            />
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         })()}
@@ -8214,6 +9639,44 @@ export function WidgetFrame({
                                 };
                                 return (
                                     <>
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                {t('wf.clock.sourceDp')}
+                                            </label>
+                                            <div className="flex gap-1">
+                                                <input
+                                                    type="text"
+                                                    value={config.datapoint ?? ''}
+                                                    onChange={(e) =>
+                                                        onConfigChange({ ...config, datapoint: e.target.value })
+                                                    }
+                                                    placeholder="z.B. evcc.0.status.full"
+                                                    className={`${inputCls} font-mono flex-1 min-w-0`}
+                                                    style={inputStyle}
+                                                />
+                                                <button
+                                                    onClick={() => setPickerTarget('datapoint')}
+                                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                                    style={inputStyle}
+                                                    title={t('wf.edit.fromIoBroker')}
+                                                >
+                                                    <Database size={13} />
+                                                </button>
+                                                <JsonPathButton
+                                                    value={config.datapoint ?? ''}
+                                                    onChange={(ref) => onConfigChange({ ...config, datapoint: ref })}
+                                                />
+                                            </div>
+                                            <p
+                                                className="text-[10px] mt-1 leading-tight"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                {t('wf.clock.sourceDpHint')}
+                                            </p>
+                                        </div>
                                         <div>
                                             <label
                                                 className="text-[11px] mb-1 block"
@@ -8294,7 +9757,7 @@ export function WidgetFrame({
                                                 className="text-[10px] mt-1 leading-tight"
                                                 style={{ color: 'var(--text-secondary)' }}
                                             >
-                                                Tokens: HH mm ss dd MM yyyy EE EEEE MMMM ww SR SS CT
+                                                Tokens: HH mm ss dd MM yyyy EE EEEE MMMM ww SR SS CT REL
                                             </p>
                                         </div>
                                         {(o.customFormat as string)?.trim() ? (
@@ -8469,6 +9932,10 @@ export function WidgetFrame({
                             config.type !== 'alarm' &&
                             config.type !== 'map' &&
                             config.type !== 'statusoverview' &&
+                            config.type !== 'mirror' &&
+                            config.type !== 'menu' &&
+                            config.type !== 'messages' &&
+                            config.type !== 'aircontrol' &&
                             config.type !== 'energiebilanz' && (
                                 <div>
                                     <label
@@ -8482,7 +9949,9 @@ export function WidgetFrame({
                                               : config.type === 'binarysensor'
                                                 ? 'Sensorwert Datenpunkt (boolean, true = aktiv)'
                                                 : config.type === 'stateimage'
-                                                  ? 'Zustand Datenpunkt (boolean, true = erstes Bild)'
+                                                  ? config.options?.stateMode === 'condition'
+                                                      ? 'Zustand Datenpunkt (Bedingung entscheidet über das Bild)'
+                                                      : 'Zustand Datenpunkt (boolean, true = erstes Bild)'
                                                   : config.type === 'shutter'
                                                     ? 'Positions-Datenpunkt (0–100 %)'
                                                     : config.type === 'dimmer'
@@ -8557,11 +10026,16 @@ export function WidgetFrame({
                                         />
                                         {(config.type === 'value' ||
                                             config.type === 'gauge' ||
-                                            config.type === 'fill') && (
+                                            config.type === 'fill' ||
+                                            config.type === 'chart') && (
                                             <ValueTransformButton
                                                 factor={config.options?.valueFactor as number | undefined}
                                                 offset={config.options?.valueOffset as number | undefined}
                                                 presetId={config.options?.valueTransform as string | undefined}
+                                                timeFormat={config.options?.valueTimeFormat as string | undefined}
+                                                timePattern={config.options?.valueTimePattern as string | undefined}
+                                                allowTimeFormat={config.type === 'value'}
+                                                dpId={config.datapoint}
                                                 fillUnit
                                                 onPatch={(patch) =>
                                                     onConfigChange({
@@ -8623,90 +10097,142 @@ export function WidgetFrame({
                                 </p>
                             </div>
                         )}
+                        {config.type === 'switch' &&
+                            (() => {
+                                const o = config.options ?? {};
+                                const set = (patch: Record<string, unknown>) =>
+                                    onConfigChange({ ...config, options: { ...o, ...patch } });
+                                const sMode = (o.stateMode as 'boolean' | 'condition') ?? 'boolean';
+                                const fieldCls = 'text-xs rounded-lg px-2.5 py-2 focus:outline-none';
+                                const fieldSty = {
+                                    background: 'var(--app-bg)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--app-border)',
+                                };
+                                return (
+                                    <>
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Status-Datenpunkt (optional)
+                                            </label>
+                                            <div className="flex gap-1">
+                                                <input
+                                                    type="text"
+                                                    value={(o.statusDp as string) ?? ''}
+                                                    onChange={(e) => set({ statusDp: e.target.value || undefined })}
+                                                    placeholder="z.B. mqtt.1.plug1.stat.POWER"
+                                                    className={`flex-1 min-w-0 ${fieldCls}`}
+                                                    style={fieldSty}
+                                                />
+                                                <button
+                                                    onClick={() => setSwitchStatusDpPicker(true)}
+                                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                                    style={{
+                                                        background: 'var(--app-bg)',
+                                                        color: 'var(--text-secondary)',
+                                                        border: '1px solid var(--app-border)',
+                                                    }}
+                                                >
+                                                    <Database size={13} />
+                                                </button>
+                                            </div>
+                                            <p
+                                                className="text-[10px] mt-1"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                            >
+                                                Separater Status-DP für Geräte, die Schalten und Rückmeldung trennen
+                                                (z.B. Tasmota: cmnd.POWER schaltet, stat.POWER meldet ON/OFF). Zustand
+                                                und Farben kommen dann von hier – geschrieben wird weiter auf den
+                                                Hauptdatenpunkt. Leer = Hauptdatenpunkt.
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label
+                                                className="text-[11px] font-medium mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Auswertung
+                                            </label>
+                                            <div className="flex gap-1">
+                                                {(
+                                                    [
+                                                        ['boolean', 'Automatisch'],
+                                                        ['condition', 'Bedingung'],
+                                                    ] as const
+                                                ).map(([mode, lbl]) => (
+                                                    <button
+                                                        key={mode}
+                                                        onClick={() => set({ stateMode: mode })}
+                                                        className="flex-1 text-[11px] py-1.5 rounded-lg transition-colors"
+                                                        style={{
+                                                            background:
+                                                                sMode === mode ? 'var(--accent)' : 'var(--app-bg)',
+                                                            color: sMode === mode ? '#fff' : 'var(--text-secondary)',
+                                                            border: `1px solid ${sMode === mode ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                        }}
+                                                    >
+                                                        {lbl}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {sMode === 'condition' ? (
+                                                <div className="flex gap-1 items-center mt-1.5">
+                                                    <span
+                                                        className="text-[11px] shrink-0"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        An wenn
+                                                    </span>
+                                                    <select
+                                                        value={(o.stateOperator as string) ?? '>'}
+                                                        onChange={(e) => set({ stateOperator: e.target.value })}
+                                                        className={`shrink-0 ${fieldCls}`}
+                                                        style={fieldSty}
+                                                    >
+                                                        {['==', '!=', '>', '>=', '<', '<='].map((op) => (
+                                                            <option key={op} value={op}>
+                                                                {op}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <input
+                                                        type="text"
+                                                        value={(o.stateValue as string) ?? ''}
+                                                        onChange={(e) => set({ stateValue: e.target.value })}
+                                                        placeholder="ON"
+                                                        className={`flex-1 min-w-0 ${fieldCls}`}
+                                                        style={fieldSty}
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <p
+                                                    className="text-[10px] mt-1"
+                                                    style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                >
+                                                    An bei true, Zahlen ungleich 0 und Texten wie ON; aus bei false, 0,
+                                                    off und leer. Andere Werte über Bedingung vergleichen.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         {(config.type === 'value' || config.type === 'chart') && (
-                            <div>
-                                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                    {t('wf.edit.unit')}
-                                </label>
-                                <input
-                                    type="text"
-                                    value={(config.options?.unit as string) ?? ''}
-                                    onChange={(e) =>
-                                        onConfigChange({
-                                            ...config,
-                                            options: { ...config.options, unit: e.target.value || undefined },
-                                        })
-                                    }
-                                    placeholder="z.B. °C, %, W"
-                                    className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
-                                    style={{
-                                        background: 'var(--app-bg)',
-                                        color: 'var(--text-primary)',
-                                        border: '1px solid var(--app-border)',
-                                    }}
-                                />
-                            </div>
-                        )}
-                        {(config.type === 'value' || config.type === 'chart') && (
-                            <div>
-                                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                    Dezimalstellen
-                                </label>
-                                <div className="flex gap-1">
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={4}
-                                        disabled={config.options?.decimals === undefined}
-                                        value={(config.options?.decimals as number) ?? defaultDecimals}
-                                        onChange={(e) =>
-                                            onConfigChange({
-                                                ...config,
-                                                options: { ...config.options, decimals: Number(e.target.value) },
-                                            })
-                                        }
-                                        className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
-                                        style={{
-                                            background: 'var(--app-bg)',
-                                            color: 'var(--text-primary)',
-                                            border: '1px solid var(--app-border)',
-                                            opacity: config.options?.decimals === undefined ? 0.5 : 1,
-                                        }}
-                                    />
-                                    <button
-                                        onClick={() =>
-                                            onConfigChange({
-                                                ...config,
-                                                options: {
-                                                    ...config.options,
-                                                    decimals:
-                                                        config.options?.decimals === undefined
-                                                            ? defaultDecimals
-                                                            : undefined,
-                                                },
-                                            })
-                                        }
-                                        title={
-                                            config.options?.decimals === undefined
-                                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                                : 'Auf globale Einstellung zurücksetzen'
-                                        }
-                                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                                        style={{
-                                            background:
-                                                config.options?.decimals === undefined
-                                                    ? 'var(--accent)'
-                                                    : 'var(--app-border)',
-                                            color:
-                                                config.options?.decimals === undefined
-                                                    ? '#fff'
-                                                    : 'var(--text-secondary)',
-                                        }}
-                                    >
-                                        Global
-                                    </button>
-                                </div>
-                            </div>
+                            <ValueFormatRow
+                                unit={config.options?.unit as string | undefined}
+                                unitPlaceholder="z.B. °C, %, W"
+                                onUnitChange={(v) =>
+                                    onConfigChange({ ...config, options: { ...config.options, unit: v } })
+                                }
+                                decimals={config.options?.decimals as number | undefined}
+                                numberFormat={config.options?.numberFormat as NumberFormat | undefined}
+                                onChange={(patch) =>
+                                    onConfigChange({ ...config, options: { ...config.options, ...patch } })
+                                }
+                            />
                         )}
                         {config.type === 'value' && (
                             <div>
@@ -8741,13 +10267,44 @@ export function WidgetFrame({
                                         })
                                     }
                                 />
-                                <p
-                                    className="text-[10px] mt-1"
+                                <div
+                                    className="text-[10px] mt-1 space-y-0.5"
                                     style={{ color: 'var(--text-secondary)', opacity: 0.6 }}
                                 >
-                                    {'{dp}'} wird durch den Wert ersetzt · Beispiel:{' '}
-                                    {'<span style="font-size:2em">{dp}</span> kW'}
-                                </p>
+                                    <p>
+                                        <code>{'{dp}'}</code> = eigener Wert · <code>{'{beliebige.dp.id}'}</code> =
+                                        beliebiger anderer Datenpunkt (wird live abonniert)
+                                    </p>
+                                    <p>
+                                        <code>{'{color}'}</code> = aktuelle Schwellwert-Farbe (z. B. für Icon/Text) ·{' '}
+                                        <code>{'{unit}'}</code> = Einheit
+                                    </p>
+                                    <p>
+                                        JSON-Pfad-Suffix möglich: <code>{'{0_userdata.0.batterie?soc}'}</code> · Zahlen
+                                        werden mit den eingestellten Nachkommastellen formatiert, fehlende Werte als{' '}
+                                        {'„–“'}
+                                    </p>
+                                    <p>
+                                        Rechnen: <code>{'{0_userdata.0.Netz;round(0)}'}</code> ·{' '}
+                                        <code>{'{a:dp1;b:dp2;a + b}'}</code> ·{' '}
+                                        <code>{"{{ dp < 0 ? '#0f0' : '#f00' }}"}</code> — alle Operationen: Doku →
+                                        Widgets → Bindings &amp; Berechnungen
+                                    </p>
+                                    <p>
+                                        Beispiel:{' '}
+                                        <code>{'<span style="color:{color};font-size:2em">{dp}</span> {unit}'}</code>
+                                    </p>
+                                    <p>
+                                        Bilder aus dem ioBroker-Dateisystem via <code>{'aura-file:'}</code>-Präfix in{' '}
+                                        <code>{'<img src="…">'}</code>:{' '}
+                                        <code>
+                                            {
+                                                '<img src="aura-file:/opt/iobroker/iobroker-data/files/vis.0/Aura/icon.png" style="height:2em">'
+                                            }
+                                        </code>
+                                    </p>
+                                    <ImagePathHint />
+                                </div>
                             </div>
                         )}
                         {config.type === 'value' && (
@@ -8817,6 +10374,7 @@ export function WidgetFrame({
                                                     [
                                                         ['toggle', 'Schiebeschalter'],
                                                         ['icon', 'Icon'],
+                                                        ['image', 'Bild'],
                                                     ] as const
                                                 ).map(([val, lbl]) => (
                                                     <button
@@ -8931,6 +10489,107 @@ export function WidgetFrame({
                                                             style={{ color: 'var(--text-secondary)' }}
                                                         >
                                                             Icon-Größe
+                                                        </label>
+                                                        <span
+                                                            className="text-[11px] tabular-nums"
+                                                            style={{ color: 'var(--text-primary)' }}
+                                                        >
+                                                            {ctrlIconSize} px
+                                                        </span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min={16}
+                                                        max={192}
+                                                        step={2}
+                                                        value={ctrlIconSize}
+                                                        onChange={(e) =>
+                                                            set({ controlIconSize: Number(e.target.value) })
+                                                        }
+                                                        className="w-full h-1"
+                                                        style={{ accentColor: 'var(--accent)' }}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
+                                        {controlMode === 'image' && (
+                                            <>
+                                                {(['on', 'off'] as const).map((state) => {
+                                                    const isOnState = state === 'on';
+                                                    const stateLabel = isOnState ? 'AN' : 'AUS';
+                                                    const optKey = isOnState ? 'onImage' : 'offImage';
+                                                    const img = (o[optKey] as string | undefined) ?? '';
+                                                    return (
+                                                        <div key={state} className="space-y-1.5">
+                                                            <p
+                                                                className="text-[11px] font-semibold"
+                                                                style={{ color: 'var(--text-secondary)' }}
+                                                            >
+                                                                Bild {stateLabel}
+                                                            </p>
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*"
+                                                                onChange={(e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (!file) return;
+                                                                    const reader = new FileReader();
+                                                                    reader.onload = () =>
+                                                                        set({ [optKey]: reader.result as string });
+                                                                    reader.readAsDataURL(file);
+                                                                }}
+                                                                className="w-full text-[11px] cursor-pointer"
+                                                                style={{ color: 'var(--text-secondary)' }}
+                                                            />
+                                                            <textarea
+                                                                rows={2}
+                                                                value={img}
+                                                                onChange={(e) =>
+                                                                    set({
+                                                                        [optKey]: e.target.value.trim() || undefined,
+                                                                    })
+                                                                }
+                                                                placeholder="https://…/bild.png · /adapter/… · data:image/…"
+                                                                className="w-full text-[10px] rounded-lg px-2.5 py-1.5 focus:outline-none resize-none font-mono"
+                                                                style={{
+                                                                    background: 'var(--app-bg)',
+                                                                    color: 'var(--text-secondary)',
+                                                                    border: '1px solid var(--app-border)',
+                                                                }}
+                                                            />
+                                                            <ImagePathHint />
+                                                            {img && (
+                                                                <div className="flex items-center gap-2">
+                                                                    <img
+                                                                        src={img}
+                                                                        style={{
+                                                                            width: 32,
+                                                                            height: 32,
+                                                                            objectFit: 'contain',
+                                                                            border: '1px solid var(--app-border)',
+                                                                            borderRadius: 4,
+                                                                        }}
+                                                                        alt=""
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => set({ [optKey]: undefined })}
+                                                                        className="text-[10px] hover:opacity-70"
+                                                                        style={{ color: 'var(--accent-red, #ef4444)' }}
+                                                                    >
+                                                                        Entfernen
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <label
+                                                            className="text-[11px]"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
+                                                            Bildgröße
                                                         </label>
                                                         <span
                                                             className="text-[11px] tabular-nums"
@@ -9112,6 +10771,10 @@ export function WidgetFrame({
                             />
                         )}
                         {config.type === 'echart' && <EChartConfig config={config} onConfigChange={onConfigChange} />}
+                        {config.type === 'mirror' && <MirrorConfig config={config} onConfigChange={onConfigChange} />}
+                        {config.type === 'aircontrol' && (
+                            <AirControlConfig config={config} onConfigChange={onConfigChange} />
+                        )}
                         {config.type === 'energiebilanz' && (
                             <EnergiebilanzConfig config={config} onConfigChange={onConfigChange} />
                         )}
@@ -9144,6 +10807,29 @@ export function WidgetFrame({
                                         {label}
                                     </div>
                                 );
+                                // Per-pointer opt-in to the color of the zone its own value falls into.
+                                // Only rendered while color zones are active; on by default for pointer 1.
+                                const zoneColorOn = (key: string, def: boolean) => (o[key] as boolean) ?? def;
+                                const zoneColorToggle = (key: string, def: boolean) => {
+                                    const on = zoneColorOn(key, def);
+                                    return (
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                                Farbe aus Farbzone
+                                            </label>
+                                            <button
+                                                onClick={() => set({ [key]: !on })}
+                                                className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                                style={{ background: on ? 'var(--accent)' : 'var(--app-border)' }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: on ? '18px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                    );
+                                };
                                 return (
                                     <>
                                         {sectionHdr('Skala')}
@@ -9179,72 +10865,26 @@ export function WidgetFrame({
                                                 />
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1">
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    Einheit
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={(o.unit as string) ?? ''}
-                                                    onChange={(e) => set({ unit: e.target.value || undefined })}
-                                                    placeholder="°C, %, W"
-                                                    className={gCls}
-                                                    style={gSty}
-                                                />
-                                            </div>
-                                            <div className="flex-1">
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    Dezimalstellen
-                                                </label>
-                                                <div className="flex gap-1">
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={4}
-                                                        disabled={o.decimals === undefined}
-                                                        value={(o.decimals as number) ?? defaultDecimals}
-                                                        onChange={(e) => set({ decimals: Number(e.target.value) })}
-                                                        className={gCls}
-                                                        style={{ ...gSty, opacity: o.decimals === undefined ? 0.5 : 1 }}
-                                                    />
-                                                    <button
-                                                        onClick={() =>
-                                                            set({
-                                                                decimals:
-                                                                    o.decimals === undefined
-                                                                        ? defaultDecimals
-                                                                        : undefined,
-                                                            })
-                                                        }
-                                                        title={
-                                                            o.decimals === undefined
-                                                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                                                : 'Auf globale Einstellung zurücksetzen'
-                                                        }
-                                                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                                                        style={{
-                                                            background:
-                                                                o.decimals === undefined
-                                                                    ? 'var(--accent)'
-                                                                    : 'var(--app-border)',
-                                                            color:
-                                                                o.decimals === undefined
-                                                                    ? '#fff'
-                                                                    : 'var(--text-secondary)',
-                                                        }}
-                                                    >
-                                                        Global
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <ScaleBoundsRow
+                                            minDatapoint={o.minDatapoint as string | undefined}
+                                            maxDatapoint={o.maxDatapoint as string | undefined}
+                                            onChange={set}
+                                            onPick={(which) =>
+                                                setPickerTarget(which === 'min' ? 'scale_minDp' : 'scale_maxDp')
+                                            }
+                                            inputClassName={gCls}
+                                            inputStyle={gSty}
+                                        />
+                                        <ValueFormatRow
+                                            unit={o.unit as string | undefined}
+                                            unitPlaceholder="°C, %, W"
+                                            onUnitChange={(v) => set({ unit: v })}
+                                            decimals={o.decimals as number | undefined}
+                                            numberFormat={o.numberFormat as NumberFormat | undefined}
+                                            onChange={set}
+                                            inputClassName={gCls}
+                                            inputStyle={gSty}
+                                        />
                                         <div className="flex gap-2">
                                             <div className="flex-1">
                                                 <label
@@ -9259,6 +10899,23 @@ export function WidgetFrame({
                                                     max={30}
                                                     value={(o.strokeWidth as number) ?? 12}
                                                     onChange={(e) => set({ strokeWidth: Number(e.target.value) })}
+                                                    className={gCls}
+                                                    style={gSty}
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Schriftgröße Wert
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={8}
+                                                    max={60}
+                                                    value={(o.valueFontSize as number) ?? 22}
+                                                    onChange={(e) => set({ valueFontSize: Number(e.target.value) })}
                                                     className={gCls}
                                                     style={gSty}
                                                 />
@@ -9289,6 +10946,54 @@ export function WidgetFrame({
                                                 <span
                                                     className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
                                                     style={{ left: dynamicMax ? '18px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                                Wert im Bogen anzeigen
+                                            </label>
+                                            <button
+                                                onClick={() => set({ showValue: !(o.showValue !== false) })}
+                                                className="relative w-9 h-5 rounded-full transition-colors"
+                                                style={{
+                                                    background:
+                                                        o.showValue !== false ? 'var(--accent)' : 'var(--app-border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: o.showValue !== false ? '18px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <label
+                                                    className="text-[11px] font-medium"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Wert als Badge
+                                                </label>
+                                                <p
+                                                    className="text-[10px]"
+                                                    style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                >
+                                                    Unter dem Bogen, in der Farbe der aktiven Zone
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => set({ showValueBadge: !o.showValueBadge })}
+                                                className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                                style={{
+                                                    background: o.showValueBadge
+                                                        ? 'var(--accent)'
+                                                        : 'var(--app-border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: o.showValueBadge ? '18px' : '2px' }}
                                                 />
                                             </button>
                                         </div>
@@ -9481,34 +11186,44 @@ export function WidgetFrame({
                                                 {config.datapoint || '–'}
                                             </div>
                                         </div>
-                                        {!colorZones && (
-                                            <div className="flex items-center gap-2">
+                                        {colorZones && zoneColorToggle('pointer1ZoneColor', true)}
+                                        <div className="flex items-center gap-2">
+                                            {/* The picker only matters while this pointer keeps its own color */}
+                                            {!(colorZones && zoneColorOn('pointer1ZoneColor', true)) && (
                                                 <ColorPicker
                                                     value={(o.pointer1Color as string) ?? '#6366f1'}
                                                     onChange={(v) => set({ pointer1Color: v })}
                                                     className="w-8 h-7 rounded cursor-pointer shrink-0"
                                                     style={{ border: '1px solid var(--app-border)', padding: '1px' }}
                                                 />
-                                                <div className="flex-1">
-                                                    <label
-                                                        className="text-[11px] mb-1 block"
-                                                        style={{ color: 'var(--text-secondary)' }}
+                                            )}
+                                            <div className="flex-1">
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Zeiger 1 – Bezeichnung
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={(o.pointer1Label as string) ?? ''}
+                                                    onChange={(e) =>
+                                                        set({ pointer1Label: e.target.value || undefined })
+                                                    }
+                                                    placeholder="z.B. Innen"
+                                                    className={gCls}
+                                                    style={gSty}
+                                                />
+                                                {!o.showValueBadge && (
+                                                    <p
+                                                        className="text-[10px] mt-1"
+                                                        style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
                                                     >
-                                                        Zeiger 1 – Farbe
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        value={(o.pointer1Label as string) ?? ''}
-                                                        onChange={(e) =>
-                                                            set({ pointer1Label: e.target.value || undefined })
-                                                        }
-                                                        placeholder="Bezeichnung (optional)"
-                                                        className={gCls}
-                                                        style={gSty}
-                                                    />
-                                                </div>
+                                                        Sichtbar, sobald {'„Wert als Badge“'} aktiv ist
+                                                    </p>
+                                                )}
                                             </div>
-                                        )}
+                                        </div>
                                         {/* Pointer 2 */}
                                         <div>
                                             <label
@@ -9542,14 +11257,22 @@ export function WidgetFrame({
                                                 </button>
                                             </div>
                                         </div>
+                                        {(o.pointer2Datapoint as string) &&
+                                            colorZones &&
+                                            zoneColorToggle('pointer2ZoneColor', false)}
                                         {(o.pointer2Datapoint as string) && (
                                             <div className="flex items-center gap-2">
-                                                <ColorPicker
-                                                    value={(o.pointer2Color as string) ?? '#f97316'}
-                                                    onChange={(v) => set({ pointer2Color: v })}
-                                                    className="w-8 h-7 rounded cursor-pointer shrink-0"
-                                                    style={{ border: '1px solid var(--app-border)', padding: '1px' }}
-                                                />
+                                                {!(colorZones && zoneColorOn('pointer2ZoneColor', false)) && (
+                                                    <ColorPicker
+                                                        value={(o.pointer2Color as string) ?? '#f97316'}
+                                                        onChange={(v) => set({ pointer2Color: v })}
+                                                        className="w-8 h-7 rounded cursor-pointer shrink-0"
+                                                        style={{
+                                                            border: '1px solid var(--app-border)',
+                                                            padding: '1px',
+                                                        }}
+                                                    />
+                                                )}
                                                 <div className="flex-1">
                                                     <label
                                                         className="text-[11px] mb-1 block"
@@ -9603,14 +11326,22 @@ export function WidgetFrame({
                                                 </button>
                                             </div>
                                         </div>
+                                        {(o.pointer3Datapoint as string) &&
+                                            colorZones &&
+                                            zoneColorToggle('pointer3ZoneColor', false)}
                                         {(o.pointer3Datapoint as string) && (
                                             <div className="flex items-center gap-2">
-                                                <ColorPicker
-                                                    value={(o.pointer3Color as string) ?? '#8b5cf6'}
-                                                    onChange={(v) => set({ pointer3Color: v })}
-                                                    className="w-8 h-7 rounded cursor-pointer shrink-0"
-                                                    style={{ border: '1px solid var(--app-border)', padding: '1px' }}
-                                                />
+                                                {!(colorZones && zoneColorOn('pointer3ZoneColor', false)) && (
+                                                    <ColorPicker
+                                                        value={(o.pointer3Color as string) ?? '#8b5cf6'}
+                                                        onChange={(v) => set({ pointer3Color: v })}
+                                                        className="w-8 h-7 rounded cursor-pointer shrink-0"
+                                                        style={{
+                                                            border: '1px solid var(--app-border)',
+                                                            padding: '1px',
+                                                        }}
+                                                    />
+                                                )}
                                                 <div className="flex-1">
                                                     <label
                                                         className="text-[11px] mb-1 block"
@@ -9727,72 +11458,16 @@ export function WidgetFrame({
                                                 />
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1">
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    Einheit
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={(o.unit as string) ?? ''}
-                                                    onChange={(e) => set({ unit: e.target.value || undefined })}
-                                                    placeholder="°C, %, W"
-                                                    className={kCls}
-                                                    style={kSty}
-                                                />
-                                            </div>
-                                            <div className="flex-1">
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    Dezimalstellen
-                                                </label>
-                                                <div className="flex gap-1">
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={4}
-                                                        disabled={o.decimals === undefined}
-                                                        value={(o.decimals as number) ?? defaultDecimals}
-                                                        onChange={(e) => set({ decimals: Number(e.target.value) })}
-                                                        className={kCls}
-                                                        style={{ ...kSty, opacity: o.decimals === undefined ? 0.5 : 1 }}
-                                                    />
-                                                    <button
-                                                        onClick={() =>
-                                                            set({
-                                                                decimals:
-                                                                    o.decimals === undefined
-                                                                        ? defaultDecimals
-                                                                        : undefined,
-                                                            })
-                                                        }
-                                                        title={
-                                                            o.decimals === undefined
-                                                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                                                : 'Auf globale Einstellung zurücksetzen'
-                                                        }
-                                                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                                                        style={{
-                                                            background:
-                                                                o.decimals === undefined
-                                                                    ? 'var(--accent)'
-                                                                    : 'var(--app-border)',
-                                                            color:
-                                                                o.decimals === undefined
-                                                                    ? '#fff'
-                                                                    : 'var(--text-secondary)',
-                                                        }}
-                                                    >
-                                                        Global
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <ValueFormatRow
+                                            unit={o.unit as string | undefined}
+                                            unitPlaceholder="°C, %, W"
+                                            onUnitChange={(v) => set({ unit: v })}
+                                            decimals={o.decimals as number | undefined}
+                                            numberFormat={o.numberFormat as NumberFormat | undefined}
+                                            onChange={set}
+                                            inputClassName={kCls}
+                                            inputStyle={kSty}
+                                        />
 
                                         {sectionHdr('Darstellung')}
                                         {isCustom && (
@@ -10082,7 +11757,16 @@ export function WidgetFrame({
                                 onChange={(patch) =>
                                     onConfigChange({ ...config, options: { ...(config.options ?? {}), ...patch } })
                                 }
-                                onOpenPicker={() => setPickerTarget('html_dp')}
+                                onOpenPicker={(key) => {
+                                    if (key === 'htmlDatapoint') {
+                                        setPickerTarget('html_dp');
+                                    } else {
+                                        // 'mp_dp' is the generic "write the picked id
+                                        // into options[key]" target — reused here.
+                                        setMpPickerKey(key);
+                                        setPickerTarget('mp_dp');
+                                    }
+                                }}
                             />
                         )}
 
@@ -10195,6 +11879,7 @@ export function WidgetFrame({
                                                         </p>
                                                     );
                                                 })()}
+                                                <ImagePathHint className="mt-1.5" />
                                             </div>
                                         )}
                                         {camUrlMode === 'datapoint' && (
@@ -10266,6 +11951,22 @@ export function WidgetFrame({
                                                 <option value="contain">Contain (einpassen)</option>
                                             </select>
                                         </div>
+                                        {/* Only .html/.htm streams render in an iframe (see detectMode) — an
+                                            MJPEG image has no embedded document to hand interaction to. A
+                                            datapoint URL is unknown at config time, so offer it there too. */}
+                                        {(() => {
+                                            const camPath = ((o.streamUrl as string) ?? '').split('?')[0].toLowerCase();
+                                            const isHtmlStream = camPath.endsWith('.html') || camPath.endsWith('.htm');
+                                            if (camUrlMode !== 'datapoint' && !isHtmlStream) return null;
+                                            return (
+                                                <IframeInteractionSelect
+                                                    o={o}
+                                                    set={set}
+                                                    sty={cSty}
+                                                    hasClickAction={hasClickAction}
+                                                />
+                                            );
+                                        })()}
                                         <div className="flex items-center justify-between">
                                             <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
                                                 Zeitstempel anzeigen
@@ -10283,6 +11984,37 @@ export function WidgetFrame({
                                                 <span
                                                     className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
                                                     style={{ left: (o.showTimestamp ?? true) ? '18px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <label
+                                                    className="text-[11px] block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Nach Standby neu laden
+                                                </label>
+                                                <p
+                                                    className="text-[10px]"
+                                                    style={{ color: 'var(--text-secondary)', opacity: 0.6 }}
+                                                >
+                                                    Holt den Stream nach Display-Standby zurück
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => set({ reloadOnWake: !(o.reloadOnWake ?? true) })}
+                                                className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                                style={{
+                                                    background:
+                                                        (o.reloadOnWake ?? true)
+                                                            ? 'var(--accent)'
+                                                            : 'var(--app-border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: (o.reloadOnWake ?? true) ? '18px' : '2px' }}
                                                 />
                                             </button>
                                         </div>
@@ -10416,7 +12148,10 @@ export function WidgetFrame({
                                                                 className="text-[11px] mb-1.5 block"
                                                                 style={{ color: 'var(--text-secondary)' }}
                                                             >
-                                                                Info-Zeilen
+                                                                Zeilen{' '}
+                                                                <span style={{ opacity: 0.6 }}>
+                                                                    (Anzeige &amp; Aktionen)
+                                                                </span>
                                                             </label>
                                                             <div className="flex flex-col gap-1.5">
                                                                 {items.map((item, idx) => (
@@ -10508,7 +12243,10 @@ export function WidgetFrame({
                                                                 className="text-[11px] mb-1.5 block"
                                                                 style={{ color: 'var(--text-secondary)' }}
                                                             >
-                                                                Slots
+                                                                Slots{' '}
+                                                                <span style={{ opacity: 0.6 }}>
+                                                                    (Anzeige &amp; Aktionen)
+                                                                </span>
                                                             </label>
                                                             <div className="flex flex-col gap-1.5">
                                                                 {paddedSlots.map((slot, idx) => (
@@ -10562,9 +12300,9 @@ export function WidgetFrame({
                                                 className="text-[11px] mb-1 block"
                                                 style={{ color: 'var(--text-secondary)' }}
                                             >
-                                                Bild-URL, base64 oder lokale Datei{' '}
+                                                Bild-URL, base64, SVG oder lokale Datei{' '}
                                                 <span style={{ opacity: 0.6 }}>
-                                                    (https://… · data:image/… · Datei-Picker)
+                                                    (https://… · data:image/… · &lt;svg…&gt; · Datei-Picker)
                                                 </span>
                                             </label>
                                             <div className="flex gap-1">
@@ -10605,7 +12343,7 @@ export function WidgetFrame({
                                             >
                                                 Datenpunkt{' '}
                                                 <span style={{ opacity: 0.6 }}>
-                                                    (base64 oder URL, überschreibt Bild-URL)
+                                                    (base64, URL oder SVG-Markup, überschreibt Bild-URL)
                                                 </span>
                                             </label>
                                             <div className="flex gap-1">
@@ -10632,6 +12370,7 @@ export function WidgetFrame({
                                                     <Database size={13} />
                                                 </button>
                                             </div>
+                                            <ImagePathHint className="mt-1.5" />
                                         </div>
                                         <div>
                                             <label
@@ -10658,6 +12397,13 @@ export function WidgetFrame({
                                                 ))}
                                             </div>
                                         </div>
+                                        <CwColorField
+                                            label="Hintergrund (leer = transparent)"
+                                            value={o.imageBackground as string | undefined}
+                                            swatchFallback="#ffffff"
+                                            resetTitle="Hintergrund entfernen"
+                                            onChange={(v) => set({ imageBackground: v })}
+                                        />
                                         {imageUrl && !imageUrl.startsWith('data:') && imageUrl.startsWith('http') && (
                                             <div>
                                                 <label
@@ -10690,16 +12436,6 @@ export function WidgetFrame({
                         {/* ── Status overview config ── */}
                         {config.type === 'statusoverview' && (
                             <StatusOverviewConfig config={config} onConfigChange={onConfigChange} />
-                        )}
-
-                        {/* ── ShutterRooms config ── */}
-                        {config.type === 'shutterrooms' && (
-                            <ShutterRoomsConfig
-                                options={config.options ?? {}}
-                                onOptionsChange={(opts) =>
-                                    onConfigChange({ ...config, options: opts })
-                                }
-                            />
                         )}
 
                         {/* ── Static List config ── */}
@@ -10757,8 +12493,101 @@ export function WidgetFrame({
                                         </button>
                                     </div>
                                 );
+                                const activeDp = ((o.activeDp as string | undefined) ?? '').trim();
+                                const autoDp = panelActiveStateId(config.id);
+                                const activeDpBase = (o.activeDpBase as number | undefined) === 1 ? 1 : 0;
+                                const activeDpWrite = o.activeDpWrite !== false;
                                 return (
                                     <>
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                {t('panels.opt.activeDp')}
+                                            </label>
+                                            {/* Auto-provisioned datapoint — shown so the user can wire
+                                                buttons to it without hunting through the object tree. */}
+                                            <div
+                                                className="flex items-center gap-1.5 mb-1.5 px-2 py-1.5 rounded-lg"
+                                                style={{ background: 'var(--app-bg)' }}
+                                            >
+                                                <span
+                                                    className="flex-1 min-w-0 font-mono text-[10px] break-all"
+                                                    style={{
+                                                        color: activeDp ? 'var(--text-secondary)' : 'var(--accent)',
+                                                        opacity: activeDp ? 0.55 : 1,
+                                                    }}
+                                                >
+                                                    {autoDp}
+                                                </span>
+                                                <button
+                                                    onClick={() => copyToClipboard(autoDp)}
+                                                    className="shrink-0 p-1 rounded hover:opacity-70"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                    title={t('common.copy')}
+                                                >
+                                                    <Copy size={11} />
+                                                </button>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <input
+                                                    type="text"
+                                                    value={activeDp}
+                                                    onChange={(e) => set({ activeDp: e.target.value || undefined })}
+                                                    placeholder={t('panels.opt.activeDpPlaceholder')}
+                                                    className="flex-1 min-w-0 text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                                                    style={{
+                                                        background: 'var(--app-bg)',
+                                                        color: 'var(--text-primary)',
+                                                        border: '1px solid var(--app-border)',
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={() => setPickerTarget('panels_activeDp')}
+                                                    className="px-2 rounded-lg hover:opacity-80 shrink-0"
+                                                    style={{
+                                                        background: 'var(--app-bg)',
+                                                        color: 'var(--text-secondary)',
+                                                        border: '1px solid var(--app-border)',
+                                                    }}
+                                                >
+                                                    <Database size={13} />
+                                                </button>
+                                            </div>
+                                            <p
+                                                className="text-[10px] mt-1 leading-snug"
+                                                style={{ color: 'var(--text-secondary)', opacity: 0.65 }}
+                                            >
+                                                {t('panels.opt.activeDpHint')}
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                {t('panels.opt.activeDpBase')}
+                                            </label>
+                                            <select
+                                                value={activeDpBase}
+                                                onChange={(e) => set({ activeDpBase: Number(e.target.value) })}
+                                                className="w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none"
+                                                style={{
+                                                    background: 'var(--app-bg)',
+                                                    color: 'var(--text-primary)',
+                                                    border: '1px solid var(--app-border)',
+                                                }}
+                                            >
+                                                <option value={0}>0</option>
+                                                <option value={1}>1</option>
+                                            </select>
+                                        </div>
+                                        <Toggle
+                                            label={t('panels.opt.activeDpWrite')}
+                                            value={activeDpWrite}
+                                            onToggle={() => set({ activeDpWrite: !activeDpWrite })}
+                                        />
                                         <Toggle
                                             label={t('panels.opt.loop')}
                                             value={loop}
@@ -10952,26 +12781,43 @@ export function WidgetFrame({
                                                 />
                                             </button>
                                         </div>
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                                Interaktion erlauben
-                                            </label>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <label
+                                                    className="text-[11px] block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Nach Standby neu laden
+                                                </label>
+                                                <p
+                                                    className="text-[10px]"
+                                                    style={{ color: 'var(--text-secondary)', opacity: 0.6 }}
+                                                >
+                                                    Startet Videos/Streams nach Display-Standby wieder
+                                                </p>
+                                            </div>
                                             <button
-                                                onClick={() => set({ allowInteraction: !(o.allowInteraction ?? true) })}
-                                                className="relative w-9 h-5 rounded-full transition-colors"
+                                                onClick={() => set({ reloadOnWake: !(o.reloadOnWake ?? false) })}
+                                                className="relative w-9 h-5 rounded-full transition-colors shrink-0"
                                                 style={{
                                                     background:
-                                                        (o.allowInteraction ?? true)
+                                                        (o.reloadOnWake ?? false)
                                                             ? 'var(--accent)'
                                                             : 'var(--app-border)',
                                                 }}
                                             >
                                                 <span
                                                     className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
-                                                    style={{ left: (o.allowInteraction ?? true) ? '18px' : '2px' }}
+                                                    style={{ left: (o.reloadOnWake ?? false) ? '18px' : '2px' }}
                                                 />
                                             </button>
                                         </div>
+                                        <IframeInteractionSelect
+                                            o={o}
+                                            set={set}
+                                            sty={iSty}
+                                            hasClickAction={hasClickAction}
+                                        />
                                         {!(o.keepAlive ?? false) && (
                                             <div>
                                                 <label
@@ -11144,6 +12990,7 @@ export function WidgetFrame({
                                 const min = (o.minValue as number) ?? 0;
                                 const max = (o.maxValue as number) ?? 100;
                                 const colorZones = (o.colorZones as boolean) ?? false;
+                                const overActive = (o.overActive as boolean) ?? false;
                                 const range = max - min;
                                 const fCls = 'w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none';
                                 const fSty = {
@@ -11214,6 +13061,14 @@ export function WidgetFrame({
                                                     min={20}
                                                     max={150}
                                                     defaultValue={(o.barSize as number) ?? 80}
+                                                    onChange={(e) => {
+                                                        // Live preview: commit on every keystroke/spin so the
+                                                        // widget resizes immediately. Input stays uncontrolled
+                                                        // (defaultValue) to avoid cursor jumps while typing.
+                                                        if (e.target.value === '') return;
+                                                        const n = Number(e.target.value);
+                                                        if (!isNaN(n)) set({ barSize: Math.min(150, Math.max(20, n)) });
+                                                    }}
                                                     onBlur={(e) => {
                                                         const v = Math.min(
                                                             150,
@@ -11299,72 +13154,26 @@ export function WidgetFrame({
                                                 />
                                             </div>
                                         </div>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1">
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    Einheit
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={(o.unit as string) ?? ''}
-                                                    onChange={(e) => set({ unit: e.target.value || undefined })}
-                                                    placeholder="%, L, m³"
-                                                    className={fCls}
-                                                    style={fSty}
-                                                />
-                                            </div>
-                                            <div className="flex-1">
-                                                <label
-                                                    className="text-[11px] mb-1 block"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                >
-                                                    Dezimalstellen
-                                                </label>
-                                                <div className="flex gap-1">
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={4}
-                                                        disabled={o.decimals === undefined}
-                                                        value={(o.decimals as number) ?? defaultDecimals}
-                                                        onChange={(e) => set({ decimals: Number(e.target.value) })}
-                                                        className={fCls}
-                                                        style={{ ...fSty, opacity: o.decimals === undefined ? 0.5 : 1 }}
-                                                    />
-                                                    <button
-                                                        onClick={() =>
-                                                            set({
-                                                                decimals:
-                                                                    o.decimals === undefined
-                                                                        ? defaultDecimals
-                                                                        : undefined,
-                                                            })
-                                                        }
-                                                        title={
-                                                            o.decimals === undefined
-                                                                ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                                                : 'Auf globale Einstellung zurücksetzen'
-                                                        }
-                                                        className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                                                        style={{
-                                                            background:
-                                                                o.decimals === undefined
-                                                                    ? 'var(--accent)'
-                                                                    : 'var(--app-border)',
-                                                            color:
-                                                                o.decimals === undefined
-                                                                    ? '#fff'
-                                                                    : 'var(--text-secondary)',
-                                                        }}
-                                                    >
-                                                        Global
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <ScaleBoundsRow
+                                            minDatapoint={o.minDatapoint as string | undefined}
+                                            maxDatapoint={o.maxDatapoint as string | undefined}
+                                            onChange={set}
+                                            onPick={(which) =>
+                                                setPickerTarget(which === 'min' ? 'scale_minDp' : 'scale_maxDp')
+                                            }
+                                            inputClassName={fCls}
+                                            inputStyle={fSty}
+                                        />
+                                        <ValueFormatRow
+                                            unit={o.unit as string | undefined}
+                                            unitPlaceholder="%, L, m³"
+                                            onUnitChange={(v) => set({ unit: v })}
+                                            decimals={o.decimals as number | undefined}
+                                            numberFormat={o.numberFormat as NumberFormat | undefined}
+                                            onChange={set}
+                                            inputClassName={fCls}
+                                            inputStyle={fSty}
+                                        />
 
                                         {hdr('Farbzonen')}
                                         <div className="flex items-center justify-between">
@@ -11495,6 +13304,67 @@ export function WidgetFrame({
                                                     </div>
                                                 );
                                             })()}
+
+                                        {/* Warning colour past a share of the scale. Wins over the
+                                            zones, because a value clamped to max cannot be told from
+                                            an overrun by the fill level alone (#607). */}
+                                        {hdr('Warnfarbe')}
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                                Farbe ab Schwelle wechseln
+                                            </label>
+                                            <button
+                                                onClick={() => set({ overActive: !overActive })}
+                                                className="relative w-9 h-5 rounded-full transition-colors"
+                                                style={{
+                                                    background: overActive ? 'var(--accent)' : 'var(--app-border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: overActive ? '18px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                        {overActive && (
+                                            <>
+                                                <div className="flex items-end gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <label
+                                                            className="text-[11px] mb-1 block"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
+                                                            Ab % der Skala
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            value={(o.overThreshold as number) ?? 100}
+                                                            onChange={(e) =>
+                                                                set({ overThreshold: Number(e.target.value) })
+                                                            }
+                                                            className={fCls}
+                                                            style={fSty}
+                                                        />
+                                                    </div>
+                                                    <ColorPicker
+                                                        value={(o.overColor as string) ?? FILL_OVER_COLOR}
+                                                        onChange={(v) => set({ overColor: v })}
+                                                        className="w-8 h-8 rounded cursor-pointer shrink-0"
+                                                        style={{
+                                                            border: '1px solid var(--app-border)',
+                                                            padding: '1px',
+                                                        }}
+                                                    />
+                                                </div>
+                                                <p
+                                                    className="text-[10px] leading-snug"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    100 % = der Max-Wert. Ab diesem Anteil färbt sich die Füllung
+                                                    komplett in der Warnfarbe.
+                                                </p>
+                                            </>
+                                        )}
                                     </>
                                 );
                             })()}
@@ -12039,6 +13909,218 @@ export function WidgetFrame({
                                 );
                             })()}
 
+                        {/* ── Meldungen config (issue #429) ── */}
+                        {config.type === 'messages' &&
+                            (() => {
+                                const o = config.options ?? {};
+                                const set = (patch: Record<string, unknown>) =>
+                                    onConfigChange({ ...config, options: { ...o, ...patch } });
+                                const mCls = 'w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none';
+                                const mSty = {
+                                    background: 'var(--app-bg)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--app-border)',
+                                };
+                                const SEVERITIES: { key: string; label: string; color: string }[] = [
+                                    { key: 'error', label: 'Fehler', color: '#ef4444' },
+                                    { key: 'warning', label: 'Warnung', color: '#f59e0b' },
+                                    { key: 'success', label: 'Erfolg', color: '#22c55e' },
+                                    { key: 'info', label: 'Info', color: '#3b82f6' },
+                                ];
+                                const severities = Array.isArray(o.severities)
+                                    ? (o.severities as string[])
+                                    : SEVERITIES.map((s) => s.key);
+                                const toggleSeverity = (key: string) => {
+                                    const next = severities.includes(key)
+                                        ? severities.filter((s) => s !== key)
+                                        : [...severities, key];
+                                    // An empty selection would render a permanently blank
+                                    // widget with nothing to explain why.
+                                    if (next.length) set({ severities: next });
+                                };
+                                const MToggle = ({
+                                    label,
+                                    k,
+                                    def,
+                                    hint,
+                                }: {
+                                    label: string;
+                                    k: string;
+                                    def?: boolean;
+                                    hint?: string;
+                                }) => {
+                                    const val = (o[k] as boolean | undefined) ?? def ?? false;
+                                    return (
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex flex-col">
+                                                <label
+                                                    className="text-[11px]"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    {label}
+                                                </label>
+                                                {hint && (
+                                                    <span
+                                                        className="text-[10px] opacity-60"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        {hint}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => set({ [k]: !val })}
+                                                className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                                style={{ background: val ? 'var(--accent)' : 'var(--app-border)' }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: val ? '18px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                    );
+                                };
+                                return (
+                                    <>
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Schweregrade
+                                            </label>
+                                            <div className="flex gap-1 flex-wrap">
+                                                {SEVERITIES.map((s) => {
+                                                    const on = severities.includes(s.key);
+                                                    return (
+                                                        <button
+                                                            key={s.key}
+                                                            onClick={() => toggleSeverity(s.key)}
+                                                            className="text-[10px] px-2 py-1 rounded-full transition-colors"
+                                                            style={{
+                                                                background: on ? s.color : 'var(--app-bg)',
+                                                                color: on ? '#fff' : 'var(--text-secondary)',
+                                                                border: `1px solid ${on ? s.color : 'var(--app-border)'}`,
+                                                            }}
+                                                        >
+                                                            {s.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Max. Einträge
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    max={1000}
+                                                    value={(o.maxEntries as number) ?? 50}
+                                                    onChange={(e) =>
+                                                        set({
+                                                            maxEntries: Math.max(
+                                                                1,
+                                                                Math.min(1000, Number(e.target.value) || 50),
+                                                            ),
+                                                        })
+                                                    }
+                                                    className={`${mCls} font-mono`}
+                                                    style={mSty}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Zeitraum (Std., 0 = alle)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={8760}
+                                                    value={(o.hours as number) ?? 0}
+                                                    onChange={(e) =>
+                                                        set({
+                                                            hours: Math.max(
+                                                                0,
+                                                                Math.min(8760, Number(e.target.value) || 0),
+                                                            ),
+                                                        })
+                                                    }
+                                                    className={`${mCls} font-mono`}
+                                                    style={mSty}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Nur Meldungen für dieses Layout
+                                            </label>
+                                            <select
+                                                value={(o.layoutFilter as string) ?? ''}
+                                                onChange={(e) => set({ layoutFilter: e.target.value })}
+                                                className={mCls}
+                                                style={mSty}
+                                            >
+                                                <option value="">Alle Layouts</option>
+                                                {layoutChoices.map((l) => (
+                                                    <option key={l.id} value={l.slug ?? l.id}>
+                                                        {l.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <MToggle
+                                            label="Volltext anzeigen"
+                                            k="detailed"
+                                            def={false}
+                                            hint="Aus: nur Kurzfassung in einer Zeile"
+                                        />
+                                        <MToggle
+                                            label="Nach Tag gruppieren"
+                                            k="groupByDay"
+                                            def={false}
+                                            hint="Datums-Zwischenzeilen einfügen"
+                                        />
+                                        <MToggle
+                                            label="Nur ungelesene"
+                                            k="unreadOnly"
+                                            def={false}
+                                            hint="Bestätigte Meldungen ausblenden"
+                                        />
+                                        <MToggle
+                                            label="Filter-Buttons im Frontend"
+                                            k="showFilter"
+                                            def={true}
+                                            hint="Schweregrad-Pillen zum Umschalten"
+                                        />
+                                        <MToggle
+                                            label="Bestätigen erlauben"
+                                            k="showAck"
+                                            def={true}
+                                            hint="Häkchen pro Zeile — gilt für alle Clients"
+                                        />
+                                        <MToggle
+                                            label="Verlauf leeren erlauben"
+                                            k="allowClear"
+                                            def={false}
+                                            hint="Löscht das Archiv für alle Clients"
+                                        />
+                                    </>
+                                );
+                            })()}
+
                         {/* ── Ladezeiten config ── */}
                         {config.type === 'loadtimes' &&
                             (() => {
@@ -12057,6 +14139,11 @@ export function WidgetFrame({
                                     { key: 'socketToFirstState', label: 'Socket → 1. DP', color: '#f59e0b' },
                                     { key: 'tabSwitch', label: 'Tab-Wechsel', color: '#a855f7' },
                                     { key: 'longTaskMax', label: 'Long-Task max', color: '#ef4444' },
+                                    { key: 'ttfb', label: 'TTFB (Server)', color: '#06b6d4' },
+                                    { key: 'transfer', label: 'Transfer', color: '#14b8a6' },
+                                    { key: 'dns', label: 'DNS', color: '#8b5cf6' },
+                                    { key: 'tcp', label: 'TCP/TLS', color: '#ec4899' },
+                                    { key: 'backendPing', label: 'Backend-Ping', color: '#eab308' },
                                 ];
                                 const allKeys = METRIC_OPTS.map((m) => m.key);
                                 const metrics =
@@ -12219,11 +14306,11 @@ export function WidgetFrame({
                                                 color: 'var(--text-secondary)',
                                             }}
                                         >
-                                            💡 Für mehr Details gibt es in den <b>Aura-Adapter-Einstellungen</b> unter
-                                            „Performance-Diagnose“ zwei Schalter: <b>Ladezeiten-Metriken aufzeichnen</b>{' '}
-                                            (Standard an) und <b>Timing pro Widget aufzeichnen</b> (Standard aus).
-                                            Letzteren aktivieren, damit die „Details“-Ansicht zeigt, welches Widget
-                                            langsam ist.
+                                            💡 Für mehr Details gibt es in den <b>Aura-Adapter-Einstellungen</b> unter{' '}
+                                            {'„Performance-Diagnose“'} zwei Schalter:{' '}
+                                            <b>Ladezeiten-Metriken aufzeichnen</b> (Standard an) und{' '}
+                                            <b>Timing pro Widget aufzeichnen</b> (Standard aus). Letzteren aktivieren,
+                                            damit die {'„Details“'}-Ansicht zeigt, welches Widget langsam ist.
                                         </div>
                                     </>
                                 );
@@ -12907,6 +14994,83 @@ export function WidgetFrame({
                                                 </p>
                                             )}
                                         </div>
+                                        {!(o.switchDp as string) &&
+                                            (() => {
+                                                // Pure dimmer: how the on/off icon reads the level (issue #467).
+                                                const dStateMode =
+                                                    (o.stateMode as 'boolean' | 'condition') ?? 'boolean';
+                                                return (
+                                                    <div>
+                                                        <label
+                                                            className="text-[11px] font-medium mb-1 block"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
+                                                            Icon-Auswertung
+                                                        </label>
+                                                        <div className="flex gap-1">
+                                                            {(
+                                                                [
+                                                                    ['boolean', 'An bei > 0'],
+                                                                    ['condition', 'Bedingung'],
+                                                                ] as const
+                                                            ).map(([mode, lbl]) => (
+                                                                <button
+                                                                    key={mode}
+                                                                    onClick={() => setO({ stateMode: mode })}
+                                                                    className="flex-1 text-[11px] py-1.5 rounded-lg transition-colors"
+                                                                    style={{
+                                                                        background:
+                                                                            dStateMode === mode
+                                                                                ? 'var(--accent)'
+                                                                                : 'var(--app-bg)',
+                                                                        color:
+                                                                            dStateMode === mode
+                                                                                ? '#fff'
+                                                                                : 'var(--text-secondary)',
+                                                                        border: `1px solid ${dStateMode === mode ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                                    }}
+                                                                >
+                                                                    {lbl}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        {dStateMode === 'condition' && (
+                                                            <div className="flex gap-1 items-center mt-1.5">
+                                                                <span
+                                                                    className="text-[11px] shrink-0"
+                                                                    style={{ color: 'var(--text-secondary)' }}
+                                                                >
+                                                                    An wenn
+                                                                </span>
+                                                                <select
+                                                                    value={(o.stateOperator as string) ?? '>'}
+                                                                    onChange={(e) =>
+                                                                        setO({ stateOperator: e.target.value })
+                                                                    }
+                                                                    className={`${dInputCls} shrink-0`}
+                                                                    style={dInputStyle}
+                                                                >
+                                                                    {['==', '!=', '>', '>=', '<', '<='].map((op) => (
+                                                                        <option key={op} value={op}>
+                                                                            {op}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                                <input
+                                                                    type="text"
+                                                                    value={(o.stateValue as string) ?? ''}
+                                                                    onChange={(e) =>
+                                                                        setO({ stateValue: e.target.value })
+                                                                    }
+                                                                    placeholder="0"
+                                                                    className={`flex-1 ${dInputCls} min-w-0`}
+                                                                    style={dInputStyle}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         {!!(o.switchDp as string) && (
                                             <div>
                                                 <label
@@ -13199,6 +15363,61 @@ export function WidgetFrame({
                                         const v = find('STOP', 'stop', 'Pause', 'pause');
                                         if (v) patch.stopDp = v;
                                     }
+                                    {
+                                        // Separate status DP: HmIP actuators (e.g. HmIP-BROLL) report the
+                                        // real position on a read-only LEVEL of another channel.
+                                        const device = parts.length >= 3 ? parts.slice(0, -2).join('.') : '';
+                                        const statusDp = device
+                                            ? entries.find(
+                                                  (e) =>
+                                                      e.id !== config.datapoint &&
+                                                      e.id.startsWith(`${device}.`) &&
+                                                      e.write === false &&
+                                                      /\.(LEVEL|level|POSITION|position|current_position|currentPosition)$/.test(
+                                                          e.id,
+                                                      ),
+                                              )?.id
+                                            : undefined;
+                                        if (statusDp) patch.actualPositionDp = statusDp;
+                                    }
+                                    {
+                                        // Slat tilt: HmIP blind actuators carry it as LEVEL_2 next to
+                                        // LEVEL, HM classic as LEVEL_SLATS, Zigbee/Velux as tilt.
+                                        // LEVEL_2 only counts next to a LEVEL main DP – on a dimmer it
+                                        // means the second channel's brightness.
+                                        const leaf = parts[parts.length - 1] ?? '';
+                                        const names = [
+                                            ...(/^level$/i.test(leaf) ? ['LEVEL_2', 'level_2'] : []),
+                                            'LEVEL_SLATS',
+                                            'level_slats',
+                                            'SLATS',
+                                            'slats',
+                                            'TILT',
+                                            'tilt',
+                                            'tilt_position',
+                                            'position_tilt',
+                                            'tiltPosition',
+                                            'lamella',
+                                            'lamellen',
+                                            'slat_angle',
+                                            'ANGLE',
+                                            'angle',
+                                        ];
+                                        const tiltDp = find(...names);
+                                        if (tiltDp) patch.tiltDp = tiltDp;
+                                        const device = parts.length >= 3 ? parts.slice(0, -2).join('.') : '';
+                                        const tiltStatus =
+                                            device && tiltDp
+                                                ? entries.find(
+                                                      (e) =>
+                                                          e.id !== tiltDp &&
+                                                          e.id.startsWith(`${device}.`) &&
+                                                          e.write === false &&
+                                                          names.some((n) => e.id.endsWith(`.${n}`)),
+                                                  )?.id
+                                                : undefined;
+                                        if (tiltStatus) patch.actualTiltDp = tiltStatus;
+                                    }
                                     if (Object.keys(patch).length) setO(patch);
                                 };
                                 const dpRow = (optKey: string, pickerKey: string, placeholder = 'optional') => (
@@ -13226,6 +15445,95 @@ export function WidgetFrame({
                                         </button>
                                     </div>
                                 );
+                                const toggleRow = (
+                                    label: string,
+                                    hintText: string,
+                                    on: boolean,
+                                    toggle: () => void,
+                                ) => (
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <label className="text-[11px] block" style={hint}>
+                                                {label}
+                                            </label>
+                                            <p className="text-[10px]" style={hint}>
+                                                {hintText}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={toggle}
+                                            className="relative w-9 h-5 rounded-full transition-colors shrink-0 mt-0.5"
+                                            style={{ background: on ? 'var(--accent)' : 'var(--app-border)' }}
+                                        >
+                                            <span
+                                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                                style={{ left: on ? '18px' : '2px' }}
+                                            />
+                                        </button>
+                                    </div>
+                                );
+                                const segRow = (
+                                    label: string,
+                                    hintText: string,
+                                    current: string,
+                                    options: { label: string; val: string }[],
+                                    pick: (val: string) => void,
+                                ) => (
+                                    <div>
+                                        <label className="text-[11px] block mb-1" style={hint}>
+                                            {label}
+                                        </label>
+                                        <div className="flex gap-1 mb-1">
+                                            {options.map(({ label: l, val }) => (
+                                                <button
+                                                    key={val}
+                                                    onClick={() => pick(val)}
+                                                    className="flex-1 py-1 px-2 rounded-lg text-[10px] font-medium transition-colors"
+                                                    style={{
+                                                        background: current === val ? 'var(--accent)' : 'var(--app-bg)',
+                                                        color: current === val ? '#fff' : 'var(--text-secondary)',
+                                                        border: '1px solid var(--app-border)',
+                                                    }}
+                                                >
+                                                    {l}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <p className="text-[10px]" style={hint}>
+                                            {hintText}
+                                        </p>
+                                    </div>
+                                );
+                                const numRow = (
+                                    label: string,
+                                    optKey: string,
+                                    fallback: number,
+                                    step = 1,
+                                    width = 'w-20',
+                                ) => (
+                                    <div className="flex items-center justify-between gap-2">
+                                        <label className="text-[11px]" style={hint}>
+                                            {label}
+                                        </label>
+                                        <input
+                                            type="number"
+                                            step={step}
+                                            value={typeof o[optKey] === 'number' ? (o[optKey] as number) : fallback}
+                                            onChange={(e) =>
+                                                setO({
+                                                    [optKey]:
+                                                        e.target.value === '' ? undefined : Number(e.target.value),
+                                                })
+                                            }
+                                            className={`${width} text-xs rounded-lg px-2 py-1.5 focus:outline-none tabular-nums`}
+                                            style={sInputStyle}
+                                        />
+                                    </div>
+                                );
+                                const tiltOn = !!(o.tiltDp as string | undefined);
+                                const tiltPlacement =
+                                    (o.tiltPlacement as string) ??
+                                    (config.layout === 'compact' || config.layout === 'minimal' ? 'popup' : 'inline');
                                 return (
                                     <>
                                         {/* Steuer-Modus */}
@@ -13288,6 +15596,24 @@ export function WidgetFrame({
                                                 </p>
                                             </div>
                                         )}
+
+                                        {/* Ist-Position DP */}
+                                        <div>
+                                            <label className="text-[11px] mb-1 block" style={hint}>
+                                                Ist-Position DP (optional)
+                                            </label>
+                                            {dpRow(
+                                                'actualPositionDp',
+                                                'shutter_actualPositionDp',
+                                                'z.B. …3.LEVEL (nur Anzeige)',
+                                            )}
+                                            <p className="text-[10px] mt-1" style={hint}>
+                                                Separater Anzeige-DP für die tatsächliche Position (z.B. HmIP-BROLL:
+                                                Kanal 3 = Status, Kanal 4 = steuerbar). Anzeige, Slider und Stopp nutzen
+                                                dann diesen Wert – geschrieben wird weiter auf den Hauptdatenpunkt. Leer
+                                                = Hauptdatenpunkt.
+                                            </p>
+                                        </div>
 
                                         {/* Stop-DP */}
                                         <div>
@@ -13464,6 +15790,162 @@ export function WidgetFrame({
                                             </button>
                                         </div>
 
+                                        {/* Position live mitzeichnen */}
+                                        {toggleRow(
+                                            'Position live mitzeichnen',
+                                            'Grafik und Prozentwert folgen dem Positionsregler schon beim Ziehen. Aus: erst beim Loslassen.',
+                                            !!o.positionLivePreview,
+                                            () => setO({ positionLivePreview: !o.positionLivePreview }),
+                                        )}
+
+                                        {/* ── Lamellen / Neigung ──────────────────────────────────── */}
+                                        <div className="pt-2 mt-1" style={{ borderTop: '1px solid var(--app-border)' }}>
+                                            <label
+                                                className="text-[11px] font-medium block mb-1"
+                                                style={{ color: 'var(--text-primary)' }}
+                                            >
+                                                Lamellen / Neigung
+                                            </label>
+                                            {dpRow('tiltDp', 'shutter_tiltDp', 'z.B. …4.LEVEL_2 oder …tilt')}
+                                            <p className="text-[10px] mt-1" style={hint}>
+                                                Für Jalousien und Raffstores: Datenpunkt für den Lamellenwinkel. 0 % =
+                                                geschlossen, 100 % = offen/waagerecht. Leer = kein Neigungs-Regler.
+                                            </p>
+                                        </div>
+
+                                        {tiltOn && (
+                                            <>
+                                                {/* Ist-Neigung DP */}
+                                                <div>
+                                                    <label className="text-[11px] mb-1 block" style={hint}>
+                                                        Ist-Neigung DP (optional)
+                                                    </label>
+                                                    {dpRow(
+                                                        'actualTiltDp',
+                                                        'shutter_actualTiltDp',
+                                                        'z.B. …3.LEVEL_2 (nur Anzeige)',
+                                                    )}
+                                                    <p className="text-[10px] mt-1" style={hint}>
+                                                        Separater Anzeige-DP für die tatsächliche Neigung. Geschrieben
+                                                        wird weiter auf den Neigungs-DP.
+                                                    </p>
+                                                </div>
+
+                                                {/* Wertebereich */}
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[11px] block" style={hint}>
+                                                        Wertebereich des Datenpunkts
+                                                    </label>
+                                                    {numRow('Wert für „geschlossen“', 'tiltMin', 0, 0.1)}
+                                                    {numRow('Wert für „offen“', 'tiltMax', 100, 0.1)}
+                                                    <p className="text-[10px]" style={hint}>
+                                                        Standard 0…100. Andere Geräte melden 0…1, -90…90 oder 0…180.
+                                                    </p>
+                                                </div>
+
+                                                {toggleRow(
+                                                    'Neigung invertieren',
+                                                    'Wenn beim Gerät der kleinere Wert „offen“ bedeutet.',
+                                                    !!o.invertTilt,
+                                                    () => setO({ invertTilt: !o.invertTilt }),
+                                                )}
+
+                                                {segRow(
+                                                    'Bedienung',
+                                                    tiltPlacement === 'inline'
+                                                        ? 'Regler bzw. Tasten direkt im Widget.'
+                                                        : tiltPlacement === 'popup'
+                                                          ? 'Kleine Lamellen-Taste öffnet ein Popover mit Regler und Schnellwerten.'
+                                                          : 'Neigung wird im Widget nicht bedient (nur im Klick-Popup).',
+                                                    tiltPlacement,
+                                                    [
+                                                        { label: 'Im Widget', val: 'inline' },
+                                                        { label: 'Popover', val: 'popup' },
+                                                        { label: 'Aus', val: 'off' },
+                                                    ],
+                                                    (val) => setO({ tiltPlacement: val }),
+                                                )}
+
+                                                {tiltPlacement === 'inline' &&
+                                                    config.layout !== 'compact' &&
+                                                    config.layout !== 'minimal' &&
+                                                    segRow(
+                                                        'Regler-Form',
+                                                        'Senkrecht neben der Lamellen-Grafik, waagerecht unter dem Positionsregler oder als Schrittasten.',
+                                                        (o.tiltControl as string) ?? 'slider-v',
+                                                        [
+                                                            { label: 'Senkrecht', val: 'slider-v' },
+                                                            { label: 'Waagerecht', val: 'slider-h' },
+                                                            { label: 'Tasten', val: 'buttons' },
+                                                        ],
+                                                        (val) => setO({ tiltControl: val }),
+                                                    )}
+
+                                                {((o.tiltControl as string) === 'buttons' ||
+                                                    config.layout === 'compact' ||
+                                                    config.layout === 'minimal') &&
+                                                    numRow('Schrittweite (%)', 'tiltStep', 10)}
+
+                                                {((o.tiltControl as string) ?? 'slider-v') === 'slider-v' &&
+                                                    tiltPlacement === 'inline' &&
+                                                    config.layout !== 'compact' &&
+                                                    config.layout !== 'minimal' && (
+                                                        <>
+                                                            {segRow(
+                                                                'Regler-Seite',
+                                                                'Auf welcher Seite der Lamellen-Grafik der senkrechte Regler sitzt.',
+                                                                (o.tiltSliderSide as string) === 'left'
+                                                                    ? 'left'
+                                                                    : 'right',
+                                                                [
+                                                                    { label: 'Links', val: 'left' },
+                                                                    { label: 'Rechts', val: 'right' },
+                                                                ],
+                                                                (val) => setO({ tiltSliderSide: val }),
+                                                            )}
+                                                            {numRow('Regler-Breite (px)', 'tiltSliderWidth', 14)}
+                                                        </>
+                                                    )}
+
+                                                {toggleRow(
+                                                    'Lamellen live mitzeichnen',
+                                                    'Lamellen-Grafik und Prozentwert folgen dem Neigungsregler schon beim Ziehen. Aus: erst beim Loslassen.',
+                                                    o.tiltLivePreview !== false,
+                                                    () => setO({ tiltLivePreview: !(o.tiltLivePreview !== false) }),
+                                                )}
+
+                                                {toggleRow(
+                                                    'Neigungswert anzeigen',
+                                                    'Prozentwert der Neigung neben dem Regler bzw. im Widget.',
+                                                    o.showTiltValue !== false,
+                                                    () => setO({ showTiltValue: !(o.showTiltValue !== false) }),
+                                                )}
+
+                                                {toggleRow(
+                                                    'Nach Fahrt neu setzen',
+                                                    'Manche Aktoren stellen die Lamellen bei einer Fahrt in die Endlage. Dann wird der Winkel nach Fahrtende erneut geschrieben.',
+                                                    !!o.reapplyTiltAfterMove,
+                                                    () => setO({ reapplyTiltAfterMove: !o.reapplyTiltAfterMove }),
+                                                )}
+
+                                                <div>
+                                                    <label className="text-[11px] mb-1 block" style={hint}>
+                                                        Beschriftung
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={(o.tiltLabel as string) ?? ''}
+                                                        onChange={(e) =>
+                                                            setO({ tiltLabel: e.target.value || undefined })
+                                                        }
+                                                        placeholder="Lamellen"
+                                                        className={sInputCls}
+                                                        style={sInputStyle}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
+
                                         {/* Größen */}
                                         {(() => {
                                             const valueSize = (o.valueSize as number) || 20;
@@ -13549,6 +16031,38 @@ export function WidgetFrame({
                                                 </>
                                             );
                                         })()}
+
+                                        {/* Sichtbare Felder */}
+                                        <div className="h-px" style={{ background: 'var(--app-border)' }} />
+                                        {[
+                                            { key: 'showValue', label: 'Position %' },
+                                            { key: 'showControls', label: 'Steuerknöpfe' },
+                                            { key: 'showSlider', label: 'Schieberegler' },
+                                        ].map(({ key, label }) => {
+                                            const val = o[key] !== false;
+                                            return (
+                                                <div key={key} className="flex items-center justify-between">
+                                                    <span
+                                                        className="text-[11px]"
+                                                        style={{ color: 'var(--text-primary)' }}
+                                                    >
+                                                        {label}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setO({ [key]: !val })}
+                                                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                                                        style={{
+                                                            background: val ? 'var(--accent)' : 'var(--app-border)',
+                                                        }}
+                                                    >
+                                                        <span
+                                                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                                            style={{ left: val ? '14px' : '2px' }}
+                                                        />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
                                     </>
                                 );
                             })()}
@@ -13579,6 +16093,8 @@ export function WidgetFrame({
                                 onOpenCheckDpPicker={() => setPickerTarget('chips_checkDp')}
                             />
                         )}
+
+                        {config.type === 'menu' && <MenuEditPanel config={config} onConfigChange={onConfigChange} />}
 
                         {config.type === 'slider' && (
                             <SliderEditPanel
@@ -13908,7 +16424,7 @@ export function WidgetFrame({
                                                                 const v = e.target.value.trim();
                                                                 setO({ [`${st}Base64`]: v || undefined });
                                                             }}
-                                                            placeholder="oder data:image/… einfügen"
+                                                            placeholder="oder data:image/… bzw. Pfad einfügen"
                                                             className="w-full text-[10px] rounded-lg px-2.5 py-1.5 focus:outline-none resize-none font-mono"
                                                             style={{
                                                                 background: 'var(--app-bg)',
@@ -13917,6 +16433,8 @@ export function WidgetFrame({
                                                             }}
                                                         />
                                                     )}
+                                                    <ImagePathHint />
+
                                                     {currentBase64 && (
                                                         <div className="flex items-center gap-2">
                                                             {!currentBase64.startsWith('aura-file:') && (
@@ -14273,7 +16791,7 @@ export function WidgetFrame({
                                                                 const v = e.target.value.trim();
                                                                 setO({ [`${prefix}Base64`]: v || undefined });
                                                             }}
-                                                            placeholder="oder data:image/… einfügen"
+                                                            placeholder="oder data:image/… bzw. Pfad einfügen"
                                                             className="w-full text-[10px] rounded-lg px-2.5 py-1.5 focus:outline-none resize-none font-mono"
                                                             style={{
                                                                 background: 'var(--app-bg)',
@@ -14282,6 +16800,8 @@ export function WidgetFrame({
                                                             }}
                                                         />
                                                     )}
+                                                    <ImagePathHint />
+
                                                     {currentBase64 && (
                                                         <div className="flex items-center gap-2">
                                                             {!currentBase64.startsWith('aura-file:') && (
@@ -14323,12 +16843,85 @@ export function WidgetFrame({
 
                                 const siIconOn = o.showIcon !== false;
                                 const siDisplayIconSize = draftIconSize ?? ((o.iconSize as number) || 20);
+                                const siStateMode = (o.stateMode as 'boolean' | 'condition') ?? 'boolean';
+                                const siOperator = (o.stateOperator as string) ?? '>';
+                                const trueSectionLabel =
+                                    siStateMode === 'condition' ? 'Aktiv (Bedingung erfüllt)' : 'Wahr (true)';
+                                const falseSectionLabel =
+                                    siStateMode === 'condition'
+                                        ? 'Inaktiv (Bedingung nicht erfüllt)'
+                                        : 'Falsch (false)';
 
                                 return (
                                     <>
-                                        {renderStateSection('true', 'Wahr (true)')}
+                                        {/* Active-state detection mode (issue #467) */}
+                                        <div className="space-y-2">
+                                            <p
+                                                className="text-[11px] font-semibold"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Auswertung
+                                            </p>
+                                            <div className="flex gap-1">
+                                                {(
+                                                    [
+                                                        ['boolean', 'Boolean'],
+                                                        ['condition', 'Bedingung'],
+                                                    ] as const
+                                                ).map(([mode, lbl]) => (
+                                                    <button
+                                                        key={mode}
+                                                        onClick={() => setO({ stateMode: mode })}
+                                                        className="flex-1 text-[10px] py-1 rounded-lg transition-colors"
+                                                        style={{
+                                                            background:
+                                                                siStateMode === mode
+                                                                    ? 'var(--accent)'
+                                                                    : 'var(--app-bg)',
+                                                            color:
+                                                                siStateMode === mode ? '#fff' : 'var(--text-secondary)',
+                                                            border: `1px solid ${siStateMode === mode ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                        }}
+                                                    >
+                                                        {lbl}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {siStateMode === 'condition' && (
+                                                <div className="flex gap-1 items-center">
+                                                    <span
+                                                        className="text-[11px] shrink-0"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        Wert
+                                                    </span>
+                                                    <select
+                                                        value={siOperator}
+                                                        onChange={(e) => setO({ stateOperator: e.target.value })}
+                                                        className="text-xs rounded-lg px-2 py-1.5 focus:outline-none shrink-0"
+                                                        style={siInputStyle}
+                                                    >
+                                                        {['==', '!=', '>', '>=', '<', '<='].map((op) => (
+                                                            <option key={op} value={op}>
+                                                                {op}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <input
+                                                        type="text"
+                                                        value={(o.stateValue as string) ?? ''}
+                                                        onChange={(e) => setO({ stateValue: e.target.value })}
+                                                        placeholder="0"
+                                                        className="flex-1 min-w-0 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none"
+                                                        style={siInputStyle}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="h-px" style={{ background: 'var(--app-border)' }} />
-                                        {renderStateSection('false', 'Falsch (false)')}
+                                        {renderStateSection('true', trueSectionLabel)}
+                                        <div className="h-px" style={{ background: 'var(--app-border)' }} />
+                                        {renderStateSection('false', falseSectionLabel)}
                                         <div className="h-px" style={{ background: 'var(--app-border)' }} />
                                         <div className="flex items-center justify-between">
                                             <span className="text-[11px]" style={{ color: 'var(--text-primary)' }}>
@@ -14536,70 +17129,121 @@ export function WidgetFrame({
                                                 className="text-[11px] mb-1 block"
                                                 style={{ color: 'var(--text-secondary)' }}
                                             >
-                                                Schnellwahl (kommagetrennt)
+                                                Schnellwahl (mit ; getrennt)
                                             </label>
-                                            <input
-                                                type="text"
-                                                value={((o.presets as number[]) ?? [18, 20, 22, 24]).join(', ')}
-                                                onChange={(e) => {
-                                                    const vals = e.target.value
-                                                        .split(',')
-                                                        .map((s) => parseFloat(s.trim()))
-                                                        .filter((n) => !isNaN(n));
-                                                    setO({ presets: vals.length ? vals : undefined });
-                                                }}
-                                                placeholder="18, 20, 22, 24"
+                                            <NumberListInput
+                                                value={(o.presets as number[]) ?? [18, 20, 22, 24]}
+                                                onChange={(presets) => setO({ presets })}
+                                                placeholder="18; 20; 21,5; 24"
                                                 className={tInputCls}
                                                 style={tInputStyle}
                                             />
                                         </div>
-                                        <div>
-                                            <label
-                                                className="text-[11px] mb-1 block"
-                                                style={{ color: 'var(--text-secondary)' }}
-                                            >
-                                                Dezimalstellen
-                                            </label>
-                                            <div className="flex gap-1">
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    max={4}
-                                                    disabled={o.decimals === undefined}
-                                                    value={(o.decimals as number) ?? defaultDecimals}
-                                                    onChange={(e) => setO({ decimals: Number(e.target.value) })}
-                                                    className={tInputCls}
-                                                    style={{
-                                                        ...tInputStyle,
-                                                        opacity: o.decimals === undefined ? 0.5 : 1,
-                                                    }}
-                                                />
-                                                <button
-                                                    onClick={() =>
+                                        <ValueFormatRow
+                                            decimals={o.decimals as number | undefined}
+                                            numberFormat={o.numberFormat as NumberFormat | undefined}
+                                            onChange={setO}
+                                        />
+
+                                        {/* Sichtbare Felder */}
+                                        <div className="h-px" style={{ background: 'var(--app-border)' }} />
+                                        {[
+                                            { key: 'showSetpoint', label: 'Solltemperatur' },
+                                            { key: 'showActualTemp', label: 'Isttemperatur' },
+                                            { key: 'showControls', label: 'Tasten ±' },
+                                            { key: 'showPresets', label: 'Schnellwahl' },
+                                        ].map(({ key, label }) => {
+                                            const val = o[key] !== false;
+                                            return (
+                                                <div key={key} className="flex items-center justify-between">
+                                                    <span
+                                                        className="text-[11px]"
+                                                        style={{ color: 'var(--text-primary)' }}
+                                                    >
+                                                        {label}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setO({ [key]: !val })}
+                                                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                                                        style={{
+                                                            background: val ? 'var(--accent)' : 'var(--app-border)',
+                                                        }}
+                                                    >
+                                                        <span
+                                                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                                            style={{ left: val ? '14px' : '2px' }}
+                                                        />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* ── Rundskala ── only meaningful for the dial layout */}
+                                        {config.layout === 'dial' && (
+                                            <>
+                                                <div className="h-px" style={{ background: 'var(--app-border)' }} />
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <label
+                                                        className="text-[11px]"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        Skalenfarbe
+                                                    </label>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <ColorPicker
+                                                            value={(o.dialColor as string) || ''}
+                                                            fallback="#f59e0b"
+                                                            onChange={(v) => setO({ dialColor: v })}
+                                                            className="w-8 h-7 rounded cursor-pointer shrink-0"
+                                                            style={{
+                                                                border: '1px solid var(--app-border)',
+                                                                padding: '1px',
+                                                            }}
+                                                        />
+                                                        <button
+                                                            onClick={() => setO({ dialColor: undefined })}
+                                                            className="text-[10px] px-2 py-1 rounded"
+                                                            style={{
+                                                                background: 'var(--app-bg)',
+                                                                color: 'var(--text-secondary)',
+                                                                border: '1px solid var(--app-border)',
+                                                            }}
+                                                        >
+                                                            Auto
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <label
+                                                        className="text-[11px]"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        Skalenbreite
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min={2}
+                                                        max={24}
+                                                        step={1}
+                                                        value={(o.dialThickness as number) ?? 11}
+                                                        onChange={(e) =>
+                                                            setO({ dialThickness: Number(e.target.value) })
+                                                        }
+                                                        className="w-20 text-xs rounded-lg px-2 py-1 focus:outline-none"
+                                                        style={tInputStyle}
+                                                    />
+                                                </div>
+                                                <ColorThresholdsEditor
+                                                    label="Farbschwellen Skala (Soll-Wert)"
+                                                    thresholds={(o.dialColorThresholds as ColorThreshold[]) ?? []}
+                                                    onChange={(next) =>
                                                         setO({
-                                                            decimals:
-                                                                o.decimals === undefined ? defaultDecimals : undefined,
+                                                            dialColorThresholds: next.length ? next : undefined,
                                                         })
                                                     }
-                                                    title={
-                                                        o.decimals === undefined
-                                                            ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                                            : 'Auf globale Einstellung zurücksetzen'
-                                                    }
-                                                    className="px-1.5 rounded text-[10px] font-bold shrink-0"
-                                                    style={{
-                                                        background:
-                                                            o.decimals === undefined
-                                                                ? 'var(--accent)'
-                                                                : 'var(--app-border)',
-                                                        color:
-                                                            o.decimals === undefined ? '#fff' : 'var(--text-secondary)',
-                                                    }}
-                                                >
-                                                    Global
-                                                </button>
-                                            </div>
-                                        </div>
+                                                />
+                                            </>
+                                        )}
                                     </>
                                 );
                             })()}
@@ -14873,10 +17517,12 @@ export function WidgetFrame({
                             'switch',
                             'dimmer',
                             'thermostat',
+                            'climate',
                             'shutter',
                             'windowcontact',
                             'binarysensor',
                             'stateimage',
+                            'value',
                         ].includes(config.type) &&
                             (() => {
                                 const o = config.options ?? {};
@@ -15441,48 +18087,82 @@ export function WidgetFrame({
                                                 </div>
                                             </div>
 
-                                            {/* Per-column width (fr ratios) — e.g. 2 / 1 makes the first column twice as wide */}
+                                            {/* Per-column width: fr ratio (e.g. 2 / 1 makes the first column twice as
+                                            wide) or 'auto' = as wide as the cell content. A ratio column scales with
+                                            the widget, so a grid designed on the desktop grid spreads out when the same
+                                            widget is rendered full-width (mobile stack) — 'auto' columns keep the
+                                            content where it is at any width, like the compact layout does. */}
                                             {cols > 1 && (
                                                 <div>
                                                     <label
                                                         className="text-[11px] mb-1 block"
                                                         style={{ color: 'var(--text-secondary)' }}
                                                     >
-                                                        Spaltenbreiten (Verhältnis)
+                                                        Spaltenbreiten (Verhältnis / auto)
                                                     </label>
                                                     <div className="flex gap-1">
                                                         {Array.from({ length: cols }, (_, ci) => {
                                                             const cur = grid.colSizes?.[ci] ?? '1fr';
+                                                            const isAuto = cur.trim() === 'auto';
                                                             const num = parseFloat(cur) || 1;
+                                                            const setCol = (size: string) => {
+                                                                const arr = Array.from({ length: cols }, (_, k) =>
+                                                                    k === ci ? size : (grid.colSizes?.[k] ?? '1fr'),
+                                                                );
+                                                                // Only an all-equal *ratio* template is the same as no
+                                                                // template at all — all-'auto' must stay stored.
+                                                                const allEqualFr =
+                                                                    arr.every((s) => s === arr[0]) &&
+                                                                    arr[0].endsWith('fr');
+                                                                writeGrid({
+                                                                    ...grid,
+                                                                    colSizes: allEqualFr ? undefined : arr,
+                                                                });
+                                                            };
                                                             return (
-                                                                <input
+                                                                <div
                                                                     key={ci}
-                                                                    type="number"
-                                                                    min={0.25}
-                                                                    step={0.25}
-                                                                    value={num}
-                                                                    title={`Spalte ${ci + 1}`}
-                                                                    onChange={(e) => {
-                                                                        const v = Math.max(
-                                                                            0.25,
-                                                                            Number(e.target.value) || 1,
-                                                                        );
-                                                                        const arr = Array.from(
-                                                                            { length: cols },
-                                                                            (_, k) =>
-                                                                                k === ci
-                                                                                    ? `${v}fr`
-                                                                                    : (grid.colSizes?.[k] ?? '1fr'),
-                                                                        );
-                                                                        const allEqual = arr.every((s) => s === arr[0]);
-                                                                        writeGrid({
-                                                                            ...grid,
-                                                                            colSizes: allEqual ? undefined : arr,
-                                                                        });
-                                                                    }}
-                                                                    className={`flex-1 ${inputCls}`}
-                                                                    style={inputSty}
-                                                                />
+                                                                    className="flex-1 min-w-0 flex flex-col gap-1"
+                                                                >
+                                                                    <input
+                                                                        type="number"
+                                                                        min={0.25}
+                                                                        step={0.25}
+                                                                        value={isAuto ? '' : num}
+                                                                        disabled={isAuto}
+                                                                        placeholder="auto"
+                                                                        title={`Spalte ${ci + 1}`}
+                                                                        onChange={(e) =>
+                                                                            setCol(
+                                                                                `${Math.max(0.25, Number(e.target.value) || 1)}fr`,
+                                                                            )
+                                                                        }
+                                                                        className={inputCls}
+                                                                        style={{
+                                                                            ...inputSty,
+                                                                            opacity: isAuto ? 0.5 : 1,
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setCol(isAuto ? '1fr' : 'auto')}
+                                                                        title={`Spalte ${ci + 1}: Breite = Inhalt`}
+                                                                        className="text-[10px] rounded-md py-0.5"
+                                                                        style={{
+                                                                            background: isAuto
+                                                                                ? 'var(--accent)'
+                                                                                : 'var(--app-bg)',
+                                                                            color: isAuto
+                                                                                ? '#fff'
+                                                                                : 'var(--text-secondary)',
+                                                                            border: `1px solid ${isAuto ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                                        }}
+                                                                    >
+                                                                        {/* label shortened past ~8 columns so it
+                                                                        doesn't clip in the narrow per-column box */}
+                                                                        {cols > 8 ? 'A' : 'auto'}
+                                                                    </button>
+                                                                </div>
                                                             );
                                                         })}
                                                     </div>
@@ -15491,7 +18171,9 @@ export function WidgetFrame({
                                                         style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
                                                     >
                                                         Verhältnis der Spaltenbreiten – z.&nbsp;B. 2 / 1 macht die erste
-                                                        Spalte doppelt so breit.
+                                                        Spalte doppelt so breit. <b>auto</b> = so breit wie der Inhalt:
+                                                        bleibt bei jeder Widget-Breite gleich (z.&nbsp;B. mobile
+                                                        Vollbreite), Verhältnis-Spalten wachsen mit.
                                                     </p>
                                                 </div>
                                             )}
@@ -15648,11 +18330,13 @@ export function WidgetFrame({
                                                         rows={rows}
                                                         widgetType={config.type}
                                                         isUniversal={isUniversal}
-                                                        defaultDecimals={defaultDecimals}
                                                         onChange={(patch) => setCell(sel, patch)}
                                                         onOpenIconPicker={setCustomCellIconPicker}
-                                                        onOpenDpPicker={() => setCustomCellPickerOpen(true)}
+                                                        onOpenDpPicker={(field) =>
+                                                            setCustomCellPickerOpen(field ?? 'dpId')
+                                                        }
                                                         onOpenImagePicker={() => setCustomCellImagePickerOpen(true)}
+                                                        onOpenConditions={() => setCustomCellCondOpen(true)}
                                                     />
                                                 ) : (
                                                     <p
@@ -15706,51 +18390,107 @@ export function WidgetFrame({
                                 };
                                 return (
                                     <>
-                                        {/* Nur Uhrzeit */}
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                                Nur Uhrzeit (kein Datum)
-                                            </label>
-                                            <button
-                                                onClick={() =>
-                                                    set({
-                                                        timeOnly: !o.timeOnly,
-                                                        showTime: !o.timeOnly ? true : o.showTime,
-                                                    })
-                                                }
-                                                className="relative w-7 h-4 rounded-full transition-colors shrink-0"
-                                                style={{
-                                                    background: o.timeOnly ? 'var(--accent)' : 'var(--app-border)',
-                                                }}
+                                        {/* Eingabeformat */}
+                                        <div>
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
                                             >
-                                                <span
-                                                    className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
-                                                    style={{ left: o.timeOnly ? '14px' : '2px' }}
-                                                />
-                                            </button>
+                                                Eingabeformat
+                                            </label>
+                                            <select
+                                                value={(o.inputFormat as string) ?? 'picker'}
+                                                onChange={(e) => set({ inputFormat: e.target.value })}
+                                                className={inputCls2}
+                                                style={inputSty2}
+                                            >
+                                                <option value="picker">Datums-/Zeitwähler</option>
+                                                <option value="custom">Eigenes Format…</option>
+                                            </select>
                                         </div>
-                                        {/* Uhrzeit anzeigen — nur wenn nicht timeOnly */}
-                                        {!o.timeOnly && (
-                                            <div className="flex items-center justify-between">
+                                        {o.inputFormat === 'custom' && (
+                                            <div>
                                                 <label
-                                                    className="text-[11px]"
+                                                    className="text-[11px] mb-1 block"
                                                     style={{ color: 'var(--text-secondary)' }}
                                                 >
-                                                    Uhrzeit-Eingabe anzeigen
+                                                    Eingabe-Muster
                                                 </label>
-                                                <button
-                                                    onClick={() => set({ showTime: !o.showTime })}
-                                                    className="relative w-7 h-4 rounded-full transition-colors shrink-0"
-                                                    style={{
-                                                        background: o.showTime ? 'var(--accent)' : 'var(--app-border)',
-                                                    }}
+                                                <input
+                                                    type="text"
+                                                    value={(o.inputPattern as string) ?? ''}
+                                                    onChange={(e) => set({ inputPattern: e.target.value || undefined })}
+                                                    placeholder="z.B. MM.yyyy"
+                                                    className={`${inputCls2} font-mono`}
+                                                    style={inputSty2}
+                                                />
+                                                <p
+                                                    className="text-[10px] mt-1 leading-tight"
+                                                    style={{ color: 'var(--text-secondary)' }}
                                                 >
-                                                    <span
-                                                        className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
-                                                        style={{ left: o.showTime ? '14px' : '2px' }}
-                                                    />
-                                                </button>
+                                                    Das Muster bestimmt die Auswahl: <code>MM.yyyy</code> →
+                                                    Monatswähler, <code>dd.MM.yyyy</code> → Kalender, <code>HH:mm</code>{' '}
+                                                    → Uhrzeit; sonst freies Textfeld. Nicht genannte Teile bleiben
+                                                    erhalten. Tokens: {DATE_PATTERN_TOKENS}
+                                                </p>
                                             </div>
+                                        )}
+                                        {/* Picker-Modus: Nur Uhrzeit / Uhrzeit-Eingabe — beim eigenen Format
+                                            legt stattdessen das Muster fest, welche Felder erscheinen. */}
+                                        {o.inputFormat !== 'custom' && (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <label
+                                                        className="text-[11px]"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >
+                                                        Nur Uhrzeit (kein Datum)
+                                                    </label>
+                                                    <button
+                                                        onClick={() =>
+                                                            set({
+                                                                timeOnly: !o.timeOnly,
+                                                                showTime: !o.timeOnly ? true : o.showTime,
+                                                            })
+                                                        }
+                                                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                                                        style={{
+                                                            background: o.timeOnly
+                                                                ? 'var(--accent)'
+                                                                : 'var(--app-border)',
+                                                        }}
+                                                    >
+                                                        <span
+                                                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                                            style={{ left: o.timeOnly ? '14px' : '2px' }}
+                                                        />
+                                                    </button>
+                                                </div>
+                                                {!o.timeOnly && (
+                                                    <div className="flex items-center justify-between">
+                                                        <label
+                                                            className="text-[11px]"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
+                                                            Uhrzeit-Eingabe anzeigen
+                                                        </label>
+                                                        <button
+                                                            onClick={() => set({ showTime: !o.showTime })}
+                                                            className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                                                            style={{
+                                                                background: o.showTime
+                                                                    ? 'var(--accent)'
+                                                                    : 'var(--app-border)',
+                                                            }}
+                                                        >
+                                                            <span
+                                                                className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                                                style={{ left: o.showTime ? '14px' : '2px' }}
+                                                            />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </>
                                         )}
                                         {/* Ausgabeformat */}
                                         <div>
@@ -15775,6 +18515,32 @@ export function WidgetFrame({
                                                 )}
                                             </select>
                                         </div>
+                                        {fmt === 'custom' && (
+                                            <div>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Ausgabe-Muster
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={(o.outputPattern as string) ?? ''}
+                                                    onChange={(e) =>
+                                                        set({ outputPattern: e.target.value || undefined })
+                                                    }
+                                                    placeholder={DEFAULT_DATE_PATTERN}
+                                                    className={`${inputCls2} font-mono`}
+                                                    style={inputSty2}
+                                                />
+                                                <p
+                                                    className="text-[10px] mt-1 leading-tight"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Tokens: {DATE_PATTERN_TOKENS}
+                                                </p>
+                                            </div>
+                                        )}
                                     </>
                                 );
                             })()}
@@ -15791,6 +18557,8 @@ export function WidgetFrame({
                                 const showSubmit = o.showSubmit !== false;
                                 const placeholder = (o.placeholder as string) ?? '';
                                 const textAlign = (o.textAlign as 'left' | 'right' | 'center') ?? 'left';
+                                const fieldAlign = (o.fieldAlign as 'left' | 'right' | 'center') ?? 'left';
+                                const hasFixedWidth = Number(o.inputWidth) > 0;
                                 const inputCls3 = 'w-full text-xs rounded-lg px-2.5 py-2 focus:outline-none';
                                 const inputSty3 = {
                                     background: 'var(--app-bg)',
@@ -15818,22 +18586,45 @@ export function WidgetFrame({
                                             </label>
                                             <Toggle on={multiline} onClick={() => set({ multiline: !multiline })} />
                                         </div>
-                                        {/* Platzhalter */}
-                                        <div>
-                                            <label
-                                                className="text-[11px] mb-1 block"
-                                                style={{ color: 'var(--text-secondary)' }}
-                                            >
-                                                Platzhalter
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={placeholder}
-                                                onChange={(e) => set({ placeholder: e.target.value || undefined })}
-                                                placeholder="z.B. Nachricht eingeben…"
-                                                className={inputCls3}
-                                                style={inputSty3}
-                                            />
+                                        {/* Platzhalter (70%) + Feldbreite (30%) nebeneinander */}
+                                        <div className="flex gap-2">
+                                            <div style={{ flex: '7 1 0%', minWidth: 0 }}>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Platzhalter
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={placeholder}
+                                                    onChange={(e) => set({ placeholder: e.target.value || undefined })}
+                                                    placeholder="z.B. Nachricht eingeben…"
+                                                    className={inputCls3}
+                                                    style={inputSty3}
+                                                />
+                                            </div>
+                                            <div style={{ flex: '3 1 0%', minWidth: 0 }}>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Feldbreite (px)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={20}
+                                                    step={10}
+                                                    value={(o.inputWidth as number) ?? ''}
+                                                    onChange={(e) => {
+                                                        const n = Number(e.target.value);
+                                                        set({ inputWidth: e.target.value && n > 0 ? n : undefined });
+                                                    }}
+                                                    placeholder="voll"
+                                                    className={inputCls3}
+                                                    style={inputSty3}
+                                                />
+                                            </div>
                                         </div>
                                         {/* Eingabeart — bei Textarea ausgeblendet (immer Text) */}
                                         {!multiline && (
@@ -15979,6 +18770,26 @@ export function WidgetFrame({
                                                             className="text-[11px] font-medium"
                                                             style={{ color: 'var(--text-secondary)' }}
                                                         >
+                                                            Feld nach dem Senden leeren
+                                                        </label>
+                                                        <p
+                                                            className="text-[10px]"
+                                                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                                                        >
+                                                            Kommandofeld: zeigt den Datenpunkt-Wert nicht an
+                                                        </p>
+                                                    </div>
+                                                    <Toggle
+                                                        on={!!o.clearAfterSubmit}
+                                                        onClick={() => set({ clearAfterSubmit: !o.clearAfterSubmit })}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <label
+                                                            className="text-[11px] font-medium"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
                                                             Sicherheitsabfrage
                                                         </label>
                                                         <p
@@ -16057,6 +18868,46 @@ export function WidgetFrame({
                                                 })}
                                             </div>
                                         </div>
+                                        {/* Feldausrichtung — nur bei fester Feldbreite wirksam */}
+                                        {hasFixedWidth && (
+                                            <div>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Feldausrichtung
+                                                </label>
+                                                <div className="flex gap-1">
+                                                    {(
+                                                        [
+                                                            { v: 'left', label: 'Links' },
+                                                            { v: 'center', label: 'Mittig' },
+                                                            { v: 'right', label: 'Rechts' },
+                                                        ] as const
+                                                    ).map(({ v, label }) => {
+                                                        const active = fieldAlign === v;
+                                                        return (
+                                                            <button
+                                                                key={v}
+                                                                onClick={() =>
+                                                                    set({ fieldAlign: v === 'left' ? undefined : v })
+                                                                }
+                                                                className="flex-1 text-[10px] py-1.5 px-2 rounded-lg transition-colors"
+                                                                style={{
+                                                                    background: active
+                                                                        ? 'var(--accent)'
+                                                                        : 'var(--app-bg)',
+                                                                    color: active ? '#fff' : 'var(--text-secondary)',
+                                                                    border: `1px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                                                }}
+                                                            >
+                                                                {label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                         {/* Schreibschutz */}
                                         <div className="flex items-center justify-between">
                                             <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
@@ -16068,117 +18919,28 @@ export function WidgetFrame({
                                 );
                             })()}
 
-                        {/* ── Farbschwellen ── */}
+                        {/* ── Farbschwellen ──
+                            The lists carry theirs in their own "Werte & Farben"
+                            section, right next to the other global colours. */}
                         {(config.type === 'value' ||
                             config.type === 'dimmer' ||
                             config.type === 'shutter' ||
-                            config.type === 'thermostat' ||
-                            config.type === 'list' ||
-                            config.type === 'autolist') &&
-                            (() => {
-                                type CT = [number, string];
-                                const thresholds = (config.options?.colorThresholds as CT[]) ?? [];
-                                const setThresholds = (next: CT[]) =>
-                                    onConfigChange({
-                                        ...config,
-                                        options: { ...config.options, colorThresholds: next.length ? next : undefined },
-                                    });
-                                return (
-                                    <div
-                                        style={{
-                                            borderTop: '1px solid var(--app-border)',
-                                            marginTop: 4,
-                                            paddingTop: 8,
-                                        }}
-                                    >
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                                Farbschwellen
-                                            </label>
-                                            <button
-                                                onClick={() => setThresholds([...thresholds, [100, '#22c55e']])}
-                                                className="text-[10px] px-2 py-0.5 rounded hover:opacity-80"
-                                                style={{
-                                                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                                                    color: 'var(--accent)',
-                                                }}
-                                            >
-                                                + Hinzufügen
-                                            </button>
-                                        </div>
-                                        {thresholds.length > 0 && (
-                                            <p
-                                                className="text-[10px] mb-1.5"
-                                                style={{ color: 'var(--text-secondary)', opacity: 0.65 }}
-                                            >
-                                                Wert &lt; Schwelle → Farbe · aufsteigend sortieren
-                                            </p>
-                                        )}
-                                        <div className="space-y-1">
-                                            {thresholds.map(([thresh, color], i) => (
-                                                <div key={i} className="flex items-center gap-1.5">
-                                                    <button
-                                                        onClick={() =>
-                                                            setThresholds(thresholds.filter((_, j) => j !== i))
-                                                        }
-                                                        className="text-[11px] w-5 h-5 flex items-center justify-center rounded shrink-0"
-                                                        style={{
-                                                            color: 'var(--text-secondary)',
-                                                            background: 'var(--app-bg)',
-                                                            border: '1px solid var(--app-border)',
-                                                        }}
-                                                    >
-                                                        ×
-                                                    </button>
-                                                    <ColorPicker
-                                                        value={color}
-                                                        fallback={'#22c55e'}
-                                                        onChange={(v) => {
-                                                            const n = [...thresholds];
-                                                            n[i] = [thresh, v];
-                                                            setThresholds(n);
-                                                        }}
-                                                        className="w-8 h-7 rounded cursor-pointer shrink-0"
-                                                        style={{
-                                                            border: '1px solid var(--app-border)',
-                                                            padding: '1px',
-                                                        }}
-                                                    />
-                                                    <span
-                                                        className="text-[10px] shrink-0"
-                                                        style={{ color: 'var(--text-secondary)' }}
-                                                    >
-                                                        Wert &lt;
-                                                    </span>
-                                                    <input
-                                                        type="number"
-                                                        value={thresh}
-                                                        onChange={(e) => {
-                                                            const n = [...thresholds];
-                                                            n[i] = [Number(e.target.value), color];
-                                                            setThresholds(n);
-                                                        }}
-                                                        className="flex-1 text-xs rounded-lg px-2 py-1 focus:outline-none"
-                                                        style={{
-                                                            background: 'var(--app-bg)',
-                                                            color: 'var(--text-primary)',
-                                                            border: '1px solid var(--app-border)',
-                                                        }}
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {thresholds.length === 0 && (
-                                            <p
-                                                className="text-[10px] italic"
-                                                style={{ color: 'var(--text-secondary)', opacity: 0.45 }}
-                                            >
-                                                Keine Farbschwellen konfiguriert
-                                            </p>
-                                        )}
-                                    </div>
-                                );
-                            })()}
+                            config.type === 'thermostat') && (
+                            <div style={{ borderTop: '1px solid var(--app-border)', marginTop: 4, paddingTop: 8 }}>
+                                <ColorThresholdsEditor
+                                    thresholds={(config.options?.colorThresholds as ColorThreshold[]) ?? []}
+                                    onChange={(next) =>
+                                        onConfigChange({
+                                            ...config,
+                                            options: {
+                                                ...config.options,
+                                                colorThresholds: next.length ? next : undefined,
+                                            },
+                                        })
+                                    }
+                                />
+                            </div>
+                        )}
                     </div>
                 </CenteredModal>
             )}
@@ -16187,7 +18949,11 @@ export function WidgetFrame({
             {pickerTarget && (
                 <DatapointPicker
                     allowedTypes={
-                        pickerTarget === 'datapoint' && config.type === 'stateimage' ? ['boolean'] : undefined
+                        pickerTarget === 'datapoint' &&
+                        config.type === 'stateimage' &&
+                        config.options?.stateMode !== 'condition'
+                            ? ['boolean']
+                            : undefined
                     }
                     currentValue={
                         pickerTarget === 'datapoint' || pickerTarget === 'universal-dp'
@@ -16214,175 +18980,219 @@ export function WidgetFrame({
                                           ? ((config.options?.stopDp as string) ?? '')
                                           : pickerTarget === 'shutter_openDp'
                                             ? ((config.options?.openDp as string) ?? '')
-                                            : pickerTarget === 'shutter_closeDp'
-                                              ? ((config.options?.closeDp as string) ?? '')
-                                              : pickerTarget === 'dimmer_switchDp'
-                                                ? ((config.options?.switchDp as string) ?? '')
-                                                : pickerTarget === 'light_switchDp'
-                                                  ? ((config.options?.switchDp as string) ?? '')
-                                                  : pickerTarget === 'light_brightnessDp'
-                                                    ? ((config.options?.brightnessDp as string) ?? '')
-                                                    : pickerTarget === 'light_hueDp'
-                                                      ? ((config.options?.hueDp as string) ?? '')
-                                                      : pickerTarget === 'light_saturationDp'
-                                                        ? ((config.options?.saturationDp as string) ?? '')
-                                                        : pickerTarget === 'light_rDp'
-                                                          ? ((config.options?.rDp as string) ?? '')
-                                                          : pickerTarget === 'light_gDp'
-                                                            ? ((config.options?.gDp as string) ?? '')
-                                                            : pickerTarget === 'light_bDp'
-                                                              ? ((config.options?.bDp as string) ?? '')
-                                                              : pickerTarget === 'light_colorDp'
-                                                                ? ((config.options?.colorDp as string) ?? '')
-                                                                : pickerTarget === 'light_temperatureDp'
-                                                                  ? ((config.options?.temperatureDp as string) ?? '')
-                                                                  : pickerTarget === 'light_effectDp'
-                                                                    ? ((config.options?.effectDp as string) ?? '')
-                                                                    : pickerTarget === 'gauge_pointer2Dp'
-                                                                      ? ((config.options
-                                                                            ?.pointer2Datapoint as string) ?? '')
-                                                                      : pickerTarget === 'gauge_pointer3Dp'
-                                                                        ? ((config.options
-                                                                              ?.pointer3Datapoint as string) ?? '')
-                                                                        : pickerTarget === 'windowcontact_batteryDp'
-                                                                          ? ((config.options?.batteryDp as string) ??
-                                                                            '')
-                                                                          : pickerTarget === 'wc_lockDp'
-                                                                            ? ((config.options?.lockDp as string) ?? '')
-                                                                            : pickerTarget === 'status_batteryDp'
+                                            : pickerTarget === 'shutter_actualPositionDp'
+                                              ? ((config.options?.actualPositionDp as string) ?? '')
+                                              : pickerTarget === 'shutter_tiltDp'
+                                                ? ((config.options?.tiltDp as string) ?? '')
+                                                : pickerTarget === 'shutter_actualTiltDp'
+                                                  ? ((config.options?.actualTiltDp as string) ?? '')
+                                                  : pickerTarget === 'shutter_closeDp'
+                                                    ? ((config.options?.closeDp as string) ?? '')
+                                                    : pickerTarget === 'dimmer_switchDp'
+                                                      ? ((config.options?.switchDp as string) ?? '')
+                                                      : pickerTarget === 'light_switchDp'
+                                                        ? ((config.options?.switchDp as string) ?? '')
+                                                        : pickerTarget === 'light_brightnessDp'
+                                                          ? ((config.options?.brightnessDp as string) ?? '')
+                                                          : pickerTarget === 'light_hueDp'
+                                                            ? ((config.options?.hueDp as string) ?? '')
+                                                            : pickerTarget === 'light_saturationDp'
+                                                              ? ((config.options?.saturationDp as string) ?? '')
+                                                              : pickerTarget === 'light_rDp'
+                                                                ? ((config.options?.rDp as string) ?? '')
+                                                                : pickerTarget === 'light_gDp'
+                                                                  ? ((config.options?.gDp as string) ?? '')
+                                                                  : pickerTarget === 'light_bDp'
+                                                                    ? ((config.options?.bDp as string) ?? '')
+                                                                    : pickerTarget === 'light_colorDp'
+                                                                      ? ((config.options?.colorDp as string) ?? '')
+                                                                      : pickerTarget === 'light_temperatureDp'
+                                                                        ? ((config.options?.temperatureDp as string) ??
+                                                                          '')
+                                                                        : pickerTarget === 'light_effectDp'
+                                                                          ? ((config.options?.effectDp as string) ?? '')
+                                                                          : pickerTarget === 'gauge_pointer2Dp'
+                                                                            ? ((config.options
+                                                                                  ?.pointer2Datapoint as string) ?? '')
+                                                                            : pickerTarget === 'gauge_pointer3Dp'
                                                                               ? ((config.options
-                                                                                    ?.batteryDp as string) ?? '')
-                                                                              : pickerTarget === 'status_unreachDp'
+                                                                                    ?.pointer3Datapoint as string) ??
+                                                                                '')
+                                                                              : pickerTarget ===
+                                                                                  'windowcontact_batteryDp'
                                                                                 ? ((config.options
-                                                                                      ?.unreachDp as string) ?? '')
-                                                                                : pickerTarget === 'camera_wakeUpDp'
+                                                                                      ?.batteryDp as string) ?? '')
+                                                                                : pickerTarget === 'wc_lockDp'
                                                                                   ? ((config.options
-                                                                                        ?.wakeUpDp as string) ?? '')
-                                                                                  : pickerTarget === 'camera_urlDp'
+                                                                                        ?.lockDp as string) ?? '')
+                                                                                  : pickerTarget === 'status_batteryDp'
                                                                                     ? ((config.options
-                                                                                          ?.streamUrlDp as string) ??
-                                                                                      '')
-                                                                                    : pickerTarget === 'html_dp'
+                                                                                          ?.batteryDp as string) ?? '')
+                                                                                    : pickerTarget ===
+                                                                                        'status_unreachDp'
                                                                                       ? ((config.options
-                                                                                            ?.htmlDatapoint as string) ??
+                                                                                            ?.unreachDp as string) ??
                                                                                         '')
-                                                                                      : pickerTarget === 'image_dp'
+                                                                                      : pickerTarget ===
+                                                                                          'camera_wakeUpDp'
                                                                                         ? ((config.options
-                                                                                              ?.imageDatapoint as string) ??
+                                                                                              ?.wakeUpDp as string) ??
                                                                                           '')
-                                                                                        : pickerTarget === 'mp_dp'
-                                                                                          ? ((config.options?.[
-                                                                                                mpPickerKey
-                                                                                            ] as string) ?? '')
-                                                                                          : pickerTarget === 'mp_chip'
-                                                                                            ? (() => {
-                                                                                                  const chips =
-                                                                                                      (config.options
-                                                                                                          ?.chips as Array<{
-                                                                                                          dp: string;
-                                                                                                      }>) ?? [];
-                                                                                                  return (
-                                                                                                      chips[mpChipIdx]
-                                                                                                          ?.dp ?? ''
-                                                                                                  );
-                                                                                              })()
+                                                                                        : pickerTarget ===
+                                                                                            'camera_urlDp'
+                                                                                          ? ((config.options
+                                                                                                ?.streamUrlDp as string) ??
+                                                                                            '')
+                                                                                          : pickerTarget === 'html_dp'
+                                                                                            ? ((config.options
+                                                                                                  ?.htmlDatapoint as string) ??
+                                                                                              '')
                                                                                             : pickerTarget ===
-                                                                                                'chips_chip'
-                                                                                              ? (() => {
-                                                                                                    const chips =
-                                                                                                        (config.options
-                                                                                                            ?.chips as Array<{
-                                                                                                            dp: string;
-                                                                                                        }>) ?? [];
-                                                                                                    return (
-                                                                                                        chips[
-                                                                                                            chipsChipIdx
-                                                                                                        ]?.dp ?? ''
-                                                                                                    );
-                                                                                                })()
-                                                                                              : pickerTarget ===
-                                                                                                  'chips_checkDp'
-                                                                                                ? ((config.options
-                                                                                                      ?.checkDp as string) ??
-                                                                                                  '')
+                                                                                                'image_dp'
+                                                                                              ? ((config.options
+                                                                                                    ?.imageDatapoint as string) ??
+                                                                                                '')
+                                                                                              : pickerTarget === 'mp_dp'
+                                                                                                ? ((config.options?.[
+                                                                                                      mpPickerKey
+                                                                                                  ] as string) ?? '')
                                                                                                 : pickerTarget ===
-                                                                                                    'carousel_item'
+                                                                                                    'mp_chip'
                                                                                                   ? (() => {
-                                                                                                        const items =
+                                                                                                        const chips =
                                                                                                             (config
                                                                                                                 .options
-                                                                                                                ?.items as Array<{
+                                                                                                                ?.chips as Array<{
                                                                                                                 dp: string;
                                                                                                             }>) ?? [];
                                                                                                         return (
-                                                                                                            items[
-                                                                                                                carouselItemIdx
+                                                                                                            chips[
+                                                                                                                mpChipIdx
                                                                                                             ]?.dp ?? ''
                                                                                                         );
                                                                                                     })()
                                                                                                   : pickerTarget ===
-                                                                                                      'carousel_checkDp'
-                                                                                                    ? ((config.options
-                                                                                                          ?.checkDp as string) ??
-                                                                                                      '')
+                                                                                                      'chips_chip'
+                                                                                                    ? (() => {
+                                                                                                          const chips =
+                                                                                                              (config
+                                                                                                                  .options
+                                                                                                                  ?.chips as Array<{
+                                                                                                                  dp: string;
+                                                                                                              }>) ?? [];
+                                                                                                          return (
+                                                                                                              chips[
+                                                                                                                  chipsChipIdx
+                                                                                                              ]?.dp ??
+                                                                                                              ''
+                                                                                                          );
+                                                                                                      })()
                                                                                                     : pickerTarget ===
-                                                                                                        'http_response_dp'
+                                                                                                        'chips_checkDp'
                                                                                                       ? ((config.options
-                                                                                                            ?.responseDatapoint as string) ??
+                                                                                                            ?.checkDp as string) ??
                                                                                                         '')
                                                                                                       : pickerTarget ===
-                                                                                                          'iframe_urlDp'
-                                                                                                        ? ((config
-                                                                                                              .options
-                                                                                                              ?.iframeUrlDp as string) ??
-                                                                                                          '')
+                                                                                                          'carousel_item'
+                                                                                                        ? (() => {
+                                                                                                              const items =
+                                                                                                                  (config
+                                                                                                                      .options
+                                                                                                                      ?.items as Array<{
+                                                                                                                      dp: string;
+                                                                                                                  }>) ??
+                                                                                                                  [];
+                                                                                                              return (
+                                                                                                                  items[
+                                                                                                                      carouselItemIdx
+                                                                                                                  ]
+                                                                                                                      ?.dp ??
+                                                                                                                  ''
+                                                                                                              );
+                                                                                                          })()
                                                                                                         : pickerTarget ===
-                                                                                                            'sl_action'
-                                                                                                          ? (() => {
-                                                                                                                const acts =
-                                                                                                                    (config
-                                                                                                                        .options
-                                                                                                                        ?.actions as Array<{
-                                                                                                                        dp: string;
-                                                                                                                    }>) ??
-                                                                                                                    [];
-                                                                                                                return (
-                                                                                                                    acts[
-                                                                                                                        slActionIdx
-                                                                                                                    ]
-                                                                                                                        ?.dp ??
-                                                                                                                    ''
-                                                                                                                );
-                                                                                                            })()
+                                                                                                            'carousel_checkDp'
+                                                                                                          ? ((config
+                                                                                                                .options
+                                                                                                                ?.checkDp as string) ??
+                                                                                                            '')
                                                                                                           : pickerTarget ===
-                                                                                                              'camera_slot'
-                                                                                                            ? (() => {
-                                                                                                                  const key =
-                                                                                                                      (config.layout ??
-                                                                                                                          'minimal') ===
-                                                                                                                      'default'
-                                                                                                                          ? 'infoItems'
-                                                                                                                          : 'customSlots';
-                                                                                                                  const arr =
-                                                                                                                      (config
-                                                                                                                          .options?.[
-                                                                                                                          key
-                                                                                                                      ] as CameraSlot[]) ??
-                                                                                                                      [];
-                                                                                                                  return (
-                                                                                                                      arr[
-                                                                                                                          cameraSlotPickerIdx
-                                                                                                                      ]
-                                                                                                                          ?.datapoint ??
-                                                                                                                      ''
-                                                                                                                  );
-                                                                                                              })()
-                                                                                                            : ((config
+                                                                                                              'http_response_dp'
+                                                                                                            ? ((config
                                                                                                                   .options
-                                                                                                                  ?.actualDatapoint as string) ??
+                                                                                                                  ?.responseDatapoint as string) ??
                                                                                                               '')
+                                                                                                            : pickerTarget ===
+                                                                                                                'iframe_urlDp'
+                                                                                                              ? ((config
+                                                                                                                    .options
+                                                                                                                    ?.iframeUrlDp as string) ??
+                                                                                                                '')
+                                                                                                              : pickerTarget ===
+                                                                                                                  'sl_action'
+                                                                                                                ? (() => {
+                                                                                                                      const acts =
+                                                                                                                          (config
+                                                                                                                              .options
+                                                                                                                              ?.actions as Array<{
+                                                                                                                              dp: string;
+                                                                                                                          }>) ??
+                                                                                                                          [];
+                                                                                                                      return (
+                                                                                                                          acts[
+                                                                                                                              slActionIdx
+                                                                                                                          ]
+                                                                                                                              ?.dp ??
+                                                                                                                          ''
+                                                                                                                      );
+                                                                                                                  })()
+                                                                                                                : pickerTarget ===
+                                                                                                                    'camera_slot'
+                                                                                                                  ? (() => {
+                                                                                                                        const key =
+                                                                                                                            (config.layout ??
+                                                                                                                                'minimal') ===
+                                                                                                                            'default'
+                                                                                                                                ? 'infoItems'
+                                                                                                                                : 'customSlots';
+                                                                                                                        const arr =
+                                                                                                                            (config
+                                                                                                                                .options?.[
+                                                                                                                                key
+                                                                                                                            ] as CameraSlot[]) ??
+                                                                                                                            [];
+                                                                                                                        return (
+                                                                                                                            arr[
+                                                                                                                                cameraSlotPickerIdx
+                                                                                                                            ]
+                                                                                                                                ?.datapoint ??
+                                                                                                                            ''
+                                                                                                                        );
+                                                                                                                    })()
+                                                                                                                  : pickerTarget ===
+                                                                                                                      'scale_minDp'
+                                                                                                                    ? ((config
+                                                                                                                          .options
+                                                                                                                          ?.minDatapoint as string) ??
+                                                                                                                      '')
+                                                                                                                    : pickerTarget ===
+                                                                                                                        'scale_maxDp'
+                                                                                                                      ? ((config
+                                                                                                                            .options
+                                                                                                                            ?.maxDatapoint as string) ??
+                                                                                                                        '')
+                                                                                                                      : ((config
+                                                                                                                            .options
+                                                                                                                            ?.actualDatapoint as string) ??
+                                                                                                                        '')
                     }
                     onSelect={(id, unit, name, role, dpType) => {
+                        if (pickerTarget === 'datapoint' && config.type === 'clock') {
+                            // Clock: the DP is only an optional time source — never run type
+                            // auto-detection or secondary-DP discovery on it.
+                            onConfigChange({ ...config, datapoint: id });
+                            return;
+                        }
                         if (pickerTarget === 'datapoint') {
                             const detected =
                                 role || dpType
@@ -16572,6 +19382,12 @@ export function WidgetFrame({
                             onConfigChange({ ...config, options: { ...config.options, openDp: id } });
                         } else if (pickerTarget === 'shutter_closeDp') {
                             onConfigChange({ ...config, options: { ...config.options, closeDp: id } });
+                        } else if (pickerTarget === 'shutter_actualPositionDp') {
+                            onConfigChange({ ...config, options: { ...config.options, actualPositionDp: id } });
+                        } else if (pickerTarget === 'shutter_tiltDp') {
+                            onConfigChange({ ...config, options: { ...config.options, tiltDp: id } });
+                        } else if (pickerTarget === 'shutter_actualTiltDp') {
+                            onConfigChange({ ...config, options: { ...config.options, actualTiltDp: id } });
                         } else if (pickerTarget === 'dimmer_switchDp') {
                             onConfigChange({ ...config, options: { ...config.options, switchDp: id } });
                         } else if (pickerTarget === 'light_switchDp') {
@@ -16596,6 +19412,10 @@ export function WidgetFrame({
                             onConfigChange({ ...config, options: { ...config.options, temperatureDp: id } });
                         } else if (pickerTarget === 'light_effectDp') {
                             onConfigChange({ ...config, options: { ...config.options, effectDp: id } });
+                        } else if (pickerTarget === 'scale_minDp') {
+                            onConfigChange({ ...config, options: { ...config.options, minDatapoint: id } });
+                        } else if (pickerTarget === 'scale_maxDp') {
+                            onConfigChange({ ...config, options: { ...config.options, maxDatapoint: id } });
                         } else if (pickerTarget === 'gauge_pointer2Dp') {
                             onConfigChange({ ...config, options: { ...config.options, pointer2Datapoint: id } });
                         } else if (pickerTarget === 'gauge_pointer3Dp') {
@@ -16622,6 +19442,8 @@ export function WidgetFrame({
                             onConfigChange({ ...config, options: { ...config.options, humidityDatapoint: id } });
                         } else if (pickerTarget === 'climate_targetDp') {
                             onConfigChange({ ...config, options: { ...config.options, targetDatapoint: id } });
+                        } else if (pickerTarget === 'climate_pressureDp') {
+                            onConfigChange({ ...config, options: { ...config.options, pressureDatapoint: id } });
                         } else if (pickerTarget === 'iframe_urlDp') {
                             onConfigChange({ ...config, options: { ...config.options, iframeUrlDp: id } });
                         } else if (pickerTarget === 'image_dp') {
@@ -16648,6 +19470,8 @@ export function WidgetFrame({
                             onConfigChange({ ...config, options: { ...config.options, items } });
                         } else if (pickerTarget === 'carousel_checkDp') {
                             onConfigChange({ ...config, options: { ...config.options, checkDp: id } });
+                        } else if (pickerTarget === 'panels_activeDp') {
+                            onConfigChange({ ...config, options: { ...config.options, activeDp: id } });
                         } else if (pickerTarget === 'map_marker') {
                             const mk = [...((config.options?.markers as Array<Record<string, unknown>>) ?? [])];
                             if (mk[mapMarkerPicker.idx]) {
@@ -16720,6 +19544,18 @@ export function WidgetFrame({
                         </CenteredModal>
                     );
                 })()}
+
+            {/* Switch widget: read-back datapoint picker */}
+            {switchStatusDpPicker && (
+                <DatapointPicker
+                    currentValue={(config.options?.statusDp as string) ?? ''}
+                    onSelect={(id) => {
+                        onConfigChange({ ...config, options: { ...config.options, statusDp: id } });
+                        setSwitchStatusDpPicker(false);
+                    }}
+                    onClose={() => setSwitchStatusDpPicker(false)}
+                />
+            )}
 
             {/* Image file picker */}
             {imageFilePicker && (
@@ -17018,7 +19854,7 @@ export function WidgetFrame({
             )}
 
             {/* Custom-Grid DP picker */}
-            {customCellPickerOpen &&
+            {customCellPickerOpen !== null &&
                 selectedCustomCell !== null &&
                 (() => {
                     const fb =
@@ -17031,16 +19867,18 @@ export function WidgetFrame({
                     const idx = selectedCustomCell;
                     return (
                         <DatapointPicker
-                            currentValue={grid.cells[idx]?.dpId ?? ''}
+                            currentValue={grid.cells[idx]?.[customCellPickerOpen] ?? ''}
                             onSelect={(id) => {
                                 const next: CustomGridDef = {
                                     ...grid,
-                                    cells: grid.cells.map((c, i) => (i === idx ? { ...c, dpId: id } : c)),
+                                    cells: grid.cells.map((c, i) =>
+                                        i === idx ? { ...c, [customCellPickerOpen]: id } : c,
+                                    ),
                                 };
                                 onConfigChange({ ...config, options: { ...config.options, customGrid: next } });
-                                setCustomCellPickerOpen(false);
+                                setCustomCellPickerOpen(null);
                             }}
-                            onClose={() => setCustomCellPickerOpen(false)}
+                            onClose={() => setCustomCellPickerOpen(null)}
                         />
                     );
                 })()}
@@ -17077,12 +19915,54 @@ export function WidgetFrame({
                     );
                 })()}
 
+            {/* Custom-Grid per-cell conditional formatting */}
+            {customCellCondOpen &&
+                selectedCustomCell !== null &&
+                (() => {
+                    const fb =
+                        config.type === 'universal'
+                            ? DEFAULT_UNIVERSAL_GRID
+                            : config.type === 'knob'
+                              ? DEFAULT_KNOB_GRID
+                              : DEFAULT_CUSTOM_GRID;
+                    const grid = normalizeGrid(config.options?.customGrid, fb);
+                    const idx = selectedCustomCell;
+                    const cell = grid.cells[idx];
+                    if (!cell) return null;
+                    return (
+                        <CenteredModal
+                            title={`Bedingungen · Zeile ${Math.floor(idx / grid.cols) + 1}, Spalte ${(idx % grid.cols) + 1}`}
+                            onClose={() => setCustomCellCondOpen(false)}
+                            wide
+                        >
+                            <CellConditionEditor
+                                rules={cell.conditions ?? []}
+                                ownDpId={cell.dpId}
+                                onChange={(next) => {
+                                    const nextGrid: CustomGridDef = {
+                                        ...grid,
+                                        cells: grid.cells.map((c, i) =>
+                                            i === idx ? { ...c, conditions: next.length ? next : undefined } : c,
+                                        ),
+                                    };
+                                    onConfigChange({ ...config, options: { ...config.options, customGrid: nextGrid } });
+                                }}
+                            />
+                        </CenteredModal>
+                    );
+                })()}
+
             {/* Export (with optional anonymisation) */}
             {showExportDialog && (
                 <ExportAnonymizeDialog
                     onExport={(anon) => exportWidget(config, anon)}
                     onClose={() => setShowExportDialog(false)}
                 />
+            )}
+
+            {/* Save as Widget-Designer preset */}
+            {showSavePresetDialog && (
+                <SavePresetDialog widget={config} onClose={() => setShowSavePresetDialog(false)} />
             )}
 
             {/* Conditions Modal */}
@@ -17105,6 +19985,13 @@ export function WidgetFrame({
                 <CenteredModal title="Bedingungen" onClose={() => openPanelFor(null)} wide>
                     <ConditionEditor
                         conditions={conditions}
+                        sourceCtx={sourceCtx}
+                        slots={conditionSlots}
+                        current={{
+                            title: config.title,
+                            icon: config.options?.icon as string | undefined,
+                            iconSize: config.options?.iconSize as number | undefined,
+                        }}
                         onChange={(next) =>
                             onConfigChange({ ...config, options: { ...config.options, conditions: next } })
                         }
@@ -17116,6 +20003,7 @@ export function WidgetFrame({
                 <CenteredModal title={t('wf.menu.badges')} onClose={() => openPanelFor(null)} wide>
                     <BadgeEditor
                         badges={badges}
+                        sourceCtx={sourceCtx}
                         onChange={(next) => onConfigChange({ ...config, options: { ...config.options, badges: next } })}
                     />
                 </CenteredModal>
@@ -17139,7 +20027,9 @@ export function WidgetFrame({
                     widget={config}
                     action={clickAction}
                     onClose={() => setPopupOpen(false)}
-                    allWidgets={useDashboardStore.getState().layouts.flatMap((l) => l.tabs.flatMap((t) => t.widgets))}
+                    allWidgets={useDashboardStore
+                        .getState()
+                        .layouts.flatMap((l) => l.sections.flatMap((s) => s.tabs.flatMap((t) => t.widgets)))}
                 />
             )}
         </div>

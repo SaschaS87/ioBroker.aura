@@ -5,7 +5,10 @@ import { useConfirmAction } from '../../hooks/useConfirmAction';
 import type { WidgetProps } from '../../types';
 import { contentPositionClass, titlePositionStyle } from '../../utils/widgetUtils';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { valueHidden, valueTextOverride } from '../../utils/conditionSet';
+import { resolveImageSource } from '../../utils/assetUrl';
 import { StatusBadges } from './StatusBadges';
+import { cellStateActive, type StateEvalConfig } from '../../utils/cellState';
 import { CustomGridView } from './CustomGridView';
 import { useStatusFields } from '../../hooks/useStatusFields';
 import { ConfirmOverlay } from './ConfirmOverlay';
@@ -34,7 +37,23 @@ export function SwitchWidget({ config }: WidgetProps) {
     const offValue = o.offValue as string | undefined;
     const trueWrite = parseVal(onValue, true);
     const falseWrite = parseVal(offValue, false);
-    const isOn = onValue !== undefined && onValue !== '' ? String(value) === String(trueWrite) : Boolean(value);
+    // Devices that split command and status (MQTT/Tasmota plugs: cmnd.POWER takes the write
+    // and falls back to null, stat.POWER reports ON/OFF) point statusDp at the read-back DP.
+    // State, label and colours then come from there while every write stays on the main DP.
+    const statusDp = ((o.statusDp as string) ?? '').trim();
+    const status = useDatapoint(statusDp);
+    const readValue = statusDp ? status.value : value;
+    const stateEval: StateEvalConfig = {
+        stateMode: o.stateMode as StateEvalConfig['stateMode'],
+        stateOperator: o.stateOperator as StateEvalConfig['stateOperator'],
+        stateValue: o.stateValue as string | undefined,
+    };
+    // The AN write value doubles as the state comparison, but only while reading the DP we
+    // write to — a status DP reports its own vocabulary (issue #567).
+    const isOn =
+        stateEval.stateMode !== 'condition' && !statusDp && onValue !== undefined && onValue !== ''
+            ? String(readValue) === String(trueWrite)
+            : cellStateActive(stateEval, readValue, statusDp || config.datapoint, true);
 
     const toggle = () => {
         if (momentary) {
@@ -55,9 +74,10 @@ export function SwitchWidget({ config }: WidgetProps) {
     const iconSize = (o.iconSize as number) || 20;
     const { battery, reach, batteryIcon, reachIcon, statusBadges } = useStatusFields(config);
 
-    // Icon-Modus statt Schiebeschalter
+    // Icon-/Bild-Modus statt Schiebeschalter
     const controlMode = (o.controlMode as string) ?? 'toggle';
     const isIconMode = controlMode === 'icon';
+    const isImageMode = controlMode === 'image';
     const onColor = (o.onColor as string) || 'var(--accent-green)';
     const offColor = (o.offColor as string) || 'var(--text-secondary)';
     const OnIconComp = getWidgetIcon(o.onIcon as string | undefined, WidgetIcon);
@@ -65,15 +85,30 @@ export function SwitchWidget({ config }: WidgetProps) {
     const StateIcon = isOn ? OnIconComp : OffIconComp;
     const stateColor = isOn ? onColor : offColor;
     const controlIconSize = (o.controlIconSize as number) || 28;
+    const onImage = o.onImage as string | undefined;
+    const offImage = o.offImage as string | undefined;
+    const stateImage = isOn ? onImage : offImage;
+    // A condition rule may replace the state text ("Anzeige überschreiben"). It also
+    // drives the accessible name, so what is read out matches what is shown.
+    const stateLabel = valueHidden(config) ? '' : (valueTextOverride(config) ?? (isOn ? 'AN' : 'AUS'));
 
+    // Bedienelement für Icon- oder Bild-Modus (gemeinsamer Button-Wrapper)
     const iconControlButton = (extraClass = '') => (
         <button
             onClick={handleToggle}
             className={`aura-widget-action nodrag flex items-center justify-center shrink-0 transition-transform hover:scale-110 focus:outline-none ${extraClass}`}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
-            aria-label={isOn ? 'AN' : 'AUS'}
+            aria-label={stateLabel}
         >
-            <StateIcon size={controlIconSize} style={{ color: stateColor }} />
+            {isImageMode && stateImage ? (
+                <img
+                    src={resolveImageSource(stateImage)}
+                    style={{ width: controlIconSize, height: controlIconSize, objectFit: 'contain' }}
+                    alt=""
+                />
+            ) : (
+                <StateIcon size={controlIconSize} style={{ color: stateColor }} />
+            )}
         </button>
     );
 
@@ -82,7 +117,7 @@ export function SwitchWidget({ config }: WidgetProps) {
             <div className="relative w-full h-full">
                 <CustomGridView
                     config={config}
-                    value={isOn ? 'AN' : 'AUS'}
+                    value={stateLabel}
                     extraFields={{ battery, reach }}
                     extraComponents={{
                         icon: showIcon ? (
@@ -94,28 +129,29 @@ export function SwitchWidget({ config }: WidgetProps) {
                         'battery-icon': batteryIcon,
                         'reach-icon': reachIcon,
                         'status-badges': statusBadges,
-                        toggle: isIconMode ? (
-                            iconControlButton()
-                        ) : (
-                            <button
-                                onClick={handleToggle}
-                                className="aura-widget-action nodrag relative w-10 h-5 rounded-full transition-colors focus:outline-none"
-                                style={{
-                                    background: isOn
-                                        ? 'var(--switch-bg, var(--accent))'
-                                        : 'var(--switch-off-bg, var(--app-border))',
-                                    border: '1px solid var(--switch-border, transparent)',
-                                }}
-                            >
-                                <span
-                                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full shadow transition-transform"
+                        toggle:
+                            isIconMode || isImageMode ? (
+                                iconControlButton()
+                            ) : (
+                                <button
+                                    onClick={handleToggle}
+                                    className="aura-widget-action nodrag relative w-10 h-5 rounded-full transition-colors focus:outline-none"
                                     style={{
-                                        left: isOn ? '22px' : '2px',
-                                        background: 'var(--switch-thumb-color, #fff)',
+                                        background: isOn
+                                            ? 'var(--switch-bg, var(--accent))'
+                                            : 'var(--switch-off-bg, var(--app-border))',
+                                        border: '1px solid var(--switch-border, transparent)',
                                     }}
-                                />
-                            </button>
-                        ),
+                                >
+                                    <span
+                                        className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full shadow transition-transform"
+                                        style={{
+                                            left: isOn ? '22px' : '2px',
+                                            background: 'var(--switch-thumb-color, #fff)',
+                                        }}
+                                    />
+                                </button>
+                            ),
                     }}
                 />
                 {pending && <ConfirmOverlay text={confirmText} onConfirm={confirm} onCancel={cancel} />}
@@ -163,7 +199,7 @@ export function SwitchWidget({ config }: WidgetProps) {
                             className="aura-widget-value text-xs opacity-70"
                             style={{ color: isOn ? '#fff' : 'var(--text-secondary)' }}
                         >
-                            {isOn ? 'AN' : 'AUS'}
+                            {stateLabel}
                         </p>
                     )}
                 </div>
@@ -196,7 +232,7 @@ export function SwitchWidget({ config }: WidgetProps) {
                     </span>
                 )}
                 {!showTitle && <span className="flex-1" />}
-                {isIconMode ? (
+                {isIconMode || isImageMode ? (
                     iconControlButton()
                 ) : (
                     <button
@@ -261,10 +297,10 @@ export function SwitchWidget({ config }: WidgetProps) {
                         className="aura-widget-value text-base font-semibold"
                         style={{ color: isOn ? 'var(--accent-green)' : 'var(--text-secondary)' }}
                     >
-                        {isOn ? 'AN' : 'AUS'}
+                        {stateLabel}
                     </span>
                 )}
-                {isIconMode ? (
+                {isIconMode || isImageMode ? (
                     iconControlButton(!showLabel ? 'ml-auto' : '')
                 ) : (
                     <button

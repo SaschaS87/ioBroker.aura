@@ -7,17 +7,23 @@
  * `useEnergyBalanceValues`), matching the "Diagramm (erweitert)" data model. The two-sided
  * Produktion/Verbrauch reference layout is simply the N=2 case (legendSide left + right).
  */
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { PieChart as PieChartIcon } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import type { WidgetProps } from '../../types';
 import { useIoBroker } from '../../hooks/useIoBroker';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { formatNum, type NumberFormat } from '../../utils/formatValue';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { lucidePascalToIconify } from '../../utils/iconifyLoader';
+import { RANGE_LABELS } from '../../hooks/useChartHistory';
 import type { EChartTimeRange } from '../../hooks/useMultiSeriesData';
 import { useEnergyBalanceValues, type EnergyEntry } from '../../hooks/useEnergyBalanceValues';
+
+/** Presets offered by the frontend range selector (custom handled separately). */
+const PRESET_RANGES: EChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d'];
+/** Full ordered set of frontend-selectable ranges (used to normalise the config list). */
+const FRONTEND_RANGES: EChartTimeRange[] = ['1h', '6h', '24h', '7d', '30d', 'custom'];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,6 +33,22 @@ export interface EnergyBar {
     entries: EnergyEntry[];
     /** Where this bar's legend sits relative to the bar. Default 'below'. */
     legendSide?: 'left' | 'right' | 'below' | 'top';
+    /** Datapoint holding this group's 100 % reference (a budget, a prepayment, a tank size). */
+    totalDatapoint?: string;
+    /** Static 100 % reference; used only when `totalDatapoint` is empty. */
+    totalValue?: number;
+    /** Label of the unused remainder in the legend. Default 'Rest'. */
+    restLabel?: string;
+    /** Colour of the remainder segment. Default REST_COLOR. */
+    restColor?: string;
+    /** Show the unused remainder as its own segment. Default true. */
+    showRest?: boolean;
+    /** Swap the entry colours for `overColor` once the reference is used up. Default false. */
+    overActive?: boolean;
+    /** Share of the reference (in %) from which the warning colour applies. Default 100. */
+    overThreshold?: number;
+    /** Warning colour of the entries past the threshold. Default OVER_COLOR. */
+    overColor?: string;
 }
 
 /** What each legend row shows. Default 'icon-value'. */
@@ -38,14 +60,25 @@ export interface EnergyBalanceOptions {
     chartStyle?: 'bars' | 'pie' | 'donut';
     /** Width of each stacked bar in px (only for chartStyle 'bars'). Default 46. */
     barWidth?: number;
+    /**
+     * Where the first entry sits in the stack (only for chartStyle 'bars'). Default 'down' —
+     * first entry on top, so a configured reference puts its "Rest" at the bottom. 'up'
+     * stacks from the bottom instead, which reads like a filling tank.
+     */
+    barDirection?: 'down' | 'up';
     /** Max diameter of the pie/donut in px (only for chartStyle 'pie'/'donut'). Default 160. */
     pieSize?: number;
     /** Default unit shown after each value + total (per-entry unit overrides). */
     unit?: string;
     decimals?: number;
+    numberFormat?: NumberFormat;
     range?: EChartTimeRange;
     rangeCustomValue?: number;
     rangeCustomUnit?: 'h' | 'd';
+    /** Which presets the frontend range selector offers (default: all presets). */
+    visibleRanges?: EChartTimeRange[];
+    /** Hide the frontend range selector and pin the configured range. Default false. */
+    lockRange?: boolean;
     showTitle?: boolean;
     /** Per-bar title + total above each bar. Default true. */
     showBarTitles?: boolean;
@@ -53,6 +86,10 @@ export interface EnergyBalanceOptions {
     barTitleAlign?: 'left' | 'center' | 'right';
     showTotals?: boolean;
     showPercent?: boolean;
+    /** Show each entry's icon inside its bar segment / pie slice, next to the percentage. Default false. */
+    showSegmentIcon?: boolean;
+    /** Pull the percentage of pie/donut slices too small for an inside label outside on a leader line. Default true. */
+    showOutsidePercent?: boolean;
     showLegend?: boolean;
     /** Legend position for all bars. Falls back to each bar's own `legendSide`, then 'below'. */
     legendSide?: 'left' | 'right' | 'below' | 'top';
@@ -67,6 +104,14 @@ export interface EnergyBalanceOptions {
 }
 
 const DEFAULT_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+
+/** Fallback colour of the "Rest" segment - readable on both themes without any config. */
+export const REST_COLOR = '#94a3b8';
+/** Fallback warning colour once a group reaches its reference (#607). */
+export const OVER_COLOR = '#ef4444';
+/** Synthetic entry ids: one per group for its reference datapoint and its remainder. */
+const targetEntryId = (barId: string) => `__target-${barId}`;
+const restEntryId = (barId: string) => `__rest-${barId}`;
 
 function toIconifyId(name: string): string {
     return name.includes(':') ? name : lucidePascalToIconify(name);
@@ -113,7 +158,7 @@ interface Computed {
 
 export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
     const { subscribe, connected } = useIoBroker();
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
 
     const o = (config.options ?? {}) as unknown as EnergyBalanceOptions;
     const showTitle = o.showTitle !== false;
@@ -121,15 +166,37 @@ export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
     const barTitleAlign = o.barTitleAlign ?? 'center';
     const showTotals = o.showTotals !== false;
     const showPercent = o.showPercent !== false;
+    const showSegmentIcon = o.showSegmentIcon === true;
+    const showOutsidePercent = o.showOutsidePercent !== false;
     const showLegend = o.showLegend !== false;
     const chartStyle = o.chartStyle ?? 'bars';
     const barWidth = o.barWidth ?? 46;
+    const barDirection = o.barDirection ?? 'down';
     const pieSize = o.pieSize ?? 160;
     const legendFormat = o.legendFormat ?? 'icon-value';
     const legendAlign = o.legendAlign;
     const unit = o.unit ?? 'kWh';
     const decimals = o.decimals ?? defaultDecimals ?? 2;
-    const range = o.range ?? '24h';
+    const numFmt = o.numberFormat ?? globalNumFmt;
+
+    // ── Time range — configured window, frontend-switchable unless locked ──
+    const cfgRange = o.range ?? '24h';
+    const cfgCustomVal = o.rangeCustomValue ?? 24;
+    const cfgCustomUnit = o.rangeCustomUnit ?? 'h';
+    const lockRange = o.lockRange === true;
+    // Which presets the frontend selector offers (config-selectable; default: all presets).
+    const cfgVisibleRanges = o.visibleRanges;
+    const visibleRanges =
+        cfgVisibleRanges && cfgVisibleRanges.length > 0
+            ? FRONTEND_RANGES.filter((r) => cfgVisibleRanges.includes(r))
+            : PRESET_RANGES;
+
+    const [activeRange, setActiveRange] = useState<EChartTimeRange>(cfgRange);
+    // Reset the frontend selection whenever the admin config changes.
+    useEffect(() => {
+        setActiveRange(cfgRange);
+    }, [cfgRange]);
+    const range = lockRange ? cfgRange : activeRange;
     // Honor the shared "Darstellung" appearance controls (icon, hide icon, icon size, align).
     const showIcon = o.showIcon !== false;
     const iconSize = (o.iconSize as number) || 18;
@@ -141,21 +208,39 @@ export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
     const usingSample = editMode && !hasConfig;
     const bars = usingSample ? SAMPLE_BARS : configuredBars;
 
-    // One flat subscription/fetch across every entry of every bar (ids are unique).
-    const allEntries = useMemo(() => bars.flatMap((b) => b.entries ?? []), [bars]);
+    // One flat subscription/fetch across every entry of every bar (ids are unique). The
+    // per-group 100 % reference rides along as a synthetic 'last' entry: a reference is a
+    // current setpoint, not a window aggregate, so the hook serves it from the live state
+    // and keeps it updated without a history query (issue #596).
+    const allEntries = useMemo(
+        () => [
+            ...bars.flatMap((b) => b.entries ?? []),
+            ...bars
+                .filter((b) => !!b.totalDatapoint)
+                .map(
+                    (b): EnergyEntry => ({
+                        id: targetEntryId(b.id),
+                        datapointId: b.totalDatapoint as string,
+                        aggregate: 'last',
+                    }),
+                ),
+        ],
+        [bars],
+    );
     const valueMap = useEnergyBalanceValues(
         usingSample ? [] : allEntries,
         range,
         connected,
         subscribe,
-        o.rangeCustomValue,
-        o.rangeCustomUnit,
+        cfgCustomVal,
+        cfgCustomUnit,
     );
 
     const getValue = (entryId: string): number | null =>
         usingSample ? (SAMPLE_VALUES[entryId] ?? null) : (valueMap.get(entryId)?.value ?? null);
 
-    const fmt = (v: number, e: EnergyEntry) => `${formatNum(v, e.decimals ?? decimals)} ${e.unit ?? unit}`;
+    const fmt = (v: number, e: EnergyEntry) =>
+        `${formatNum(v, e.decimals ?? decimals, e.numberFormat ?? numFmt)} ${e.unit ?? unit}`;
 
     if (bars.length === 0) {
         return (
@@ -180,8 +265,39 @@ export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
                             titleAlign === 'center' ? 'center' : titleAlign === 'right' ? 'flex-end' : 'flex-start',
                     }}
                 >
-                    {showIcon && <WidgetIcon size={iconSize} style={{ color: 'var(--text-secondary)' }} />}
-                    {config.title && <span>{config.title}</span>}
+                    {showIcon && (
+                        <WidgetIcon
+                            className="aura-widget-icon"
+                            size={iconSize}
+                            style={{ color: 'var(--text-secondary)' }}
+                        />
+                    )}
+                    {config.title && <span className="aura-widget-title">{config.title}</span>}
+                </div>
+            )}
+
+            {!lockRange && visibleRanges.length > 0 && (
+                <div className="nodrag shrink-0 mb-1 flex gap-1 min-w-0 overflow-x-auto aura-no-scrollbar">
+                    {visibleRanges.map((r) => {
+                        const active = range === r;
+                        const label =
+                            r === 'custom'
+                                ? `${cfgCustomVal} ${cfgCustomUnit === 'd' ? 'Tage' : 'Std'}`
+                                : RANGE_LABELS[r];
+                        return (
+                            <button
+                                key={r}
+                                className="nodrag shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[10px] font-medium hover:opacity-80 transition-opacity"
+                                style={{
+                                    background: active ? 'var(--accent)' : 'var(--app-border)',
+                                    color: active ? '#fff' : 'var(--text-secondary)',
+                                }}
+                                onClick={() => setActiveRange(r)}
+                            >
+                                {label}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
@@ -198,8 +314,42 @@ export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
                             percent: 0,
                         };
                     });
-                    const total = computed.reduce((sum, c) => sum + c.value, 0);
+                    const sum = computed.reduce((acc, c) => acc + c.value, 0);
+                    // A group can pin its 100 % to a reference instead of its own sum: the
+                    // entries then show their share of it and the unused part becomes a
+                    // "Rest" segment ("147 EUR of a 160 EUR prepayment").
+                    const targetRaw = bar.totalDatapoint
+                        ? getValue(targetEntryId(bar.id))
+                        : typeof bar.totalValue === 'number'
+                          ? bar.totalValue
+                          : null;
+                    const target = typeof targetRaw === 'number' && targetRaw > 0 ? targetRaw : null;
+                    // Past the reference the bar stays full and the remainder is gone, so an
+                    // overrun reads as 100 % rather than as a slice bulging out of the circle.
+                    const total = target !== null ? Math.max(target, sum) : sum;
+                    const rest = target !== null ? Math.max(0, target - sum) : 0;
+                    if (rest > 0 && bar.showRest !== false) {
+                        computed.push({
+                            entry: { id: restEntryId(bar.id), datapointId: '', label: bar.restLabel ?? 'Rest' },
+                            color: bar.restColor ?? REST_COLOR,
+                            value: rest,
+                            percent: 0,
+                        });
+                    }
                     for (const c of computed) c.percent = total > 0 ? (c.value / total) * 100 : 0;
+                    const usedPct = target !== null ? (sum / target) * 100 : 0;
+                    // Past the reference the bar is simply full, so without a colour change a
+                    // blown budget looks exactly like a met one. From the configured share the
+                    // entries (bar, pie and legend swatch alike) turn into the warning colour
+                    // - the remainder keeps its own, it is what is left, not what is over (#607).
+                    const overLimit =
+                        bar.overActive === true && target !== null && usedPct >= (bar.overThreshold ?? 100);
+                    const overColor = bar.overColor ?? OVER_COLOR;
+                    if (overLimit) {
+                        for (const c of computed) {
+                            if (c.entry.id !== restEntryId(bar.id)) c.color = overColor;
+                        }
+                    }
 
                     const side = o.legendSide ?? bar.legendSide ?? 'below';
                     const legend = showLegend ? (
@@ -207,24 +357,41 @@ export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
                     ) : null;
                     const chart =
                         chartStyle === 'bars' ? (
-                            <StackedBar items={computed} total={total} showPercent={showPercent} width={barWidth} />
+                            <StackedBar
+                                items={computed}
+                                total={total}
+                                showPercent={showPercent}
+                                showIcon={showSegmentIcon}
+                                width={barWidth}
+                                direction={barDirection}
+                            />
                         ) : (
                             <PieChart
                                 items={computed}
                                 total={total}
                                 showPercent={showPercent}
+                                showIcon={showSegmentIcon}
+                                showOutside={showOutsidePercent}
                                 donut={chartStyle === 'donut'}
                                 size={pieSize}
                                 center={
                                     chartStyle === 'donut' && showTotals
-                                        ? { value: formatNum(total, decimals), unit }
+                                        ? target !== null
+                                            ? // With a reference the share of it is the headline number.
+                                              { value: String(Math.round(usedPct)), unit: '%' }
+                                            : { value: formatNum(total, decimals, numFmt), unit }
                                         : null
                                 }
                             />
                         );
 
                     return (
-                        <div key={bar.id} className="flex flex-col items-center min-w-0" style={{ flex: '1 1 0' }}>
+                        <div
+                            key={bar.id}
+                            className="flex flex-col items-center min-w-0"
+                            style={{ flex: '1 1 0' }}
+                            data-aura-energy-over={overLimit ? '1' : '0'}
+                        >
                             {showBarTitles && (bar.title || showTotals) && (
                                 <div className="mb-1.5 shrink-0 w-full" style={{ textAlign: barTitleAlign }}>
                                     {bar.title && (
@@ -233,8 +400,27 @@ export function EnergiebilanzWidget({ config, editMode }: WidgetProps) {
                                         </div>
                                     )}
                                     {showTotals && (
-                                        <div style={{ fontSize: 14, fontWeight: 700 }}>
-                                            {formatNum(total, decimals)} {unit}
+                                        <div style={{ fontSize: 14, fontWeight: 700 }} data-aura-energy-total={bar.id}>
+                                            {target !== null ? (
+                                                <>
+                                                    {formatNum(sum, decimals, numFmt)} /{' '}
+                                                    {formatNum(target, decimals, numFmt)} {unit}
+                                                    <span
+                                                        style={{
+                                                            fontSize: 11,
+                                                            fontWeight: 600,
+                                                            marginLeft: 4,
+                                                            color: overLimit ? overColor : 'var(--text-secondary)',
+                                                        }}
+                                                    >
+                                                        {Math.round(usedPct)} %
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {formatNum(total, decimals, numFmt)} {unit}
+                                                </>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -260,12 +446,16 @@ function StackedBar({
     items,
     total,
     showPercent,
+    showIcon,
     width = 46,
+    direction = 'down',
 }: {
     items: Computed[];
     total: number;
     showPercent: boolean;
+    showIcon: boolean;
     width?: number;
+    direction?: 'down' | 'up';
 }) {
     if (total <= 0) {
         return (
@@ -277,29 +467,49 @@ function StackedBar({
                     background: 'color-mix(in srgb, var(--text-secondary) 12%, transparent)',
                     border: '1px dashed var(--app-border)',
                 }}
+                data-aura-energy-bar="empty"
             />
         );
     }
     return (
-        <div className="rounded-lg overflow-hidden self-stretch flex flex-col" style={{ width, minHeight: 80 }}>
-            {items.map((c) => (
-                <div
-                    key={c.entry.id}
-                    className="flex items-center justify-center"
-                    style={{
-                        flexGrow: c.value,
-                        flexBasis: 0,
-                        background: c.color,
-                        color: '#fff',
-                        fontSize: 11,
-                        fontWeight: 600,
-                        overflow: 'hidden',
-                        minHeight: 0,
-                    }}
-                >
-                    {showPercent && c.percent >= 8 ? `${Math.round(c.percent)} %` : ''}
-                </div>
-            ))}
+        <div
+            className="rounded-lg overflow-hidden self-stretch flex"
+            style={{ width, minHeight: 80, flexDirection: direction === 'up' ? 'column-reverse' : 'column' }}
+            data-aura-energy-bar="stack"
+            data-aura-energy-direction={direction}
+        >
+            {items.map((c) => {
+                // Icon needs more vertical room than the percent label, so gate it on a
+                // larger share; both are centred and stacked when they fit together.
+                const wantIcon = showIcon && !!c.entry.icon && c.percent >= 12;
+                const wantPct = showPercent && c.percent >= 8;
+                // Grow by the SHARE, not the raw value: CSS hands out only `sum(flex-grow)`
+                // of the free space when that sum is below 1, so small readings (0.01 + 0.04
+                // + 0.02 kWh) used to collapse the bar to 7 % of its height (issue #560).
+                const grow = total > 0 ? (c.value / total) * 100 : 0;
+                return (
+                    <div
+                        key={c.entry.id}
+                        className="flex flex-col items-center justify-center gap-0.5"
+                        data-aura-energy-segment={c.entry.id}
+                        style={{
+                            flexGrow: grow,
+                            flexBasis: 0,
+                            background: c.color,
+                            color: '#fff',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            overflow: 'hidden',
+                            minHeight: 0,
+                        }}
+                    >
+                        {wantIcon && (
+                            <Icon icon={toIconifyId(c.entry.icon!)} width={15} height={15} style={{ color: '#fff' }} />
+                        )}
+                        {wantPct && <span>{Math.round(c.percent)} %</span>}
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -328,6 +538,8 @@ function PieChart({
     items,
     total,
     showPercent,
+    showIcon,
+    showOutside,
     donut,
     center,
     size = 160,
@@ -335,6 +547,8 @@ function PieChart({
     items: Computed[];
     total: number;
     showPercent: boolean;
+    showIcon: boolean;
+    showOutside: boolean;
     donut: boolean;
     center: { value: string; unit: string } | null;
     size?: number;
@@ -343,6 +557,45 @@ function PieChart({
     const cx = 50;
     const cy = 50;
     const rInner = donut ? 26 : 0;
+
+    // Icon (foreignObject) + percentage (SVG text) at a slice centroid. Icon needs a bit
+    // more room, so it's gated on a slightly larger share; when both show they stack.
+    const renderLabel = (c: Computed, lx: number, ly: number) => {
+        const wantIcon = showIcon && !!c.entry.icon && c.percent >= 10;
+        const wantPct = showPercent && c.percent >= 8;
+        if (!wantIcon && !wantPct) return null;
+        const both = wantIcon && wantPct;
+        return (
+            <g style={{ pointerEvents: 'none' }}>
+                {wantIcon && (
+                    <foreignObject
+                        x={lx - 6}
+                        y={ly - (both ? 11 : 6)}
+                        width={12}
+                        height={12}
+                        style={{ overflow: 'visible' }}
+                    >
+                        <div className="w-full h-full flex items-center justify-center">
+                            <Icon icon={toIconifyId(c.entry.icon!)} width={11} height={11} style={{ color: '#fff' }} />
+                        </div>
+                    </foreignObject>
+                )}
+                {wantPct && (
+                    <text
+                        x={lx}
+                        y={both ? ly + 5 : ly}
+                        fill="#fff"
+                        fontSize={7}
+                        fontWeight={600}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                    >
+                        {Math.round(c.percent)}%
+                    </text>
+                )}
+            </g>
+        );
+    };
 
     if (total <= 0) {
         return (
@@ -366,19 +619,61 @@ function PieChart({
     }
 
     const segments = items.filter((c) => c.value > 0);
-    let angle = 0;
+
+    // Lay out every slice's angular span once so the slices and the small-slice outside
+    // labels share the same geometry (angle 0 = top, growing clockwise).
+    let acc = 0;
+    const laid = segments.map((c) => {
+        const frac = c.value / total;
+        const start = acc;
+        const end = acc + frac * 2 * Math.PI;
+        acc = end;
+        return { c, frac, start, end, mid: (start + end) / 2 };
+    });
+
+    // Slices below this share can't fit a readable label inside, so their percentage is
+    // pulled outside the ring with a leader line instead of being dropped. Only when
+    // percentages are shown and there's more than one slice.
+    const OUTSIDE_MAX = 8;
+    const outside =
+        showPercent && showOutside && laid.length > 1
+            ? laid.filter((s) => s.c.percent > 0 && s.c.percent < OUTSIDE_MAX && s.frac < 0.9999)
+            : [];
+
+    // Widen the viewBox only when there are outside labels, so a pie without tiny slices
+    // still fills the box at full size.
+    const pad = outside.length > 0 ? 22 : 2;
+    const viewBox = `${-pad} ${-pad} ${100 + 2 * pad} ${100 + 2 * pad}`;
+
+    // De-collide outside labels per side: sort by their natural edge-y, push apart to a
+    // minimum gap, then shift the column up if it runs past the bottom margin.
+    const MIN_GAP = 9;
+    const yBottom = cy + R + 16;
+    const adjY = new Map<string, number>();
+    for (const sign of [1, -1] as const) {
+        const col = outside
+            .filter((s) => (Math.sin(s.mid) >= 0 ? 1 : -1) === sign)
+            .map((s) => ({ id: s.c.entry.id, y: polar(cx, cy, R, s.mid)[1] }))
+            .sort((a, b) => a.y - b.y);
+        for (let i = 1; i < col.length; i++) {
+            if (col[i].y - col[i - 1].y < MIN_GAP) col[i].y = col[i - 1].y + MIN_GAP;
+        }
+        const overflow = col.length ? col[col.length - 1].y - yBottom : 0;
+        if (overflow > 0) for (const e of col) e.y -= overflow;
+        for (const e of col) adjY.set(e.id, e.y);
+    }
 
     return (
         <div className="self-stretch min-h-0 shrink-0 flex items-center justify-center">
-            <svg viewBox="0 0 100 100" style={{ height: '100%', maxHeight: size, width: 'auto', aspectRatio: '1 / 1' }}>
-                {segments.map((c) => {
-                    const frac = c.value / total;
+            <svg viewBox={viewBox} style={{ height: '100%', maxHeight: size, width: 'auto', aspectRatio: '1 / 1' }}>
+                {laid.map((s) => {
+                    const c = s.c;
                     // A single full-circle segment: draw a ring/disc (an arc from 0 to 2π is degenerate).
-                    if (frac >= 0.9999) {
-                        angle = 2 * Math.PI;
-                        return donut ? (
+                    if (s.frac >= 0.9999) {
+                        // Label sits at the top of the ring band; the donut centre still shows the total.
+                        const [lx, ly] = polar(cx, cy, (R + rInner) / 2, 0);
+                        const shape = donut ? (
                             <circle
-                                key={c.entry.id}
                                 cx={cx}
                                 cy={cy}
                                 r={(R + rInner) / 2}
@@ -387,30 +682,51 @@ function PieChart({
                                 strokeWidth={R - rInner}
                             />
                         ) : (
-                            <circle key={c.entry.id} cx={cx} cy={cy} r={R} fill={c.color} />
+                            <circle cx={cx} cy={cy} r={R} fill={c.color} />
+                        );
+                        return (
+                            <g key={c.entry.id}>
+                                {shape}
+                                {renderLabel(c, lx, ly)}
+                            </g>
                         );
                     }
-                    const start = angle;
-                    const end = angle + frac * 2 * Math.PI;
-                    angle = end;
-                    const mid = (start + end) / 2;
-                    const [lx, ly] = polar(cx, cy, (R + rInner) / 2, mid);
+                    const [lx, ly] = polar(cx, cy, (R + rInner) / 2, s.mid);
                     return (
                         <g key={c.entry.id}>
-                            <path d={sectorPath(cx, cy, R, rInner, start, end)} fill={c.color} />
-                            {showPercent && c.percent >= 8 && (
-                                <text
-                                    x={lx}
-                                    y={ly}
-                                    fill="#fff"
-                                    fontSize={7}
-                                    fontWeight={600}
-                                    textAnchor="middle"
-                                    dominantBaseline="central"
-                                >
-                                    {Math.round(c.percent)}%
-                                </text>
-                            )}
+                            <path d={sectorPath(cx, cy, R, rInner, s.start, s.end)} fill={c.color} />
+                            {renderLabel(c, lx, ly)}
+                        </g>
+                    );
+                })}
+                {outside.map((s) => {
+                    const c = s.c;
+                    const right = Math.sin(s.mid) >= 0;
+                    const [ex, ey] = polar(cx, cy, R, s.mid);
+                    const y = adjY.get(c.entry.id) ?? ey;
+                    const kneeX = right ? cx + R + 7 : cx - R - 7;
+                    const textX = right ? kneeX + 2 : kneeX - 2;
+                    const label = c.percent < 1 ? '<1 %' : `${Math.round(c.percent)} %`;
+                    return (
+                        <g key={`o-${c.entry.id}`} style={{ pointerEvents: 'none' }}>
+                            <polyline
+                                points={`${ex},${ey} ${kneeX},${y} ${textX},${y}`}
+                                fill="none"
+                                stroke={c.color}
+                                strokeWidth={0.6}
+                                strokeOpacity={0.75}
+                            />
+                            <text
+                                x={textX + (right ? 0.5 : -0.5)}
+                                y={y}
+                                fill={c.color}
+                                fontSize={7}
+                                fontWeight={600}
+                                textAnchor={right ? 'start' : 'end'}
+                                dominantBaseline="central"
+                            >
+                                {label}
+                            </text>
                         </g>
                     );
                 })}

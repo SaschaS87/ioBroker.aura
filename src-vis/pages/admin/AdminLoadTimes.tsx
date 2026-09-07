@@ -1,0 +1,61 @@
+import { LoadTimesWidget } from '../../components/widgets/LoadTimesWidget';
+import type { WidgetConfig } from '../../types';
+
+// Throwaway config: the LoadTimesWidget only reads config.options for display
+// defaults (all have fallbacks) and config.title for its header. Rendering it
+// here with editMode=false makes it poll the backend continuously (live view).
+// clientFilter defaults to 'all' because the frontend being measured usually
+// runs in a *different* browser tab (different client) than this backend page.
+const WIDGET_CONFIG: WidgetConfig = {
+    id: 'admin-loadtimes',
+    type: 'loadtimes',
+    title: '',
+    datapoint: '',
+    gridPos: { x: 0, y: 0, w: 0, h: 0 },
+    options: { clientFilter: 'all', view: 'breakdown', showTitle: false, showIcon: false, linkToEditor: true },
+};
+
+export function AdminLoadTimes() {
+    return (
+        <div className="p-8 space-y-6">
+            <div>
+                <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                    Ladezeiten
+                </h1>
+                <p className="text-base mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Backend hier offen lassen und das Frontend in einem zweiten Browser-Tab bedienen — die Werte
+                    aktualisieren sich hier live, ohne die Messung zu stören. Für die Pro-Widget-Details muss in den
+                    Aura-Adapter-Einstellungen {'„Timing pro Widget aufzeichnen“'} aktiv sein.
+                </p>
+                <p
+                    className="text-sm mt-2 rounded-lg px-3 py-2"
+                    style={{
+                        color: 'var(--text-secondary)',
+                        background: 'color-mix(in srgb, var(--accent-yellow, #f59e0b) 12%, var(--app-surface))',
+                        border: '1px solid color-mix(in srgb, var(--accent-yellow, #f59e0b) 40%, transparent)',
+                    }}
+                >
+                    ⚠️ Tipp: {'„Timing pro Widget aufzeichnen“'} nach der Fehlersuche wieder <b>deaktivieren</b> — die
+                    Instrumentierung jedes Widgets bei jedem Render kostet selbst Performance.
+                </p>
+            </div>
+
+            <div
+                className="rounded-xl p-4"
+                style={{
+                    background: 'var(--app-surface)',
+                    border: '1px solid var(--app-border)',
+                    height: 'calc(100vh - 200px)',
+                    minHeight: 480,
+                }}
+            >
+                {/* Enlarge the whole (dense) widget uniformly via CSS zoom. The inner
+                    height is divided by the zoom factor so the zoomed result exactly
+                    fills the card without overflowing. */}
+                <div style={{ zoom: 1.35, height: 'calc((100vh - 232px) / 1.35)', minHeight: 340 }}>
+                    <LoadTimesWidget config={WIDGET_CONFIG} editMode={false} onConfigChange={() => {}} />
+                </div>
+            </div>
+        </div>
+    );
+}

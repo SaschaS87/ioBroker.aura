@@ -7,13 +7,15 @@
  * via the callbacks in props — this component never holds picker state itself.
  */
 import React, { useState } from 'react';
-import { Database, FolderOpen, HelpCircle, Plus, type LucideIcon } from 'lucide-react';
+import { Database, FolderOpen, HelpCircle, Plus, SlidersHorizontal, type LucideIcon } from 'lucide-react';
 import { JsonPathButton } from '../config/JsonPathButton';
 import type { CustomCell, WidgetType } from '../../types';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
-import { FORMAT_LABELS, type DateOutputFormat } from '../widgets/DatePickerWidget';
+import { FORMAT_LABELS, DATE_PATTERN_TOKENS, DEFAULT_DATE_PATTERN, type DateOutputFormat } from '../../utils/dateValue';
 import { IconPickerModal } from '../config/IconPickerModal';
+import { ImagePathHint } from '../config/ImagePathHint';
 import { ValueTransformButton } from '../config/ValueTransformButton';
+import { ValueFormatRow } from '../config/ValueFormatRow';
 import { getObjectDirect } from '../../hooks/useIoBroker';
 import { ColorPicker } from '../common/ColorPicker';
 
@@ -82,6 +84,12 @@ const COMPONENT_OPTIONS: Record<string, { key: string; label: string }[]> = {
         { key: 'btn-up', label: '▲ Hoch' },
         { key: 'btn-stop', label: '■ Stop' },
         { key: 'btn-down', label: '▼ Runter' },
+        { key: 'slider', label: 'Positions-Regler' },
+        { key: 'tilt-slider-v', label: 'Neigungs-Regler (senkrecht)' },
+        { key: 'tilt-slider-h', label: 'Neigungs-Regler (waagerecht)' },
+        { key: 'btn-tilt', label: 'Lamellen-Popover' },
+        { key: 'btn-tilt-open', label: 'Lamellen öffnen' },
+        { key: 'btn-tilt-close', label: 'Lamellen schließen' },
         { key: 'battery-icon', label: 'Batterie-Icon' },
         { key: 'reach-icon', label: 'Erreichbarkeit-Icon' },
         { key: 'status-badges', label: 'Status-Badges (alle)' },
@@ -141,6 +149,10 @@ const COMPONENT_OPTIONS: Record<string, { key: string; label: string }[]> = {
         { key: 'status', label: 'Status-Text' },
         { key: 'events', label: 'Ereignis-Liste' },
         { key: 'add', label: '+ Ereignis-Button' },
+    ],
+    calendar: [
+        { key: 'icon', label: 'Widget-Icon' },
+        { key: 'cal-icon', label: '📅 Kalender-Icon des Termins' },
     ],
     clock: [
         { key: 'icon', label: 'Widget-Icon' },
@@ -240,14 +252,53 @@ const STATIC_CELL_OPTS: CellOpt[] = (
     ] satisfies CellOpt[]
 ).sort(sortDe);
 
+/**
+ * Kalender-Felder, die es fuer JEDEN sichtbaren Termin gibt. Das Widget haengt die
+ * 1-basierte Termin-Nummer an den Schluessel (summary -> summary3), damit sich eine
+ * ganze Terminliste als Zellenmatrix bauen laesst; der Editor blendet dafuer ein
+ * Nummernfeld ein. Alles andere (z.B. count) gilt fuer das ganze Widget.
+ */
+const CALENDAR_EVENT_FIELDS = new Set([
+    'summary',
+    'date',
+    'time',
+    'endtime',
+    'timespan',
+    'calname',
+    'location',
+    'running',
+    'week',
+    'kw',
+    'kwnew',
+    'day',
+    'daycount',
+]);
+
+/** Dasselbe fuer die Komponenten-Schluessel des Kalenders. */
+const CALENDAR_EVENT_COMPONENTS = new Set(['cal-icon']);
+
+/** Zerlegt summary3 in Basis-Schluessel + Termin-Nummer (ohne Ziffer: Termin 1). */
+function splitEventKey(key: string): { base: string; index: number } {
+    const m = /^(.*[^0-9])([0-9]+)$/.exec(key);
+    return m ? { base: m[1], index: Number(m[2]) } : { base: key, index: 1 };
+}
+
 const FIELD_OPTIONS: Record<string, { key: string; label: string }[]> = {
     calendar: [
         { key: 'summary', label: 'Terminname' },
         { key: 'date', label: 'Datum / Zeit' },
-        { key: 'time', label: 'Uhrzeit' },
+        { key: 'time', label: 'Uhrzeit (von)' },
+        { key: 'endtime', label: 'Uhrzeit (bis)' },
+        { key: 'timespan', label: 'Uhrzeit von – bis' },
         { key: 'calname', label: 'Kalendername' },
         { key: 'location', label: 'Ort' },
-        { key: 'count', label: 'Anzahl Termine' },
+        { key: 'running', label: 'Laufzeit-Badge (mehrtägig)' },
+        { key: 'count', label: 'Anzahl Termine (gesamt)' },
+        { key: 'week', label: 'Kalenderwoche (Nr.)' },
+        { key: 'kw', label: 'Kalenderwoche (KW xx)' },
+        { key: 'kwnew', label: 'Kalenderwoche (nur bei Wochenwechsel)' },
+        { key: 'day', label: 'Tag des Termins (bei „jeden Tag einzeln“)' },
+        { key: 'daycount', label: 'Tage gesamt (bei „jeden Tag einzeln“)' },
     ],
     clock: [
         { key: 'time', label: 'Uhrzeit' },
@@ -258,6 +309,7 @@ const FIELD_OPTIONS: Record<string, { key: string; label: string }[]> = {
         { key: 'sunset', label: '🌇 Sonnenuntergang' },
         { key: 'week', label: 'Kalenderwoche (Nr.)' },
         { key: 'kw', label: 'Kalenderwoche (KW xx)' },
+        { key: 'relative', label: '⏳ Relativ (in 3 h 12 min)' },
     ],
     value: [
         { key: 'unit', label: 'Einheit' },
@@ -277,6 +329,7 @@ const FIELD_OPTIONS: Record<string, { key: string; label: string }[]> = {
     ],
     shutter: [
         { key: 'position', label: 'Position (%)' },
+        { key: 'tilt', label: 'Neigung (%)' },
         { key: 'status', label: 'Status' },
         { key: 'moving', label: 'Fährt' },
         { key: 'battery', label: 'Batterie' },
@@ -429,6 +482,80 @@ const inputSty: React.CSSProperties = {
     border: '1px solid var(--app-border)',
 };
 
+/** Shared active-state detection editor: boolean coercion vs. an operator/value comparison.
+ *  Used by 'state-icon' (#467) and by 'switch' / 'state-text' (#567). */
+function StateEvalRow({ cell, onChange }: { cell: CustomCell; onChange: (patch: Partial<CustomCell>) => void }) {
+    const mode = cell.stateMode ?? 'boolean';
+    return (
+        <div>
+            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                Auswertung
+            </label>
+            <div className="flex gap-1">
+                {(
+                    [
+                        ['boolean', 'Boolean'],
+                        ['condition', 'Bedingung'],
+                    ] as const
+                ).map(([m, lbl]) => (
+                    <button
+                        key={m}
+                        onClick={() => onChange({ stateMode: m })}
+                        className="flex-1 text-[10px] py-1 rounded-lg transition-colors"
+                        style={{
+                            background: mode === m ? 'var(--accent)' : 'var(--app-bg)',
+                            color: mode === m ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${mode === m ? 'var(--accent)' : 'var(--app-border)'}`,
+                        }}
+                    >
+                        {lbl}
+                    </button>
+                ))}
+            </div>
+            {mode === 'condition' && (
+                <div className="flex gap-1 items-center mt-1.5">
+                    <span className="text-[11px] shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                        Wert
+                    </span>
+                    <select
+                        value={cell.stateOperator ?? '>'}
+                        onChange={(e) => onChange({ stateOperator: e.target.value as CustomCell['stateOperator'] })}
+                        className="text-xs rounded-lg px-2 py-1.5 focus:outline-none shrink-0"
+                        style={{
+                            background: 'var(--app-bg)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--app-border)',
+                        }}
+                    >
+                        {['==', '!=', '>', '>=', '<', '<='].map((op) => (
+                            <option key={op} value={op}>
+                                {op}
+                            </option>
+                        ))}
+                    </select>
+                    <input
+                        type="text"
+                        value={cell.stateValue ?? ''}
+                        onChange={(e) => onChange({ stateValue: e.target.value })}
+                        placeholder="0"
+                        className="flex-1 min-w-0 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none"
+                        style={{
+                            background: 'var(--app-bg)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--app-border)',
+                        }}
+                    />
+                </div>
+            )}
+            {mode === 'boolean' && (
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+                    An bei true / 1 / "on". Andere Werte (z.B. "OPEN") über "Bedingung" mit == vergleichen.
+                </p>
+            )}
+        </div>
+    );
+}
+
 export interface CustomCellEditorProps {
     cell: CustomCell;
     index: number;
@@ -436,12 +563,37 @@ export interface CustomCellEditorProps {
     rows: number;
     widgetType: WidgetType;
     isUniversal: boolean;
-    defaultDecimals: number;
     onChange: (patch: Partial<CustomCell>) => void;
     onOpenIconPicker: (slot: 'iconName' | 'trueIcon' | 'falseIcon') => void;
-    onOpenDpPicker: () => void;
+    onOpenDpPicker: (field?: 'dpId' | 'statusDpId') => void;
     onOpenImagePicker: () => void;
+    onOpenConditions: () => void;
 }
+
+// Value-bearing / icon cell types that support per-cell conditional formatting.
+// Every type whose renderer actually reads the rules (see CustomGridView). The
+// static ones — title/unit/text/field/icon/image/button — have no own value, so a
+// clause there reads the widget's main datapoint or a foreign one.
+const CELL_CONDITION_TYPES = new Set<CustomCell['type']>([
+    'dp',
+    'value',
+    'title',
+    'unit',
+    'text',
+    'field',
+    'icon',
+    'image',
+    'button',
+    'progress',
+    'state-text',
+    'state-icon',
+    'lastchange',
+    'select',
+    'stepper',
+    'slider',
+    'input',
+    'switch',
+]);
 
 export function CustomCellEditor({
     cell,
@@ -450,11 +602,11 @@ export function CustomCellEditor({
     rows,
     widgetType,
     isUniversal,
-    defaultDecimals,
     onChange,
     onOpenIconPicker,
     onOpenDpPicker,
     onOpenImagePicker,
+    onOpenConditions,
 }: CustomCellEditorProps) {
     const [entryIconPicker, setEntryIconPicker] = useState<number | null>(null);
     const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -578,7 +730,7 @@ export function CustomCellEditor({
                                 type="text"
                                 value={cell.imageUrl ?? ''}
                                 onChange={(e) => onChange({ imageUrl: e.target.value || undefined })}
-                                placeholder="https://… oder data:image/png;base64,…"
+                                placeholder="https://… · /adapter/… · data:image/png;base64,…"
                                 className={`flex-1 ${inputCls}`}
                                 style={inputSty}
                             />
@@ -603,10 +755,77 @@ export function CustomCellEditor({
                         {!(cell.imageUrl ?? '').startsWith('aura-file:') && (
                             <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
                                 Tipp: Auch Base64-kodierte Bilder werden unterstützt — z.&nbsp;B. kleine Icons oder
-                                Logos ohne externen Server.
+                                Logos ohne externen Server. Bei gesetztem Datenpunkt dient dies als Fallback.
                             </p>
                         )}
+                        <ImagePathHint className="mt-1.5" />
                     </div>
+                    <div>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            Bild aus Datenpunkt (optional)
+                        </label>
+                        <div className="flex gap-1">
+                            <input
+                                type="text"
+                                value={cell.dpId ?? ''}
+                                onChange={(e) => onChange({ dpId: e.target.value || undefined })}
+                                placeholder="DP mit URL / Pfad / Base64"
+                                className="flex-1 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                                style={inputSty}
+                            />
+                            <button
+                                onClick={() => onOpenDpPicker('dpId')}
+                                className="text-xs px-2 py-1.5 rounded-lg shrink-0"
+                                style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+                                title="Datenpunkt wählen"
+                            >
+                                <Database size={12} />
+                            </button>
+                        </div>
+                        <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                            Der Wert des Datenpunkts liefert das Bild (URL, Pfad oder Base64) und hat Vorrang vor der
+                            festen URL oben. Leer = feste URL verwenden.
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        <div className="flex-1">
+                            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                                Breite (px)
+                            </label>
+                            <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={cell.imageWidth ?? ''}
+                                onChange={(e) =>
+                                    onChange({ imageWidth: e.target.value ? Number(e.target.value) : undefined })
+                                }
+                                placeholder="auto"
+                                className={inputCls}
+                                style={inputSty}
+                            />
+                        </div>
+                        <div className="flex-1">
+                            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                                Höhe (px)
+                            </label>
+                            <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={cell.imageHeight ?? ''}
+                                onChange={(e) =>
+                                    onChange({ imageHeight: e.target.value ? Number(e.target.value) : undefined })
+                                }
+                                placeholder="auto"
+                                className={inputCls}
+                                style={inputSty}
+                            />
+                        </div>
+                    </div>
+                    <p className="text-[10px] -mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+                        Leer = Zelle füllen. Feste Pixel-Maße überschreiben die Zellengröße.
+                    </p>
                     <div>
                         <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                             Darstellung
@@ -638,6 +857,20 @@ export function CustomCellEditor({
             {cell.type === 'field' &&
                 (() => {
                     const options = FIELD_OPTIONS[widgetType] ?? [];
+                    const perEvent = widgetType === 'calendar';
+                    const { base, index } = perEvent
+                        ? splitEventKey(cell.fieldKey ?? '')
+                        : { base: cell.fieldKey ?? '', index: 1 };
+                    const indexed = perEvent && CALENDAR_EVENT_FIELDS.has(base);
+                    // Termin 1 keeps the plain key, so grids built before the per-event
+                    // fields existed stay byte-identical.
+                    const commit = (nextBase: string, nextIndex: number) =>
+                        onChange({
+                            fieldKey:
+                                perEvent && CALENDAR_EVENT_FIELDS.has(nextBase) && nextIndex > 1
+                                    ? `${nextBase}${nextIndex}`
+                                    : nextBase,
+                        });
                     return (
                         <div>
                             <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
@@ -645,8 +878,8 @@ export function CustomCellEditor({
                             </label>
                             {options.length > 0 ? (
                                 <select
-                                    value={cell.fieldKey ?? ''}
-                                    onChange={(e) => onChange({ fieldKey: e.target.value })}
+                                    value={base}
+                                    onChange={(e) => commit(e.target.value, index)}
                                     className={inputCls}
                                     style={inputSty}
                                 >
@@ -667,6 +900,25 @@ export function CustomCellEditor({
                                     style={inputSty}
                                 />
                             )}
+                            {indexed && (
+                                <div className="flex items-center gap-2 mt-1.5">
+                                    <label className="text-[11px] shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                                        Termin
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={50}
+                                        value={index}
+                                        onChange={(e) => commit(base, Math.max(1, Number(e.target.value) || 1))}
+                                        className="w-20 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                                        style={inputSty}
+                                    />
+                                    <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                                        1 = nächster Termin
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     );
                 })()}
@@ -675,6 +927,18 @@ export function CustomCellEditor({
             {cell.type === 'component' &&
                 (() => {
                     const options = COMPONENT_OPTIONS[widgetType] ?? [];
+                    const perEvent = widgetType === 'calendar';
+                    const { base, index } = perEvent
+                        ? splitEventKey(cell.componentKey ?? '')
+                        : { base: cell.componentKey ?? '', index: 1 };
+                    const indexed = perEvent && CALENDAR_EVENT_COMPONENTS.has(base);
+                    const commit = (nextBase: string, nextIndex: number) =>
+                        onChange({
+                            componentKey:
+                                perEvent && CALENDAR_EVENT_COMPONENTS.has(nextBase) && nextIndex > 1
+                                    ? `${nextBase}${nextIndex}`
+                                    : nextBase,
+                        });
                     return (
                         <>
                             <div>
@@ -682,8 +946,8 @@ export function CustomCellEditor({
                                     Aktion / Icon
                                 </label>
                                 <select
-                                    value={cell.componentKey ?? ''}
-                                    onChange={(e) => onChange({ componentKey: e.target.value })}
+                                    value={base}
+                                    onChange={(e) => commit(e.target.value, index)}
                                     className={inputCls}
                                     style={inputSty}
                                 >
@@ -695,6 +959,25 @@ export function CustomCellEditor({
                                     ))}
                                 </select>
                             </div>
+                            {indexed && (
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[11px] shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                                        Termin
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={50}
+                                        value={index}
+                                        onChange={(e) => commit(base, Math.max(1, Number(e.target.value) || 1))}
+                                        className="w-20 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                                        style={inputSty}
+                                    />
+                                    <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                                        1 = nächster Termin
+                                    </span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2">
                                 <label className="text-[11px] shrink-0" style={{ color: 'var(--text-secondary)' }}>
                                     Größe
@@ -747,7 +1030,7 @@ export function CustomCellEditor({
                             style={inputSty}
                         />
                         <button
-                            onClick={onOpenDpPicker}
+                            onClick={() => onOpenDpPicker('dpId')}
                             className="text-xs px-2 py-1.5 rounded-lg shrink-0"
                             style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
                         >
@@ -759,13 +1042,11 @@ export function CustomCellEditor({
                                 factor={cell.valueFactor}
                                 offset={cell.valueOffset}
                                 presetId={cell.valueTransform}
-                                onPatch={(patch) =>
-                                    onChange({
-                                        valueFactor: patch.valueFactor,
-                                        valueOffset: patch.valueOffset,
-                                        valueTransform: patch.valueTransform,
-                                    })
-                                }
+                                timeFormat={cell.valueTimeFormat}
+                                timePattern={cell.valueTimePattern}
+                                allowTimeFormat={cell.type === 'dp'}
+                                dpId={cell.dpId}
+                                onPatch={({ unit: _unit, ...cellPatch }) => onChange(cellPatch)}
                                 size={12}
                             />
                         )}
@@ -792,6 +1073,43 @@ export function CustomCellEditor({
                         </div>
                     )}
                 </div>
+            )}
+
+            {cell.type === 'switch' && (
+                <>
+                    <div>
+                        <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                            Status-Datenpunkt (optional)
+                        </label>
+                        <div className="flex gap-1">
+                            <input
+                                type="text"
+                                value={cell.statusDpId ?? ''}
+                                onChange={(e) => onChange({ statusDpId: e.target.value || undefined })}
+                                placeholder="z.B. mqtt.1.plug1.stat.POWER"
+                                className="flex-1 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
+                                style={inputSty}
+                            />
+                            <button
+                                onClick={() => onOpenDpPicker('statusDpId')}
+                                className="text-xs px-2 py-1.5 rounded-lg shrink-0"
+                                style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+                            >
+                                <Database size={12} />
+                            </button>
+                            <JsonPathButton
+                                value={cell.statusDpId}
+                                onChange={(ref) => onChange({ statusDpId: ref })}
+                                size={12}
+                            />
+                        </div>
+                        <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+                            Zustand, Beschriftung und Farben kommen von hier, geschaltet wird weiter auf den Datenpunkt
+                            oben. Leer = beides derselbe Datenpunkt.
+                        </p>
+                    </div>
+                    <StateEvalRow cell={cell} onChange={onChange} />
+                </>
             )}
 
             {cell.type === 'switch' && (
@@ -865,6 +1183,11 @@ export function CustomCellEditor({
                             </span>
                         </button>
                     );
+                    // Button mode colours: per-state keys, falling back to the older
+                    // state-independent color/buttonTextColor of existing configs.
+                    const baseBg = cell.color && cell.color.startsWith('#') ? cell.color : '#3b82f6';
+                    const baseFg =
+                        cell.buttonTextColor && cell.buttonTextColor.startsWith('#') ? cell.buttonTextColor : '#ffffff';
                     return (
                         <>
                             <div>
@@ -979,21 +1302,39 @@ export function CustomCellEditor({
                             )}
                             {mode === 'button' && (
                                 <>
-                                    <div>
-                                        <label
-                                            className="text-[11px] mb-1 block"
-                                            style={{ color: 'var(--text-secondary)' }}
-                                        >
-                                            Beschriftung
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={cell.text ?? ''}
-                                            onChange={(e) => onChange({ text: e.target.value || undefined })}
-                                            placeholder="z.B. AN/AUS"
-                                            className={inputCls}
-                                            style={inputSty}
-                                        />
+                                    <div className="flex gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Beschriftung AN
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={cell.trueText ?? ''}
+                                                onChange={(e) => onChange({ trueText: e.target.value || undefined })}
+                                                placeholder={cell.text || 'AN'}
+                                                className={inputCls}
+                                                style={inputSty}
+                                            />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Beschriftung AUS
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={cell.falseText ?? ''}
+                                                onChange={(e) => onChange({ falseText: e.target.value || undefined })}
+                                                placeholder={cell.text || 'AUS'}
+                                                className={inputCls}
+                                                style={inputSty}
+                                            />
+                                        </div>
                                     </div>
                                     <div className="flex gap-2">
                                         <div className="flex-1">
@@ -1001,45 +1342,52 @@ export function CustomCellEditor({
                                                 className="text-[11px] mb-1 block"
                                                 style={{ color: 'var(--text-secondary)' }}
                                             >
-                                                Hintergrundfarbe
+                                                Hintergrundfarbe AN
                                             </label>
-                                            <div className="flex items-center gap-1">
-                                                <ColorPicker
-                                                    value={
-                                                        cell.color && cell.color.startsWith('#')
-                                                            ? cell.color
-                                                            : '#3b82f6'
-                                                    }
-                                                    onChange={(v) => onChange({ color: v })}
-                                                    className="flex-1 h-7 rounded cursor-pointer border-0 p-0"
-                                                />
-                                                <button
-                                                    onClick={() => onChange({ color: '' })}
-                                                    className="text-[10px] px-2 py-0.5 rounded shrink-0"
-                                                    style={{
-                                                        background: 'var(--app-bg)',
-                                                        color: 'var(--text-secondary)',
-                                                        border: '1px solid var(--app-border)',
-                                                    }}
-                                                >
-                                                    Theme
-                                                </button>
-                                            </div>
+                                            <ColorPicker
+                                                value={cell.buttonTrueColor || baseBg}
+                                                onChange={(v) => onChange({ buttonTrueColor: v })}
+                                                className="w-full h-7 rounded cursor-pointer border-0 p-0"
+                                            />
                                         </div>
                                         <div className="flex-1">
                                             <label
                                                 className="text-[11px] mb-1 block"
                                                 style={{ color: 'var(--text-secondary)' }}
                                             >
-                                                Textfarbe
+                                                Hintergrundfarbe AUS
                                             </label>
                                             <ColorPicker
-                                                value={
-                                                    cell.buttonTextColor && cell.buttonTextColor.startsWith('#')
-                                                        ? cell.buttonTextColor
-                                                        : '#ffffff'
-                                                }
-                                                onChange={(v) => onChange({ buttonTextColor: v })}
+                                                value={cell.buttonFalseColor || baseBg}
+                                                onChange={(v) => onChange({ buttonFalseColor: v })}
+                                                className="w-full h-7 rounded cursor-pointer border-0 p-0"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="flex-1">
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Textfarbe AN
+                                            </label>
+                                            <ColorPicker
+                                                value={cell.buttonTrueTextColor || baseFg}
+                                                onChange={(v) => onChange({ buttonTrueTextColor: v })}
+                                                className="w-full h-7 rounded cursor-pointer border-0 p-0"
+                                            />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label
+                                                className="text-[11px] mb-1 block"
+                                                style={{ color: 'var(--text-secondary)' }}
+                                            >
+                                                Textfarbe AUS
+                                            </label>
+                                            <ColorPicker
+                                                value={cell.buttonFalseTextColor || baseFg}
+                                                onChange={(v) => onChange({ buttonFalseTextColor: v })}
                                                 className="w-full h-7 rounded cursor-pointer border-0 p-0"
                                             />
                                         </div>
@@ -1066,6 +1414,28 @@ export function CustomCellEditor({
                                             className="w-full h-1"
                                             style={{ accentColor: 'var(--accent)' }}
                                         />
+                                    </div>
+                                    <div>
+                                        <label
+                                            className="text-[11px] block mb-1"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            Button-Breite
+                                        </label>
+                                        <select
+                                            value={cell.buttonWidth ?? 'auto'}
+                                            onChange={(e) =>
+                                                onChange({
+                                                    buttonWidth: e.target.value as CustomCell['buttonWidth'],
+                                                })
+                                            }
+                                            className={inputCls}
+                                            style={inputSty}
+                                        >
+                                            <option value="auto">Automatisch (Textbreite)</option>
+                                            <option value="full">Volle Zellenbreite</option>
+                                            <option value="uniform">Einheitlich (längstes Label)</option>
+                                        </select>
                                     </div>
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
@@ -1343,46 +1713,9 @@ export function CustomCellEditor({
                             })}
                         </div>
                     </div>
-                    {/* Dezimalstellen — only relevant when the value display is on */}
+                    {/* Dezimalstellen / 1000er-Trennzeichen — only relevant when the value display is on */}
                     {(cell.valuePosition ?? 'none') !== 'none' && (
-                        <div>
-                            <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                Dezimalstellen
-                            </label>
-                            <div className="flex gap-1">
-                                <input
-                                    type="number"
-                                    min={0}
-                                    max={6}
-                                    step={1}
-                                    disabled={cell.decimals === undefined}
-                                    value={cell.decimals ?? defaultDecimals}
-                                    onChange={(e) => onChange({ decimals: Number(e.target.value) })}
-                                    className="w-16 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
-                                    style={{ ...inputSty, opacity: cell.decimals === undefined ? 0.5 : 1 }}
-                                />
-                                <button
-                                    onClick={() =>
-                                        onChange({
-                                            decimals: cell.decimals === undefined ? defaultDecimals : undefined,
-                                        })
-                                    }
-                                    title={
-                                        cell.decimals === undefined
-                                            ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                            : 'Auf globale Einstellung zurücksetzen'
-                                    }
-                                    className="text-[10px] px-2 py-1 rounded-lg shrink-0"
-                                    style={{
-                                        background: cell.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
-                                        color: cell.decimals === undefined ? '#fff' : 'var(--text-secondary)',
-                                        border: 'none',
-                                    }}
-                                >
-                                    Global
-                                </button>
-                            </div>
-                        </div>
+                        <ValueFormatRow decimals={cell.decimals} numberFormat={cell.numberFormat} onChange={onChange} />
                     )}
                 </div>
             )}
@@ -1398,7 +1731,7 @@ export function CustomCellEditor({
                             border: '1px solid var(--app-border)',
                         }}
                     >
-                        ⚠ Veraltet: stattdessen „Schalter“ mit Bedienelement „Button“ verwenden.
+                        ⚠ Veraltet: stattdessen {'„Schalter“'} mit Bedienelement {'„Button“'} verwenden.
                     </p>
                     <div>
                         <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
@@ -1506,15 +1839,18 @@ export function CustomCellEditor({
                             </span>
                         </button>
                     );
+                    const stateMode = cell.stateMode ?? 'boolean';
                     return (
                         <>
+                            {/* Active-state detection: boolean vs. operator/value comparison (issue #467) */}
+                            <StateEvalRow cell={cell} onChange={onChange} />
                             <div className="flex gap-2">
                                 <div className="flex-1 min-w-0">
                                     <label
                                         className="text-[11px] mb-1 block"
                                         style={{ color: 'var(--text-secondary)' }}
                                     >
-                                        Icon (an / true)
+                                        Icon ({stateMode === 'condition' ? 'aktiv' : 'an / true'})
                                     </label>
                                     {pickBtn('trueIcon', TruePrev, cell.trueIcon, trueCol)}
                                 </div>
@@ -1523,7 +1859,7 @@ export function CustomCellEditor({
                                         className="text-[11px] mb-1 block"
                                         style={{ color: 'var(--text-secondary)' }}
                                     >
-                                        Icon (aus / false)
+                                        Icon ({stateMode === 'condition' ? 'inaktiv' : 'aus / false'})
                                     </label>
                                     {pickBtn('falseIcon', FalsePrev, cell.falseIcon, falseCol)}
                                 </div>
@@ -1822,6 +2158,33 @@ export function CustomCellEditor({
                                     />
                                 </button>
                             </div>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <label
+                                        className="text-[11px] font-medium"
+                                        style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                        Feld nach dem Senden leeren
+                                    </label>
+                                    <p className="text-[10px]" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+                                        Kommandofeld: zeigt den Datenpunkt-Wert nicht an
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() =>
+                                        onChange({ clearAfterSubmit: cell.clearAfterSubmit ? undefined : true })
+                                    }
+                                    className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                                    style={{
+                                        background: cell.clearAfterSubmit ? 'var(--accent)' : 'var(--app-border)',
+                                    }}
+                                >
+                                    <span
+                                        className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
+                                        style={{ left: cell.clearAfterSubmit ? '18px' : '2px' }}
+                                    />
+                                </button>
+                            </div>
                             <div>
                                 <div className="flex items-center justify-between">
                                     <div>
@@ -1916,6 +2279,7 @@ export function CustomCellEditor({
             {/* State-Text: trueText / falseText + colors */}
             {cell.type === 'state-text' && (
                 <>
+                    <StateEvalRow cell={cell} onChange={onChange} />
                     <div className="flex gap-2">
                         <div className="flex-1 min-w-0">
                             <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
@@ -2207,42 +2571,87 @@ export function CustomCellEditor({
                     const fmt = (cell.dateFormat as DateOutputFormat) ?? 'timestamp_ms';
                     return (
                         <>
-                            <div className="flex items-center justify-between">
-                                <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                    Nur Uhrzeit (kein Datum)
+                            <div>
+                                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+                                    Eingabeformat
                                 </label>
-                                <button
-                                    onClick={() =>
-                                        onChange({
-                                            timeOnly: !cell.timeOnly,
-                                            showTime: !cell.timeOnly ? true : cell.showTime,
-                                        })
-                                    }
-                                    className="relative w-7 h-4 rounded-full transition-colors shrink-0"
-                                    style={{ background: cell.timeOnly ? 'var(--accent)' : 'var(--app-border)' }}
+                                <select
+                                    value={cell.dateInput ?? 'picker'}
+                                    onChange={(e) => onChange({ dateInput: e.target.value as 'picker' | 'custom' })}
+                                    className={inputCls}
+                                    style={inputSty}
                                 >
-                                    <span
-                                        className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
-                                        style={{ left: cell.timeOnly ? '14px' : '2px' }}
-                                    />
-                                </button>
+                                    <option value="picker">Datums-/Zeitwähler</option>
+                                    <option value="custom">Eigenes Format…</option>
+                                </select>
                             </div>
-                            {!cell.timeOnly && (
-                                <div className="flex items-center justify-between">
-                                    <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                                        Uhrzeit-Eingabe anzeigen
-                                    </label>
-                                    <button
-                                        onClick={() => onChange({ showTime: !cell.showTime })}
-                                        className="relative w-7 h-4 rounded-full transition-colors shrink-0"
-                                        style={{ background: cell.showTime ? 'var(--accent)' : 'var(--app-border)' }}
+                            {cell.dateInput === 'custom' && (
+                                <div>
+                                    <label
+                                        className="text-[11px] mb-1 block"
+                                        style={{ color: 'var(--text-secondary)' }}
                                     >
-                                        <span
-                                            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
-                                            style={{ left: cell.showTime ? '14px' : '2px' }}
-                                        />
-                                    </button>
+                                        Eingabe-Muster
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={cell.dateInputPattern ?? ''}
+                                        onChange={(e) => onChange({ dateInputPattern: e.target.value || undefined })}
+                                        placeholder="z.B. MM.yyyy"
+                                        className={`${inputCls} font-mono`}
+                                        style={inputSty}
+                                    />
+                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                        Muster bestimmt die Auswahl: MM.yyyy → Monatswähler, dd.MM.yyyy → Kalender,
+                                        HH:mm → Uhrzeit; sonst Textfeld. Tokens: {DATE_PATTERN_TOKENS}
+                                    </p>
                                 </div>
+                            )}
+                            {/* Picker-Modus: beim eigenen Format legt das Muster die Felder fest. */}
+                            {cell.dateInput !== 'custom' && (
+                                <>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                            Nur Uhrzeit (kein Datum)
+                                        </label>
+                                        <button
+                                            onClick={() =>
+                                                onChange({
+                                                    timeOnly: !cell.timeOnly,
+                                                    showTime: !cell.timeOnly ? true : cell.showTime,
+                                                })
+                                            }
+                                            className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                                            style={{
+                                                background: cell.timeOnly ? 'var(--accent)' : 'var(--app-border)',
+                                            }}
+                                        >
+                                            <span
+                                                className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                                style={{ left: cell.timeOnly ? '14px' : '2px' }}
+                                            />
+                                        </button>
+                                    </div>
+                                    {!cell.timeOnly && (
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                                Uhrzeit-Eingabe anzeigen
+                                            </label>
+                                            <button
+                                                onClick={() => onChange({ showTime: !cell.showTime })}
+                                                className="relative w-7 h-4 rounded-full transition-colors shrink-0"
+                                                style={{
+                                                    background: cell.showTime ? 'var(--accent)' : 'var(--app-border)',
+                                                }}
+                                            >
+                                                <span
+                                                    className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform"
+                                                    style={{ left: cell.showTime ? '14px' : '2px' }}
+                                                />
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
                             )}
                             <div>
                                 <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
@@ -2263,6 +2672,27 @@ export function CustomCellEditor({
                                     )}
                                 </select>
                             </div>
+                            {fmt === 'custom' && (
+                                <div>
+                                    <label
+                                        className="text-[11px] mb-1 block"
+                                        style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                        Ausgabe-Muster
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={cell.datePattern ?? ''}
+                                        onChange={(e) => onChange({ datePattern: e.target.value || undefined })}
+                                        placeholder={DEFAULT_DATE_PATTERN}
+                                        className={`${inputCls} font-mono`}
+                                        style={inputSty}
+                                    />
+                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                        Tokens: {DATE_PATTERN_TOKENS}
+                                    </p>
+                                </div>
+                            )}
                         </>
                     );
                 })()}
@@ -2299,44 +2729,9 @@ export function CustomCellEditor({
                 </div>
             )}
 
-            {/* Dezimalstellen for value / dp / stepper / progress */}
+            {/* Dezimalstellen / 1000er-Trennzeichen for value / dp / stepper / progress */}
             {(cell.type === 'value' || cell.type === 'dp' || cell.type === 'stepper' || cell.type === 'progress') && (
-                <div>
-                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                        Dezimalstellen
-                    </label>
-                    <div className="flex gap-1">
-                        <input
-                            type="number"
-                            min={0}
-                            max={6}
-                            step={1}
-                            disabled={cell.decimals === undefined}
-                            value={cell.decimals ?? defaultDecimals}
-                            onChange={(e) => onChange({ decimals: Number(e.target.value) })}
-                            className="w-16 text-xs rounded-lg px-2 py-1.5 focus:outline-none"
-                            style={{ ...inputSty, opacity: cell.decimals === undefined ? 0.5 : 1 }}
-                        />
-                        <button
-                            onClick={() =>
-                                onChange({ decimals: cell.decimals === undefined ? defaultDecimals : undefined })
-                            }
-                            title={
-                                cell.decimals === undefined
-                                    ? 'Globale Einstellung aktiv – klicken für eigenen Wert'
-                                    : 'Auf globale Einstellung zurücksetzen'
-                            }
-                            className="text-[10px] px-2 py-1 rounded-lg shrink-0"
-                            style={{
-                                background: cell.decimals === undefined ? 'var(--accent)' : 'var(--app-border)',
-                                color: cell.decimals === undefined ? '#fff' : 'var(--text-secondary)',
-                                border: 'none',
-                            }}
-                        >
-                            Global
-                        </button>
-                    </div>
-                </div>
+                <ValueFormatRow decimals={cell.decimals} numberFormat={cell.numberFormat} onChange={onChange} />
             )}
 
             {/* Alignment for component cells */}
@@ -2728,6 +3123,38 @@ export function CustomCellEditor({
                         </div>
                     </div>
                 </>
+            )}
+
+            {/* Per-cell conditional formatting (own popup) — always last, highlighted */}
+            {CELL_CONDITION_TYPES.has(cell.type) && (
+                <div style={{ borderTop: '1px solid var(--app-border)', paddingTop: 10, marginTop: 6 }}>
+                    <button
+                        onClick={onOpenConditions}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-colors hover:opacity-90"
+                        style={{
+                            background: cell.conditions?.length ? 'var(--accent)' : 'var(--accent)15',
+                            border: `1px solid ${cell.conditions?.length ? 'var(--accent)' : 'var(--accent)55'}`,
+                            color: cell.conditions?.length ? '#fff' : 'var(--accent)',
+                        }}
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <SlidersHorizontal size={14} />
+                            Bedingungen
+                        </span>
+                        <span
+                            className="text-[10px] px-1.5 py-0.5 rounded-full"
+                            style={{
+                                background: cell.conditions?.length ? '#ffffff33' : 'var(--accent)',
+                                color: '#fff',
+                            }}
+                        >
+                            {cell.conditions?.length ?? 0}
+                        </span>
+                    </button>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        Auf Werte reagieren — Farbe, Hintergrund, Icon oder Ausblenden nur für diese Zelle.
+                    </p>
+                </div>
             )}
         </>
     );

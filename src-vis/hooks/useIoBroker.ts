@@ -3,6 +3,7 @@ import type { ioBrokerState, ObjectViewResult } from '../types';
 import { version as appVersion } from '../../package.json';
 import { splitDpRef, resolveDpValue } from '../utils/dpRef';
 import { NS } from '../utils/namespace';
+import { guardDevWrites } from '../utils/devWriteGuard';
 
 interface IoBrokerSocket {
     connected: boolean;
@@ -72,12 +73,57 @@ export function getStateFromCache(id: string): ioBrokerState | null {
     return stateCache.get(id) ?? null;
 }
 
+// IDs with at least one live subscription right now, i.e. the ones whose cache
+// entry is actually being kept current by inbound stateChange events.
+//
+// The cache alone says nothing about freshness: an entry survives after its last
+// subscriber goes away, and from that moment on it silently rots, because a
+// `stateChange` only arrives for IDs we are subscribed to. That is what made a
+// popup show stale values — it subscribes on open and unsubscribes on close, so
+// a datapoint that changed while the popup was closed kept its old cached value,
+// and the mount-time `getState` was skipped precisely because the cache had an
+// entry. Reopening showed the value from the previous open. (issue #528)
+const maintained = new Set<string>();
+
+// When each cache entry was last confirmed against the server. Lets a value that
+// was fetched moments ago (the load-time prefetch, whose whole point is to batch
+// those round-trips) count as fresh even before anything subscribes to it, while
+// an entry nobody has maintained since then goes stale on its own.
+//
+// Kept deliberately short: this window is the one place a missed change can still
+// slip through (value confirmed at T, changed at T+1s with nobody subscribed,
+// consumer mounts at T+2s and trusts the cache). It only has to span
+// prefetch → first mount, which is well under a second in practice.
+const verifiedAt = new Map<string, number>();
+const FRESH_TTL_MS = 3000;
+
+/** Record an authoritative value: from a fetch, or pushed live by the server. */
+function cacheState(id: string, state: ioBrokerState): void {
+    stateCache.set(id, state);
+    verifiedAt.set(id, Date.now());
+}
+
+/** True when the cached value for `id` can be trusted without a round-trip: either a
+ *  live subscription is keeping it current, or it was confirmed within FRESH_TTL_MS.
+ *  A stale cached value is still worth rendering immediately (no null-flash), but has
+ *  to be re-fetched to confirm. */
+export function isStateFresh(id: string): boolean {
+    if (!stateCache.has(id)) return false;
+    if (maintained.has(id)) return true;
+    const at = verifiedAt.get(id);
+    return at !== undefined && Date.now() - at < FRESH_TTL_MS;
+}
+
 /** DEV-only: push a fabricated state into the cache and notify live subscribers,
  *  exactly like an inbound `stateChange` — but without any socket round-trip or
  *  write to ioBroker. Used by the screenshot harness to render widgets against
  *  controlled, side-effect-free values. Not wired up in production builds. */
 export function __devInjectState(id: string, state: ioBrokerState): void {
-    stateCache.set(id, state);
+    cacheState(id, state);
+    // The harness IS the authority for injected IDs — mark them permanently fresh so
+    // no consumer re-fetches them and overwrites the fabricated value with the real
+    // one mid-screenshot.
+    maintained.add(id);
     subscribers.get(id)?.forEach((fn) => fn(state));
 }
 
@@ -86,9 +132,21 @@ export function __devInjectState(id: string, state: ioBrokerState): void {
 // so history charts, adapter/script/log lists etc. render offline & side-effect
 // free. Returning `undefined` from the sendTo stub means "not handled, fall
 // through to the real socket". Not wired up in production builds.
-let devHistoryGen: ((id: string, opts: { start: number; end: number; count?: number }) => HistoryEntry[]) | null = null;
+// `step`/`aggregate` are handed over as requested, so a stub can emulate what the
+// adapter would do with them — average smearing a spike, `minmax` keeping it.
+let devHistoryGen:
+    | ((
+          id: string,
+          opts: { start: number; end: number; count?: number; step?: number; aggregate?: HistoryAggregate },
+      ) => HistoryEntry[])
+    | null = null;
 let devObjectView: ((type: string, startkey: string, endkey: string) => ObjectViewResult | undefined) | null = null;
 let devSendTo: ((target: string, command: string, payload: unknown) => unknown) | null = null;
+// Stands in for what the server would answer to `getState`. Lets a test model a
+// datapoint that changed while the frontend held no subscription — the situation
+// the cache-freshness logic exists for, and which is otherwise unreachable
+// without writing to a real ioBroker instance.
+let devGetState: ((id: string) => ioBrokerState | null | undefined) | null = null;
 
 export function __devSetHistoryGen(fn: typeof devHistoryGen): void {
     devHistoryGen = fn;
@@ -98,6 +156,28 @@ export function __devSetObjectView(fn: typeof devObjectView): void {
 }
 export function __devSetSendTo(fn: typeof devSendTo): void {
     devSendTo = fn;
+}
+export function __devSetGetState(fn: typeof devGetState): void {
+    devGetState = fn;
+}
+
+// DEV-only write log. Records what a control actually sent (id + value) so a
+// Playwright test can assert the converted raw value — e.g. that a slat slider
+// at 40 % writes 0.4 on a 0…1 datapoint — instead of inferring it from the DOM.
+// Off (null) unless a test arms it; the write itself is untouched either way.
+export interface DevWrite {
+    id: string;
+    val: boolean | number | string;
+}
+let devWriteLog: DevWrite[] | null = null;
+export function __devSetWriteLog(on: boolean): void {
+    devWriteLog = on ? [] : null;
+}
+export function __devWrites(): DevWrite[] {
+    return devWriteLog ? [...devWriteLog] : [];
+}
+function noteWrite(id: string, val: boolean | number | string): void {
+    devWriteLog?.push({ id, val });
 }
 
 // Optimistic writes: when enabled, setState reflects the written value locally
@@ -142,8 +222,20 @@ export function prefetchStates(ids: string[], onProgress?: (loaded: number, tota
     const fetches = unique.map(
         (id) =>
             new Promise<void>((resolve) => {
+                // Route through the dev stub as well, so the harness controls every
+                // getState path. Otherwise the prefetch reaches the real socket for a
+                // fictional demo ID and caches whatever it answers.
+                if (devGetState) {
+                    const handled = devGetState(id);
+                    if (handled !== undefined) {
+                        if (handled) cacheState(id, handled);
+                        onProgress?.(++loaded, total);
+                        resolve();
+                        return;
+                    }
+                }
                 getSocket().emit('getState', id, (_err: unknown, state: ioBrokerState | null) => {
-                    if (state) stateCache.set(id, state);
+                    if (state) cacheState(id, state);
                     onProgress?.(++loaded, total);
                     resolve();
                 });
@@ -186,6 +278,152 @@ function getInitialUrl(): string {
 
 let currentUrl = getInitialUrl();
 
+/**
+ * Re-fetch every state we have ever cached and push the fresh value into the
+ * cache + any live subscribers.
+ *
+ * Why the *cache* and not just the current subscriptions: a `disconnect` flips
+ * `connected` to false, which tears down every useDatapoint effect, which
+ * unsubscribes — so by the time we reconnect, `subscribers` is empty and a pass
+ * over it would be a no-op. React then re-mounts the effects, but they skip
+ * their `getState` round-trip whenever `stateCache` already holds a value
+ * (that's the no-null-flash optimisation) — so any datapoint that changed while
+ * we were offline stays visibly stale until it happens to change again. Only a
+ * full page reload cleared it, because the cache is module state. (issue #528)
+ *
+ * Emitted in chunks so a dashboard with hundreds of datapoints doesn't fire one
+ * giant burst at a socket that has just come up.
+ */
+function revalidateStates(s: IoBrokerSocket): void {
+    const ids = [...new Set([...subscribers.keys(), ...stateCache.keys()])].filter(isValidStateId);
+    if (ids.length === 0) return;
+    const CHUNK = 50;
+    const emitChunk = (from: number): void => {
+        // A socket swapped out mid-pass (reconnect / bounce) makes the rest of
+        // the chunks meaningless — the new socket runs its own pass.
+        if (socket !== s) return;
+        for (const id of ids.slice(from, from + CHUNK)) {
+            s.emit('getState', id, (_err: unknown, state: unknown) => {
+                if (!state) return;
+                const next = state as ioBrokerState;
+                const prev = stateCache.get(id);
+                cacheState(id, next);
+                // Only wake subscribers on an actual change — a reconnect on a
+                // large dashboard would otherwise re-render every widget.
+                if (prev && prev.val === next.val && prev.ts === next.ts && prev.ack === next.ack) return;
+                subscribers.get(id)?.forEach((fn) => fn(next));
+            });
+        }
+        if (from + CHUNK < ids.length) globalThis.setTimeout(() => emitChunk(from + CHUNK), 25);
+    };
+    emitChunk(0);
+}
+
+// ── Wake-up liveness check ────────────────────────────────────────────────────
+// A tab parked in the background for hours (Edge "sleeping tabs", OS suspend)
+// comes back with a socket that may be dead in one of two ways: the library
+// noticed and is reconnecting (handled by handleConnected), or the TCP leg to
+// the aura WS proxy is still open while the upstream to the web adapter is gone
+// — a zombie that reports `connected` and never delivers another stateChange.
+// Probe it on wake-up: no answer in time means bounce, an answer means we are
+// live and only need fresh values.
+let livenessProbeAt = 0;
+
+function checkConnectionAlive(opts?: { ignoreVisibility?: boolean }): void {
+    // Hidden tabs are normally left alone — but a detected freeze/long gap wants
+    // the probe regardless, since that is exactly when the socket went stale.
+    if (!opts?.ignoreVisibility && typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    const now = Date.now();
+    if (now - livenessProbeAt < 5000) return;
+    livenessProbeAt = now;
+
+    const s = socket;
+    if (!s) return; // nothing mounted yet — getSocket() will connect on demand
+    if (!s.connected) {
+        bounceSocket();
+        return;
+    }
+
+    let answered = false;
+    const probeId = subscribers.keys().next().value ?? 'system.config';
+    s.emit('getState', probeId, () => {
+        answered = true;
+        if (socket === s) revalidateStates(s);
+    });
+    globalThis.setTimeout(() => {
+        // Still the same socket, still "connected", but no reply: zombie.
+        if (!answered && socket === s) bounceSocket();
+    }, 4000);
+}
+
+// ── Tab-suspend detection ─────────────────────────────────────────────────────
+// Edge's "put tabs to sleep" (and Chrome's tab freezing) suspend a background
+// tab through the Page Lifecycle API: the document goes `frozen` and emits
+// `resume` when it wakes. That event is the only *unambiguous* signal that the
+// BROWSER suspended us — a plain long gap between timer ticks would equally fit
+// a laptop that was asleep, which no browser setting can change. So the `resume`
+// event drives the user-facing hint, while the coarse gap check below only
+// triggers a data refresh.
+let tabWasSuspended = false;
+const suspendListeners = new Set<(suspended: boolean) => void>();
+
+/** True once the browser has frozen and resumed this tab at least once. */
+export function wasTabSuspended(): boolean {
+    return tabWasSuspended;
+}
+
+export function onTabSuspended(fn: (suspended: boolean) => void): () => void {
+    suspendListeners.add(fn);
+    return () => {
+        suspendListeners.delete(fn);
+    };
+}
+
+/** True for Chromium browsers, whose sleeping-tab setting the hint can point at. */
+export function isChromiumBrowser(): boolean {
+    const brands = (navigator as { userAgentData?: { brands?: Array<{ brand: string }> } }).userAgentData?.brands;
+    if (brands?.length) return brands.some((b) => /Chromium/i.test(b.brand));
+    return /Chrome|Edg\//.test(navigator.userAgent);
+}
+
+/** 'edge' | 'chrome' | null — decides which settings path the hint names. */
+export function chromiumFlavour(): 'edge' | 'chrome' | null {
+    if (!isChromiumBrowser()) return null;
+    return /Edg\//.test(navigator.userAgent) ? 'edge' : 'chrome';
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkConnectionAlive();
+    });
+    window.addEventListener('online', () => checkConnectionAlive({ ignoreVisibility: true }));
+    window.addEventListener('focus', () => checkConnectionAlive());
+
+    // Page Lifecycle API — not in the TS DOM lib, hence the string event names.
+    document.addEventListener('resume', () => {
+        if (!tabWasSuspended) {
+            tabWasSuspended = true;
+            suspendListeners.forEach((fn) => fn(true));
+        }
+        console.warn('[Aura] the browser suspended this tab (sleeping tabs / tab freezing) — refreshing datapoints');
+        checkConnectionAlive({ ignoreVisibility: true });
+    });
+
+    // Coarse fallback: a wall-clock gap far beyond the worst-case background
+    // throttling (browsers clamp hidden-tab timers to ~1/min, never minutes)
+    // means we were frozen or the device slept. Ambiguous, so it only refreshes
+    // data — it never raises the hint.
+    const HEARTBEAT_MS = 30000;
+    const GAP_THRESHOLD_MS = 5 * 60 * 1000;
+    let lastBeat = Date.now();
+    globalThis.setInterval(() => {
+        const now = Date.now();
+        const gap = now - lastBeat;
+        lastBeat = now;
+        if (gap > GAP_THRESHOLD_MS) checkConnectionAlive({ ignoreVisibility: true });
+    }, HEARTBEAT_MS);
+}
+
 function createSocket(url: string): IoBrokerSocket {
     const io = getIo();
     if (!io) {
@@ -208,7 +446,13 @@ function createSocket(url: string): IoBrokerSocket {
     // option and uses its own pure-WS connect. We deliberately do NOT pass
     // `path` (socket.io's default /socket.io is already correct, and @iobroker/ws
     // would mishandle it — it connects at the root).
-    const s = io.connect(url, { transports: ['websocket', 'polling'] });
+    let s = io.connect(url, { transports: ['websocket', 'polling'] });
+    // Dev only: every emit — including the two call sites that bypass the
+    // setStateDirect/setObjectDirect helpers — runs through the write guard, so
+    // the dev preview cannot switch real devices (see utils/devWriteGuard.ts).
+    // Kept out of production entirely: import.meta.env.DEV folds to false at
+    // build time, so both this line and the import are eliminated.
+    if (import.meta.env.DEV) s = guardDevWrites(s);
 
     // A re-established connection is signalled differently depending on the
     // runtime socket library: the bundled classic socket.io-client re-fires
@@ -241,60 +485,21 @@ function createSocket(url: string): IoBrokerSocket {
                 subscribers.delete(id);
             }
         });
-        // Re-subscribing is spread across small batches instead of firing every
-        // "subscribe" + ack-based "getState" in one synchronous burst. A widget
-        // with a handful of datapoints (most of the app) never showed a problem
-        // either way, but Wetter's ~120 datapoints in a single burst reliably
-        // failed to refresh on reconnect — even triggered manually, on a fully
-        // awake, well-connected phone, ruling out background/timing as the
-        // cause. Whatever the exact limit is (server-side ack handling, socket
-        // buffer, or something specific to @iobroker/ws under a large burst of
-        // simultaneous ack-callbacks), spacing the requests out avoids it.
-        const ids = Array.from(subscribers.keys());
-        const BATCH_SIZE = 10;
-        const BATCH_DELAY_MS = 60;
-        let i = 0;
-        const sendNextBatch = (): void => {
-            const batch = ids.slice(i, i + BATCH_SIZE);
-            i += BATCH_SIZE;
-            batch.forEach((id) => {
-                const callbacks = subscribers.get(id);
-                if (!callbacks) return;
-                s.emit('subscribe', id);
-                s.emit('getState', id, (_err: unknown, state: unknown) => {
-                    if (state) {
-                        // ROOT CAUSE: this callback used to update each hook's own
-                        // React state directly but never touched the shared
-                        // stateCache. Reconnecting also flips `connected` on
-                        // useIoBroker(), which is a dependency of every
-                        // useDatapoint effect — that effect re-runs, and its
-                        // first move is `getStateFromCache(id)`. Since the cache
-                        // still held the pre-freeze value, that stale read fired
-                        // straight after this callback's fresh setDatapointState
-                        // and silently overwrote it — a live value that flashed
-                        // correct for an instant and then reverted. Keeping the
-                        // cache in sync here removes the stale value for that
-                        // subsequent re-run to find in the first place.
-                        stateCache.set(id, state as ioBrokerState);
-                        callbacks.forEach((fn) => fn(state as ioBrokerState));
-                    }
-                });
-            });
-            if (i < ids.length) {
-                setTimeout(sendNextBatch, BATCH_DELAY_MS);
-            } else {
-                // Every batch has now been sent — safe to allow another
-                // resume-triggered bounce again.
-                resumeBounceInFlight = false;
-            }
-        };
-        sendNextBatch();
+        subscribers.forEach((_callbacks, id) => {
+            s.emit('subscribe', id);
+            maintained.add(id);
+        });
+        revalidateStates(s);
     };
 
     s.on('connect', () => handleConnected(false));
     s.on('reconnect', () => handleConnected(true));
     s.on('disconnect', () => {
         connectionActive = false;
+        // Nothing is being kept current while we are offline, so every cached value
+        // now needs confirming — even for subscriptions that outlive the drop (the
+        // non-hook `subscribeStateDirect` consumers, which don't watch `connected`).
+        maintained.clear();
         console.log(
             '%c Aura %c disconnected ',
             'background:#6366f1;color:#fff;font-weight:bold;border-radius:3px 0 0 3px;padding:2px 6px;',
@@ -305,7 +510,7 @@ function createSocket(url: string): IoBrokerSocket {
     s.on('stateChange', (...args: unknown[]) => {
         const id = args[0] as string;
         const state = args[1] as ioBrokerState;
-        if (state) stateCache.set(id, state);
+        if (state) cacheState(id, state);
         subscribers.get(id)?.forEach((fn) => fn(state));
         // Perf: first live data after connect. Reported inline (rather than via
         // perfMetrics) to avoid an import cycle back into this module.
@@ -512,6 +717,7 @@ export function useIoBroker() {
         if (!subscribers.has(id)) {
             subscribers.set(id, new Set());
             getSocket().emit('subscribe', id);
+            maintained.add(id);
         }
         subscribers.get(id)!.add(callback);
         return () => {
@@ -520,6 +726,7 @@ export function useIoBroker() {
                 subs.delete(callback);
                 if (subs.size === 0) {
                     subscribers.delete(id);
+                    maintained.delete(id);
                     getSocket().emit('unsubscribe', id);
                 }
             }
@@ -527,6 +734,7 @@ export function useIoBroker() {
     }, []);
 
     const setState = useCallback((id: string, val: boolean | number | string) => {
+        noteWrite(id, val);
         getSocket().emit('setState', id, { val, ack: false });
         if (optimisticEcho) {
             const prev = stateCache.get(id);
@@ -546,20 +754,10 @@ export function useIoBroker() {
         }
     }, []);
 
-    const getState = useCallback((id: string): Promise<ioBrokerState | null> => {
-        return new Promise((resolve) => {
-            getSocket().emit('getState', id, (_err: unknown, state: ioBrokerState | null) => {
-                // Mirror getStateDirect — cache the result so remounts (e.g. when a
-                // widget moves between the grid and the off-screen reflow container)
-                // can see the value synchronously instead of starting cold and
-                // flipping back out of the reflow set. Without this the
-                // useConditionStyle remount loop in issue #281 keeps the widget
-                // bouncing in-place and other widgets never reflow up.
-                if (state) stateCache.set(id, state);
-                resolve(state);
-            });
-        });
-    }, []);
+    // Delegates to getStateDirect: identical behaviour (fetch, then cache the result
+    // so a remount sees it synchronously — see issue #281), and this way the dev
+    // getState stub covers the hook path too.
+    const getState = useCallback((id: string): Promise<ioBrokerState | null> => getStateDirect(id), []);
 
     const getObjectView = useCallback((type: 'state' | 'channel' | 'device'): Promise<ObjectViewResult> => {
         return new Promise((resolve) => {
@@ -585,6 +783,9 @@ export interface ioBrokerObject {
         type?: string;
         unit?: string;
         write?: boolean;
+        role?: string;
+        /** Value→text map for multi-state DPs (object / array / "k:v;…" string). */
+        states?: Record<string, string> | string[] | string;
         custom?: Record<string, { enabled?: boolean; [key: string]: unknown }>;
     };
 }
@@ -602,6 +803,13 @@ export function invalidateObjectCache(id?: string): void {
         objectCache.clear();
         objectInflight.clear();
     }
+}
+
+/** Seed the object cache, so getObjectDirect answers from it instead of the socket.
+ *  DEV-only: lets a screenshot show the editor fields that depend on an object (the
+ *  history adapters detected in `common.custom` above all) for a fabricated datapoint. */
+export function __devInjectObject(id: string, obj: ioBrokerObject): void {
+    objectCache.set(id, obj);
 }
 
 export function getObjectDirect(id: string, opts?: { skipCache?: boolean }): Promise<ioBrokerObject | null> {
@@ -622,6 +830,8 @@ export function getObjectDirect(id: string, opts?: { skipCache?: boolean }): Pro
 }
 
 // ── History adapter ────────────────────────────────────────────────────────────
+export type HistoryAggregate = 'none' | 'average' | 'min' | 'max' | 'minmax' | 'total' | 'count' | 'first' | 'last';
+
 export interface HistoryEntry {
     ts: number;
     val: number | boolean | string | null;
@@ -637,12 +847,18 @@ export function getHistoryDirect(
         end?: number;
         step?: number;
         count?: number;
-        aggregate?: 'none' | 'average' | 'min' | 'max' | 'minmax' | 'total' | 'count' | 'first' | 'last';
+        aggregate?: HistoryAggregate;
     },
 ): Promise<HistoryEntry[]> {
     if (devHistoryGen) {
         return Promise.resolve(
-            devHistoryGen(id, { start: opts.start, end: opts.end ?? Date.now(), count: opts.count }),
+            devHistoryGen(id, {
+                start: opts.start,
+                end: opts.end ?? Date.now(),
+                count: opts.count,
+                step: opts.step,
+                aggregate: opts.aggregate,
+            }),
         );
     }
     return new Promise((resolve) => {
@@ -678,6 +894,7 @@ export function subscribeStateDirect(id: string, callback: (state: ioBrokerState
     if (!subscribers.has(id)) {
         subscribers.set(id, new Set());
         getSocket().emit('subscribe', id);
+        maintained.add(id);
     }
     subscribers.get(id)!.add(callback);
     return () => {
@@ -686,6 +903,7 @@ export function subscribeStateDirect(id: string, callback: (state: ioBrokerState
             subs.delete(callback);
             if (subs.size === 0) {
                 subscribers.delete(id);
+                maintained.delete(id);
                 getSocket().emit('unsubscribe', id);
             }
         }
@@ -704,23 +922,68 @@ export function subscribeDpValue(
     callback: (value: ioBrokerState['val'], state: ioBrokerState) => void,
 ): () => void {
     const { id, path } = splitDpRef(ref);
-    return subscribeStateDirect(id, (state) => {
+    const deliver = (state: ioBrokerState): void => {
         callback(resolveDpValue(state?.val, path) as ioBrokerState['val'], state);
-    });
+    };
+    // Capture freshness BEFORE subscribing — subscribing is what marks the ID as
+    // maintained, so asking afterwards would always say "fresh".
+    const fresh = isStateFresh(id);
+    const unsubscribe = subscribeStateDirect(id, deliver);
+    // Prime with the current value. A bare `subscribe` only yields *changes*: the
+    // connect handler's getState pass covers subscriptions that already existed
+    // when the socket connected, but a consumer mounting later (e.g. the section
+    // menu opened from the mobile hamburger — its content is portal-mounted on
+    // open) would otherwise render its placeholder until the DP happens to change.
+    if (isValidStateId(id)) {
+        // Paint the cached value straight away when there is one (avoids a
+        // placeholder flash), then confirm it unless a live subscription was already
+        // keeping it current — an unmaintained cache entry can be arbitrarily old.
+        const cached = stateCache.get(id);
+        if (cached) deliver(cached);
+        if (!fresh) {
+            let disposed = false;
+            void getStateDirect(id).then((state) => {
+                if (!disposed && state) deliver(state);
+            });
+            return () => {
+                disposed = true;
+                unsubscribe();
+            };
+        }
+    }
+    return unsubscribe;
 }
 
 /** Get the current state of a datapoint without a React hook. */
 export function getStateDirect(id: string): Promise<ioBrokerState | null> {
+    if (devGetState) {
+        const handled = devGetState(id);
+        if (handled !== undefined) {
+            if (handled) cacheState(id, handled);
+            return Promise.resolve(handled);
+        }
+    }
     return new Promise((resolve) => {
         getSocket().emit('getState', id, (_err: unknown, state: ioBrokerState | null) => {
-            if (state) stateCache.set(id, state);
+            if (state) cacheState(id, state);
             resolve(state ?? null);
         });
     });
 }
 
+/**
+ * Current value of a datapoint, prefetch cache first and a fetch only when the
+ * cache holds nothing. For one-shot readers — freezing the `[[dp]]` tokens of a
+ * condition's message, where a token pointing at the datapoint that just
+ * triggered is always cached and must not wait on the socket.
+ */
+export async function readValueDirect(id: string): Promise<unknown> {
+    return (getStateFromCache(id) ?? (await getStateDirect(id)))?.val;
+}
+
 /** Set a state value without a React hook. */
 export function setStateDirect(id: string, val: boolean | number | string, ack = false): void {
+    noteWrite(id, val);
     getSocket().emit('setState', id, { val, ack });
 }
 

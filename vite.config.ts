@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
@@ -219,6 +220,12 @@ export default defineConfig(({ command }) => ({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // Phones on the same network reach the dev server by this machine's name
+    // (e.g. http://<pc-name>.local:5173), which survives a DHCP address change.
+    // Vite 5.4.12+ answers unknown Host headers with 403, so the machine's own
+    // name has to be listed. Read at runtime via os.hostname(), so nothing
+    // machine-specific ends up in the repo.
+    allowedHosts: [os.hostname().toLowerCase(), `${os.hostname().toLowerCase()}.local`],
     proxy: {
       // Proxy socket.io (HTTP polling + WebSocket) to ioBroker.
       // secure:false lets HTTPS targets with self-signed certs work in dev.

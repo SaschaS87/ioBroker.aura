@@ -6,6 +6,10 @@ Listet Datenpunkte automatisch anhand von Filtern (Rolle, ID-Muster, Raum, Funkt
 
 Kein Haupt-Datenpunkt — die Einträge (`entries[]`) werden über die Filter ermittelt und beim Sync ergänzt. Booleans werden als Schalter, Zahlen mit Level-/Dimmer-Rolle als Regler, `value.*`/`level`-Rollen immer als Wert dargestellt.
 
+Die Darstellung lässt sich erzwingen (`displayType`) — listenweit im Dialog → Tab **Darstellung** und pro Eintrag im Detail-Editor (siehe [Darstellung der Datenpunkte](#darstellung-der-datenpunkte)) — inklusive `switch` für einen [Schalter](./liste#darstellung-schalter) mit eigenen Schreibwerten, Status-Datenpunkt und Icon-/Bild-Stil, [`slider`](./liste#darstellung-schieberegler) für einen Regler mit dem vollen Optionssatz des Schieberegler-Widgets (Skala, Schrittweite, Farbe, Balken-Optik, Fortschrittsanzeige) und `value` für den reinen Wert — beide unabhängig von Rolle und Datenpunkt-Name, `time` für Zeit-Datenpunkte (Uhrzeit / Datum / beides / eigenes Muster, siehe [Statische Liste](./liste#darstellung-datum-zeit)), `datepicker` für einen [Datumswähler](./liste#darstellung-datumswaehler), `select` für ein [Auswahlfeld](./liste#darstellung-auswahlfeld) und `input` für ein [Eingabefeld](./liste#darstellung-eingabefeld) in der Zeile.
+
+Pro Eintrag (Dialog **Datenpunkte verwalten** → Abschnitt **Datenpunkt**) lässt sich der Wert außerdem nur für die Anzeige umrechnen und/oder als Uhrzeit/Datum formatieren, siehe [Wert-Umrechnung / Zeit](./liste#wert-umrechnung-zeit). Ohne eigene Einstellung gilt die globale Umrechnung der Liste.
+
 ## Layouts
 
 ### Default
@@ -23,18 +27,164 @@ Inline-Pills mit Label und Wert — für kompakte Status-Anzeigen.
 ### Count
 Nur die Anzahl der (gefilterten) Einträge groß zentriert mit Icon und Titel.
 
-### Custom
-Einträge frei in einer Zellenmatrix platzieren — siehe [Custom-Layout](./custom-layout).
-
 ## Einstellungen
 
-Alle Optionen werden im Editor unter **Widget bearbeiten** gesetzt.
+Im Editor unter **Widget bearbeiten**. Die Datenpunkte selbst liegen dahinter im eigenen Dialog **Datenpunkte verwalten**; im Panel bleiben nur die Optionen der Liste als Ganzes, in aufklappbaren Abschnitten.
 
 ![](./assets/dynamische-liste/config.png)
 
+### Datenpunkte verwalten
+
+Links alle Einträge, rechts die vollständige Konfiguration des ausgewählten. Der Dialog ist verschiebbar, größenveränderbar und merkt sich seine Größe.
+
+![](./assets/dynamische-liste/datenpunkte-dialog.png)
+
+| Tab | |
+| --- | --- |
+| Suchen & Filter | Datenpunkt-Suche, Ausschlüsse, Trefferliste, Übernehmen — dazu Sync-Intervall und „Nur relevante DPs" |
+| Icon | Icon vor dem Namen für alle Zeilen (siehe unten) |
+| Darstellung | Darstellung aller Zeilen samt typabhängiger Felder (siehe unten) |
+| Einträge | Gefundene Datenpunkte; rechts der Detail-Editor (Bezeichnung, Einheit, Darstellung, Farben) |
+| Bedingungen | Regeln für alle Zeilen (siehe unten) |
+| Zweite Zeile | Vorlage für zusätzliche Datenpunkte in allen Zeilen (siehe unten) |
+| Klick auf Zeile | Detail-Popup beim Klick auf eine Zeile (siehe unten) |
+| Namen | Namensmuster und Namens-Filter — Platzhalter wie bei der [statischen Liste](./liste#namen), inklusive `[[{{parent}}.DeviceName]]` für Namen aus einem eigenen Datenpunkt |
+
+Der Detail-Editor rechts ist in Abschnitte gegliedert: **Datenpunkt** · **Beschriftung** (Icon, Bezeichnung, Einheit, Nachkommastellen, Tausendertrennung) · **Darstellung** (mit dem gewählten Typ als Kennzeichen, darin alle typabhängigen Felder) · **Zweite Zeile** · **Bedingungen** · **Farbschwellen** · **Verhalten** (letzte Änderung, Klick auf Zeile).
+
+Nachkommastellen, Tausendertrennung und Farbschwellen gelten pro Zeile und schlagen die Vorgabe der Liste aus dem Optionen-Panel — wie in der [statischen Liste](./liste).
+
+### Icon vor dem Namen
+
+Die Datenpunkte kommen aus einem Filter und ändern sich beim Sync, deshalb wird das Icon einmal für die ganze Liste gesetzt: Dialog → Tab **Icon** ([Lucide](https://lucide.dev) / Iconify-ID, Größe in px, Standard `13`, dazu die Farbe).
+
+| Quelle | |
+| --- | --- |
+| `entryIcon` · `entryIconSize` · `entryIconColor` | Dialog → Tab **Icon**: gilt für **alle** Zeilen |
+| `entries[].icon` · `entries[].iconSize` | Detail-Editor → Abschnitt **Beschriftung**: nur diese Zeile — die Farbe gibt es nur listenweit |
+| `icon` · `iconSize` · `iconColor` einer Bedingung | solange die Regel greift — gewinnt gegen beide |
+
+Der Tab zeigt eine Vorschau der ersten Zeilen und wie viele Datenpunkte ein eigenes Icon haben; **Eigene Icons entfernen** setzt sie zurück, damit die Vorgabe überall gilt.
+
+### Darstellung der Datenpunkte
+
+Wie beim Icon: die Datenpunkte kommen aus einem Filter und ändern sich beim Sync, deshalb wird die
+Darstellung einmal für die ganze Liste gesetzt — Dialog → Tab **Darstellung**, mit denselben Feldern wie
+im Detail-Editor (Typ plus alle typabhängigen Einstellungen).
+
+| Quelle | |
+| --- | --- |
+| `entryDisplay` | Dialog → Tab **Darstellung**: gilt für **alle** Zeilen ohne eigene Darstellung |
+| `entries[].displayType` | Detail-Editor → Abschnitt **Darstellung**: nur diese Zeile |
+
+Die Vorgabe wird pro Zeile **ganz oder gar nicht** übernommen: Eine Zeile mit eigener Darstellung ist
+vollständig selbst konfiguriert (eigener Schalter-Stil, eigene Werte-Zuordnung …) und ignoriert die
+Vorgabe. Zeilen ohne eigene Darstellung übernehmen Typ **und** dessen Einstellungen; ihr Detail-Editor
+zeigt statt `Auto` die Schaltfläche `Wie Liste (…)`.
+
+`Auto (keine Vorgabe)` entfernt die listenweite Darstellung wieder — jede Zeile wird dann wie zuvor
+automatisch aus Wert und Rolle abgeleitet. Der Tab zeigt eine Vorschau der ersten Zeilen mit ihrer
+Darstellung; **Eigene Darstellungen entfernen** setzt die Ausnahmen zurück.
+
+::: warning Zeilenspezifische Datenpunkte
+Befehls- und Status-Datenpunkte einer Darstellung (Rollladen `up`/`stop`/`down`, Status-DP eines
+Schalters) zeigen auf **einen** festen Datenpunkt und gelten dann für jede Zeile. Sie gehören pro
+Eintrag gesetzt; der Tab weist darauf hin, sobald einer eingetragen ist.
+:::
+
+### Zweite Zeile (zusätzliche Datenpunkte)
+
+Zusätzliche Datenpunkte unter dem Wert einer Zeile — Batterie, Signalstärke, Sollwert. **Nur Anzeige**, kein Schreiben. Felder, Plätze (links/mitte/rechts) und Formatierung wie bei der [statischen Liste](./liste#zweite-zeile-zusatzliche-datenpunkte). Layouts `default` · `card` · `compact`, nicht `minimal`.
+
+Zwei Quellen, pro Eintrag gesetzte Datenpunkte gewinnen:
+
+| Quelle | |
+| --- | --- |
+| `subDpTemplate` | Dialog → Tab **Zweite Zeile**: gilt für **alle** Einträge |
+| `entries[].subDps` | Detail-Editor → Abschnitt **Zweite Zeile**: ersetzt die Vorlage für diese Zeile |
+
+In der Vorlage darf die Datenpunkt-ID Platzhalter enthalten, aufgelöst gegen den Datenpunkt der jeweiligen Zeile:
+
+| Platzhalter | |
+| --- | --- |
+| `{{parent}}` | ID ohne letztes Segment, z. B. `{{parent}}.BATTERY` |
+| `{{dp}}` | vollständige ID der Zeile |
+| `{{name}}` | letztes Segment der ID |
+
+Ohne Platzhalter gilt derselbe Datenpunkt für jede Zeile (Außentemperatur, Strompreis). Ein Beispiel-Eintrag im Tab liefert die Auswahl der Geschwister-Datenpunkte und die Vorschau der aufgelösten IDs.
+
+Zusätzlich pro Datenpunkt der zweiten Zeile:
+
+| Feld | |
+| --- | --- |
+| Werte-Zuordnung (`states`) | Tabelle `Wert → Text`, optional mit Icon und Farbe — z. B. `true` → `ONLINE`. Ersetzt den Werttext; die Einheit entfällt dann |
+| Bedingungen (`conditions`) | dieselben Regeln wie [je Zeile](#bedingungen-je-zeile), nur für diesen einen Wert |
+
+Die Werte-Zuordnung ist dieselbe Tabelle wie beim Darstellungstyp `Zustände` und wirkt an beiden Stellen
+gleich.
+
+| Option | Standard | |
+| --- | --- | --- |
+| `subDpTemplate` | — | Vorlage für alle Einträge |
+| `subDpTemplateHideMissing` | `true` | Zeilen ohne den aufgelösten Datenpunkt bleiben leer statt `–` zu zeigen |
+
+### Bedingungen je Zeile
+
+Regeln, die auf einen Wert reagieren und Farbe, Icon oder Text einer Zeile ändern. Zwei Orte, gleiche
+Regeln:
+
+| Ort | Gilt für |
+| --- | --- |
+| Dialog **Datenpunkte verwalten** → Tab **Bedingungen** (`rowConditions`) | alle Zeilen |
+| Detail-Editor → Abschnitt **Bedingungen** (`entries[].conditions`) | nur diese Zeile |
+
+Die listenweiten Regeln laufen zuerst, die des Eintrags danach — **pro Eigenschaft gewinnt die letzte**.
+Ausblenden ist absorbierend.
+
+| Feld | |
+| --- | --- |
+| `target` | `row` (Standard) · `name` · `value` · `icon` — worauf die Regel wirkt |
+| `clauses` / `logic` | wie bei den [Widget-Bedingungen](../einstellungen/editor#bedingungen-marker-operatoren), inkl. Vergleich gegen einen zweiten Datenpunkt |
+| `color` · `bg` · `iconColor` | Textfarbe · Zeilenhintergrund (nur `row`) · Icon-Farbe |
+| `icon` | anderes Icon, solange die Regel greift |
+| `iconSize` | Icon-Größe in px, solange die Regel greift; leer lässt die eingestellte Größe |
+| `fontSize` | Textgröße in px, solange die Regel greift; leer lässt die eingestellte Größe |
+| `text` | ersetzt den angezeigten Text; die Einheit entfällt dabei |
+| `bold` · `italic` | Schriftschnitt |
+| `effect` | `pulse` · `blink` — lässt das Element pulsieren bzw. blinken |
+| `hide` | Element ausblenden |
+
+Eine Regel auf `row` gibt Textgröße, Textfarbe, Fett/Kursiv sowie Icon, Icon-Farbe und Icon-Größe an Name, Wert und
+Icon weiter; Hintergrund und Ausblenden bleiben bei der Zeile. Eine Regel auf einen einzelnen Teil gewinnt gegen sie.
+
+Auf `value` wirken Textgröße, Textfarbe und Schriftschnitt in jeder **Darstellung**: auch auf die Schalter-Beschriftung,
+die Zustands- und Kontakt-Pille, die Rollen-Anzeige eines Sensors, den Wert von Schieberegler und Stepper sowie die
+Datums- und Text-Felder. Ohne Werttext — Umschalter ohne Beschriftung, Rollladen-Tasten, Wert-Tasten, Taster — gibt es
+nichts zu formatieren.
+
+#### Datenpunkt einer Bedingung
+
+| Schreibweise | bedeutet |
+| --- | --- |
+| `{dp}` (leer) | Wert der Zeile selbst |
+| `hm-rpc.0.Gerät.UNREACH` | genau dieser Datenpunkt, in jeder Zeile derselbe |
+| `{{parent}}.UNREACH` | Nachbar-Datenpunkt **der jeweiligen Zeile** |
+| `{{dp}}` · `{{name}}` | vollständige ID bzw. letztes Segment der Zeile |
+
+Die doppelten Klammern sind dieselben Platzhalter wie in der [zweiten Zeile](#zweite-zeile-zusatzliche-datenpunkte).
+Zeilen, deren Datenpunkt einen Platzhalter nicht beantworten kann (kein Elternstrang), überspringen die
+Regel — statt gegen den wörtlichen Text zu vergleichen.
+
+::: tip Beispiel
+`{{parent}}.UNREACH` ist wahr → `target: icon`, Icon `CloudOff`, Icon-Farbe rot. Eine Regel, jede Zeile
+prüft ihr eigenes Gerät.
+:::
+
 ### Datenpunkt-Suche
 
-Mehrere Werte je Feld kommagetrennt; ID-Muster akzeptiert Text (Teilstring) oder `/regex/`.
+Dialog **Datenpunkte verwalten** → Tab **Suchen & Filter**. Mehrere Werte je Feld kommagetrennt; ID-Muster akzeptiert Text (Teilstring) oder `/regex/`.
+
+Neben Raum und Funktion steht jede selbst angelegte enum-Kategorie zur Auswahl (z. B. `enum.floors` für Stockwerke). Enthält ein Eintrag Räume statt Datenpunkte, werden diese mit aufgelöst — ein Stockwerk findet also die Datenpunkte seiner Räume. Hängen die Mitglieder direkt an der Kategorie (`enum.etage` ohne Ebene darunter), ist die Kategorie selbst der Auswahleintrag. Gibt es außer `enum.rooms` und `enum.functions` nichts, bleibt das Feld leer und sagt das auch.
 
 | Option | Standard | |
 | --- | --- | --- |
@@ -42,12 +192,54 @@ Mehrere Werte je Feld kommagetrennt; ID-Muster akzeptiert Text (Teilstring) oder
 | `filterIdPattern` | — | ID-Muster (Text oder `/regex/`) |
 | `filterRooms` | — | Räume |
 | `filterFuncs` | — | Funktionen |
+| `filterEnums` | — | eigene Kategorien: volle enum-IDs (`enum.floors.og`), ODER innerhalb einer Kategorie, UND über Kategorien |
 | `filterTypes` | — | Typen (`boolean`, `number`, …) |
 | `filterAdapters` | — | Adapter-Instanzen (`hm-rpc.0`, …) |
 | `excludeIdPatterns` | — | auszuschließende ID-Muster |
 | `excludeIds` | — | einzeln ausgeschlossene IDs |
 | `filterRelevant` | `true` | nur Widget-relevante Rollen/Typen übernehmen |
 | `syncIntervalMin` | `5` | Sync-Intervall in Minuten |
+
+### Klick auf Zeile
+
+Dialog **Datenpunkte verwalten** → Tab **Klick auf Zeile**. Ein Klick auf eine Listenzeile öffnet ein Detail-Popup zu genau diesem Datenpunkt. Klicks auf Schalter, Regler oder Buttons in der Zeile schalten weiterhin direkt.
+
+| Option | Standard | |
+| --- | --- | --- |
+| `rowClickAction` | Aus | `auto` · `{ "kind": "none" }` (aus) · vollständige Klick-Aktion |
+| `rowPopupTitle` | Zeilenname | Titel des Popups |
+| `rowPopupWidth` / `rowPopupHeight` | auto | px |
+| `rowPopupAutoCloseSec` | View/Global | Sekunden, `0` = aus |
+
+Standard ohne eigene Einstellung: **Aus** — Zeilen reagieren nicht auf Klicks. **Eigene Aktion** startet mit *Popup: Alle Datenpunkte des Geräts*, Umfang **Gleicher Strang (Elternobjekt)**, **Nur relevante Datenpunkte** an — entspricht `{ "kind": "popup-dps", "scope": "parent", "relevantOnly": true }`. **Automatisch** (Popup nach Rolle) muss aktiv gewählt werden.
+
+Automatik nach Rolle des Datenpunkts:
+
+| Rolle | Popup |
+| --- | --- |
+| `level.dimmer` · `level.*` · `*dimmer*` · `*brightness*` | Dimmer |
+| `switch` · `switch.*` · `sensor.*` · `indicator.*` · `button` | Schalter |
+| `level.blind` · `*shutter*` · `*cover*` · `*awning*` | Rollladen |
+| `level.temperature` · `heating*` | Thermostat |
+| `media.*` (außer `media.volume`) | Schalter |
+| sonst | `Standard: Datenpunkt` (Wert, Steuerung, ID, letzte Änderung) |
+
+Zugewiesene [Widget-Typ-Standards](../einstellungen/popups#widget-typ-standards) gelten auch hier — wer dem Typ `switch` eine eigene View zuweist, bekommt sie auch in der Liste.
+
+Pro Datenpunkt lässt sich das im Detail-Editor überschreiben (`entries[].clickAction`):
+
+| Modus | |
+| --- | --- |
+| Wie Liste | Übernimmt die Listen-Einstellung — der Normalfall |
+| Automatisch | Erzwingt die Ableitung aus der Rolle, auch wenn die Liste auf `Aus` oder eine eigene Aktion steht |
+| Aus | Diese Zeile reagiert nicht auf Klicks |
+| Eigene Aktion | Vollständige Klick-Aktion nur für diese Zeile — eine Zeile öffnet ein Widget-Popup, die nächste springt in einen anderen Tab. Popup-Titel und -Größe kommen weiterhin aus der Listen-Einstellung |
+
+Navigations-Aktionen (`Sprung: Tab` · `Externe URL` · `Widget`) springen direkt, statt ein Popup zu öffnen.
+
+::: tip Badges-Layout
+Ein Badge ist die ganze Zeile. Bei `Automatisch` schalten schaltbare Badges weiterhin, das Popup übernimmt nur Badges ohne eigenen Schalter (Sensoren, schreibgeschützte und numerische Werte). Eine ausdrücklich gesetzte Aktion gewinnt dagegen auch bei schaltbaren Badges.
+:::
 
 ### Anzeige
 
@@ -59,6 +251,12 @@ Mehrere Werte je Feld kommagetrennt; ID-Muster akzeptiert Text (Teilstring) oder
 | `iconSize` | `20` | px |
 | `titleAlign` | `left` | `left` · `center` · `right` |
 | `showCount` | `true` | Anzahl hinter dem Titel |
+| `maxRows` | `0` | Höchstzahl angezeigter Zeilen; `0` = alle. Macht die Höhe planbar, weil die Zeilen sonst erst zur Laufzeit entstehen |
+| `showMore` | `true` | Abgeschnittene Zeilen als „+N weitere“ ausweisen |
+| `entryIcon` | — | [Icon vor dem Namen](#icon-vor-dem-namen) — gilt für alle Zeilen |
+| `entryIconSize` | `13` | px |
+| `entryIconColor` | `--text-secondary` | Farbe des Zeilen-Icons (im Layout `minimal` sonst die Badge-Farbe) |
+| `entryDisplay` | — | [Darstellung](#darstellung-der-datenpunkte) aller Zeilen ohne eigene — Typ plus dessen Einstellungen |
 | `showId` | `false` | Datenpunkt-ID unter dem Label |
 | `showRoom` | `false` | Räume unter dem Label |
 | `showEntryLastChange` | `false` | Zeitstempel der letzten Änderung je Eintrag |
@@ -76,26 +274,45 @@ Mehrere Werte je Feld kommagetrennt; ID-Muster akzeptiert Text (Teilstring) oder
 | `activeColor` | `--accent-green` | Textfarbe bei AN |
 | `inactiveColor` | `--text-secondary` | Textfarbe bei AUS |
 | `activeBg` / `inactiveBg` | — | Hintergrund des Eintrags je Zustand |
+| `valueTransform` / `valueFactor` / `valueOffset` | — | globale [Wert-Umrechnung](./liste#wert-umrechnung-zeit) (Eintrag überschreibt) |
+| `valueTimeFormat` / `valueTimePattern` | — | globale Zeit-Formatierung (Eintrag überschreibt) |
+| `colorThresholds` | — | Farbskala aus `[Schwelle, Farbe]`, z. B. `[[17,"#ef4444"],[100,"#22c55e"]]` — der Wert nimmt die Farbe der ersten Schwelle, unter der er liegt, oberhalb der letzten bleibt deren Farbe. Reihenfolge beliebig |
 
-### Filter
+### Anzeige-Filter
 
-Frontend-Filter als Chip im Header; `backendValueFilter` steuert nur die Editor-Vorschau.
+Frontend-Filter als Chip im Header (nicht zu verwechseln mit der Datenpunkt-Suche oben); `backendValueFilter` steuert nur die Editor-Vorschau. Neben den drei eingebauten Modi bietet das Menü die eigenen Filter und ein Freitextfeld.
 
 | Option | Standard | |
 | --- | --- | --- |
-| `valueFilter` | `all` | `all` · `active` · `inactive` |
+| `valueFilter` | `all` | `all` · `active` · `inactive` · ID eines eigenen Filters |
 | `filterActiveLabel` | `Nur aktive` | Chip-Text |
 | `filterInactiveLabel` | `Nur inaktive` | Chip-Text |
+| `hideBuiltinFilters` | `false` | `Nur aktive`/`Nur inaktive` aus dem Menü nehmen |
+| `hideFilterSearch` | `false` | Freitextfeld im Menü ausblenden |
+| `filterSearchPlaceholder` | `Suchen …` | Platzhalter des Freitextfelds |
+| `hideFilterButton` | `false` | Filter-Chip ausblenden |
 | `backendValueFilter` | `all` | Vorschau-Filter im Editor |
+
+Freitext trifft Name, Datenpunkt-ID, Wert und alle Werte der [zweiten Zeile](#zweite-zeile-zusatzliche-datenpunkte).
+
+### Eigene Filter
+
+Panel **Filter & Sortierung** → **Eigene Filter**. Aufbau und Optionen (`filterPresets[]`, `rules[]`) wie bei der [statischen Liste](./liste#eigene-filter) —
+inklusive `source: name` und `enthält nicht`, mit denen sich Zeilen anhand ihres Namens **ausschließen**
+lassen. Regeln mit `source: sub` prüfen die Datenpunkte der zweiten Zeile — auch die per Vorlage aufgelösten, `subKey` trifft dann die Bezeichnung oder die DP-Endung (`{{parent}}.BATTERY` → `BATTERY`).
 
 ### Sortierung
 
-| Option | Standard | |
-| --- | --- | --- |
-| `sortBy` | `none` | `none` · `label` · `value` |
-| `sortOrder` | `asc` | `asc` · `desc` |
-| `sortBy2` | `none` | zweites Sortierkriterium |
-| `sortOrder2` | `asc` | Richtung des zweiten Kriteriums |
+Panel **Filter & Sortierung** → **Sortierung**. Kriterien-Kette und Optionen (`sortRules[]`) wie bei der
+[statischen Liste](./liste#sortierung) — inklusive `mode: custom` für eine eigene Werte-Reihenfolge und
+`empty` für Zeilen ohne Wert. Der Dialog zeigt live die entstehende Reihenfolge.
+
+Ein Kriterium mit `source: sub` liest die Datenpunkte der zweiten Zeile — auch die per
+[Vorlage](#zweite-zeile-zusatzliche-datenpunkte) aufgelösten. `subKey` trifft dann die Bezeichnung oder
+die DP-Endung (`{{parent}}.BATTERY` → `BATTERY`), leer = erster weiterer DP der Zeile.
+
+Die älteren Optionen `sortBy` / `sortOrder` / `sortBy2` / `sortOrder2` wirken unverändert weiter; die
+erste Änderung im Dialog ersetzt sie durch `sortRules[]`.
 
 ### Summe
 

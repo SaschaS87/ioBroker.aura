@@ -3,7 +3,7 @@ import { useDatapoint } from '../../hooks/useDatapoint';
 import type { WidgetProps } from '../../types';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { useGlobalSettingsStore } from '../../store/globalSettingsStore';
-import { formatNum } from '../../utils/formatValue';
+import { formatNum, type NumberFormat } from '../../utils/formatValue';
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
     const rad = (angleDeg * Math.PI) / 180;
@@ -40,11 +40,24 @@ interface GaugeSVGProps {
     max: number;
     unit: string;
     decimals: number;
+    numFmt?: NumberFormat;
     strokeWidth: number;
     colorZones: boolean;
     zones: ColorZone[];
     showMinMax: boolean;
+    showValue: boolean;
+    valueFontSize?: number;
     scale?: number;
+}
+
+const DEFAULT_VALUE_FONT_SIZE = 22;
+const CENTER_DOT_R = 5;
+
+/** Color of the zone a value falls into; last zone catches anything above the final threshold. */
+function zoneColorAt(value: number, zones: ColorZone[]): string | undefined {
+    if (zones.length === 0) return undefined;
+    const match = zones.find((z) => value <= z.max);
+    return match ? match.color : zones[zones.length - 1].color;
 }
 
 function GaugeSVG({
@@ -53,10 +66,13 @@ function GaugeSVG({
     max,
     unit,
     decimals,
+    numFmt,
     strokeWidth,
     colorZones,
     zones,
     showMinMax,
+    showValue,
+    valueFontSize,
     scale = 1,
 }: GaugeSVGProps) {
     const cx = 100,
@@ -64,20 +80,23 @@ function GaugeSVG({
         r = 80;
     const primary = pointers[0];
 
-    // Determine primary color (zone-based or fixed)
-    let primaryColor = primary.color;
-    if (colorZones && zones.length > 0) {
-        const match = zones.find((z) => primary.value <= z.max);
-        primaryColor = match ? match.color : zones[zones.length - 1].color;
-    }
+    // Value text: baseline placed so the digit tops stay clear of the centre dot,
+    // and the viewBox grows with the font size so nothing is clipped at the bottom.
+    const valueFs = valueFontSize && valueFontSize > 0 ? valueFontSize : DEFAULT_VALUE_FONT_SIZE;
+    const unitFs = Math.max(7, Math.round(valueFs * 0.6));
+    const valueBaseline = cy + CENTER_DOT_R + 4 + valueFs * 0.72;
+    const vbHeight = showValue ? Math.max(120, Math.ceil(valueBaseline + valueFs * 0.12)) : 120;
 
-    const displayVal = isNaN(primary.value) ? '–' : formatNum(primary.value, decimals);
+    // Pointer colors are already resolved by the widget – zone lookup included.
+    const primaryColor = primary.color;
+
+    const displayVal = isNaN(primary.value) ? '–' : formatNum(primary.value, decimals, numFmt);
 
     // Needle lengths: primary longest, secondary progressively shorter
     const needleLengths = [r - 8, r - 16, r - 24];
 
     return (
-        <svg viewBox="0 0 200 120" style={{ width: 200 * scale, height: 120 * scale, display: 'block' }}>
+        <svg viewBox={`0 0 200 ${vbHeight}`} style={{ width: 200 * scale, height: vbHeight * scale, display: 'block' }}>
             {colorZones && zones.length > 0 ? (
                 /* Zone arcs – cover the full track, no background track underneath */
                 <>
@@ -154,17 +173,26 @@ function GaugeSVG({
             })}
 
             {/* Center circle */}
-            <circle cx={cx} cy={cy} r={5} fill={primaryColor} />
+            <circle cx={cx} cy={cy} r={CENTER_DOT_R} fill={primaryColor} />
 
             {/* Primary value text */}
-            <text x={cx} y={cy + 18} textAnchor="middle" fontSize={22} fontWeight="bold" fill="var(--text-primary)">
-                {displayVal}
-                {unit && (
-                    <tspan fontSize={13} fill="var(--text-secondary)" dx={2}>
-                        {unit}
-                    </tspan>
-                )}
-            </text>
+            {showValue && (
+                <text
+                    x={cx}
+                    y={valueBaseline}
+                    textAnchor="middle"
+                    fontSize={valueFs}
+                    fontWeight="bold"
+                    fill="var(--text-primary)"
+                >
+                    {displayVal}
+                    {unit && (
+                        <tspan fontSize={unitFs} fill="var(--text-secondary)" dx={2}>
+                            {unit}
+                        </tspan>
+                    )}
+                </text>
+            )}
 
             {/* Min/Max labels – centred below the arc endpoints, clear of the stroke */}
             {showMinMax && (
@@ -211,12 +239,16 @@ export function GaugeWidget({ config }: WidgetProps) {
     const resolvedMax =
         maxDp && maxDpVal !== undefined && maxDpVal !== null ? tx(parseFloat(String(maxDpVal))) : staticMax;
 
-    const { defaultDecimals } = useGlobalSettingsStore();
+    const { defaultDecimals, numberFormat: globalNumFmt } = useGlobalSettingsStore();
     const unit = (opts.unit as string) ?? '';
     const decimals = (opts.decimals as number) ?? defaultDecimals;
+    const numFmt = (opts.numberFormat as NumberFormat | undefined) ?? globalNumFmt;
     const strokeWidth = (opts.strokeWidth as number) ?? 12;
     const colorZones = (opts.colorZones as boolean) ?? false;
     const showMinMax = (opts.showMinMax as boolean) ?? true;
+    const showValue = opts.showValue !== false;
+    const showValueBadge = !!opts.showValueBadge;
+    const valueFontSize = (opts.valueFontSize as number) || DEFAULT_VALUE_FONT_SIZE;
 
     const numVal = typeof value === 'number' ? value : parseFloat(String(value ?? 0));
     const safeVal = isNaN(numVal) ? resolvedMin : tx(numVal);
@@ -244,24 +276,35 @@ export function GaugeWidget({ config }: WidgetProps) {
         ];
     })();
 
-    // Build pointers array
+    // Build pointers array. Each pointer can take the color of the zone its own value
+    // falls into instead of its fixed color – on by default for pointer 1 only, which
+    // is how the gauge behaved before the toggles existed.
+    const pickColor = (val: number, fixed: string, useZone: boolean): string =>
+        (colorZones && useZone ? zoneColorAt(val, zones) : undefined) ?? fixed;
+
     const ptr1Color = (opts.pointer1Color as string) ?? 'var(--gauge-arc, var(--accent))';
     const pointers: PointerDef[] = [
-        { value: safeVal, color: ptr1Color, label: (opts.pointer1Label as string) || config.title || undefined },
+        {
+            value: safeVal,
+            color: pickColor(safeVal, ptr1Color, opts.pointer1ZoneColor !== false),
+            label: (opts.pointer1Label as string) || undefined,
+        },
     ];
     if (ptr2Dp) {
         const v = parseFloat(String(val2 ?? 0));
+        const val = isNaN(v) ? effectiveMin : tx(v);
         pointers.push({
-            value: isNaN(v) ? effectiveMin : tx(v),
-            color: (opts.pointer2Color as string) ?? '#f97316',
+            value: val,
+            color: pickColor(val, (opts.pointer2Color as string) ?? '#f97316', !!opts.pointer2ZoneColor),
             label: (opts.pointer2Label as string) || undefined,
         });
     }
     if (ptr3Dp) {
         const v = parseFloat(String(val3 ?? 0));
+        const val = isNaN(v) ? effectiveMin : tx(v);
         pointers.push({
-            value: isNaN(v) ? effectiveMin : tx(v),
-            color: (opts.pointer3Color as string) ?? '#8b5cf6',
+            value: val,
+            color: pickColor(val, (opts.pointer3Color as string) ?? '#8b5cf6', !!opts.pointer3ZoneColor),
             label: (opts.pointer3Label as string) || undefined,
         });
     }
@@ -272,29 +315,42 @@ export function GaugeWidget({ config }: WidgetProps) {
         max: effectiveMax,
         unit,
         decimals,
+        numFmt,
         strokeWidth,
         colorZones,
         zones,
         showMinMax,
+        showValue,
+        valueFontSize,
     };
 
-    // Secondary pointer badges
-    const secondaryBadges = pointers.slice(1).map((ptr, i) => {
-        const dispVal = isNaN(ptr.value) ? '–' : formatNum(ptr.value, decimals);
+    // color-mix instead of an `#rrggbb` + alpha suffix: pointer 1 defaults to a CSS
+    // variable, and `var(--x)22` is not a valid color – it would drop fill and border.
+    const renderBadge = (key: string, val: number, color: string, label?: string) => {
+        const dispVal = isNaN(val) ? '–' : formatNum(val, decimals, numFmt);
         return (
             <span
-                key={i}
+                key={key}
                 className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded"
-                style={{ background: `${ptr.color}22`, color: ptr.color, border: `1px solid ${ptr.color}55` }}
+                style={{
+                    background: `color-mix(in srgb, ${color} 13%, transparent)`,
+                    color,
+                    border: `1px solid color-mix(in srgb, ${color} 33%, transparent)`,
+                }}
             >
                 <span className="font-bold tabular-nums">
                     {dispVal}
                     {unit}
                 </span>
-                {ptr.label && <span className="opacity-80">{ptr.label}</span>}
+                {label && <span className="opacity-80">{label}</span>}
             </span>
         );
-    });
+    };
+
+    // Main value as a badge below the arc – same color as its needle.
+    const badges = showValueBadge ? [renderBadge('primary', safeVal, pointers[0].color, pointers[0].label)] : [];
+    // Secondary pointer badges
+    badges.push(...pointers.slice(1).map((ptr, i) => renderBadge(`ptr${i}`, ptr.value, ptr.color, ptr.label)));
 
     const titleAlign = (opts.titleAlign as string) ?? 'left';
     const showTitle = opts.showTitle !== false;
@@ -331,9 +387,7 @@ export function GaugeWidget({ config }: WidgetProps) {
             <div className="aura-widget-value flex-1 flex items-center justify-center">
                 <GaugeSVG {...gaugeProps} scale={0.95} />
             </div>
-            {secondaryBadges.length > 0 && (
-                <div className="flex flex-wrap justify-center gap-1.5 pb-1 shrink-0">{secondaryBadges}</div>
-            )}
+            {badges.length > 0 && <div className="flex flex-wrap justify-center gap-1.5 pb-1 shrink-0">{badges}</div>}
         </div>
     );
 }

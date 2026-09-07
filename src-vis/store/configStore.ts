@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { managedStorage } from './persistManager';
-import type { TabBarSettings } from './dashboardStore';
+import type { TabBarSettings, LayoutMenuItem } from './dashboardStore';
 
 export interface FrontendSettings {
     customCSS: string;
@@ -14,6 +14,8 @@ export interface FrontendSettings {
     headerTitle: string;
     showConnectionBadge: boolean;
     showAdminLink: boolean;
+    /** Bell with the unread-message counter (issue #429). */
+    showMessageBell: boolean;
     // Header clock
     headerClockEnabled: boolean;
     headerClockDisplay: 'time' | 'date' | 'datetime';
@@ -33,6 +35,8 @@ export interface FrontendSettings {
     fontScale: number;
     mobileBreakpoint: number;
     language: 'de' | 'en';
+    /** Hide the draggable touch scroll indicator over the dashboard grid (mobile/coarse pointers). */
+    hideGridScrollbar: boolean;
     // Guidelines overlay
     guidelinesEnabled: boolean;
     guidelinesWidth: number;
@@ -42,15 +46,53 @@ export interface FrontendSettings {
     guidelinesShowResolution: boolean;
     // Layout drawer (hamburger) — global toggle
     layoutDrawerEnabled: boolean;
+    layoutDrawerShowSingle: boolean;
     layoutDrawerSize: 'sm' | 'md' | 'lg';
     /** Floating button auto-hides; reveals near top edge (mouse) or top-touch (touch). */
     layoutDrawerAutoHide: boolean;
-    /** When header is hidden: render hamburger as a floating top-left button, or inline in the TabBar. */
-    layoutDrawerPlacement: 'floating' | 'tabbar';
+    /**
+     * floating/tabbar: hamburger trigger opening an overlay (only when header is hidden).
+     * sidebar: permanently docked left menu (no overlay), always visible — works with or without header.
+     * top/bottom: permanently docked horizontal section bar (like the tab bar) above / below the dashboard.
+     */
+    layoutDrawerPlacement: 'floating' | 'tabbar' | 'sidebar' | 'top' | 'bottom';
+    /**
+     * Placement below the mobile breakpoint, where a docked sidebar would eat too
+     * much horizontal space. 'auto' puts the hamburger into the tab bar when that
+     * bar is visible anyway and floats it otherwise, so a single-tab section can
+     * keep its bar-less look; any other value forces that placement on mobile.
+     */
+    layoutDrawerMobilePlacement: 'auto' | 'floating' | 'tabbar' | 'sidebar' | 'top' | 'bottom';
+    /** Width in px of the docked sidebar (placement='sidebar'). */
+    layoutDrawerWidth: number;
+    /** Top offset in px of the docked sidebar menu content (placement='sidebar'). */
+    layoutDrawerTopOffset: number;
+    /** Bottom offset in px of the docked sidebar menu content (placement='sidebar'). */
+    layoutDrawerBottomOffset: number;
+    /** Show the menu title/header row. */
+    layoutDrawerShowTitle: boolean;
     /** Drawer header title; empty falls back to the localized default ("Layouts"). */
     layoutDrawerTitle: string;
+    /** Extra space in px above the menu title row. */
+    layoutDrawerTitleMarginTop: number;
+    /** Extra space in px below the menu title row. */
+    layoutDrawerTitleMarginBottom: number;
     /** How entries are shown in the drawer list. */
-    layoutDrawerEntryStyle: 'iconAndName' | 'iconOnly' | 'nameOnly';
+    layoutDrawerEntryStyle: 'iconAndName' | 'iconOnly' | 'nameOnly' | 'bulletAndName';
+    /** Min height in px of each menu entry. */
+    layoutDrawerEntryHeight: number;
+    /** Selected-entry indicator style — mirrors the tab-bar indicator styles. */
+    layoutDrawerIndicatorStyle: 'text' | 'underline' | 'filled' | 'pills';
+    /** Entry text font size in px. */
+    layoutDrawerFontSize: number;
+    /** Entry icon size in px. */
+    layoutDrawerIconSize: number;
+    /** Horizontal-bar placement (top/bottom): alignment of the section entries in the bar. */
+    layoutDrawerBarAlignment: 'left' | 'center' | 'right';
+    /** Horizontal-bar placement (top/bottom): hide the custom scroll indicator on mobile. */
+    layoutDrawerHideMobileScrollbar: boolean;
+    /** Extra elements (clock/datapoint/text) rendered above/below the layout list. */
+    layoutDrawerItems: LayoutMenuItem[];
     // Idle return — auto-switch back to default tab after inactivity
     idleReturnEnabled: boolean;
     /** Seconds of inactivity before returning to the default tab. */
@@ -112,6 +154,7 @@ export const DEFAULT_FRONTEND: FrontendSettings = {
     headerTitle: 'Aura',
     showConnectionBadge: true,
     showAdminLink: false,
+    showMessageBell: false,
     headerClockEnabled: false,
     headerClockDisplay: 'time',
     headerClockShowSeconds: false,
@@ -128,6 +171,7 @@ export const DEFAULT_FRONTEND: FrontendSettings = {
     fontScale: 1,
     mobileBreakpoint: 600,
     language: 'de',
+    hideGridScrollbar: false,
     // Fresh installs show the guidelines + resolution readout in the frontend so
     // users immediately see their device's viewport size (with a dismissible hint
     // explaining how to switch it off). Existing installs keep their persisted
@@ -138,11 +182,26 @@ export const DEFAULT_FRONTEND: FrontendSettings = {
     guidelinesShowInFrontend: true,
     guidelinesShowResolution: true,
     layoutDrawerEnabled: false,
+    layoutDrawerShowSingle: false,
     layoutDrawerSize: 'md',
     layoutDrawerAutoHide: false,
     layoutDrawerPlacement: 'floating',
+    layoutDrawerMobilePlacement: 'auto',
+    layoutDrawerWidth: 240,
+    layoutDrawerTopOffset: 0,
+    layoutDrawerBottomOffset: 0,
+    layoutDrawerShowTitle: true,
     layoutDrawerTitle: '',
+    layoutDrawerTitleMarginTop: 0,
+    layoutDrawerTitleMarginBottom: 0,
     layoutDrawerEntryStyle: 'iconAndName',
+    layoutDrawerEntryHeight: 48,
+    layoutDrawerIndicatorStyle: 'filled',
+    layoutDrawerFontSize: 14,
+    layoutDrawerIconSize: 16,
+    layoutDrawerBarAlignment: 'left',
+    layoutDrawerHideMobileScrollbar: false,
+    layoutDrawerItems: [],
     idleReturnEnabled: false,
     idleReturnDelay: 30,
     optimisticUpdates: true,

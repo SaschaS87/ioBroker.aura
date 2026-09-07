@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { resolveHtmlAssets } from './utils/assetUrl';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Sun, Moon, Settings } from 'lucide-react';
 import {
@@ -11,16 +12,22 @@ import {
     setOptimisticEcho,
     getObjectViewDirect,
     setBackendTimingSink,
+    wasTabSuspended,
+    onTabSuspended,
+    chromiumFlavour,
 } from './hooks/useIoBroker';
 import { useCustomJs } from './hooks/useCustomJs';
 import { useCustomCss } from './hooks/useCustomCss';
 import { useConfigSync } from './hooks/useConfigSync';
+import { useActiveSelectionSync } from './hooks/useActiveSelectionSync';
 import { useVersionGuard } from './hooks/useVersionGuard';
 import { useConnectionStore } from './store/connectionStore';
+import { useGlobalSettingsStore } from './store/globalSettingsStore';
 import { useConfigStore } from './store/configStore';
-import { useDashboardStore, useLayoutBySlug } from './store/dashboardStore';
+import { useDashboardStore, resolveView, resolveTabBarSettings } from './store/dashboardStore';
 import { useNavigationStore } from './store/navigationStore';
 import { useThemeStore } from './store/themeStore';
+import { bumpThemeEpoch } from './store/themeEpoch';
 import { getTheme } from './themes';
 import { useGroupStore } from './store/groupStore';
 import { loadConfigFromIoBroker, applyRaw } from './utils/configLoader';
@@ -30,24 +37,30 @@ import { TabBar } from './components/layout/TabBar';
 import { LayoutDrawer } from './components/layout/LayoutDrawer';
 import { HeaderLogo } from './components/common/HeaderLogo';
 import { useIframeStore } from './store/iframeStore';
-import { useEffectiveThemeId, useEffectiveCustomVars } from './hooks/useEffectiveSettings';
+import { useEffectiveThemeId, useEffectiveCustomVars, useEffectiveSettings } from './hooks/useEffectiveSettings';
 import { useT } from './i18n';
 import { applyCustomFormat, fmtTime, fmtDate } from './utils/clockUtils';
+import { tabBarShowsOnOwn } from './utils/tabBarVisible';
 import type { Tab } from './store/dashboardStore';
 import type { FrontendSettings } from './store/configStore';
 
-import { discardPending } from './store/persistManager';
+import { discardPending, isScreenshotMode } from './store/persistManager';
 import { markGroupDefsHydrated } from './store/groupDefsStore';
-import { usePopupConfigStore } from './store/popupConfigStore';
+import { markWidgetPresetsHydrated } from './store/widgetPresetsStore';
+import { usePopupConfigStore, newTriggerHost } from './store/popupConfigStore';
+import { usePopupRuntimeStore } from './store/popupRuntimeStore';
+import { DpPopupTriggers } from './components/widgets/popup/DpPopupTriggers';
+import { ToastLayer } from './components/messages/ToastLayer';
+import { MessageBell } from './components/layout/MessageBell';
+import type { MessageScope } from './store/messagesStore';
 import { NS } from './utils/namespace';
+import { themeModeOverride, useThemeModeStore, writeCachedThemeMode, type ThemeMode } from './utils/themeModeCache';
 import { baseDpId } from './utils/dpRef';
-import { initPerfMetrics, setPerfTracking } from './utils/perfMetrics';
+import { initPerfMetrics, setPerfTracking, reportBackendPing } from './utils/perfMetrics';
 import { setBreakdownTracking, recordBackendCall } from './utils/perfBreakdown';
-
-// Module-level cache of the active themeMode.frontend DP override. Lets the
-// DP listener win over delayed config rehydrations and the followBrowser
-// effect, which would otherwise overwrite the DP-driven setTheme call.
-const themeModeOverride: { value: 'dark' | 'light' | null } = { value: null };
+import { PinPrompt } from './components/common/PinPrompt';
+import { usePinStore, unlockedReader } from './store/pinStore';
+import { activePinKeys, pendingPinTarget, pinEscapeTarget, unlocksFor, type EscapeTarget } from './utils/pinLock';
 
 const STORE_REHYDRATORS: Record<string, () => void> = {
     'aura-dashboard': () => useDashboardStore.persist.rehydrate(),
@@ -59,6 +72,10 @@ const STORE_REHYDRATORS: Record<string, () => void> = {
         if (v) applyRaw('aura-group-defs', v);
     },
     'aura-popup-config': () => usePopupConfigStore.persist.rehydrate(),
+    'aura-widget-presets': () => {
+        const v = localStorage.getItem('aura-widget-presets');
+        if (v) applyRaw('aura-widget-presets', v);
+    },
 };
 
 // ── HeaderClock ────────────────────────────────────────────────────────────
@@ -120,7 +137,7 @@ function HeaderDatapoint({ id, template }: { id: string; template?: string }) {
             <span
                 className="text-sm font-medium"
                 style={{ color: 'var(--text-primary)' }}
-                dangerouslySetInnerHTML={{ __html: template.replace(/\{dp\}/g, val) }}
+                dangerouslySetInnerHTML={{ __html: resolveHtmlAssets(template.replace(/\{dp\}/g, val)) }}
             />
         );
     }
@@ -196,6 +213,113 @@ function ConnectionIndicator({ showBadge }: { showBadge: boolean }) {
     );
 }
 
+// ── TabSleepHint ────────────────────────────────────────────────────────────
+// Chromium's "sleeping tabs" (Edge) / tab freezing (Chrome) suspends a tab that
+// sat idle in the background for hours. Waking it now revalidates every
+// datapoint (issue #528), so this notice is informational rather than an error —
+// it just tells the user why the dashboard stood still and how to opt this page
+// out. Only shown on Chromium, where that setting exists, and only after a
+// freeze actually happened. Dismissal is permanent per browser profile.
+
+const TAB_SLEEP_DISMISSED_KEY = 'aura-tabsleep-hint-dismissed';
+
+function TabSleepHint() {
+    const t = useT();
+    const flavour = useMemo(() => chromiumFlavour(), []);
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        if (!flavour) return;
+        try {
+            if (localStorage.getItem(TAB_SLEEP_DISMISSED_KEY)) return;
+        } catch {
+            /* storage blocked — show the hint anyway */
+        }
+        // A freeze that happened before this component mounted still counts.
+        if (wasTabSuspended()) setVisible(true);
+        return onTabSuspended(() => setVisible(true));
+    }, [flavour]);
+
+    if (!visible) return null;
+
+    const dismiss = (): void => {
+        try {
+            localStorage.setItem(TAB_SLEEP_DISMISSED_KEY, '1');
+        } catch {
+            /* ignore */
+        }
+        setVisible(false);
+    };
+
+    // Top-right, clearing the connection dot above it — the bottom edge is already
+    // taken by the client-ID badge (left) and the guidelines hint (centre).
+    return (
+        <div
+            className="fixed top-12 right-3 z-50 max-w-sm rounded-xl px-4 py-3 shadow-lg text-sm"
+            style={{
+                background: 'var(--app-surface)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--app-border)',
+            }}
+        >
+            <div className="font-medium mb-1">{t('tabSleep.title')}</div>
+            <div style={{ color: 'var(--text-secondary)' }}>{t('tabSleep.body')}</div>
+            <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {flavour === 'edge' ? t('tabSleep.pathEdge') : t('tabSleep.pathChrome')}
+            </div>
+            <button
+                onClick={dismiss}
+                className="mt-3 px-3 py-1 rounded-lg text-xs font-medium hover:opacity-90"
+                style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+                {t('tabSleep.dismiss')}
+            </button>
+        </div>
+    );
+}
+
+// ── ClientIdBadge ───────────────────────────────────────────────────────────
+// Opt-in overlay (global setting, toggled in Settings → Connected Devices) that
+// shows THIS device its own client ID, so it can be identified without opening
+// the backend. Tap to copy. Fixed bottom-left so it clears the connection dot.
+
+function ClientIdBadge() {
+    const { clientId, clientName } = useConnectionStore();
+    const [copied, setCopied] = useState(false);
+
+    const copy = () => {
+        void navigator.clipboard?.writeText(clientId).then(
+            () => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+            },
+            () => {},
+        );
+    };
+
+    return (
+        <button
+            onClick={copy}
+            className="fixed bottom-3 left-3 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono shadow-lg hover:opacity-90"
+            style={{
+                background: 'var(--app-surface)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--app-border)',
+            }}
+            title="Client-ID kopieren"
+        >
+            {clientName && (
+                <span className="font-sans font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    {clientName}
+                </span>
+            )}
+            <span>
+                {copied ? '✓ ' : ''}ID: {clientId}
+            </span>
+        </button>
+    );
+}
+
 // Scan widget options for ioBroker DP IDs to warm the prefetch cache.
 // Recognizes values in keys whose name ends with "Dp", "Datapoint", or equals "datapoint"/"dpId".
 function collectOptionDps(obj: unknown, ids: Set<string>): void {
@@ -220,11 +344,14 @@ function collectOptionDps(obj: unknown, ids: Set<string>): void {
 }
 
 export default function App() {
-    const { tabSlug, layoutSlug } = useParams<{ tabSlug?: string; layoutSlug?: string }>();
+    const { tabSlug, layoutSlug, sectionSlug } = useParams<{
+        tabSlug?: string;
+        layoutSlug?: string;
+        sectionSlug?: string;
+    }>();
     const navigate = useNavigate();
     const { frontend } = useConfigStore();
     const { setTheme } = useThemeStore();
-    const clearLayoutSettings = useDashboardStore((s) => s.clearLayoutSettings);
     const { connected, subscribe } = useIoBroker();
     const { clientId, clientName } = useConnectionStore();
 
@@ -252,14 +379,63 @@ export default function App() {
         })();
     }, []);
 
-    // Determine which layout to display based on URL slug
-    const layout = useLayoutBySlug(layoutSlug);
-    const tabs = useMemo<Tab[]>(() => layout?.tabs ?? [], [layout?.tabs]);
+    // Measure a backend round-trip (RTT) once the socket is connected — a clean
+    // network-latency signal (spikes over VPN) independent of device/render cost.
+    const pingedRef = useRef(false);
+    useEffect(() => {
+        if (connected && !pingedRef.current) {
+            pingedRef.current = true;
+            void reportBackendPing();
+        }
+    }, [connected]);
 
-    // Effective settings for the active layout (per-layout overrides + global fallback)
-    const effectiveThemeId = useEffectiveThemeId(layout?.id);
-    const effectiveCustomVars = useEffectiveCustomVars(layout?.id);
+    // Determine which layout + section to display based on the URL slugs.
+    // resolveView also handles legacy `/view/<oldLayoutSlug>` links (old layouts
+    // are now sections of the migrated default layout).
+    const allLayouts = useDashboardStore((s) => s.layouts);
+    // The widget options panel only exists in edit mode, and edit mode only exists in the admin
+    // editor — which needs a login and is therefore out of reach for the screenshot harness. In
+    // DEV `?shot=1` the harness may switch it on (`__auraShot.setEditMode`) so a test can open a
+    // panel; anywhere else this stays false and the frontend is read-only as before.
+    const storeEditMode = useDashboardStore((s) => s.editMode);
+    const shotEditMode = import.meta.env.DEV && isScreenshotMode() && storeEditMode;
+    const view = useMemo(() => resolveView(allLayouts, layoutSlug, sectionSlug), [allLayouts, layoutSlug, sectionSlug]);
+    const layout = view?.layout;
+    const section = view?.section;
+    const tabs = useMemo<Tab[]>(() => section?.tabs ?? [], [section?.tabs]);
+
+    // Effective settings cascade: global → layout → section (per-section overrides).
+    const effectiveThemeId = useEffectiveThemeId(layout?.id, section?.id);
+    const effectiveCustomVars = useEffectiveCustomVars(layout?.id, section?.id);
+    const effectiveSettings = useEffectiveSettings(layout?.id, section?.id);
     const currentTheme = getTheme(effectiveThemeId);
+
+    // URL base for the current layout+section context. The section segment is only
+    // added when the layout has more than one section (single-section layouts keep
+    // the shorter `/view/<layout>` form).
+    const viewBase = useMemo(() => {
+        if (!layout) return '';
+        const parts = [`/view/${layout.slug}`];
+        if (section && layout.sections.length > 1) parts.push(`s/${section.slug}`);
+        return parts.join('/');
+    }, [layout, section]);
+
+    // Track viewport width so a docked sidebar layout menu can collapse into an
+    // overlay hamburger on mobile — matching the same breakpoint the Dashboard
+    // uses to switch to its single-column stack. When the viewport grows back
+    // past the breakpoint the sidebar re-docks automatically.
+    const [viewportWidth, setViewportWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 0));
+    useEffect(() => {
+        const onResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            window.removeEventListener('orientationchange', onResize);
+        };
+    }, []);
+    const mobileBreakpoint = effectiveSettings.mobileBreakpoint ?? 600;
+    const isMobileViewport = viewportWidth > 0 && viewportWidth < mobileBreakpoint;
 
     // ── Prefetch (silent, background) ────────────────────────────────────────
     // Warm the state cache for the active tab before widgets mount so they render
@@ -284,12 +460,17 @@ export default function App() {
     // ── Local active tab state (frontend only — doesn't affect admin editor)
     // URL slug takes priority; fall back to defaultTabId or first tab
     const [activeTabId, setActiveTabId] = useState<string>(() => {
-        if (tabSlug && layout?.tabs) {
-            const tab = layout.tabs.find((t) => (t.slug ?? t.id) === tabSlug);
+        if (tabSlug && section?.tabs) {
+            const tab = section.tabs.find((t) => (t.slug ?? t.id) === tabSlug);
             if (tab) return tab.id;
         }
-        return layout?.defaultTabId ?? layout?.activeTabId ?? tabs[0]?.id ?? '';
+        return section?.defaultTabId ?? section?.activeTabId ?? tabs[0]?.id ?? '';
     });
+
+    // Mirror the currently displayed layout / section / tab into read-only DPs
+    // (aura.<n>.info.active{Layout,Section,Tab}) so scripts can react to it.
+    const activeTab = useMemo(() => tabs.find((t) => t.id === activeTabId), [tabs, activeTabId]);
+    useActiveSelectionSync(connected, layout, section, activeTab);
 
     // Prefetch active tab on connect, then background-prefetch remaining tabs.
     // Dashboard is always visible immediately — no blocking on prefetch completion.
@@ -311,18 +492,18 @@ export default function App() {
     // stale "default" tab and Dashboard renders nothing in a fresh session.
     // Always respect URL slug first so F5 stays on the correct tab.
     useEffect(() => {
-        if (!layout?.tabs?.length) return;
+        if (!section?.tabs?.length) return;
         if (tabSlug) {
-            const tab = layout.tabs.find((t) => (t.slug ?? t.id) === tabSlug);
+            const tab = section.tabs.find((t) => (t.slug ?? t.id) === tabSlug);
             if (tab) {
                 if (tab.id !== activeTabId) setActiveTabId(tab.id);
                 return;
             }
         }
-        if (layout.tabs.some((t) => t.id === activeTabId)) return;
-        setActiveTabId(layout.defaultTabId ?? layout.tabs[0].id);
+        if (section.tabs.some((t) => t.id === activeTabId)) return;
+        setActiveTabId(section.defaultTabId ?? section.tabs[0].id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [layout?.id, layout?.tabs, tabSlug]);
+    }, [layout?.id, section?.id, section?.tabs, tabSlug]);
 
     // If active tab is disabled, jump to the first visible (non-disabled, non-hidden) tab.
     // Hidden tabs are intentionally not bounced: they stay reachable via their direct slug URL.
@@ -353,10 +534,13 @@ export default function App() {
         setOptimisticEcho(frontend.optimisticUpdates !== false);
     }, [frontend.optimisticUpdates]);
 
-    // Idle-return: switch to default tab after configured inactivity period
-    const idleReturnEnabled = frontend.idleReturnEnabled;
-    const idleReturnDelay = frontend.idleReturnDelay ?? 30;
-    // Jump back to the default tab via the URL (not setActiveTabId directly).
+    // Idle-return: switch to the layout default after configured inactivity period
+    const idleReturnEnabled = effectiveSettings.idleReturnEnabled;
+    const idleReturnDelay = effectiveSettings.idleReturnDelay ?? 30;
+    // Jump back to the layout default via the URL (not setActiveTabId directly).
+    // The default is layout-scoped: the layout's default section and, within it,
+    // that section's default tab — regardless of which section/tab the viewer
+    // drifted onto (a kiosk left on a secondary section must still come home).
     // Driving the route slug keeps it in sync with activeTabId exactly like a
     // manual tab click does. Setting activeTabId alone left the slug pointing at
     // the previously-viewed tab, so re-clicking that tab was a no-op navigation
@@ -365,11 +549,18 @@ export default function App() {
     // sees the latest layout/route without re-subscribing the listeners.
     const idleReturnNavRef = useRef<() => void>(() => {});
     idleReturnNavRef.current = () => {
-        const defaultId = layout?.defaultTabId ?? tabs[0]?.id ?? '';
-        if (!defaultId || defaultId === activeTabId) return;
-        const defaultTab = tabs.find((t) => t.id === defaultId);
-        const slug = defaultTab?.slug ?? defaultId;
-        navigate(layoutSlug ? `/view/${layoutSlug}/tab/${slug}` : `/tab/${slug}`);
+        if (!layout) return;
+        const targetSection = layout.sections.find((sec) => sec.id === layout.defaultSectionId) ?? layout.sections[0];
+        if (!targetSection) return;
+        const defaultTabId = targetSection.defaultTabId ?? targetSection.tabs[0]?.id ?? '';
+        if (!defaultTabId) return;
+        // Already exactly on the default section + default tab → nothing to do.
+        if (targetSection.id === section?.id && defaultTabId === activeTabId) return;
+        const defaultTab = targetSection.tabs.find((t) => t.id === defaultTabId);
+        const tabSlugPart = defaultTab?.slug ?? defaultTabId;
+        const base =
+            layout.sections.length > 1 ? `/view/${layout.slug}/s/${targetSection.slug}` : `/view/${layout.slug}`;
+        navigate(`${base}/tab/${tabSlugPart}`);
     };
     useEffect(() => {
         if (!idleReturnEnabled) return;
@@ -396,19 +587,32 @@ export default function App() {
         if (!pendingNav) return;
         const nav = consumeNav();
         if (!nav) return;
-        const targetLayout = useDashboardStore.getState().layouts.find((l) => l.id === nav.layoutId);
-        if (!targetLayout) return;
-        const targetTab = targetLayout.tabs.find((t) => t.id === nav.tabId);
+        // A navigation intent may reference the layout directly, or (legacy click
+        // actions / migrated links) reference what is now a section by its old
+        // layoutId. Resolve the target layout + section + tab across the tree.
+        const allL = useDashboardStore.getState().layouts;
+        let targetLayout = allL.find((l) => l.id === nav.layoutId);
+        let targetSection = targetLayout?.sections.find((sec) => sec.id === nav.sectionId);
+        // Find the section (and its layout) that actually holds the target tab.
+        if (!targetSection) {
+            for (const l of allL) {
+                const sec = l.sections.find((s) => s.tabs.some((t) => t.id === nav.tabId));
+                if (sec) {
+                    targetLayout = l;
+                    targetSection = sec;
+                    break;
+                }
+            }
+        }
+        if (!targetLayout || !targetSection) return;
+        const targetTab = targetSection.tabs.find((t) => t.id === nav.tabId);
         if (!targetTab) return;
         const tabSl = targetTab.slug ?? targetTab.id;
-        const laySl = targetLayout.slug;
-        if (laySl !== layoutSlug) {
-            navigate(`/view/${laySl}/tab/${tabSl}`);
-        } else if (layoutSlug) {
-            navigate(`/view/${layoutSlug}/tab/${tabSl}`);
-        } else {
-            navigate(`/tab/${tabSl}`);
-        }
+        const base =
+            targetLayout.sections.length > 1
+                ? `/view/${targetLayout.slug}/s/${targetSection.slug}`
+                : `/view/${targetLayout.slug}`;
+        navigate(`${base}/tab/${tabSl}`);
         // Sprung: Widget — pulse-highlight the target widget once the tab is shown.
         // WidgetFrame reads FocusedWidgetContext and applies the highlight while it
         // matches its config.id; setting it after the route switch also scrolls it
@@ -433,21 +637,34 @@ export default function App() {
         return () => window.removeEventListener('storage', handler);
     }, []);
 
-    // Apply effective custom CSS (per-layout overrides global when set)
-    useCustomCss(layout?.id, false);
+    // Apply effective custom CSS (per-section/layout overrides global when set)
+    useCustomCss(layout?.id, section?.id, false);
 
     // Custom JS — runs always in frontend; installs window.aura helper API.
-    useCustomJs(layout?.id, false);
+    useCustomJs(layout?.id, section?.id, false);
 
-    // Apply per-layout theme overrides on top of global ThemeProvider vars.
+    // Apply per-layout / per-section theme overrides on top of global ThemeProvider vars.
     // Written as a scoped <style> rule ([data-aura-app="frontend"] { ... }) so that
     // CSS custom-property inheritance overrides :root values without conflicting with
     // ThemeProvider's effect on document.documentElement (parent effects run after child effects).
+    // Both scopes matter: reading only section.settings here meant a design picked
+    // for a whole layout never reached the frontend at all (#573).
     const layoutThemeRef = useRef<HTMLStyleElement | null>(null);
+    const layoutSettings = layout?.settings;
+    const sectionSettings = section?.settings;
+    const scopedFontScale = sectionSettings?.fontScale ?? layoutSettings?.fontScale;
     useEffect(() => {
-        const ls = layout?.settings;
-        if (!ls?.themeId && !ls?.customVars && !ls?.fontScale) {
-            if (layoutThemeRef.current) layoutThemeRef.current.textContent = '';
+        const overridden =
+            sectionSettings?.themeId !== undefined ||
+            sectionSettings?.customVars !== undefined ||
+            layoutSettings?.themeId !== undefined ||
+            layoutSettings?.customVars !== undefined ||
+            scopedFontScale !== undefined;
+        if (!overridden) {
+            if (layoutThemeRef.current) {
+                layoutThemeRef.current.textContent = '';
+                bumpThemeEpoch();
+            }
             return;
         }
         if (!layoutThemeRef.current) {
@@ -460,9 +677,12 @@ export default function App() {
             .filter(([, v]) => v)
             .map(([k, v]) => `  ${k}: ${v};`)
             .join('\n');
-        const fontScaleDecl = ls?.fontScale !== undefined ? `\n  --font-scale: ${ls.fontScale};` : '';
+        const fontScaleDecl = scopedFontScale !== undefined ? `\n  --font-scale: ${scopedFontScale};` : '';
         layoutThemeRef.current.textContent = `[data-aura-app="frontend"] {\n${declarations}${fontScaleDecl}\n}`;
-    }, [layout?.id, layout?.settings, currentTheme, effectiveCustomVars]);
+        // Same as in ThemeProvider: the scoped variables are applied, so whoever
+        // has to resolve one in JavaScript (the chart canvas) may do it now.
+        bumpThemeEpoch();
+    }, [layoutSettings, sectionSettings, scopedFontScale, currentTheme, effectiveCustomVars]);
 
     // ── Load config from ioBroker on first connect ────────────────────────────
     // Frontend is read-only — clear the pending Map after loading remote config.
@@ -483,6 +703,7 @@ export default function App() {
         // 2 decimals) while another shows the configured 0.
         void loadConfigFromIoBroker(true, { ignoreDirty: true }).finally(() => {
             markGroupDefsHydrated(); // unblock group-defs saves even if remote was empty
+            markWidgetPresetsHydrated();
             discardPending();
         });
     }, [connected]);
@@ -514,51 +735,46 @@ export default function App() {
         applyIfFollowing();
         mq.addEventListener('change', applyIfFollowing);
         const unsub = useThemeStore.subscribe(applyIfFollowing);
+        // Also react to the mode datapoint being cleared — browser sync takes
+        // over again the moment the explicit override goes away.
+        const unsubMode = useThemeModeStore.subscribe(applyIfFollowing);
         return () => {
             mq.removeEventListener('change', applyIfFollowing);
             unsub();
+            unsubMode();
         };
     }, [setTheme]);
 
     // ── Datapoint-driven dark/light mode ──────────────────────────────────────
-    // Subscribes to aura.0.config.themeMode.frontend ('dark'|'light'|''). Mirrors
-    // the Sun/Moon button: switches global theme and clears the active layout's
-    // themeId override (otherwise the per-layout scoped CSS would mask the
-    // global change).
-    //
-    // Stickiness: also subscribes to the theme store. When loadConfigFromIoBroker
-    // (or any other source) rehydrates themeId to a different value while a DP
-    // override is active, we snap back so the DP truly wins. Without this guard
-    // the frontend briefly flashes to the DP value, then reverts to the saved
-    // theme once the config arrives.
+    // Subscribes to aura.0.config.themeMode.frontend ('dark'|'light'|''). The
+    // value is a *mode*, not a design: it lives in its own store and is applied
+    // on top of the effective theme (resolveThemeModeId), so a design whose
+    // polarity already matches stays untouched and the saved themeId is never
+    // overwritten. Before that, one press of the header sun/moon button pinned
+    // the device to the plain dark/light preset for good and made every design
+    // picked in the admin look like it had no effect (#573).
     useEffect(() => {
-        const applyOverride = () => {
-            const v = themeModeOverride.value;
-            if (!v) return;
-            if (useThemeStore.getState().themeId !== v) setTheme(v);
-            if (layout?.settings?.themeId) clearLayoutSettings(layout.id, 'themeId');
-        };
-        const unsubDP = subscribeStateDirect(`${NS}.config.themeMode.frontend`, (state) => {
+        // Documentation screenshots pick their own theme; the instance behind the dev proxy
+        // must not pull them back to whatever it is set to (that is why the frontend shots
+        // used to come out dark). Every other write is blocked in screenshot mode too.
+        if (isScreenshotMode()) return;
+        return subscribeStateDirect(`${NS}.config.themeMode.frontend`, (state) => {
             if (state?.val == null) return;
             const raw = state.val;
-            if (raw === '') {
-                themeModeOverride.value = null;
-                return;
-            }
-            if (raw === 'dark' || raw === 'light') themeModeOverride.value = raw;
+            let mode: ThemeMode | null;
+            if (raw === '') mode = null;
+            else if (raw === 'dark' || raw === 'light') mode = raw;
             else if (raw === true || raw === 1)
-                themeModeOverride.value = 'dark'; // legacy boolean
+                mode = 'dark'; // legacy boolean
             else if (raw === false || raw === 0)
-                themeModeOverride.value = 'light'; // legacy boolean
+                mode = 'light'; // legacy boolean
             else return;
-            applyOverride();
+            themeModeOverride.value = mode;
+            // Remember it so the next reload paints this mode before the socket
+            // is even connected (see applyCachedThemeMode in main.tsx).
+            writeCachedThemeMode(mode);
         });
-        const unsubStore = useThemeStore.subscribe(applyOverride);
-        return () => {
-            unsubDP();
-            unsubStore();
-        };
-    }, [setTheme, layout?.id, layout?.settings?.themeId, clearLayoutSettings]);
+    }, []);
 
     // Activate tab when URL slug changes
     useEffect(() => {
@@ -578,9 +794,17 @@ export default function App() {
                 // Absolute in-app route, e.g. "/view/haus/tab/buero" or "/tab/buero"
                 navigate(val);
             } else if (val.includes('/')) {
-                // "<viewSlug>/<tabSlug>" from the navigate.target selector
-                const [viewSlug, tabSl] = val.split('/');
-                navigate(tabSl ? `/view/${viewSlug}/tab/${tabSl}` : `/view/${viewSlug}`);
+                // navigate.target selector value. New form: "<layout>/<section>/<tab>";
+                // legacy form: "<layout>/<tab>" (still supported — resolveView treats a
+                // non-matching first segment as a section of the default layout).
+                const parts = val.split('/').filter(Boolean);
+                if (parts.length >= 3) {
+                    navigate(`/view/${parts[0]}/s/${parts[1]}/tab/${parts[2]}`);
+                } else if (parts.length === 2) {
+                    navigate(`/view/${parts[0]}/tab/${parts[1]}`);
+                } else {
+                    navigate(`/view/${parts[0]}`);
+                }
             } else {
                 const tab = tabs.find((t) => (t.slug ?? t.id) === val);
                 if (tab) setActiveTabId(tab.id);
@@ -589,6 +813,46 @@ export default function App() {
         },
         [tabs, navigate],
     );
+
+    // Shared popup.open handler (global + per-client). Accepts a popup-view id or
+    // name, or a JSON payload {view, dp, title} where `dp` becomes the view's
+    // {{dp}} context. Clears the datapoint afterwards, like handleNavigate.
+    const handlePopupOpen = useCallback((val: string, clearId: string) => {
+        if (!val) return;
+        let viewRef = val;
+        let dp: string | undefined;
+        let title: string | undefined;
+        if (val.startsWith('{')) {
+            try {
+                const payload = JSON.parse(val) as { view?: string; dp?: string; title?: string };
+                viewRef = String(payload.view ?? '').trim();
+                dp = payload.dp ? String(payload.dp) : undefined;
+                title = payload.title ? String(payload.title) : undefined;
+            } catch {
+                console.warn('[aura] popup.open: invalid JSON payload', val);
+                setStateDirect(clearId, '');
+                return;
+            }
+        }
+        const views = usePopupConfigStore.getState().views;
+        const view =
+            views.find((v) => v.id === viewRef) ?? views.find((v) => v.name.toLowerCase() === viewRef.toLowerCase());
+        if (!view) {
+            console.warn('[aura] popup.open: unknown popup view', viewRef);
+            setStateDirect(clearId, '');
+            return;
+        }
+        usePopupRuntimeStore.getState().openPopup({
+            key: `dp:${clearId}`,
+            widget: {
+                ...newTriggerHost(),
+                title: title ?? view.name,
+                datapoint: dp ?? '',
+            },
+            action: { kind: 'popup-view', viewId: view.id, dp },
+        });
+        setStateDirect(clearId, '');
+    }, []);
 
     // Subscribe to global navigate datapoint (affects all clients)
     useEffect(() => {
@@ -599,27 +863,40 @@ export default function App() {
     }, [subscribe, layout?.id, handleNavigate]);
 
     // Register this client in ioBroker on connect and subscribe to per-client navigate.
-    // We only write the relay state when the client is genuinely new (or its name changed).
-    // `connected` toggles on every websocket reconnect (~10 min); writing unconditionally
-    // re-triggered the adapter every time, spamming "[clients] registered" in the log.
-    const registeredNameRef = useRef<string | null>(null);
+    // The server-side name (clients.<id>.info.name) is authoritative: once the client
+    // exists we NEVER overwrite it from here. Renames always write that DP directly
+    // (see ClientsCard.saveName), so re-pushing the local/UA name on reconnect would only
+    // ever clobber a name set from another device (where this device's localStorage
+    // clientName is empty and the UA fallback "Linux; Android 10; K" would win).
+    // We therefore only register — with the local name or the UA fallback — on FIRST
+    // contact, when no server name exists yet.
+    // `connected` toggles on every websocket reconnect (~10 min); the ref guards against
+    // re-running the check on every reconnect within a session — but only once a name
+    // actually exists on the server. Latching it on the write itself meant a register
+    // that never landed (socket just came up, tab suspended mid-write) was never retried
+    // for the lifetime of the page, which on a kiosk tablet is weeks (#532).
+    const registeredRef = useRef(false);
     useEffect(() => {
-        if (!connected) return;
-        const displayName = clientName || navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || 'Aura Client';
-        // Already registered this name in the current session → a plain reconnect, skip the write.
-        if (registeredNameRef.current === displayName) return;
+        if (!connected || registeredRef.current) return;
 
         let cancelled = false;
         void (async () => {
             const existing = await getStateDirect(`${NS}.clients.${clientId}.info.name`);
             if (cancelled) return;
-            registeredNameRef.current = displayName;
-            // Adapter already knows this client under this name → nothing to do.
-            if (existing && String(existing.val ?? '') === displayName) return;
+            // Already registered → server name wins; leave it untouched. The userAgent /
+            // resolution are still refreshed via the resolution relay on every connect.
+            if (existing && String(existing.val ?? '').length > 0) {
+                registeredRef.current = true;
+                return;
+            }
 
-            // Register via relay state: adapter creates the full object tree and writes initial states.
-            // Direct setObject calls are blocked by the web adapter socket (admin-only).
-            setStateDirect(`${NS}.clients.register`, JSON.stringify({ clientId, name: displayName }));
+            // First registration: seed the name from this device's stored name, else the
+            // UA fallback. Register via relay state (direct setObject is admin-only).
+            const initialName = clientName || navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || 'Aura Client';
+            setStateDirect(
+                `${NS}.clients.register`,
+                JSON.stringify({ clientId, name: initialName, userAgent: navigator.userAgent }),
+            );
         })();
         return () => {
             cancelled = true;
@@ -635,7 +912,12 @@ export default function App() {
         const report = () =>
             setStateDirect(
                 `${NS}.clients.resolution`,
-                JSON.stringify({ clientId, width: window.innerWidth, height: window.innerHeight }),
+                JSON.stringify({
+                    clientId,
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    userAgent: navigator.userAgent,
+                }),
             );
         report();
         const onResize = () => {
@@ -659,24 +941,223 @@ export default function App() {
         });
     }, [subscribe, clientId, layout?.id, handleNavigate]);
 
-    const layoutUrlBase = layoutSlug ? `/view/${layoutSlug}` : '';
+    // Subscribe to the popup.open datapoints (global + per client). Same
+    // write-then-self-clear contract as navigate.url above.
+    // Payload: a popup-view name or id, or JSON {"view":"…","dp":"…","title":"…"}.
+    useEffect(() => {
+        const globalId = `${NS}.popup.open`;
+        const clientDpId = `${NS}.clients.${clientId}.popup.open`;
+        const unsubGlobal = subscribe(globalId, (state) => {
+            handlePopupOpen(String(state.val ?? '').trim(), globalId);
+        });
+        const unsubClient = subscribe(clientDpId, (state) => {
+            handlePopupOpen(String(state.val ?? '').trim(), clientDpId);
+        });
+        return () => {
+            unsubGlobal();
+            unsubClient();
+        };
+    }, [subscribe, clientId, handlePopupOpen]);
 
-    const showBadge = frontend.showHeader && frontend.showConnectionBadge;
+    const layoutUrlBase = viewBase;
+
+    const showBadge = effectiveSettings.showHeader && effectiveSettings.showConnectionBadge;
+    const showClientIdBadge = useGlobalSettingsStore((s) => s.showClientIdBadge);
 
     const activeTabSlug = useMemo(() => {
         const t = tabs.find((t) => t.id === activeTabId);
         return t?.slug ?? null;
     }, [tabs, activeTabId]);
 
-    const totalLayouts = useDashboardStore((s) => s.layouts.length);
-    const drawerEnabled = (frontend.layoutDrawerEnabled ?? false) && totalLayouts > 1;
-    const drawerSize = frontend.layoutDrawerSize ?? 'md';
-    const drawerAutoHide = frontend.layoutDrawerAutoHide ?? false;
-    const drawerPlacement = frontend.layoutDrawerPlacement ?? 'floating';
-    const drawerInTabBar = drawerEnabled && !frontend.showHeader && drawerPlacement === 'tabbar' && !drawerAutoHide;
-    const drawerFloating = drawerEnabled && !frontend.showHeader && !drawerInTabBar;
-    const drawerTitle = frontend.layoutDrawerTitle ?? '';
-    const drawerEntryStyle = frontend.layoutDrawerEntryStyle ?? 'iconAndName';
+    // ── PIN gate ─────────────────────────────────────────────────────────────
+    // A section or tab carrying a `pin` renders the unlock keypad instead of its
+    // content until the code was entered. The gate sits here, in front of the
+    // Dashboard, so it covers every way in equally: a click in the section menu,
+    // a click in the tab bar, a widget click-action and a bookmarked slug URL.
+    const unlockedPins = usePinStore((s) => s.unlocked);
+    const unlockPin = usePinStore((s) => s.unlock);
+    const retainPins = usePinStore((s) => s.retain);
+    const isPinUnlocked = useMemo(() => unlockedReader(unlockedPins), [unlockedPins]);
+    const pinTarget = useMemo(
+        () => (shotEditMode ? null : pendingPinTarget(section, activeTab, isPinUnlocked)),
+        [shotEditMode, section, activeTab, isPinUnlocked],
+    );
+
+    // Everything unlocked with the default relock mode falls shut again as soon as
+    // the viewer moves on to another section / tab.
+    const activeKeys = useMemo(() => activePinKeys(section?.id, activeTabId), [section?.id, activeTabId]);
+    useEffect(() => {
+        retainPins(activeKeys);
+    }, [activeKeys, retainPins]);
+
+    // Last view the viewer was actually allowed to see — where "cancel" returns to.
+    const lastFreeViewRef = useRef<EscapeTarget | null>(null);
+    useEffect(() => {
+        if (!pinTarget && section?.id && activeTabId)
+            lastFreeViewRef.current = { sectionId: section.id, tabId: activeTabId };
+    }, [pinTarget, section?.id, activeTabId]);
+
+    const goToView = useCallback(
+        (target: EscapeTarget) => {
+            if (!layout) return;
+            const sec = layout.sections.find((s) => s.id === target.sectionId);
+            if (!sec) return;
+            const base = layout.sections.length > 1 ? `/view/${layout.slug}/s/${sec.slug}` : `/view/${layout.slug}`;
+            const tab = sec.tabs.find((t) => t.id === target.tabId);
+            navigate(tab ? `${base}/tab/${tab.slug ?? tab.id}` : base);
+        },
+        [layout, navigate],
+    );
+
+    // Only offer "cancel" when there is somewhere free to go — on a dashboard whose
+    // every view is locked the prompt would otherwise dismiss into nothing.
+    // A locked section drops its tabs from the bar — the tab names alone would
+    // already give away what is behind the lock. The bar itself stays as long as
+    // it carries something else (the section-menu hamburger, clock/text items),
+    // so the viewer is never stranded on the prompt.
+    const sectionLocked = pinTarget?.scope === 'section';
+
+    const pinEscape = useMemo(
+        () =>
+            pinTarget && layout
+                ? pinEscapeTarget(layout.sections, section?.id, lastFreeViewRef.current, isPinUnlocked)
+                : null,
+        [pinTarget, layout, section?.id, isPinUnlocked],
+    );
+
+    // Scope for the message target filter. Slug, id and name are all passed on:
+    // a `target` is usually hand-written in a script, so any of the three should hit.
+    const messageScope = useMemo<MessageScope>(() => {
+        const tab = tabs.find((t) => t.id === activeTabId);
+        return {
+            clientId,
+            layoutId: layout?.id,
+            layoutSlug: layout?.slug,
+            layoutName: layout?.name,
+            tabId: tab?.id,
+            tabSlug: tab?.slug,
+            tabName: tab?.name,
+        };
+    }, [clientId, layout?.id, layout?.slug, layout?.name, tabs, activeTabId]);
+
+    // The section menu (formerly the layout drawer) lists the sections of the
+    // active layout and only appears when that layout has more than one visible
+    // section — mirroring the old "menu shows only with >1 entry" behaviour.
+    const visibleSectionCount = (layout?.sections ?? []).filter((sec) => !sec.hidden).length;
+    const drawerEnabled =
+        (effectiveSettings.layoutDrawerEnabled ?? false) &&
+        (visibleSectionCount > 1 || (effectiveSettings.layoutDrawerShowSingle ?? false));
+    const drawerSize = effectiveSettings.layoutDrawerSize ?? 'md';
+    const drawerAutoHide = effectiveSettings.layoutDrawerAutoHide ?? false;
+    // Tab-bar settings cascade global → layout → section, same as the bar itself.
+    const tabBarResolved = resolveTabBarSettings(
+        resolveTabBarSettings(frontend.tabBar, layout?.settings?.tabBar),
+        section?.settings?.tabBar,
+    );
+    // Below the mobile breakpoint the configured mobile placement wins outright.
+    // 'auto' only rewrites a docked sidebar (which would eat the whole screen width
+    // there): into the tab bar when that bar is visible anyway, otherwise as a
+    // floating hamburger — so a single-tab section keeps its clean, bar-less look.
+    // Every other desktop placement passes through unchanged.
+    const desktopPlacement = effectiveSettings.layoutDrawerPlacement ?? 'floating';
+    const mobilePlacement = effectiveSettings.layoutDrawerMobilePlacement ?? 'auto';
+    const autoMobilePlacement =
+        desktopPlacement === 'sidebar'
+            ? tabBarShowsOnOwn(tabs.length, tabBarResolved)
+                ? 'tabbar'
+                : 'floating'
+            : desktopPlacement;
+    const mobileChoice = mobilePlacement === 'auto' ? autoMobilePlacement : mobilePlacement;
+    const drawerPlacement = isMobileViewport ? mobileChoice : desktopPlacement;
+    // A mobile placement that deliberately differs from the desktop one — explicitly
+    // configured, or the auto-rewritten sidebar — is the chosen host even when a
+    // header is shown; the header rules below only guard the pass-through case.
+    const mobileRelocated = isMobileViewport && (mobilePlacement !== 'auto' || mobileChoice !== desktopPlacement);
+    // Docked sidebar: always-visible left menu, works with or without header — overrides overlay placements.
+    const drawerSidebar = drawerEnabled && drawerPlacement === 'sidebar';
+    const drawerWidth = effectiveSettings.layoutDrawerWidth ?? 240;
+    // Docked horizontal section bar (like the tab bar), above or below the dashboard.
+    // Works with or without the header — the bar is self-contained (no hamburger).
+    const drawerBarTop = drawerEnabled && drawerPlacement === 'top';
+    const drawerBarBottom = drawerEnabled && drawerPlacement === 'bottom';
+    const drawerBar = drawerBarTop || drawerBarBottom;
+    // Exactly one host shows the hamburger: the tab bar, a floating overlay button or
+    // the header. Tab bar wins when that placement is active — with a visible header
+    // only if the menu was relocated for mobile, otherwise the header hosts it.
+    const drawerInTabBar =
+        drawerEnabled &&
+        drawerPlacement === 'tabbar' &&
+        (mobileRelocated || (!effectiveSettings.showHeader && !drawerAutoHide));
+    const drawerFloating =
+        drawerEnabled && !drawerSidebar && !drawerBar && !effectiveSettings.showHeader && !drawerInTabBar;
+    const drawerShowTitle = effectiveSettings.layoutDrawerShowTitle ?? true;
+    const drawerTitle = effectiveSettings.layoutDrawerTitle ?? '';
+    const drawerTitleMarginTop = effectiveSettings.layoutDrawerTitleMarginTop ?? 0;
+    const drawerTitleMarginBottom = effectiveSettings.layoutDrawerTitleMarginBottom ?? 0;
+    const drawerEntryStyle = effectiveSettings.layoutDrawerEntryStyle ?? 'iconAndName';
+    const drawerEntryHeight = effectiveSettings.layoutDrawerEntryHeight ?? 48;
+    const drawerIndicatorStyle = effectiveSettings.layoutDrawerIndicatorStyle ?? 'filled';
+    const drawerFontSize = effectiveSettings.layoutDrawerFontSize ?? 14;
+    const drawerIconSize = effectiveSettings.layoutDrawerIconSize ?? 16;
+    const drawerItems = effectiveSettings.layoutDrawerItems ?? [];
+
+    // Tab bar can be placed above the dashboard (default) or as a footer below it.
+    const tabBarAtBottom = tabBarResolved.position === 'bottom';
+
+    const tabBarNode = (
+        <TabBar
+            readonly
+            layoutId={layout?.id}
+            sectionId={section?.id}
+            viewTabs={sectionLocked ? [] : tabs}
+            viewActiveTabId={activeTabId}
+            onViewTabClick={(tab) => {
+                const slug = tab.slug ?? tab.id;
+                navigate(viewBase ? `${viewBase}/tab/${slug}` : `/tab/${slug}`);
+            }}
+            layoutUrlBase={layoutUrlBase}
+            headerSlot={
+                drawerInTabBar ? (
+                    <LayoutDrawer
+                        activeLayoutId={layout?.id}
+                        activeSectionId={section?.id}
+                        size={drawerSize}
+                        iconOnly
+                        showTitle={drawerShowTitle}
+                        drawerTitle={drawerTitle}
+                        titleMarginTop={drawerTitleMarginTop}
+                        titleMarginBottom={drawerTitleMarginBottom}
+                        entryStyle={drawerEntryStyle}
+                        entryHeight={drawerEntryHeight}
+                        indicatorStyle={drawerIndicatorStyle}
+                        fontSize={drawerFontSize}
+                        iconSize={drawerIconSize}
+                        items={drawerItems}
+                    />
+                ) : undefined
+            }
+        />
+    );
+
+    // Docked horizontal section bar — rendered above the tab bar (placement 'top')
+    // or below it (placement 'bottom'), so the section menu is the outermost strip.
+    const sectionMenuBar = drawerBar ? (
+        <LayoutDrawer
+            activeLayoutId={layout?.id}
+            activeSectionId={section?.id}
+            variant="bar"
+            barPosition={drawerBarBottom ? 'bottom' : 'top'}
+            barAlignment={effectiveSettings.layoutDrawerBarAlignment ?? 'left'}
+            hideMobileScrollbar={effectiveSettings.layoutDrawerHideMobileScrollbar ?? false}
+            drawerTitle={drawerTitle}
+            entryStyle={drawerEntryStyle}
+            entryHeight={drawerEntryHeight}
+            indicatorStyle={drawerIndicatorStyle}
+            fontSize={drawerFontSize}
+            iconSize={drawerIconSize}
+            items={drawerItems}
+        />
+    ) : null;
 
     return (
         <div
@@ -685,109 +1166,155 @@ export default function App() {
             style={{ background: 'var(--app-bg)', color: 'var(--text-primary)' }}
         >
             <ConnectionIndicator showBadge={showBadge} />
+            <TabSleepHint />
+            {showClientIdBadge && <ClientIdBadge />}
+            <DpPopupTriggers layoutId={layout?.id} tabId={activeTabId} />
+            <ToastLayer scope={messageScope} />
             {drawerFloating && (
                 <LayoutDrawer
                     activeLayoutId={layout?.id}
+                    activeSectionId={section?.id}
                     floating
                     size={drawerSize}
                     autoHide={drawerAutoHide}
+                    showTitle={drawerShowTitle}
                     drawerTitle={drawerTitle}
+                    titleMarginTop={drawerTitleMarginTop}
+                    titleMarginBottom={drawerTitleMarginBottom}
                     entryStyle={drawerEntryStyle}
+                    entryHeight={drawerEntryHeight}
+                    indicatorStyle={drawerIndicatorStyle}
+                    fontSize={drawerFontSize}
+                    iconSize={drawerIconSize}
+                    items={drawerItems}
                 />
             )}
-            {frontend.showHeader && (
-                <header
-                    className="aura-header flex items-center justify-between px-4 sm:px-6 py-4 shrink-0"
-                    style={{ background: 'var(--app-surface)', borderBottom: '1px solid var(--app-border)' }}
-                >
-                    <div className="flex items-center gap-3 min-w-0">
-                        {drawerEnabled && (
-                            <LayoutDrawer
-                                activeLayoutId={layout?.id}
-                                size={drawerSize}
-                                drawerTitle={drawerTitle}
-                                entryStyle={drawerEntryStyle}
-                            />
-                        )}
-                        <HeaderLogo />
-                        <h1 className="aura-titel text-xl font-bold tracking-tight truncate">
-                            {frontend.headerTitle || 'Aura'}
-                        </h1>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {frontend.headerDatapoint && (
-                            <HeaderDatapoint
-                                id={frontend.headerDatapoint}
-                                template={frontend.headerDatapointTemplate || undefined}
-                            />
-                        )}
-                        {frontend.headerClockEnabled && <HeaderClock f={frontend} />}
-                        {showBadge && <ConnectionBadge />}
-                        {frontend.showAdminLink && (
-                            <a
-                                href="#/admin"
-                                className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
-                                style={{
-                                    background: 'var(--app-bg)',
-                                    color: 'var(--text-secondary)',
-                                    border: '1px solid var(--app-border)',
-                                }}
-                                title="Admin"
-                            >
-                                <Settings size={15} />
-                            </a>
-                        )}
-                        <button
-                            onClick={() => {
-                                const nextId = currentTheme.dark ? 'light' : 'dark';
-                                themeModeOverride.value = nextId; // seed before setTheme so snap-back doesn't revert
-                                setTheme(nextId);
-                                if (layout?.settings?.themeId) clearLayoutSettings(layout.id, 'themeId');
-                                setStateDirect(`${NS}.config.themeMode.frontend`, nextId);
-                            }}
-                            className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
-                            style={{
-                                background: 'var(--app-bg)',
-                                color: 'var(--text-secondary)',
-                                border: '1px solid var(--app-border)',
-                            }}
-                            title={currentTheme.dark ? 'Hell-Modus' : 'Dunkel-Modus'}
+            <div className={drawerSidebar ? 'flex-1 min-h-0 flex' : 'contents'}>
+                {drawerSidebar && (
+                    <LayoutDrawer
+                        activeLayoutId={layout?.id}
+                        activeSectionId={section?.id}
+                        variant="sidebar"
+                        width={drawerWidth}
+                        topOffset={effectiveSettings.layoutDrawerTopOffset ?? 0}
+                        bottomOffset={effectiveSettings.layoutDrawerBottomOffset ?? 0}
+                        showTitle={drawerShowTitle}
+                        drawerTitle={drawerTitle}
+                        titleMarginTop={drawerTitleMarginTop}
+                        titleMarginBottom={drawerTitleMarginBottom}
+                        entryStyle={drawerEntryStyle}
+                        entryHeight={drawerEntryHeight}
+                        indicatorStyle={drawerIndicatorStyle}
+                        fontSize={drawerFontSize}
+                        iconSize={drawerIconSize}
+                        items={drawerItems}
+                    />
+                )}
+                <div className={drawerSidebar ? 'flex-1 min-w-0 flex flex-col' : 'contents'}>
+                    {effectiveSettings.showHeader && (
+                        <header
+                            className="aura-header flex items-center justify-between px-4 sm:px-6 py-4 shrink-0"
+                            style={{ background: 'var(--app-surface)', borderBottom: '1px solid var(--app-border)' }}
                         >
-                            {currentTheme.dark ? <Sun size={15} /> : <Moon size={15} />}
-                        </button>
+                            <div className="flex items-center gap-3 min-w-0">
+                                {drawerEnabled && !drawerSidebar && !drawerInTabBar && !drawerBar && (
+                                    <LayoutDrawer
+                                        activeLayoutId={layout?.id}
+                                        activeSectionId={section?.id}
+                                        size={drawerSize}
+                                        showTitle={drawerShowTitle}
+                                        drawerTitle={drawerTitle}
+                                        titleMarginTop={drawerTitleMarginTop}
+                                        titleMarginBottom={drawerTitleMarginBottom}
+                                        entryStyle={drawerEntryStyle}
+                                        entryHeight={drawerEntryHeight}
+                                        indicatorStyle={drawerIndicatorStyle}
+                                        fontSize={drawerFontSize}
+                                        iconSize={drawerIconSize}
+                                        items={drawerItems}
+                                    />
+                                )}
+                                <HeaderLogo />
+                                <h1 className="aura-titel text-xl font-bold tracking-tight truncate">
+                                    {effectiveSettings.headerTitle || 'Aura'}
+                                </h1>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {effectiveSettings.headerDatapoint && (
+                                    <HeaderDatapoint
+                                        id={effectiveSettings.headerDatapoint}
+                                        template={effectiveSettings.headerDatapointTemplate || undefined}
+                                    />
+                                )}
+                                {effectiveSettings.headerClockEnabled && <HeaderClock f={effectiveSettings} />}
+                                {showBadge && <ConnectionBadge />}
+                                {effectiveSettings.showMessageBell && <MessageBell />}
+                                {effectiveSettings.showAdminLink && (
+                                    <a
+                                        href="#/admin"
+                                        className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
+                                        style={{
+                                            background: 'var(--app-bg)',
+                                            color: 'var(--text-secondary)',
+                                            border: '1px solid var(--app-border)',
+                                        }}
+                                        title="Admin"
+                                    >
+                                        <Settings size={15} />
+                                    </a>
+                                )}
+                                <button
+                                    onClick={() => {
+                                        // Flip the mode only — the design stays whatever the
+                                        // admin configured, so toggling back restores it (#573).
+                                        const nextMode: ThemeMode = currentTheme.dark ? 'light' : 'dark';
+                                        themeModeOverride.value = nextMode;
+                                        writeCachedThemeMode(nextMode);
+                                        setStateDirect(`${NS}.config.themeMode.frontend`, nextMode);
+                                    }}
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
+                                    style={{
+                                        background: 'var(--app-bg)',
+                                        color: 'var(--text-secondary)',
+                                        border: '1px solid var(--app-border)',
+                                    }}
+                                    title={currentTheme.dark ? 'Hell-Modus' : 'Dunkel-Modus'}
+                                >
+                                    {currentTheme.dark ? <Sun size={15} /> : <Moon size={15} />}
+                                </button>
+                            </div>
+                        </header>
+                    )}
+                    {drawerBarTop && sectionMenuBar}
+                    {!tabBarAtBottom && tabBarNode}
+                    <div className="flex-1 min-h-0 flex flex-col">
+                        {pinTarget ? (
+                            <PinPrompt
+                                key={pinTarget.key}
+                                scope={pinTarget.scope}
+                                name={pinTarget.name}
+                                pin={pinTarget.pin}
+                                onUnlock={(code) =>
+                                    unlocksFor(section, activeTab, code).forEach((g) => unlockPin(g.key, g.relock))
+                                }
+                                onCancel={pinEscape ? () => goToView(pinEscape) : undefined}
+                            />
+                        ) : (
+                            <FocusedWidgetContext.Provider value={focusWidgetId}>
+                                <Dashboard
+                                    readonly={!shotEditMode}
+                                    editMode={shotEditMode}
+                                    viewTabs={tabs}
+                                    viewActiveTabId={activeTabId}
+                                    layoutId={layout?.id}
+                                    sectionId={section?.id}
+                                />
+                            </FocusedWidgetContext.Provider>
+                        )}
                     </div>
-                </header>
-            )}
-            <TabBar
-                readonly
-                layoutId={layout?.id}
-                viewTabs={tabs}
-                viewActiveTabId={activeTabId}
-                onViewTabClick={(tab) => {
-                    const slug = tab.slug ?? tab.id;
-                    if (layoutSlug) {
-                        navigate(`/view/${layoutSlug}/tab/${slug}`);
-                    } else {
-                        navigate(`/tab/${slug}`);
-                    }
-                }}
-                layoutUrlBase={layoutUrlBase}
-                headerSlot={
-                    drawerInTabBar ? (
-                        <LayoutDrawer
-                            activeLayoutId={layout?.id}
-                            size={drawerSize}
-                            iconOnly
-                            drawerTitle={drawerTitle}
-                            entryStyle={drawerEntryStyle}
-                        />
-                    ) : undefined
-                }
-            />
-            <div className="flex-1 min-h-0 flex flex-col">
-                <FocusedWidgetContext.Provider value={focusWidgetId}>
-                    <Dashboard readonly viewTabs={tabs} viewActiveTabId={activeTabId} layoutId={layout?.id} />
-                </FocusedWidgetContext.Provider>
+                    {tabBarAtBottom && tabBarNode}
+                    {drawerBarBottom && sectionMenuBar}
+                </div>
             </div>
         </div>
     );

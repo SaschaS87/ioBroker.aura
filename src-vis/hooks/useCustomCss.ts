@@ -6,11 +6,12 @@ import { useConfigStore } from '../store/configStore';
  * Apply user-defined custom CSS to the page.
  *
  * @param layoutId  Active layout for per-layout overrides.
+ * @param sectionId Active section for per-section overrides.
  * @param inEditor  When true, the caller is the admin editor — execution is
  *                  gated additionally on `customCSSInEditor`.
  */
-export function useCustomCss(layoutId: string | undefined, inEditor: boolean) {
-    const effective = useEffectiveSettings(layoutId);
+export function useCustomCss(layoutId: string | undefined, sectionId: string | undefined, inEditor: boolean) {
+    const effective = useEffectiveSettings(layoutId, sectionId);
     const frontend = useConfigStore((s) => s.frontend);
     const styleRef = useRef<HTMLStyleElement | null>(null);
 

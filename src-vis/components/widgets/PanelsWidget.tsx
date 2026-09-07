@@ -17,6 +17,10 @@ import { useT } from '../../i18n';
 import { useGroupDefsStore, newGroupDefId } from '../../store/groupDefsStore';
 import { getDragBridge, setDragBridge } from '../../utils/dragBridge';
 import { getWidgetIcon } from '../../utils/widgetIconMap';
+import { useDatapoint } from '../../hooks/useDatapoint';
+import { isScreenshotMode } from '../../store/persistManager';
+import { publishPanelSlides, panelActiveStateId } from '../../utils/publishPanelState';
+import { copyWidget } from '../../utils/widgetCopy';
 
 const SWIPE_THRESHOLD = 60; // px — minimum drag distance to trigger slide change
 // Single source of truth for the slide-track transition — the seamless-loop snap
@@ -81,6 +85,28 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
     const showArrows = o.showArrows !== false;
     const autoplay = !!o.autoplay;
     const autoplayInterval = Math.max(1, (o.autoplayInterval as number | undefined) ?? 5);
+    // Datapoint that selects the visible slide. Every panels widget gets one
+    // provisioned automatically under aura.<n>.panels.<widgetId>.activeSlide;
+    // `options.activeDp` overrides it with a datapoint of the user's choosing.
+    // `activeDpBase` is the value the FIRST slide answers to (0 like vis' "view
+    // in widget", or 1 for people who count from one); `activeDpWrite` mirrors
+    // manual navigation back into the DP so external button rows stay in sync.
+    const autoDp = panelActiveStateId(config.id);
+    const activeDp = ((o.activeDp as string | undefined) ?? '').trim() || autoDp;
+    const activeDpBase = (o.activeDpBase as number | undefined) === 1 ? 1 : 0;
+    const activeDpWrite = o.activeDpWrite !== false;
+
+    // Provision the auto datapoint as soon as the widget exists, so the user can
+    // wire buttons to it straight after adding the panel, and keep its
+    // `common.states` in step with the slide names so a select control can offer
+    // them by name. Skipped until the defs store has hydrated — the empty
+    // children array of a booting app would publish an empty slide list.
+    const slideLabels = children.map((c, i) => c.title?.trim() || `${t('panels.slide')} ${i + 1}`);
+    const slideLabelsKey = JSON.stringify(slideLabels);
+    useEffect(() => {
+        if (!defsHydrated) return;
+        publishPanelSlides(config.id, config.title, JSON.parse(slideLabelsKey) as string[], activeDpBase);
+    }, [config.id, config.title, slideLabelsKey, activeDpBase, defsHydrated]);
 
     // ── State ────────────────────────────────────────────────────────────────
     const [active, setActive] = useState(0);
@@ -93,6 +119,14 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
     // to the real slide the clone stands for.
     const [wrap, setWrap] = useState<null | 'fwd' | 'back'>(null);
     const wrapTimerRef = useRef<number | null>(null);
+    // Clear a pending wrap safety-timer on unmount so its finishWrap (setState)
+    // can't fire after the widget is gone.
+    useEffect(
+        () => () => {
+            if (wrapTimerRef.current !== null) clearTimeout(wrapTimerRef.current);
+        },
+        [],
+    );
     const trackRef = useRef<HTMLDivElement | null>(null);
     // Tracks an in-progress pointer interaction before it's promoted to a swipe.
     // `captured` flips true once movement crosses DRAG_START_THRESHOLD; only then
@@ -113,6 +147,59 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
         if (active >= children.length && children.length > 0) setActive(children.length - 1);
         if (children.length === 0 && active !== 0) setActive(0);
     }, [children.length, active]);
+
+    // ── Datapoint binding (optional, two-way) ────────────────────────────────
+    // Always-current `active` so the DP→slide effect can compare without taking
+    // `active` as a dependency — re-running it on every slide change would let a
+    // stale DP value yank the user back right after a swipe.
+    const activeRef = useRef(0);
+    activeRef.current = active;
+    const { value: dpValue, setValue: setDpValue } = useDatapoint(activeDp);
+    // Last DP value the read effect consumed. Gates on the VALUE, not on render
+    // count, so the echo of our own write is recognised and ignored.
+    const seenDpRef = useRef<unknown>(undefined);
+    // Set while a slide change originates from the DP, so the write-back below
+    // knows not to push it straight back out.
+    const adoptingRef = useRef(false);
+    const prevActiveRef = useRef(0);
+
+    // DP → slide. Only NEW datapoint values are adopted; an out-of-range or
+    // non-numeric value is ignored outright (clamping would silently park the
+    // panel on slide 1 and hide the misconfiguration).
+    useEffect(() => {
+        if (!activeDp || editMode) return;
+        if (children.length === 0) return;
+        // A wrap animation owns `active` until it snaps — bail and retry when it
+        // clears (wrap is a dependency), otherwise the jump fights the snap.
+        if (wrap) return;
+        if (seenDpRef.current === dpValue) return;
+        seenDpRef.current = dpValue;
+        if (dpValue === null || dpValue === '') return;
+        // Booleans pass through Number(): false → 0, true → 1, so a plain switch
+        // can flip between two panels.
+        const num = Number(dpValue);
+        if (!Number.isFinite(num)) return;
+        const idx = Math.round(num) - activeDpBase;
+        if (idx < 0 || idx >= children.length) return;
+        if (activeRef.current === idx) return;
+        adoptingRef.current = true;
+        setActive(idx);
+    }, [dpValue, activeDp, activeDpBase, editMode, children.length, wrap]);
+
+    // Slide → DP. Hooked to `active` rather than to goTo(), so every route that
+    // moves the panel is covered: swipe, arrows, dots, autoplay, loop-wrap and
+    // the clamp above.
+    useEffect(() => {
+        if (prevActiveRef.current === active) return; // first run / no movement
+        prevActiveRef.current = active;
+        if (adoptingRef.current) {
+            adoptingRef.current = false; // this change came FROM the DP
+            return;
+        }
+        if (!activeDp || !activeDpWrite || editMode) return;
+        if (isScreenshotMode()) return; // the screenshot harness must not write
+        setDpValue(active + activeDpBase);
+    }, [active, activeDp, activeDpWrite, activeDpBase, editMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Track viewport width for transform math
     useEffect(() => {
@@ -262,11 +349,7 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
         setChildren(children.map((c) => (c.id === updated.id ? updated : c)));
 
     const duplicateChild = (child: WidgetConfig) => {
-        const copy: WidgetConfig = {
-            ...child,
-            id: `slide-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        };
-        setChildren([...children, copy]);
+        setChildren([...children, copyWidget(child)]);
         setActive(children.length);
     };
 
@@ -325,10 +408,16 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
                     minHeight: editMode && !(showTitle && config.title) ? '36px' : undefined,
                 }}
             >
-                {showIcon && <WidgetIcon size={iconSize} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />}
+                {showIcon && (
+                    <WidgetIcon
+                        className="aura-widget-icon"
+                        size={iconSize}
+                        style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
+                    />
+                )}
                 {showTitle && config.title && (
                     <span
-                        className="text-xs font-semibold truncate flex-1 min-w-0"
+                        className="aura-widget-title text-xs font-semibold truncate flex-1 min-w-0"
                         style={{ textAlign: titleAlign as React.CSSProperties['textAlign'] }}
                     >
                         {config.title}
@@ -563,7 +652,7 @@ export function PanelsWidget({ config, editMode, onConfigChange }: WidgetProps) 
 // sorted alphabetically by their displayed label. Derived from the registry so
 // new widgets show up automatically — and stay sorted — without touching this file.
 const PANEL_WIDGET_TYPES: WidgetType[] = WIDGET_REGISTRY.filter(
-    (m) => m.addMode !== 'wizard-only' && m.type !== 'panels',
+    (m) => m.addMode !== 'wizard-only' && m.type !== 'panels' && !m.hidden,
 )
     .slice()
     .sort((a, b) => a.shortLabel.localeCompare(b.shortLabel, 'de'))

@@ -8,6 +8,8 @@ import { CustomGridView } from './CustomGridView';
 import { StatusBadges } from './StatusBadges';
 import { useStatusFields } from '../../hooks/useStatusFields';
 import { useDashboardMobile } from '../../contexts/DashboardMobileContext';
+import { resolveImageSource } from '../../utils/assetUrl';
+import { isPlaybackActive } from '../../utils/mediaPlayback';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +20,27 @@ type MediaChip = {
     dp: string;
     value?: string | number | boolean;
 };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Resolve a cover-art datapoint value into a browser-loadable image src.
+ *  - empty / data: / absolute http(s) / protocol-relative → use as-is
+ *  - base64 blob (long, no scheme, no slash) → data: URI
+ *  - relative path (e.g. Sonos `sonos/coverImage/x.png`) → route through aura's
+ *    `/webfs/` proxy. Such paths are served by the ioBroker web adapter, NOT by
+ *    aura's own HTTP server, so resolving against `window.location.origin`
+ *    directly would 404. `/webfs/` forwards the request to the web backend.
+ *  A cache-buster derived from the current track (title+artist) is appended to
+ *  relative covers so the image refreshes on track change even when the adapter
+ *  keeps writing the same filename (Sonos reuses `<ip>.png` per device). */
+function resolveCoverUrl(raw: string, title: string, artist: string): string {
+    const url = resolveImageSource(raw);
+    if (!url || url.startsWith('data:')) return url;
+    const bust = `${title}|${artist}`.trim();
+    if (!bust) return url;
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}_aura_cb=${encodeURIComponent(bust)}`;
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -182,10 +205,7 @@ export function MediaplayerWidget({ config }: WidgetProps) {
     const { value: mediaProgressStr } = useDatapoint((o.mediaProgressStrDp as string) ?? '');
     const { value: mediaLengthStr } = useDatapoint((o.mediaLengthStrDp as string) ?? '');
 
-    const isPlaying = useMemo(
-        () => playState === true || playState === 1 || playState === 'play' || playState === 'playing',
-        [playState],
-    );
+    const isPlaying = useMemo(() => isPlaybackActive(playState, o.playValue), [playState, o.playValue]);
 
     const progressPct = useMemo(() => {
         if (typeof mediaLength === 'number' && mediaLength > 0 && typeof mediaProgress === 'number') {
@@ -264,7 +284,10 @@ export function MediaplayerWidget({ config }: WidgetProps) {
     const artistStr = String(artist ?? '');
     const albumStr = String(album ?? '');
     const sourceStr = String(source ?? '');
-    const coverStr = String(cover ?? '');
+    const coverStr = useMemo(
+        () => resolveCoverUrl(String(cover ?? ''), titleStr, artistStr),
+        [cover, titleStr, artistStr],
+    );
     const subtitle = [artistStr, albumStr].filter(Boolean).join(' · ');
 
     const { battery, reach, batteryIcon, reachIcon, statusBadges } = useStatusFields(config);

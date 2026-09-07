@@ -81,6 +81,7 @@
       })();
     </script>
     <style>
+      :root { --aura-boot-bg: #0f172a; --aura-boot-fg: #94a3b8; }
       /* iOS-Homescreen-App: randlos. Auras Theme-Hintergrund fuellt die ganze
          Flaeche bis an alle Kanten -> kein toter Balken oben/unten. Der Inhalt
          wird nur aus Dynamic Island (oben) und Home-Indicator (unten) gehalten,
@@ -160,7 +161,7 @@
         position: fixed; inset: 0;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center; gap: 16px;
-        background: #0f172a; color: #94a3b8;
+        background: var(--aura-boot-bg); color: var(--aura-boot-fg);
         font-family: system-ui, sans-serif; font-size: 13px;
         z-index: 9999;
         transition: opacity 0.25s ease-out;
@@ -188,15 +189,29 @@
         to { transform: rotate(360deg); }
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-Cmrr4HBX.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/react-Bk2tEoOi.js">
-    <link rel="modulepreload" crossorigin href="./assets/react-dom-Bt2Mxcwn.js">
-    <link rel="modulepreload" crossorigin href="./assets/router-DRgFpRnU.js">
-    <link rel="modulepreload" crossorigin href="./assets/grid--CJP6aj_.js">
-    <link rel="modulepreload" crossorigin href="./assets/lucide-BwPGPok4.js">
-    <link rel="modulepreload" crossorigin href="./assets/dompurify-D6gMnemd.js">
+    <script>
+      // Repaint the boot splash in the theme this device rendered last (written by
+      // ThemeProvider as "<--app-bg>|<--text-secondary>"). Without it the splash is
+      // hard-coded dark, so a light device flashes dark on every reload.
+      try {
+        var c = (localStorage.getItem('aura-boot-colors') || '').split('|');
+        if (c.length === 2 && c[0] && c[1]) {
+          var r = document.documentElement.style;
+          r.setProperty('--aura-boot-bg', c[0]);
+          r.setProperty('--aura-boot-fg', c[1]);
+          r.setProperty('--app-bg', c[0]);
+        }
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="./assets/index-Dfjt-cjo.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/react-CMd_R4qx.js">
+    <link rel="modulepreload" crossorigin href="./assets/react-dom-DnNQTdJz.js">
+    <link rel="modulepreload" crossorigin href="./assets/router-CqM3g0x1.js">
+    <link rel="modulepreload" crossorigin href="./assets/grid-BbAxdxRG.js">
+    <link rel="modulepreload" crossorigin href="./assets/lucide-CghZ9bO5.js">
+    <link rel="modulepreload" crossorigin href="./assets/dompurify-Cdnc6Rlq.js">
     <link rel="stylesheet" crossorigin href="./assets/grid-DULRuONn.css">
-    <link rel="stylesheet" crossorigin href="./assets/index-WKjFBNh9.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-Clh1AVDf.css">
   </head>
   <body>
     <div id="aura-boot">
