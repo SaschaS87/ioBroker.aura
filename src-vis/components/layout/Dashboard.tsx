@@ -338,7 +338,7 @@ export function Dashboard({
     // switching between fill-tab and normal tabs.
     const activeTab = tabs.find((t) => t.id === activeTabId);
     // Nur noch iFrames duerfen fillTab nutzen (Rollläden-Umbau, 01.09.2026):
-    // shutterfloors/shutterrooms sind jetzt normale Widgets, und die Admin-UI
+    // shutterfloors ist jetzt ein normales Widget, und die Admin-UI
     // fuer den fillTab-Umschalter existiert ohnehin nur fuer config.type ===
     // 'iframe' (WidgetFrame.tsx). Verhindert, dass ein Skript oder eine
     // Altkonfiguration die Shutter-Widgets versehentlich wieder in den
@@ -477,9 +477,6 @@ export function Dashboard({
                                                                 // weatherforecaststrip: detail panel height changes
                                                                 // when the chart mounts / a different day is picked.
                                                                 ew.type === 'weatherforecaststrip' ||
-                                                                // shutterrooms grows with its room/device list so the
-                                                                // tab scrolls as a whole instead of the widget itself.
-                                                                ew.type === 'shutterrooms' ||
                                                                 // shutterfloors grows with its floor/device list so the
                                                                 // tab scrolls as a whole instead of the widget itself.
                                                                 ew.type === 'shutterfloors' ||

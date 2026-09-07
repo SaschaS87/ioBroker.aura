@@ -48,7 +48,7 @@ export const PendingContext = createContext<PendingStore | null>(null);
 
 export const usePendingStore = () => {
     const ctx = useContext(PendingContext);
-    if (!ctx) throw new Error('usePendingStore must be used within ShutterRoomsWidget');
+    if (!ctx) throw new Error('usePendingStore must be used within ShutterFloorsWidget');
     return ctx;
 };
 

@@ -1,4 +1,4 @@
-import type { ShutterDeviceDef } from '../shutterrooms/types';
+import type { ShutterDeviceDef } from '../shuttershared/types';
 
 export interface ShutterFloorDeviceDef extends ShutterDeviceDef {
     kind: 'fenster' | 'dachfenster' | 'raffstore';

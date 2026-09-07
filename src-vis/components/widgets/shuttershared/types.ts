@@ -11,9 +11,3 @@ export interface ShutterDeviceDef {
     activityDp?: string;
     slatDp?: string;
 }
-
-export interface ShutterRoomDef {
-    name: string;
-    facade: string;
-    devices: ShutterDeviceDef[];
-}
