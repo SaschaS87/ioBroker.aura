@@ -20,7 +20,9 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 try {
     await page.goto(BASE, { waitUntil: 'networkidle', timeout: 45000 });
     await page.waitForTimeout(2500);
-    await page.locator('text=Rollos').first().click();
+    // Tab heisst in der Konfiguration "Rollläden" (Slug bleibt "rollos") -
+    // Textsuche "Rollos" traf hier nicht mehr, unabhaengig vom Puls-Icon-Fix.
+    await page.locator('text=Rollläden').first().click();
     await page.waitForTimeout(2500);
 
     // Der gelbe Punkt (.row-pulse) wurde am 25.08.2026 (Commit f8caad3a)
