@@ -53,12 +53,17 @@ function widget(headVariant = 'a') {
 }
 
 // Abnahme-Szenarien. sheet = Geraet, dessen Zeile angeklickt wird;
-// moving = Geraete, die als "faehrt gerade" gemeldet werden (gelber Punkt).
+// moving = Geraete, die als "faehrt gerade" gemeldet werden. Der gelbe Punkt
+// (.row-pulse) wurde am 25.08.2026 (Commit f8caad3a) bewusst entfernt -
+// Fahranimation und die flaechig gelbe Stopp-Taste sagten dasselbe zweimal.
+// Seit 31.08.2026 zeigt stattdessen das Typ-Icon selbst die Fahrt: die
+// Behang-Flaeche pulsiert (ShutterTypeIcons.css, Klasse .ti-moving auf dem
+// <svg>, Animation auf dem Kind .ti-behang).
 const VIEWS = [
     { name: 'kopf-A-schlicht', width: 390, height: 844, scale: 2, theme: 'dark', head: 'a' },
     { name: 'kopf-B-typografisch', width: 390, height: 844, scale: 2, theme: 'dark', head: 'b' },
     { name: 'kopf-C-akzent', width: 390, height: 844, scale: 2, theme: 'dark', head: 'c' },
-    { name: 'fahrt-gelber-punkt', width: 390, height: 844, scale: 2, theme: 'dark', head: 'a',
+    { name: 'fahrt-puls-icon', width: 390, height: 844, scale: 2, theme: 'dark', head: 'a',
       moving: ['Wohnz_klein', 'Küchenfenster'] },
     { name: 'popup-fenster', width: 390, height: 844, scale: 2, theme: 'dark', head: 'a',
       sheet: 'Wohnzimmer klein' },
@@ -130,8 +135,8 @@ async function run() {
             }
 
             if (view.moving) {
-                const dots = await page.locator('.row-pulse').count();
-                console.log(`  gelbe Punkte sichtbar: ${dots} (erwartet ${view.moving.length})`);
+                const pulsing = await page.locator('.ti-moving').count();
+                console.log(`  pulsierende Icons sichtbar: ${pulsing} (erwartet ${view.moving.length})`);
             }
 
             const file = path.join(OUTPUT_DIR, `rollos-${view.name}.png`);

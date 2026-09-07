@@ -2,10 +2,10 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Square, RadioOff } from 'lucide-react';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useDatapoint } from '../../../hooks/useDatapoint';
-import { useShutterDevice, usePendingStore } from '../shutterrooms/useShutterDevice';
-import { useYellowForeground } from '../shutterrooms/useYellowForeground';
-import { HapticButton } from '../shutterrooms/HapticButton';
-import { radioDpsFromPosDp, isRadioOffline } from '../shutterrooms/tahomaRadio';
+import { useShutterDevice, usePendingStore } from '../shuttershared/useShutterDevice';
+import { useYellowForeground } from '../shuttershared/useYellowForeground';
+import { HapticButton } from '../shuttershared/HapticButton';
+import { radioDpsFromPosDp, isRadioOffline } from '../shuttershared/tahomaRadio';
 import { WindowIcon, RoofWindowIcon, RaffstoreIcon } from '../../icons/ShutterTypeIcons';
 import { ArrowToTopIcon, ArrowToBottomIcon } from '../../icons/ShutterActionIcons';
 import type { ShutterFloorDeviceDef } from './types';
@@ -112,7 +112,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         statusText += ` · ${state.slatAckedPos}°`;
     }
 
-    // Knopf-Handler mit Pending-Logik (analog ShutterTile)
+    // Knopf-Handler mit Pending-Logik
     const handleOpen = () => {
         if (!device.upDp) return;
         // Ziel als Rohwert: 0 = ganz offen, 100 = ganz zu. Der Hook rechnet

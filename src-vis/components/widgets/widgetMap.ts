@@ -75,10 +75,6 @@ const HeatingWidget = lazyWithReload(() => import('./HeatingWidget').then((m) =>
 const WeatherForecastStripWidget = lazyWithReload(() =>
     import('./WeatherForecastStripWidget').then((m) => ({ default: m.WeatherForecastStripWidget })),
 );
-// ShutterRoomsWidget is a specialized widget for TaHoma roller shutters, grouped by room.
-const ShutterRoomsWidget = lazyWithReload(() =>
-    import('./shutterrooms/ShutterRoomsWidget').then((m) => ({ default: m.ShutterRoomsWidget })),
-);
 // ShutterFloorsWidget is a specialized widget for TaHoma roller shutters, grouped by floor.
 const ShutterFloorsWidget = lazyWithReload(() =>
     import('./shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
@@ -141,7 +137,6 @@ export function getWidgetMap() {
         mirror: MirrorWidget,
         messages: MessagesWidget,
         menu: MenuWidget,
-        shutterrooms: ShutterRoomsWidget,
         shutterfloors: ShutterFloorsWidget,
         roomclimate: RoomClimateWidget,
         rainstation: RainStationWidget,

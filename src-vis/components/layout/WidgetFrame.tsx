@@ -98,7 +98,6 @@ import { StatusOverviewConfig } from '../config/StatusOverviewConfig';
 import { EnergiebilanzConfig } from '../config/EnergiebilanzConfig';
 import { StaticListConfig } from '../config/StaticListConfig';
 import { GroupActionConfig } from '../config/GroupActionConfig';
-import { ShutterRoomsConfig } from '../config/ShutterRoomsConfig';
 import {
     listGroupCandidates,
     groupGroupCandidates,
@@ -7354,9 +7353,6 @@ export function WidgetFrame({
         // weatherforecaststrip: same idea — the strip+detail shell is its own
         // full-width card.
         framingType === 'weatherforecaststrip' ||
-        // shutterrooms: no outer frame (transparent) + no frame padding, so the
-        // room list spans the full column width, just like heating.
-        framingType === 'shutterrooms' ||
         // shutterfloors: no outer frame (transparent) + no frame padding, so the
         // floor list spans the full column width, just like heating.
         framingType === 'shutterfloors';
@@ -12440,16 +12436,6 @@ export function WidgetFrame({
                         {/* ── Status overview config ── */}
                         {config.type === 'statusoverview' && (
                             <StatusOverviewConfig config={config} onConfigChange={onConfigChange} />
-                        )}
-
-                        {/* ── ShutterRooms config ── */}
-                        {config.type === 'shutterrooms' && (
-                            <ShutterRoomsConfig
-                                options={config.options ?? {}}
-                                onOptionsChange={(opts) =>
-                                    onConfigChange({ ...config, options: opts })
-                                }
-                            />
                         )}
 
                         {/* ── Static List config ── */}

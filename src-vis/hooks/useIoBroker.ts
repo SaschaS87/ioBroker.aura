@@ -3,6 +3,7 @@ import type { ioBrokerState, ObjectViewResult } from '../types';
 import { version as appVersion } from '../../package.json';
 import { splitDpRef, resolveDpValue } from '../utils/dpRef';
 import { NS } from '../utils/namespace';
+import { guardDevWrites } from '../utils/devWriteGuard';
 
 interface IoBrokerSocket {
     connected: boolean;
@@ -445,7 +446,13 @@ function createSocket(url: string): IoBrokerSocket {
     // option and uses its own pure-WS connect. We deliberately do NOT pass
     // `path` (socket.io's default /socket.io is already correct, and @iobroker/ws
     // would mishandle it — it connects at the root).
-    const s = io.connect(url, { transports: ['websocket', 'polling'] });
+    let s = io.connect(url, { transports: ['websocket', 'polling'] });
+    // Dev only: every emit — including the two call sites that bypass the
+    // setStateDirect/setObjectDirect helpers — runs through the write guard, so
+    // the dev preview cannot switch real devices (see utils/devWriteGuard.ts).
+    // Kept out of production entirely: import.meta.env.DEV folds to false at
+    // build time, so both this line and the import are eliminated.
+    if (import.meta.env.DEV) s = guardDevWrites(s);
 
     // A re-established connection is signalled differently depending on the
     // runtime socket library: the bundled classic socket.io-client re-fires

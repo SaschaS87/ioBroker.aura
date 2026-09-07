@@ -24,7 +24,7 @@
    deckungsgleich die ganze Tab-Flaeche gross waren (fillTab-Overlay) - 92%
    ergab in diesem Sonderfall zufaellig wieder ~92% des Bildschirms.
 
-   Jetzt ist shutterfloors/shutterrooms ein normales, mitwachsendes Widget.
+   Jetzt ist shutterfloors ein normales, mitwachsendes Widget.
    Der Backdrop ist ueber position: fixed; inset: 0 wieder an den Bildschirm
    gebunden, nicht mehr an die (potenziell viel hoehere) Widget-Kachel. Ein
    Prozentwert wuerde also wieder auf die Kachel zeigen, wenn das Widget
