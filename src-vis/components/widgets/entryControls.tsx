@@ -30,7 +30,7 @@ import {
     type EnumEntry,
     type EnumEntryDisplay,
     type EnumRender,
-} from './EnumWidget';
+} from './enumEntry';
 import { HtmlSelect } from '../common/HtmlSelect';
 import { TiltButton, TiltPopover } from './TiltControls';
 import { tiltRange, rawToTiltPct, tiltPctToRaw } from '../../utils/shutterTilt';
@@ -178,8 +178,15 @@ export interface EntryControlConfig extends ValueTransformSettings, SwitchEntryC
     // ── switch (on/off) ───────────────────────────────────────────────────────
     // The option set itself lives in utils/switchEntry (SwitchEntryConfig), so the
     // group master switch and the unit test can apply the same rule (issue #591).
-    /** Size in px of the row icon and of the icon/image switch. Unset = per-layout default. */
+    /** Size in px of the row icon (left of the name). Unset = per-layout default. */
     iconSize?: number;
+    /**
+     * Size in px of the icon/image switch. Its own key, because a row can show BOTH a
+     * name icon and an icon switch (issue #616) — one shared size made the row icon
+     * jump to the switch size and hid the row-icon field in the editor. Falls back to
+     * `iconSize` so configs written before the split keep rendering unchanged.
+     */
+    switchIconSize?: number;
     // ── shutter ──────────────────────────────────────────────────────────────
     /**
      * Shutter control model:
@@ -389,6 +396,8 @@ export interface EntryControlConfig extends ValueTransformSettings, SwitchEntryC
     inputMultiline?: boolean;
     /** Multi-line: height of the text area in px. Unset = the layout's default. */
     inputHeight?: number;
+    /** Show the entry's unit right of the field. Default false (issue #622). */
+    inputShowUnit?: boolean;
 }
 
 type SetState = (id: string, v: boolean | number | string) => void;
@@ -538,7 +547,7 @@ export function SwitchControl({
     const style = entry.switchStyle ?? 'slide';
 
     if (style === 'icon' || style === 'image') {
-        const size = entry.iconSize ?? 22;
+        const size = entry.switchIconSize ?? entry.iconSize ?? 22;
         const image = active ? entry.onImage : entry.offImage;
         const StateIcon = getWidgetIcon(active ? entry.trueIcon : entry.falseIcon, Power);
         return (
@@ -1622,7 +1631,7 @@ export function InputControl({
     fullWidth,
     cond,
 }: {
-    entry: EntryControlConfig & { id: string };
+    entry: EntryControlConfig & { id: string; unit?: string };
     val: ioBrokerState['val'];
     setState: SetState;
     /** Card layouts stack vertically, so the field takes the whole cell there. */
@@ -1645,6 +1654,10 @@ export function InputControl({
     const clearAfterSubmit = !!entry.inputClearAfterSubmit && submitMode === 'submit' && !readOnly;
     const showSubmit = entry.inputShowSubmit !== false && submitMode === 'submit' && !readOnly;
     const width = Number(entry.inputWidth) > 0 ? Number(entry.inputWidth) : undefined;
+    // Unit next to the field (issue #622). Off by default so existing lists - where the
+    // unit is auto-filled from common.unit and only ever appeared behind a *value* -
+    // keep their input rows unchanged. The text itself is the entry's own unit.
+    const unit = entry.inputShowUnit && entry.unit ? entry.unit : '';
     const FieldTag = (multiline ? 'textarea' : 'input') as 'input';
 
     const dpString = val == null ? '' : String(val);
@@ -1769,6 +1782,14 @@ export function InputControl({
                 // the field would fire off the message. There the send is always explicit.
                 onBlur={submitMode === 'submit' && !clearAfterSubmit && !readOnly ? commit : undefined}
             />
+            {unit && (
+                <span
+                    className="aura-input-unit shrink-0 self-center text-xs"
+                    style={{ color: cond?.color ?? 'var(--text-secondary)', ...condTextStyle(cond) }}
+                >
+                    {unit}
+                </span>
+            )}
             {showSubmit && (
                 <button
                     type="button"

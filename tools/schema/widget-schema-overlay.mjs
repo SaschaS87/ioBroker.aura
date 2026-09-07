@@ -261,6 +261,30 @@ export const WIDGET_OPTION_NOTES = {
         statusAlign: { description: 'Ausrichtung des Zustandstexts.' },
     },
     fill: {
+        limits: {
+            description:
+                'Verstellbare Grenzen auf der Skala (#613) — Ladelimit, Entladegrenze, Priorisierungsschwelle. ' +
+                'Jede Grenze bringt einen eigenen Datenpunkt mit und kann im Dashboard gezogen werden; sie teilen ' +
+                'die Skala in Abschnitte, die je ein Icon und eine Farbe tragen. Icon und bandColor einer Grenze ' +
+                'gelten für den Abschnitt ÜBER ihr; der unterste Abschnitt nutzt baseIcon/baseBandColor. ' +
+                'Abschnittsfarben gewinnen über colorZones. Nur in den Layouts default, battery und bar — ' +
+                'segments, wave und custom haben keinen durchgehenden Balken und ignorieren die Grenzen.',
+        },
+        limitsEditable: {
+            description: 'Hauptschalter: false macht alle Grenzen zur reinen Anzeige, unabhängig von limit.editable.',
+        },
+        limitCommitOnRelease: {
+            description:
+                'Datenpunkt erst beim Loslassen schreiben. false schreibt bei jeder Bewegung — nur für träge Ziele sinnvoll.',
+        },
+        limitClampNeighbours: {
+            description: 'Eine gezogene Grenze darf die Grenzen unter und über ihr nicht überholen.',
+        },
+        baseIcon: {
+            description:
+                'Icon im untersten Abschnitt, also unter der niedrigsten Grenze. Der hat keine Grenze über sich, an der ein Icon hängen könnte.',
+        },
+        baseBandColor: { description: 'Farbe des untersten Abschnitts. Leer = normale Füllfarbe.' },
         overActive: { description: 'Farbwechsel ab einer Schwelle einschalten.' },
         overThreshold: {
             description:
@@ -349,6 +373,17 @@ export const WIDGET_OPTION_NOTES = {
         falseLabel: { description: 'Beschriftung für den falschen Zustand.' },
     },
     mediaplayer: {
+        // Reported from use: set, accepted by the validator, and without any
+        // effect — the player draws its own header and the editor does not even
+        // offer the toggle. It is not a phantom either: in layout "custom" a
+        // title cell honours it (CustomGridView). `onlyLayouts` says exactly
+        // that, and aura_validate warns when the widget is on another layout.
+        showTitle: {
+            onlyLayouts: ['custom'],
+            description:
+                'Titelzeile anzeigen — wirkt NUR im Layout "custom" (Titelzelle). In "default" und ' +
+                '"compact" zeichnet der Player seine eigene Kopfzeile und ignoriert die Option.',
+        },
         titleDp: { description: 'Datenpunkt des Titels.' },
         artistDp: { description: 'Datenpunkt des Interpreten.' },
         albumDp: { description: 'Datenpunkt des Albums.' },
@@ -367,7 +402,18 @@ export const WIDGET_OPTION_NOTES = {
         volumeMax: { description: 'Größter Lautstärkewert des Geräts.' },
         volumeStep: { description: 'Schrittweite der Lautstärke.' },
         muteDp: { description: 'Datenpunkt für Stummschaltung.' },
-        muteViaVolume: { description: 'Stummschalten, indem die Lautstärke auf 0 gesetzt wird.' },
+        stopDp: {
+            description:
+                'Datenpunkt, der die Wiedergabe stoppt. Gesetzt zeigt das Widget eine Stop-Taste neben ' +
+                'Play/Pause; showStop schaltet sie wieder ab.',
+        },
+        showStop: { description: 'Stop-Taste anzeigen (greift nur, wenn stopDp gesetzt ist).' },
+        muteViaVolume: {
+            description:
+                'Stummschalten, indem die Lautstärke auf 0 gesetzt wird — für Geräte ohne schreibbaren ' +
+                'Mute-Datenpunkt (Alexa). Neu immer als echter Boolean true; die Geräteerkennung hat ' +
+                'früher den String "true" geschrieben, deshalb ist beides erlaubt.',
+        },
         mediaProgressDp: { description: 'Datenpunkt der Abspielposition als Zahl.' },
         mediaLengthDp: { description: 'Datenpunkt der Titellänge als Zahl.' },
         mediaProgressStrDp: { description: 'Datenpunkt der Abspielposition als fertiger Text.' },
@@ -415,6 +461,7 @@ export const WIDGET_OPTION_NOTES = {
         inputWidth: { description: 'Breite des Eingabefelds in px. 0 = volle Breite.' },
         textAlign: { description: 'Ausrichtung des eingegebenen Texts.' },
         fieldAlign: { description: 'Ausrichtung des Eingabefelds in der Kachel.' },
+        unit: { description: 'Einheit rechts neben dem Eingabefeld, z. B. "°C". Leer = keine Einheit.' },
     },
     datepicker: {
         timeOnly: { description: 'Nur eine Uhrzeit statt eines Datums abfragen.' },
@@ -542,6 +589,19 @@ export const WIDGET_OPTION_NOTES = {
         maxEvents: { description: 'Höchstzahl angezeigter Termine.' },
         showCalName: { description: 'Kalendernamen neben dem Termin anzeigen.' },
         showCalIcon: { description: 'Das je Kalender vergebene Icon vor dem Termin anzeigen.' },
+        calIconSize: {
+            description:
+                'Größe des Kalender-Icons in px. 0 = die Größe, die das jeweilige Layout vorgibt (Default 12, Agenda/Card 11, Compact 13, Custom 20).',
+        },
+        showCalDot: {
+            description:
+                'Farbige Markierung vor dem Termin anzeigen — im Default-Layout der Punkt, in Agenda der Balken. Card und Compact haben keine.',
+        },
+        calNameAlign: {
+            enum: ['left', 'center', 'right'],
+            description:
+                'Ausrichtung des Kalendernamens (left/center/right). Wirkt dort, wo der Name eine eigene Zeile oder Spalte hat: Default, Card und Agenda mit fester calNameWidth.',
+        },
         showWeek: {
             description:
                 'Kalenderwoche anzeigen — in Default und Agenda am ersten Termin jeder Woche, in Card und Compact am angezeigten Termin.',
@@ -738,6 +798,12 @@ export const KEY_TYPES = {
     // The stored value may also be a bare CustomCell[] (legacy 3x3); normalizeGrid
     // accepts both. Describing the current shape is what a generator needs.
     customGrid: 'CustomGridDef',
+    // A flag the widget reads as `!!o.muteViaVolume`, so the string 'true' has
+    // always worked — and the frontend's Alexa detection wrote exactly that until
+    // it was corrected. Declaring it boolean-only made every dashboard that had
+    // ever used the Alexa detection unwritable through the MCP, because the
+    // validator refuses the whole widget over one option's type.
+    muteViaVolume: 'boolean | string',
 };
 
 /** Identifiers the readers picked up that are not option keys. */

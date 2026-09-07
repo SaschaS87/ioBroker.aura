@@ -18,7 +18,7 @@ import { TIME_DISPLAY_PRESETS, formatTimeDisplay } from '../../utils/timeDisplay
 import { ensureDatapointCache, type DatapointEntry } from '../../hooks/useDatapointList';
 import type { ConditionOperator } from '../../types';
 import type { EntryControlConfig, EntryDisplayType, EntryPreset, EntryStateMap } from '../widgets/entryControls';
-import type { EnumEntryDisplay, EnumRender } from '../widgets/EnumWidget';
+import type { EnumEntryDisplay, EnumRender } from '../widgets/enumEntry';
 import { entryDateText } from '../widgets/entryControls';
 import { DATE_PATTERN_TOKENS, FORMAT_LABELS, DEFAULT_DATE_PATTERN, type DateOutputFormat } from '../../utils/dateValue';
 import {
@@ -64,7 +64,7 @@ function parseCommonStates(states: unknown): EntryStateMap[] {
 interface Props {
     // entry carries the list-entry id at runtime (StaticListEntry/AutoListEntry);
     // needed to scope sibling lookup for shutter auto-detection.
-    entry: EntryControlConfig & { id?: string };
+    entry: EntryControlConfig & { id?: string; unit?: string };
     onUpdate: (patch: Partial<EntryControlConfig>) => void;
     /** Drop the internal "Darstellung" caption - for callers whose own section
      *  heading already says it (the datapoint dialog's detail pane). */
@@ -436,6 +436,9 @@ export function EntryControlsConfig({ entry, onUpdate, hideLabel, autoLabel }: P
                                     </div>
                                 ))}
                                 <div>
+                                    {/* Size of the SWITCH icon only — the icon in front of the name has its
+                                        own field in the entry's "Beschriftung" section (issue #616). Reads
+                                        the old shared `iconSize` while nothing has been set here yet. */}
                                     <Label>Größe (px)</Label>
                                     <input
                                         type="number"
@@ -444,10 +447,10 @@ export function EntryControlsConfig({ entry, onUpdate, hideLabel, autoLabel }: P
                                         className={`${iCls} tabular-nums`}
                                         style={iSty}
                                         placeholder="22"
-                                        value={entry.iconSize ?? ''}
+                                        value={entry.switchIconSize ?? entry.iconSize ?? ''}
                                         onChange={(e) => {
                                             const n = parseInt(e.target.value, 10);
-                                            onUpdate({ iconSize: Number.isFinite(n) && n > 0 ? n : undefined });
+                                            onUpdate({ switchIconSize: Number.isFinite(n) && n > 0 ? n : undefined });
                                         }}
                                     />
                                 </div>
@@ -2104,6 +2107,23 @@ export function EntryControlsConfig({ entry, onUpdate, hideLabel, autoLabel }: P
                             </select>
                         </div>
                     </div>
+                    {/* Einheit neben dem Feld (Issue #622). Der Text ist die Einheit des
+                        Eintrags - in der dynamischen Liste kommt sie beim Abgleich aus
+                        common.unit, in der statischen aus dem Feld "Einheit". */}
+                    <ToggleRow
+                        label="Einheit neben dem Feld"
+                        checked={!!entry.inputShowUnit}
+                        onChange={(v) => onUpdate({ inputShowUnit: v || undefined })}
+                    />
+                    {entry.inputShowUnit && !entry.unit && (
+                        <p
+                            className="text-[9px] leading-tight"
+                            style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+                        >
+                            Noch keine Einheit hinterlegt - sie kommt aus dem Feld {'„'}Einheit{'“'} des Eintrags bzw.
+                            beim Abgleich aus dem Datenpunkt.
+                        </p>
+                    )}
                     <p className="text-[9px] leading-tight" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
                         {inputSubmitMode === 'live'
                             ? 'Jeder Tastenschlag schreibt sofort in den Datenpunkt.'

@@ -56,6 +56,7 @@ export const de = {
     'admin.save.save': 'Speichern',
     'admin.save.saved': 'Alle Änderungen gespeichert',
     'admin.save.autoIn': 'Automatisch in {s}s…',
+    'admin.update.available': 'Version {v} ist verfügbar — Release-Notes öffnen',
 
     // ── Editor settings ───────────────────────────────────────────────────────────
     'settings.editor.title': 'Editor',
@@ -82,6 +83,12 @@ export const de = {
     'settings.clients.none': 'Noch keine Geräte registriert.',
     'settings.clients.thisDevice': 'Dieses Gerät',
     'settings.clients.copyId': 'Client-ID kopieren',
+    'settings.clients.fixedId': 'Feste ID für dieses Gerät',
+    'settings.clients.fixedIdPh': 'z.B. wohnzimmer-tablet',
+    'settings.clients.fixedIdHint':
+        'Erlaubt sind a–z, 0–9, - und _. Das Gerät zieht auf clients.<ID> um; der bisherige Eintrag wird entfernt.',
+    'settings.clients.idTaken': 'Diese ID ist bereits vergeben.',
+    'settings.clients.idInvalid': 'Ungültige ID – erlaubt sind a–z, 0–9, - und _.',
     'settings.clients.showIdBadge': 'ID-Badge auf jedem Gerät anzeigen',
     'settings.clients.justNow': 'gerade eben',
     'settings.clients.minsAgo': 'vor {n} min',
@@ -333,6 +340,13 @@ export const de = {
     'dashboard.mcp.warning':
         'Der Assistent verändert dein Dashboard. Vor jedem Schreibvorgang sichert Aura nach {ns}.backups. Mit der Stufe „Nur lesen“ anfangen.',
     'dashboard.mcp.docs': 'Alle Schritte in der Dokumentation',
+    'dashboard.mcp.titleActive': 'KI-Zugriff aktiv (MCP)',
+    'dashboard.mcp.mode.read': 'Nur lesen',
+    'dashboard.mcp.mode.write': 'Lesen & schreiben',
+    'dashboard.mcp.mode.rename': 'Schreiben & umbenennen',
+    'dashboard.mcp.mode.delete': 'Schreiben, umbenennen & löschen',
+    'dashboard.mcp.showGuide': 'Anleitung',
+    'dashboard.mcp.hideGuide': 'Anleitung ausblenden',
 
     'dashboard.nav.title': 'Tablet-Navigation via ioBroker',
     'dashboard.nav.description':
@@ -354,6 +368,9 @@ export const de = {
     'dashboard.orphans.panelLabel': 'Panels-DPs ohne Widget',
     'dashboard.orphans.refresh': 'Aktualisieren',
     'dashboard.orphans.cleanup': 'Aufräumen',
+    'dashboard.orphans.showAll': 'Alle {count} anzeigen',
+    'dashboard.orphans.more': '… und {count} weitere',
+    'dashboard.orphans.allTitle': 'Verwaiste DPs in ioBroker ({count})',
 
     'dashboard.brokenDps.title': '{count} Widget-Referenz(en) auf fehlende DPs',
     'dashboard.brokenDps.titleClean': 'Alle Widget-DP-Referenzen sind gültig',
@@ -364,6 +381,8 @@ export const de = {
     'dashboard.brokenDps.colLocation': 'Ort',
     'dashboard.brokenDps.colField': 'Feld',
     'dashboard.brokenDps.colDp': 'Datenpunkt',
+    'dashboard.brokenDps.showAll': 'Alle {count} anzeigen',
+    'dashboard.brokenDps.allTitle': 'Widget-Referenzen auf fehlende DPs ({count})',
 
     // ── Layouts ───────────────────────────────────────────────────────────────────
     'layouts.title': 'Layouts',
@@ -914,6 +933,9 @@ export const de = {
     'wf.cal.maxEntries': 'Max. Einträge',
     'wf.cal.nameWidth': 'Breite Kalender-Spalte',
     'wf.cal.nameWidthAuto': 'automatisch',
+    'wf.cal.nameAlign': 'Kalendername ausrichten',
+    'wf.cal.iconSize': 'Größe Kalender-Icon',
+    'wf.cal.iconSizeAuto': 'automatisch',
 
     // Gauge config
     'wf.gauge.strokeWidth': 'Bogenbreite',
@@ -1190,6 +1212,9 @@ export const de = {
     'cond.rules': 'Bedingungsregeln',
     'cond.rulesHint': 'Farben ändern sich wenn Bedingungen erfüllt sind',
     'cond.noRules': 'Noch keine Regeln. Erstelle eine Regel um loszulegen.',
+    'cond.moveUp': 'Nach oben schieben',
+    'cond.moveDown': 'Nach unten schieben',
+    'cond.dragHint': 'Ziehen, um die Reihenfolge zu ändern',
     'cond.newRule': 'Neue Regel',
 
     // ── Marker ───────────────────────────────────────────────────────────────────

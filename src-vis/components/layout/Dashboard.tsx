@@ -24,6 +24,7 @@ import { getDragBridge, setDragBridge } from '../../utils/dragBridge';
 import { verticalCompact } from '../../utils/gridCompact';
 import { groupRows } from '../../utils/groupLayout';
 import { reportMetric } from '../../utils/perfMetrics';
+import { measureRenderedWidgets, reportSignature, sendRenderReport } from '../../utils/renderReport';
 
 // Default gap — overridden by config at runtime
 const DEFAULT_MARGIN = 10;
@@ -217,6 +218,68 @@ export function Dashboard({
     }, [activeTabId, editMode]);
 
     const reflowHiddenIds = useReflowHiddenIds();
+
+    // ── Rendered geometry → the MCP server (utils/renderReport.ts) ──────────
+    // Only from the real frontend (viewTabs), never from the admin editor: its
+    // preview column is narrower than the dashboard and would report heights
+    // nobody ever sees. Debounced, and only when something actually changed —
+    // a report per render would be a socket message per condition update.
+    const lastReportRef = useRef('');
+    useEffect(() => {
+        if (editMode || !viewTabs || !activeTabId) return;
+        const tab = tabs.find((t) => t.id === activeTabId);
+        if (!tab) return;
+        let timer = 0;
+        const send = () => {
+            const root = document.querySelector(`[data-aura-tab-id="${CSS.escape(activeTabId)}"]`);
+            if (!root) return;
+            const widgets = measureRenderedWidgets(root);
+            if (!widgets.length) return;
+            const report = {
+                tabId: activeTabId,
+                tab: `${activeLayout.name} / ${section.name} / ${tab.name}`,
+                viewport: { w: window.innerWidth, h: window.innerHeight },
+                presentation: { fontScale: settings.fontScale ?? 1, widgetPadding },
+                grid: { rowHeight: cellSize, gap: MARGIN, snapX },
+                widgets,
+                // A condition with „Reflow“ takes the card out of the grid entirely
+                // (it stays mounted off-screen). Without this list the server sees a
+                // widget it knows from the configuration simply not reported and
+                // cannot tell "hidden on purpose" from "drew nothing".
+                hidden: (tab.widgets ?? []).filter((w) => reflowHiddenIds.has(w.id)).map((w) => w.id),
+            };
+            const signature = reportSignature(report);
+            if (signature === lastReportRef.current) return;
+            lastReportRef.current = signature;
+            sendRenderReport(report);
+        };
+        // 1.2 s after the last change: long enough for lazy widget chunks and
+        // the grid's own settle, short enough to be there when someone asks.
+        const schedule = () => {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(send, 1200);
+        };
+        schedule();
+        window.addEventListener('resize', schedule);
+        return () => {
+            window.clearTimeout(timer);
+            window.removeEventListener('resize', schedule);
+        };
+    }, [
+        activeTabId,
+        editMode,
+        viewTabs,
+        tabs,
+        activeLayout.name,
+        section.name,
+        settings.fontScale,
+        widgetPadding,
+        cellSize,
+        MARGIN,
+        snapX,
+        reflowHiddenIds,
+    ]);
+
     // Raw condition verdict (works in edit mode too) — drives group auto-shrink.
     const conditionReflowIds = useConditionReflowIds();
 
@@ -425,6 +488,7 @@ export function Dashboard({
                                             <div
                                                 key={tab.id}
                                                 data-tab={tab.slug}
+                                                data-aura-tab-id={tab.id}
                                                 className={`aura-tab aura-tab-${tab.slug}`}
                                                 style={{ display: isActive ? undefined : 'none' }}
                                             >
@@ -488,6 +552,9 @@ export function Dashboard({
                                                             return (
                                                                 <div
                                                                     key={w.id}
+                                                                    data-aura-widget={w.id}
+                                                                    data-aura-widget-type={w.type}
+                                                                    data-aura-widget-rows={w.gridPos.h}
                                                                     style={
                                                                         autoHeight
                                                                             ? undefined
@@ -854,6 +921,7 @@ export function Dashboard({
                                             <div
                                                 key={tab.id}
                                                 data-tab={tab.slug}
+                                                data-aura-tab-id={tab.id}
                                                 className={`aura-tab aura-tab-${tab.slug}`}
                                                 style={{ display: isActive ? undefined : 'none' }}
                                                 {...dropHandlers}
@@ -893,7 +961,12 @@ export function Dashboard({
                                                     containerPadding={[0, 0]}
                                                 >
                                                     {tabGridWidgets.map((w) => (
-                                                        <div key={w.id}>
+                                                        <div
+                                                            key={w.id}
+                                                            data-aura-widget={w.id}
+                                                            data-aura-widget-type={w.type}
+                                                            data-aura-widget-rows={w.gridPos.h}
+                                                        >
                                                             <WidgetFrame
                                                                 config={w}
                                                                 editMode={isActive && editMode}

@@ -53,6 +53,7 @@ import { clampModalPos, usePersistedModalSize } from '../../utils/modalGeometry'
 import { getWidgetIcon } from '../../utils/widgetIconMap';
 import { type ColorThreshold } from '../../utils/colorThresholds';
 import { ColorThresholdsEditor } from '../config/ColorThresholdsEditor';
+import { FillLimitsSection } from '../config/FillLimitsEditor';
 import { SANDBOX_PRESETS, type SandboxPreset } from '../../utils/iframeSandbox';
 import { IFRAME_INTERACTION_MODES, resolveIframeInteractionMode } from '../../utils/iframeInteraction';
 import { applyDpNameFilter } from '../../utils/dpNameFilter';
@@ -205,6 +206,7 @@ const VIS_FIELDS_PER_TYPE: Partial<Record<WidgetType, { key: string; label: stri
     calendar: [
         { key: 'showCalName', label: 'Kalender-Name' },
         { key: 'showCalIcon', label: 'Kalender-Icon' },
+        { key: 'showCalDot', label: 'Farbpunkt / Farbbalken' },
         { key: 'showSummary', label: 'Terminname' },
         { key: 'showDate', label: 'Datum / Uhrzeit' },
         { key: 'showLocation', label: 'Ort' },
@@ -224,6 +226,7 @@ const VIS_FIELDS_PER_TYPE: Partial<Record<WidgetType, { key: string; label: stri
         { key: 'showShuffle', label: 'Shuffle' },
         { key: 'showPrev', label: 'Vorheriger' },
         { key: 'showNext', label: 'Nächster' },
+        { key: 'showStop', label: 'Stop (nur mit Stop-Datenpunkt)' },
         { key: 'showRepeat', label: 'Repeat' },
         { key: 'showVolume', label: 'Lautstärke-Slider' },
         { key: 'showMute', label: 'Mute' },
@@ -777,6 +780,61 @@ function CalendarEditPanel({
                     />
                 </div>
             )}
+            {/* -- Ausrichtung des Kalendernamens (#618) -- */}
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                    {t('wf.cal.nameAlign')}
+                </span>
+                <div className="flex gap-1">
+                    {(['left', 'center', 'right'] as const).map((p) => {
+                        const lbls: Record<string, string> = {
+                            left: t('wf.edit.posLeft'),
+                            center: t('wf.edit.posCenter'),
+                            right: t('wf.edit.posRight'),
+                        };
+                        const active = ((o.calNameAlign as string) ?? 'left') === p;
+                        return (
+                            <button
+                                key={p}
+                                onClick={() => setOpts({ calNameAlign: p })}
+                                className="text-[10px] px-2 py-0.5 rounded-full transition-colors"
+                                style={{
+                                    background: active ? 'var(--accent)' : 'var(--app-bg)',
+                                    color: active ? '#fff' : 'var(--text-secondary)',
+                                    border: `1px solid ${active ? 'var(--accent)' : 'var(--app-border)'}`,
+                                }}
+                            >
+                                {lbls[p]}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* -- Größe des Kalender-Icons (#618) -- */}
+            <div>
+                <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                        {t('wf.cal.iconSize')}
+                    </label>
+                    <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                        {((o.calIconSize as number) || 0) === 0
+                            ? t('wf.cal.iconSizeAuto')
+                            : `${o.calIconSize as number} px`}
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min={0}
+                    max={48}
+                    step={1}
+                    value={(o.calIconSize as number) || 0}
+                    onChange={(e) => setOpts({ calIconSize: Number(e.target.value) })}
+                    className="w-full h-1"
+                    style={{ accentColor: 'var(--accent)' }}
+                />
+            </div>
+
             <div>
                 <div className="flex items-center justify-between mb-1">
                     <label className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
@@ -8340,6 +8398,7 @@ export function WidgetFrame({
                                           ? [
                                                 { value: 'default', label: 'Tank' },
                                                 { value: 'battery', label: 'Batterie' },
+                                                { value: 'bar', label: 'Balken' },
                                                 { value: 'segments', label: 'LED-Segmente' },
                                                 { value: 'wave', label: 'Welle' },
                                             ]
@@ -13304,6 +13363,12 @@ export function WidgetFrame({
                                                     </div>
                                                 );
                                             })()}
+
+                                        {/* Adjustable limits with their own datapoints (#613). Kept in
+                                            its own dialog: a limit row carries a datapoint, an icon and
+                                            two colours, which does not belong in this column. Hides
+                                            itself in the layouts that have no bar to hang a line on. */}
+                                        <FillLimitsSection options={o} layout={config.layout} set={set} />
 
                                         {/* Warning colour past a share of the scale. Wins over the
                                             zones, because a value clamped to max cannot be told from
@@ -18586,9 +18651,9 @@ export function WidgetFrame({
                                             </label>
                                             <Toggle on={multiline} onClick={() => set({ multiline: !multiline })} />
                                         </div>
-                                        {/* Platzhalter (70%) + Feldbreite (30%) nebeneinander */}
+                                        {/* Platzhalter (50%) + Einheit (20%) + Feldbreite (30%) nebeneinander */}
                                         <div className="flex gap-2">
-                                            <div style={{ flex: '7 1 0%', minWidth: 0 }}>
+                                            <div style={{ flex: '5 1 0%', minWidth: 0 }}>
                                                 <label
                                                     className="text-[11px] mb-1 block"
                                                     style={{ color: 'var(--text-secondary)' }}
@@ -18600,6 +18665,24 @@ export function WidgetFrame({
                                                     value={placeholder}
                                                     onChange={(e) => set({ placeholder: e.target.value || undefined })}
                                                     placeholder="z.B. Nachricht eingeben…"
+                                                    className={inputCls3}
+                                                    style={inputSty3}
+                                                />
+                                            </div>
+                                            {/* Leer = keine Einheit. Beim Auswählen eines Datenpunkts
+                                                wird common.unit vorbelegt (siehe supportsUnit). */}
+                                            <div style={{ flex: '2 1 0%', minWidth: 0 }}>
+                                                <label
+                                                    className="text-[11px] mb-1 block"
+                                                    style={{ color: 'var(--text-secondary)' }}
+                                                >
+                                                    Einheit
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={(o.unit as string) ?? ''}
+                                                    onChange={(e) => set({ unit: e.target.value || undefined })}
+                                                    placeholder="z.B. °C"
                                                     className={inputCls3}
                                                     style={inputSty3}
                                                 />
@@ -19219,7 +19302,9 @@ export function WidgetFrame({
                                 const typePatch: { type?: WidgetType } =
                                     allowTypeChange && detected ? { type: detected.type } : {};
                                 const effectiveType = (typePatch.type ?? config.type) as WidgetType;
-                                const supportsUnit = ['value', 'chart', 'gauge', 'fill'].includes(effectiveType);
+                                const supportsUnit = ['value', 'chart', 'gauge', 'fill', 'input'].includes(
+                                    effectiveType,
+                                );
                                 const unitAlreadySet = !!(config.options?.unit as string | undefined);
                                 const resolvedUnit = unit || detected?.unit;
                                 const unitPatch =

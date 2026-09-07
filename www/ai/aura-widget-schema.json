@@ -1,7 +1,7 @@
 {
   "$meta": {
     "name": "AURA widget schema",
-    "auraVersion": "0.53.3",
+    "auraVersion": "0.55.1",
     "generator": "tools/schema/gen-widget-schema.mjs",
     "purpose": "Describes every AURA widget type so a JSON widget/tab config can be generated and pasted into the dashboard editor (\"Widget importieren\").",
     "usage": [
@@ -1304,6 +1304,10 @@
           "type": "boolean",
           "description": "'input' cell: command field — clear the field after sending and never show the DP value"
         },
+        "inputUnit": {
+          "type": "string",
+          "description": "'input' cell: unit rendered right of the field (issue #622); empty = none. Named apart from the 'unit' cell type, which prints the widget's own unit."
+        },
         "showValue": {
           "type": "boolean",
           "description": "'progress' cell: overlay current value/percentage on top of bar"
@@ -1334,10 +1338,53 @@
               },
               "icon": {
                 "type": "string"
+              },
+              "image": {
+                "type": "string"
+              },
+              "render": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "image",
+                  "html",
+                  "icon"
+                ]
+              },
+              "size": {
+                "type": "number"
               }
             }
-          },
-          "description": "'select' cell: selectable value/label pairs (icon: Lucide/Iconify ID)"
+          }
+        },
+        "entriesSource": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "json"
+          ],
+          "description": "'select' cell: where the entries come from (default 'manual')"
+        },
+        "entriesDp": {
+          "type": "string",
+          "description": "'select' cell: datapoint holding the JSON list (entriesSource 'json'), may carry a ?path",
+          "datapoint": true
+        },
+        "entriesValueKey": {
+          "type": "string",
+          "description": "'select' cell: field name overrides for the JSON rows (empty = auto-detect)"
+        },
+        "entriesLabelKey": {
+          "type": "string"
+        },
+        "entriesColorKey": {
+          "type": "string"
+        },
+        "entriesIconKey": {
+          "type": "string"
+        },
+        "entriesImageKey": {
+          "type": "string"
         },
         "showSelectedLabel": {
           "type": "boolean",
@@ -2010,7 +2057,11 @@
         },
         "iconSize": {
           "type": "number",
-          "description": "Size in px of the row icon and of the icon/image switch. Unset = per-layout default."
+          "description": "Size in px of the row icon (left of the name). Unset = per-layout default."
+        },
+        "switchIconSize": {
+          "type": "number",
+          "description": "Size in px of the icon/image switch. Its own key, because a row can show BOTH a name icon and an icon switch (issue #616) — one shared size made the row icon jump to the switch size and hid the row-icon field in the editor. Falls back to `iconSize` so configs written before the split keep rendering unchanged."
         },
         "shutterMode": {
           "type": "string",
@@ -2462,6 +2513,10 @@
         "inputHeight": {
           "type": "number",
           "description": "Multi-line: height of the text area in px. Unset = the layout's default."
+        },
+        "inputShowUnit": {
+          "type": "boolean",
+          "description": "Show the entry's unit right of the field. Default false (issue #622)."
         },
         "id": {
           "type": "string",
@@ -3027,7 +3082,11 @@
         },
         "iconSize": {
           "type": "number",
-          "description": "Size in px of the row icon and of the icon/image switch. Unset = per-layout default."
+          "description": "Size in px of the row icon (left of the name). Unset = per-layout default."
+        },
+        "switchIconSize": {
+          "type": "number",
+          "description": "Size in px of the icon/image switch. Its own key, because a row can show BOTH a name icon and an icon switch (issue #616) — one shared size made the row icon jump to the switch size and hid the row-icon field in the editor. Falls back to `iconSize` so configs written before the split keep rendering unchanged."
         },
         "shutterMode": {
           "type": "string",
@@ -3479,6 +3538,10 @@
         "inputHeight": {
           "type": "number",
           "description": "Multi-line: height of the text area in px. Unset = the layout's default."
+        },
+        "inputShowUnit": {
+          "type": "boolean",
+          "description": "Show the entry's unit right of the field. Default false (issue #622)."
         },
         "id": {
           "type": "string",
@@ -3662,7 +3725,11 @@
         },
         "iconSize": {
           "type": "number",
-          "description": "Size in px of the row icon and of the icon/image switch. Unset = per-layout default."
+          "description": "Size in px of the row icon (left of the name). Unset = per-layout default."
+        },
+        "switchIconSize": {
+          "type": "number",
+          "description": "Size in px of the icon/image switch. Its own key, because a row can show BOTH a name icon and an icon switch (issue #616) — one shared size made the row icon jump to the switch size and hid the row-icon field in the editor. Falls back to `iconSize` so configs written before the split keep rendering unchanged."
         },
         "shutterMode": {
           "type": "string",
@@ -4114,6 +4181,10 @@
         "inputHeight": {
           "type": "number",
           "description": "Multi-line: height of the text area in px. Unset = the layout's default."
+        },
+        "inputShowUnit": {
+          "type": "boolean",
+          "description": "Show the entry's unit right of the field. Default false (issue #622)."
         }
       }
     },
@@ -4266,6 +4337,56 @@
         "vertical",
         "horizontal"
       ]
+    },
+    "FillLimit": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true,
+          "description": "Stable key, also used to address the row in the editor."
+        },
+        "label": {
+          "type": "string"
+        },
+        "datapoint": {
+          "type": "string",
+          "description": "Datapoint holding the limit. Empty = the fixed `value` below.",
+          "datapoint": true
+        },
+        "value": {
+          "type": "number",
+          "description": "Fixed limit, used when no datapoint is set."
+        },
+        "color": {
+          "type": "string",
+          "description": "Marker/handle colour. Empty = `--accent`."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon for the section ABOVE this limit."
+        },
+        "editable": {
+          "type": "boolean",
+          "description": "Draggable at runtime. Needs `datapoint` — a fixed value is configuration."
+        },
+        "step": {
+          "type": "number",
+          "description": "Snap while dragging, in display units."
+        },
+        "showValue": {
+          "type": "boolean",
+          "description": "Show the limit's value next to its marker."
+        },
+        "reachedColor": {
+          "type": "string",
+          "description": "Fill colour once the live value reaches this limit."
+        },
+        "bandColor": {
+          "type": "string",
+          "description": "Colour of the section ABOVE this limit."
+        }
+      }
     },
     "SandboxPreset": {
       "type": "string",
@@ -5804,6 +5925,10 @@
           "type": "boolean",
           "description": "Titelzeile des Zeilen-Popups ausblenden."
         },
+        "rowPopupPadding": {
+          "type": "number",
+          "description": "Innenabstand des Popups in px (0…40); undefined = View/Global."
+        },
         "rowPopupTitle": {
           "type": "string",
           "description": "Titel des Popups, das eine Zeile beim Antippen öffnet."
@@ -6177,6 +6302,21 @@
           "default": 1,
           "description": "Skaliert die Schrift der Terminliste."
         },
+        "calIconSize": {
+          "type": "number",
+          "default": 0,
+          "description": "Größe des Kalender-Icons in px. 0 = die Größe, die das jeweilige Layout vorgibt (Default 12, Agenda/Card 11, Compact 13, Custom 20)."
+        },
+        "calNameAlign": {
+          "type": "string",
+          "default": "left",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "description": "Ausrichtung des Kalendernamens (left/center/right). Wirkt dort, wo der Name eine eigene Zeile oder Spalte hat: Default, Card und Agenda mit fester calNameWidth."
+        },
         "calNameAlways": {
           "type": "boolean",
           "default": false,
@@ -6258,6 +6398,11 @@
           "type": "number",
           "default": 30,
           "description": "Neuladen alle n Sekunden. 0 = nie."
+        },
+        "showCalDot": {
+          "type": "boolean",
+          "default": true,
+          "description": "Farbige Markierung vor dem Termin anzeigen — im Default-Layout der Punkt, in Agenda der Balken. Card und Compact haben keine."
         },
         "showCalIcon": {
           "type": "boolean",
@@ -7958,7 +8103,10 @@
       },
       "layouts": [
         "default",
-        "battery"
+        "battery",
+        "segments",
+        "wave",
+        "bar"
       ],
       "conditionSlots": [
         "icon",
@@ -7989,9 +8137,40 @@
           "default": 80,
           "description": "Größe des Balkens in Prozent der verfügbaren Fläche."
         },
+        "baseBandColor": {
+          "type": "string",
+          "description": "Farbe des untersten Abschnitts. Leer = normale Füllfarbe."
+        },
+        "baseIcon": {
+          "type": "string",
+          "description": "Icon im untersten Abschnitt, also unter der niedrigsten Grenze. Der hat keine Grenze über sich, an der ein Icon hängen könnte."
+        },
         "colorZones": {
           "type": "boolean",
           "default": false
+        },
+        "limitClampNeighbours": {
+          "type": "boolean",
+          "default": true,
+          "description": "Eine gezogene Grenze darf die Grenzen unter und über ihr nicht überholen."
+        },
+        "limitCommitOnRelease": {
+          "type": "boolean",
+          "default": true,
+          "description": "Datenpunkt erst beim Loslassen schreiben. false schreibt bei jeder Bewegung — nur für träge Ziele sinnvoll."
+        },
+        "limits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "FillLimit"
+          },
+          "description": "Verstellbare Grenzen auf der Skala (#613) — Ladelimit, Entladegrenze, Priorisierungsschwelle. Jede Grenze bringt einen eigenen Datenpunkt mit und kann im Dashboard gezogen werden; sie teilen die Skala in Abschnitte, die je ein Icon und eine Farbe tragen. Icon und bandColor einer Grenze gelten für den Abschnitt ÜBER ihr; der unterste Abschnitt nutzt baseIcon/baseBandColor. Abschnittsfarben gewinnen über colorZones. Nur in den Layouts default, battery und bar — segments, wave und custom haben keinen durchgehenden Balken und ignorieren die Grenzen."
+        },
+        "limitsEditable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hauptschalter: false macht alle Grenzen zur reinen Anzeige, unabhängig von limit.editable."
         },
         "maxDatapoint": {
           "type": "string",
@@ -8792,6 +8971,11 @@
           ],
           "default": "left",
           "description": "Ausrichtung des eingegebenen Texts."
+        },
+        "unit": {
+          "type": "string",
+          "default": "",
+          "description": "Einheit rechts neben dem Eingabefeld, z. B. \"°C\". Leer = keine Einheit."
         }
       }
     },
@@ -9416,6 +9600,10 @@
           "type": "boolean",
           "description": "Titelzeile des Zeilen-Popups ausblenden."
         },
+        "rowPopupPadding": {
+          "type": "number",
+          "description": "Innenabstand des Popups in px (0…40); undefined = View/Global."
+        },
         "rowPopupTitle": {
           "type": "string",
           "description": "Titel des Popups, das eine Zeile beim Antippen öffnet."
@@ -9815,7 +10003,6 @@
         "reachTrueValues",
         "showIcon",
         "showStatusBadges",
-        "showTitle",
         "statusBadgesAlertOnly",
         "styleOverride",
         "transparency",
@@ -9880,20 +10067,27 @@
           "datapoint": true
         },
         "muteViaVolume": {
-          "type": "boolean",
+          "type": [
+            "boolean",
+            "string"
+          ],
           "default": false,
-          "description": "Stummschalten, indem die Lautstärke auf 0 gesetzt wird."
+          "description": "Stummschalten, indem die Lautstärke auf 0 gesetzt wird — für Geräte ohne schreibbaren Mute-Datenpunkt (Alexa). Neu immer als echter Boolean true; die Geräteerkennung hat früher den String \"true\" geschrieben, deshalb ist beides erlaubt."
         },
         "nextDp": {
-          "type": "boolean",
-          "default": false,
-          "description": "Datenpunkt für nächster Titel."
+          "type": "string",
+          "description": "Datenpunkt für nächster Titel.",
+          "datapoint": true
         },
         "pauseDp": {
-          "description": "Datenpunkt für Pause."
+          "description": "Datenpunkt für Pause.",
+          "type": "string",
+          "datapoint": true
         },
         "playDp": {
-          "description": "Datenpunkt für Wiedergabe starten."
+          "description": "Datenpunkt für Wiedergabe starten.",
+          "type": "string",
+          "datapoint": true
         },
         "playStateDp": {
           "type": "string",
@@ -9905,14 +10099,14 @@
           "description": "Wert von playStateDp, der \"spielt\" bedeutet."
         },
         "prevDp": {
-          "type": "boolean",
-          "default": false,
-          "description": "Datenpunkt für vorheriger Titel."
+          "type": "string",
+          "description": "Datenpunkt für vorheriger Titel.",
+          "datapoint": true
         },
         "repeatDp": {
-          "type": "boolean",
-          "default": false,
-          "description": "Datenpunkt für Wiederholung."
+          "type": "string",
+          "description": "Datenpunkt für Wiederholung.",
+          "datapoint": true
         },
         "showChips": {
           "type": "boolean",
@@ -9946,24 +10140,42 @@
           "type": "boolean",
           "default": true
         },
+        "showStop": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stop-Taste anzeigen (greift nur, wenn stopDp gesetzt ist)."
+        },
         "showSubtitle": {
           "type": "boolean",
           "default": true,
           "description": "Zweite Zeile unter dem Titel anzeigen."
+        },
+        "showTitle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Titelzeile anzeigen — wirkt NUR im Layout \"custom\" (Titelzelle). In \"default\" und \"compact\" zeichnet der Player seine eigene Kopfzeile und ignoriert die Option.",
+          "onlyLayouts": [
+            "custom"
+          ]
         },
         "showVolume": {
           "type": "boolean",
           "default": true
         },
         "shuffleDp": {
-          "type": "boolean",
-          "default": false,
-          "description": "Datenpunkt für Zufallswiedergabe."
+          "type": "string",
+          "description": "Datenpunkt für Zufallswiedergabe.",
+          "datapoint": true
         },
         "sourceDp": {
           "type": "string",
           "default": "",
           "description": "Datenpunkt der Quelle/des Geräts.",
+          "datapoint": true
+        },
+        "stopDp": {
+          "type": "string",
+          "description": "Datenpunkt, der die Wiedergabe stoppt. Gesetzt zeigt das Widget eine Stop-Taste neben Play/Pause; showStop schaltet sie wieder ab.",
           "datapoint": true
         },
         "titleDp": {
@@ -11030,6 +11242,10 @@
         "rowPopupHideTitle": {
           "type": "boolean",
           "description": "Titelzeile des Zeilen-Popups ausblenden."
+        },
+        "rowPopupPadding": {
+          "type": "number",
+          "description": "Innenabstand des Popups in px (0…40); undefined = View/Global."
         },
         "rowPopupTitle": {
           "type": "string",

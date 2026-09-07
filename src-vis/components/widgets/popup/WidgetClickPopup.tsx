@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { WidgetConfig, ClickAction } from '../../../types';
@@ -10,6 +10,8 @@ import {
     DEFAULT_BACKDROP_DIM,
     DEFAULT_POPUP_BACKGROUND,
     DEFAULT_POPUP_BORDER,
+    DEFAULT_POPUP_PADDING,
+    MAX_POPUP_PADDING,
 } from '../../../store/popupConfigStore';
 import { buildPopupSubMap, popupMainDp, subAll } from '../../../utils/popupPlaceholders';
 import { DynamicTitle } from '../DynamicTitle';
@@ -76,7 +78,7 @@ function normalizeAction(action: ClickAction): ClickAction {
     }
 }
 
-/** Percent option → clamped number; non-numeric/undefined falls back to `fallback`. */
+/** Numeric option (percent or px) → clamped number; non-numeric/undefined falls back to `fallback`. */
 function clampPct(value: number | undefined, max: number, fallback: number): number {
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
@@ -175,6 +177,16 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
         globalBackground ??
         DEFAULT_POPUP_BACKGROUND;
 
+    // Inner padding between the popup edge and the widgets inside (issue #621):
+    // same three levels, then the historical 12px. Handed to every body that draws
+    // a box around embedded widgets.
+    const globalPadding = usePopupConfigStore((s) => s.globalPopupPadding);
+    const padding = clampPct(
+        (widget.options?.popupPadding as number | undefined) ?? view?.padding ?? globalPadding,
+        MAX_POPUP_PADDING,
+        DEFAULT_POPUP_PADDING,
+    );
+
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             if (e.key === 'Escape') onClose();
@@ -209,6 +221,25 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
     const customWidth = widget.options?.popupWidth as number | undefined;
     const customHeight = widget.options?.popupHeight as number | undefined;
 
+    // The scrollbar lane is only reserved while the body really scrolls (issue #621).
+    // `stable both-edges` keeps a long popup view centred and clear of the scrollbar, but
+    // it also costs two scrollbar widths (~30 px) in every popup that fits — space a phone
+    // does not have. The toggle settles after one frame: reserving the lane can only make
+    // the content taller (so it keeps scrolling), releasing it only shorter (so it keeps
+    // fitting).
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const [scrolls, setScrolls] = useState(false);
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el || isIframe) return;
+        const measure = () => setScrolls(el.scrollHeight - el.clientHeight > 1);
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(el);
+        if (el.firstElementChild) ro.observe(el.firstElementChild);
+        return () => ro.disconnect();
+    }, [isIframe]);
+
     const body = (() => {
         switch (action.kind) {
             case 'popup-dimmer':
@@ -232,11 +263,18 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
             case 'popup-html':
                 return <HtmlPopupBody action={action} />;
             case 'popup-widget':
-                return <WidgetEmbedBody widget={widget} action={action} allWidgets={allWidgets} />;
+                return <WidgetEmbedBody widget={widget} action={action} allWidgets={allWidgets} padding={padding} />;
             case 'popup-dps':
-                return <DeviceDpsBody widget={widget} action={action} />;
+                return <DeviceDpsBody widget={widget} action={action} padding={padding} />;
             case 'popup-view':
-                return <TabEmbedBody viewId={action.viewId} triggerWidget={widget} dpOverride={action.dp} />;
+                return (
+                    <TabEmbedBody
+                        viewId={action.viewId}
+                        triggerWidget={widget}
+                        dpOverride={action.dp}
+                        padding={padding}
+                    />
+                );
             default:
                 return null;
         }
@@ -244,6 +282,7 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
 
     return createPortal(
         <div
+            data-aura-click-popup={action.kind}
             className="fixed inset-0 flex items-center justify-center z-[300] p-4"
             style={{ background: `rgba(0,0,0,${backdropDim / 100})` }}
             onClick={onClose}
@@ -301,10 +340,11 @@ export function WidgetClickPopup({ widget, action: rawAction, onClose, allWidget
                     (both-edges keeps the content centered) so a long popup-view's scrollbar
                     no longer overlaps the rightmost widgets. */}
                 <div
+                    ref={scrollRef}
                     className="overflow-auto flex"
                     style={{
                         flex: isIframe ? 'none' : '1 1 auto',
-                        scrollbarGutter: isIframe ? undefined : 'stable both-edges',
+                        scrollbarGutter: !isIframe && scrolls ? 'stable both-edges' : undefined,
                     }}
                 >
                     <div className="m-auto">{body}</div>

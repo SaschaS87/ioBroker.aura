@@ -5,7 +5,9 @@ import { useDashboardStore } from '../../store/dashboardStore';
 import {
     usePopupConfigStore,
     MAX_POPUP_TRANSPARENCY,
+    MAX_POPUP_PADDING,
     pctOrUndefined,
+    pxOrUndefined,
     colorOrUndefined,
 } from '../../store/popupConfigStore';
 import { PopupBackgroundField } from '../common/PopupBackgroundField';
@@ -170,6 +172,7 @@ export function ClickActionEditor({ config, onConfigChange, popupOnly, hidePopup
     const popupTransparency = o.popupTransparency as number | undefined;
     const popupBackdropDim = o.popupBackdropDim as number | undefined;
     const popupBackground = o.popupBackground as string | undefined;
+    const popupPadding = o.popupPadding as number | undefined;
 
     const layouts = useDashboardStore((s) => s.layouts);
 
@@ -1134,6 +1137,22 @@ export function ClickActionEditor({ config, onConfigChange, popupOnly, hidePopup
                         onChange={(v) => setOpts({ popupBackground: colorOrUndefined(v) })}
                         inheritLabel="View/Global"
                     />
+                    <div>
+                        <label className={labelCls} style={labelStyle}>
+                            Innenabstand (px, leer = View/Global)
+                        </label>
+                        <input
+                            type="number"
+                            min={0}
+                            max={MAX_POPUP_PADDING}
+                            step={2}
+                            value={popupPadding ?? ''}
+                            onChange={(e) => setOpts({ popupPadding: pxOrUndefined(e.target.value) })}
+                            placeholder="View/Global"
+                            className={inputCls}
+                            style={inputStyle}
+                        />
+                    </div>
                 </div>
             )}
 

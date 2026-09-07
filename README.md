@@ -115,6 +115,60 @@ So the path of any release is: `-nextN` test build → **Latest** (published, on
 
 _Older releases: see [CHANGELOG_OLD.md](CHANGELOG_OLD.md)._
 
+### 0.55.2 (2026-09-07)
+- Input field - optional unit next to the field, in the Eingabefeld widget, the static and dynamic list rows and the Universal Widget cell ([#622](https://github.com/hdering/ioBroker.aura/issues/622))
+
+
+### 0.55.1 (2026-09-07)
+- 🌟 **New feature:** Popups - the inner padding is now adjustable (globally, per popup view, per click action), and the scrollbar lane is only reserved while the popup really scrolls, so list rows in a popup get the full width ([#621](https://github.com/hdering/ioBroker.aura/issues/621))
+
+
+### 0.55.0 (2026-09-06)
+- 🌟 **New feature:** Universal Widget - the select cell can now take its entries from a JSON datapoint, and shows icons, images and HTML inside the dropdown, just like the standalone select widget ([#615](https://github.com/hdering/ioBroker.aura/issues/615))
+- MCP server - aura_rendered now lists every widget of the tab, including the ones that draw nothing, and prints the content height next to the rendered one; a card that is simply larger than it needs to be is no longer reported as a deviation
+- 🌟 **New feature:** Calendar - the calendar name, the event title, the date, the location and the coloured marker each carry their own CSS class now; the coloured dot/bar can be switched off, the calendar name aligned and the calendar icon resized in the editor ([#618](https://github.com/hdering/ioBroker.aura/issues/618))
+- 🌟 **New feature:** General - Aura now points out a newer adapter version: the admin sidebar shows it next to the version number, and an optional instance setting announces it in the frontend as a message ([#617](https://github.com/hdering/ioBroker.aura/issues/617))
+- 🌟 **New feature:** Dynamic list - a row can be given its own icon size even when the icon itself comes from the list-wide setting; the entry's icon button now shows that inherited icon faintly ([#616](https://github.com/hdering/ioBroker.aura/issues/616))
+- Settings - a device keeps its client ID: it is stored in the browser instead of being derived from the browser version, so a browser update no longer turns a named device into a new, nameless duplicate. A fixed, speaking ID can now be assigned per device, either in Connected Devices or by opening Aura with ?client=living-room-tablet ([#620](https://github.com/hdering/ioBroker.aura/issues/620))
+- 🌟 **New feature:** General - condition rules can be reordered afterwards: drag the new grip in the rule header or use the up/down arrows. Works everywhere rules are edited - widget and tab conditions, the list-wide and per-entry rules of the static and dynamic list, the datapoints of a second line, and the cells of the universal widget ([#623](https://github.com/hdering/ioBroker.aura/issues/623))
+
+
+### 0.54.2 (2026-09-05)
+- Fill - dragging an adjustable limit no longer triggers the click action of the surrounding group ([#619](https://github.com/hdering/ioBroker.aura/issues/619))
+- AI access (MCP) - the dashboard now reports the heights it really renders; aura_rendered shows what scrolls and where the estimate is off
+- AI access (MCP) - aura_update_widgets changes several widgets in one validated write, so rearranging a column no longer fails on intermediate overlaps
+- AI access (MCP) - aura_measure says how each widget type reacts to height, and aura_dashboard says on which row every tab ends
+- AI access (MCP) - tab paths and popup names are accepted exactly as the error messages print them
+- AI access (MCP) - new multiroom recipe, and an option a widget only reads on another layout is now reported instead of silently ignored
+
+
+### 0.54.1 (2026-09-05)
+- List - the icon size of a row can be set for every display type again, and an icon switch now has a size of its own ([#616](https://github.com/hdering/ioBroker.aura/issues/616))
+
+
+### 0.54.0 (2026-09-05)
+- Mediaplayer - a stop datapoint now works: a stop button appears next to play/pause when one is configured
+- Mediaplayer - players found by device detection (Alexa, Sonos, Spotify, Kodi) can be edited through AI access again; their next/previous/shuffle/repeat datapoints were declared as switches and every write was refused
+- AI access - widgets can be edited far more reliably: a leftover option no longer blocks every change, a position can be changed one value at a time, every write is read back and reported honestly, the new tool aura_compact clears editor-only overlaps, and height measurement now uses real content (charts, chips, media players, energy balances, carousels) with a row factor measured per list layout
+- 🌟 **New feature:** Fill level - adjustable limits: any number of lines on the scale, each from its own datapoint, draggable in the dashboard and written straight back - charge ceiling, discharge floor, priority thresholds ([#613](https://github.com/hdering/ioBroker.aura/issues/613))
+- 🌟 **New feature:** Fill level - the sections between two limits carry their own colour and their own icon, and the fill can switch colour as soon as a limit is reached ([#613](https://github.com/hdering/ioBroker.aura/issues/613))
+- 🌟 **New feature:** Fill level - new "Balken" layout: a flat bar with rounded ends for a limit that is not a tank ([#613](https://github.com/hdering/ioBroker.aura/issues/613))
+
+
+### 0.53.5 (2026-09-04)
+- AI access (MCP) - below the delete permission, a write that leaves existing widgets out is now refused instead of removing them ([#614](https://github.com/hdering/ioBroker.aura/issues/614))
+
+
+### 0.53.4 (2026-09-04)
+- 🌟 **New feature:** Popups - the background colour can now be set globally, per popup view and per click action; new theme tokens `--popup-bg` / `--popup-border` colour every popup of a layout ([#611](https://github.com/hdering/ioBroker.aura/issues/611))
+- AI (MCP) - aura_measure now computes heights for the dashboard's own font scale and widget padding instead of the default ones, and counts a section separator with a heading as the taller row it is; list heights used to come out too small from about four rows on
+- Overview - new card explaining that Aura can now be controlled by an AI assistant over MCP, with the setup steps and a link to the documentation; it now sits above the health cards instead of below them, and once MCP is switched on it shrinks to a status line naming the level the assistant runs at, unfoldable back into the full guide
+- Overview - the orphaned-datapoint and broken-reference lists show five entries each and move the rest into a "show all" dialog, so a damaged installation no longer stretches the page and pushes everything below it out of sight
+- General - the loading screen now reports an unreachable ioBroker server after 8 seconds instead of spinning forever without explanation, and offers a reload button
+- AI (MCP) - the endpoint can now be reached through `mcp-remote`, which is what Claude Desktop needs: OAuth discovery probes are answered with a plain 404 instead of the dashboard page, so the bridge no longer dies with `Unexpected token '<'`; a wrong token now reports itself as one instead of failing somewhere inside an OAuth flow, and browser-hosted clients get the CORS preflight they need ([#612](https://github.com/hdering/ioBroker.aura/issues/612))
+- Settings - the MCP section now offers two ready-made client blocks side by side: the short HTTP one for Claude Code, and one that runs the same server through mcp-remote for Claude Desktop, which cannot speak HTTP itself ([#612](https://github.com/hdering/ioBroker.aura/issues/612))
+
+
 ### 0.53.3 (2026-09-03)
 - MCP server - aura_measure counts the last-change line under a list row (+13.7 px): per affected row for the static list, for every row where the dynamic list switches it on list-wide
 - MCP server - the widget schema no longer advertises 45 options a widget never reads: the option reader followed an import into another widget and attributed its options to the wrong type (the static list alone carried 25 of them, among them maxRows, entryDisplay and groupByRoom — all measured as ineffective)
@@ -194,70 +248,25 @@ _Older releases: see [CHANGELOG_OLD.md](CHANGELOG_OLD.md)._
 - 🌟 **New feature:** Calendar - multi-day events can be shown as one entry per day ([#608](https://github.com/hdering/ioBroker.aura/issues/608))
 
 
-### 0.52.1 (2026-09-01)
-- AI assistant (MCP, beta) - two new tools aimed at the same thing: dashboards that use what AURA can do. aura_recipes hands the model finished, valid widgets for the jobs that come up - a room as one list instead of a row of value tiles, a counter as consumption bars, a tile with colour thresholds and conditions, a status overview, a thermostat dial, a whole room tab. aura_review goes the other way and looks over a tab that already exists, naming what would make it better: tile rows that belong in one list, numbers with no good or bad range, a meter shown as its raw reading, a bar chart without an aggregation, a list with no second line - each finding names the widgets and the recipe that fixes it, and stays a suggestion. On top of that the instructions now send the model to a recipe and to an existing tab of the dashboard before it reads the schema, so a generated view no longer comes back as the bare minimum the schema accepts
-- Editor - the "AI prompt" dialog now pastes worked examples into the prompt (the same ones the MCP server hands out) and says what a good dashboard looks like, instead of only what is valid JSON. The old wording asked the model to leave options out, which is why generated views came back as bare tiles
-
-
-### 0.52.0 (2026-09-01)
-- 🌟 **New feature:** Sections and tabs can be protected with a PIN - the content only appears once the code was entered, no matter whether the section menu, the tab bar, a widget click action or a bookmarked URL led there. Set per section and per tab in the dashboard editor; a section and a tab inside it sharing the same code ask only once
-- Dashboard editor - the section settings popover follows the admin theme again instead of showing up dark, and its marker editor starts collapsed like the tab settings
-- 🌟 **New feature:** AI assistant (MCP, beta) - popup views and group children are now first class: every widget command works there too, and a single group tile can be added or changed without rewriting the whole group. New: reorder layouts, sections and tabs, copy or move a widget between tabs and whole tabs, sections, layouts and popup views, reusable widget templates (covered by backups), and a search that finds widgets by datapoint, type or title. Fewer silent failures: parallel edits no longer overwrite each other, an ambiguous widget id or view name is reported instead of guessed, an option written at the wrong level is an error instead of a no-op, deleting a group cleans up its leftover children, and slimmer schema answers keep prompts short
-
-
-### 0.51.3 (2026-08-31)
-- 🌟 **New feature:** Messages - [[dp]] placeholders in a message title or body now read live in the Meldungen widget, the header bell and the admin history, not only on the toast. A message sent by a condition freezes those values when the rule fires, so the archive keeps what the datapoint said at that moment ([#605](https://github.com/hdering/ioBroker.aura/issues/605))
-- General - copying a tab, a section or a layout now gives every copied widget (and every group child) a new id, so the widget picker of a click action can tell the copies apart. Dashboards that already hold such twins are repaired on load ([#606](https://github.com/hdering/ioBroker.aura/issues/606))
-- 🌟 **New feature:** Carousel - each element can carry its own caption per state, e.g. "Auto" while the datapoint is true and "Manuell" while it is false. Leaving a field empty falls back to the element label ([#603](https://github.com/hdering/ioBroker.aura/issues/603))
-- 🌟 **New feature:** Distribution chart and Fill level - a group with a 100 % reference, and a fill level, can now switch to a warning colour once a configurable share is reached. Both cap at full, so an exceeded budget used to look exactly like a met one; the colour now says which it is. The remainder segment keeps its own colour ([#607](https://github.com/hdering/ioBroker.aura/issues/607))
-- 🌟 **New feature:** Lists - a row can now be a select field: the dropdown of the select field widget with its full option set - values with text, colour, icon, image or HTML, entries from a JSON datapoint, the current entry as text, icon + text or icon only, and a fixed width. Available in the static and the dynamic list; the value list is shared with the button display, so switching between the two keeps it ([#609](https://github.com/hdering/ioBroker.aura/issues/609))
-
-
-### 0.51.2 (2026-08-30)
-- 🌟 **New feature:** Lists - a condition on a row now reaches every display type and every layout: text size and colour on the switch labels, sensor states, window contacts, sliders, steppers and the date/text fields, and the icon swap/hide in the minimal layout and on a datapoint of the second line ([#601](https://github.com/hdering/ioBroker.aura/issues/601))
-- 🌟 **New feature:** Conditions - a condition can now send one message per triggering list row: on a row condition (Datenpunkte verwalten) or on a widget rule watching "one entry" of the list. The message can address the row that triggered with {{dp}} / {{parent}} / {{name}} - e.g. a title of "Motion: [[{{parent}}.NAME]]" ([#605](https://github.com/hdering/ioBroker.aura/issues/605))
-
-
-### 0.51.1 (2026-08-29)
-- Advanced chart - a consumption ("delta") chart no longer runs on past its own data: the time axis used to end half a bucket after the newest reading, leaving an empty strip on the right, and now ends where the data does - so the curve reaches the right edge just as the bars reach the left one ([#598](https://github.com/hdering/ioBroker.aura/issues/598))
-- 🌟 **New feature:** Thermostat - new "Rundskala" layout: a 270 dial with a draggable handle, the setpoint in its centre and the +/- buttons in the arc gap; the scale colour is configurable, either fixed or from a colour-threshold scale ([#599](https://github.com/hdering/ioBroker.aura/issues/599))
-
-
-### 0.51.0 (2026-08-29)
-- 🌟 **New feature:** Distribution chart, fill level and gauge - the scale can now come from datapoints instead of fixed numbers: a group takes its 100 % from a datapoint (a prepayment, a budget), the unused part becomes a "Rest" segment and the bar stack direction can be flipped, so the used part sits at the bottom; the gauge min/max datapoints are now offered in the editor at all ([#596](https://github.com/hdering/ioBroker.aura/issues/596))
-- Advanced chart - a consumption ("delta") bar series no longer pushes the time axis out past the selected period: the window now opens on the same day/hour boundary the bars sit on, so lines and bars start at the same point instead of the line appearing to begin half a day late ([#598](https://github.com/hdering/ioBroker.aura/issues/598))
-- Advanced chart - decimal places and thousands separator moved from the options panel into the "Manage datapoints" dialog, whose tabs now run Mode (with a tip on what each mode is for), Number format, Series, Values - and a single series can override decimals and separator for itself ([#600](https://github.com/hdering/ioBroker.aura/issues/600))
-- List / Dynamic list - the row displays caught up with their standalone widgets: the slider brings scale and step, colour, bar look, track size, value / unit / min-max labels, write-on-release and a read-only progress bar; the input field a number range and a multi-line text area; the buttons colour, icon, image or HTML per button, a JSON datapoint as their source and a dropdown for long lists; the shutter a position slider in the row, a feedback datapoint, inverted counting and the slat control; on top of that a value mapping can draw an image per state and compare with an operator, and a window/door contact can show a lock datapoint as a padlock
-- List / Dynamic list - the per-datapoint editor now runs Datapoint, Label, Display, Second line, Conditions, Colour thresholds, Behaviour, so the display and its settings sit right below the name
-- List / Dynamic list - two display fixes: the dynamic list's "Slider" and "Value" displays now actually render (a slider used to be drawn only when the datapoint name looked like a dimmer), and a switch entry in the card layout now fills its cell with the labelled button instead of keeping the compact toggle
-- Dynamic list - the display of the datapoints (switch, slider, value mapping ...) can now be set once for the whole list in the datapoint dialog, including that display's own settings, while a single datapoint can still override it; decimals, thousands separator and the colour scale can now also be set per row instead of only list-wide
-- 🌟 **New feature:** Conditions - a rule can now set the text size as well: per element (title / value) in the widget conditions, and in the row rules of both lists, their second line and the custom-layout cells; the field sits above the text colour and empty keeps the configured size
-- Slider - the track thickness set in the editor is now applied (the field was written but never read)
-- Editor - dialogs no longer open partly off screen after a switch to a smaller resolution: the remembered size is capped to the current window (and kept for the bigger screen), and a dialog can no longer be dragged out of reach
-
-
-### 0.50.10 (2026-08-28)
-- 🌟 **New feature:** Advanced chart - a timeseries chart can now mix history series with JSON datapoint series on one time axis, e.g. measured values plus a solar forecast ([#595](https://github.com/hdering/ioBroker.aura/issues/595))
-- 🌟 **New feature:** Advanced chart - mode and series moved into the "Manage datapoints" dialog: series list on the left, the selected series in full detail on the right, global settings stay in the options panel
-- 🌟 **New feature:** Advanced chart - switching the mode no longer overwrites the series: a chart with a JSON series kept its data source after a look into another mode and back
-- Advanced chart - the value-label default and the stack percentage moved into the "Manage datapoints" dialog (tab "Values"), next to the series they apply to
-
-
-### 0.50.9 (2026-08-28)
-- Advanced chart - leaving the day navigation for a rolling range (7/30 days) no longer keeps the chart framed on that single day ([#594](https://github.com/hdering/ioBroker.aura/issues/594))
-
-
 ## License
 
 MIT License
 
-Copyright (c) 2026 Hermann Dering <aura@dering-online.de>
+Copyright (c) 2026 hdering <aura@dering-online.de>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+
+
+
+
+
 
 
 

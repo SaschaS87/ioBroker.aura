@@ -61,7 +61,8 @@ Die Datenpunkte kommen aus einem Filter und ändern sich beim Sync, deshalb wird
 | Quelle | |
 | --- | --- |
 | `entryIcon` · `entryIconSize` · `entryIconColor` | Dialog → Tab **Icon**: gilt für **alle** Zeilen |
-| `entries[].icon` · `entries[].iconSize` | Detail-Editor → Abschnitt **Beschriftung**: nur diese Zeile — die Farbe gibt es nur listenweit |
+| `entries[].icon` · `entries[].iconSize` | Detail-Editor → Abschnitt **Beschriftung**: nur diese Zeile — die Farbe gibt es nur listenweit. Die Größe gilt auch für das listenweite Icon, das die Zeile blass im Auswahl-Button zeigt |
+| `entries[].switchIconSize` | Größe des Schalter-Icons, unabhängig vom Icon vor dem Namen |
 | `icon` · `iconSize` · `iconColor` einer Bedingung | solange die Regel greift — gewinnt gegen beide |
 
 Der Tab zeigt eine Vorschau der ersten Zeilen und wie viele Datenpunkte ein eigenes Icon haben; **Eigene Icons entfernen** setzt sie zurück, damit die Vorgabe überall gilt.

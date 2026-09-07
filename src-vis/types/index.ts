@@ -95,6 +95,13 @@ export type WidgetType =
     | 'menu'
     | 'messages';
 
+/**
+ * Every layout any widget offers. `segments` / `wave` / `bar` belong to the fill
+ * widget — the flat `bar` is the one that carries the draggable limits (#613).
+ *
+ * Keep this a plain union of string literals: test/widget-schema.test.js parses it
+ * by splitting on `|`, so a comment between the members breaks the parse.
+ */
 export type WidgetLayout =
     | 'default'
     | 'card'
@@ -116,7 +123,10 @@ export type WidgetLayout =
     | 'light-custom'
     | 'knob-endless'
     | 'knob-scale'
-    | 'dial';
+    | 'dial'
+    | 'segments'
+    | 'wave'
+    | 'bar';
 
 // ── Light widget option types ─────────────────────────────────────────────────
 
@@ -296,13 +306,31 @@ export interface CustomCell {
     submitMode?: 'submit' | 'live'; // 'input' cell: write on Enter/Send/blur ('submit', default) or on every keystroke ('live')
     showSubmit?: boolean; // 'input' cell: show the Send button in submit mode (default true)
     clearAfterSubmit?: boolean; // 'input' cell: command field — clear the field after sending and never show the DP value
+    inputUnit?: string; // 'input' cell: unit rendered right of the field (issue #622); empty = none. Named apart from the 'unit' cell type, which prints the widget's own unit.
     // 'progress' type
     showValue?: boolean; // 'progress' cell: overlay current value/percentage on top of bar
     // 'state-text' type — reuses trueColor/falseColor + color/text styling
     trueText?: string; // 'state-text' cell / 'switch' cell (button mode): label rendered for truthy value
     falseText?: string; // 'state-text' cell / 'switch' cell (button mode): label rendered for falsy value
     // 'select' type — dropdown that maps DP values to labels (mini enum widget per cell)
-    entries?: { value: string; label: string; color?: string; icon?: string }[]; // 'select' cell: selectable value/label pairs (icon: Lucide/Iconify ID)
+    // Everything the standalone Auswahlfeld widget can do, including the JSON
+    // source and the rich render modes (issue #615).
+    entries?: {
+        value: string;
+        label: string;
+        color?: string;
+        icon?: string; // Lucide/Iconify ID
+        image?: string; // image URL or aura-file: path (render === 'image')
+        render?: 'text' | 'image' | 'html' | 'icon'; // default: text (html when the label is markup)
+        size?: number; // px size for image/icon entries
+    }[]; // 'select' cell: selectable value/label pairs
+    entriesSource?: 'manual' | 'json'; // 'select' cell: where the entries come from (default 'manual')
+    entriesDp?: string; // 'select' cell: datapoint holding the JSON list (entriesSource 'json'), may carry a ?path
+    entriesValueKey?: string; // 'select' cell: field name overrides for the JSON rows (empty = auto-detect)
+    entriesLabelKey?: string;
+    entriesColorKey?: string;
+    entriesIconKey?: string;
+    entriesImageKey?: string;
     showSelectedLabel?: boolean; // 'select' cell: render current label next to dropdown
     hideSelect?: boolean; // 'select' cell: hide dropdown and render entries as a button group
     entryDisplay?: 'icon' | 'icon-text' | 'text'; // 'select' cell: how the current entry is shown (default 'text')
@@ -422,6 +450,7 @@ export type ClickAction =
 // options.popupTransparency?: number – per-click-action popup transparency in % (0 = opaque; undefined = inherit view/global)
 // options.popupBackdropDim?: number – per-click-action backdrop dim in % (0 = clear; undefined = inherit view/global)
 // options.popupBackground?: string – per-click-action popup surface colour (any CSS colour; undefined = inherit view/global/theme)
+// options.popupPadding?: number – per-click-action inner padding in px (0…40; undefined = inherit view/global)
 
 // ── Messages (issue #429) ─────────────────────────────────────────────────────
 // An info / warning / error notice pushed into Aura by writing JSON — or plain

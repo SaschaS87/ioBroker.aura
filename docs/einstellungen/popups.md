@@ -12,13 +12,16 @@ Eigene Popup-Views erstellen und als Standard für Widget-Typen zuweisen. Ein Po
 | Popup-Transparenz | `0 %` = deckend, höhere Werte lassen das Dashboard durchscheinen (max. `95 %`) |
 | Hintergrund abdunkeln | Abdunklung hinter dem Popup; `0 %` = keine, Standard `60 %` |
 | Hintergrundfarbe | Fläche des Popups; leer = Theme (`--popup-bg`, sonst `--app-surface`) |
+| Innenabstand | Abstand zwischen Popup-Rand und den Widgets darin; `0`–`40 px`, Standard `12 px` |
 
-Alle vier Werte gelten als Standard für jedes Popup und lassen sich überschreiben:
+Alle fünf Werte gelten als Standard für jedes Popup und lassen sich überschreiben:
 
 | Ebene | Wo |
 | --- | --- |
 | Popup-View | Toolbar im View-Editor (leer = global) |
 | Klick-Aktion | Widget-Optionen → Klick-Aktion (leer = View/global) |
+
+Der **Innenabstand** wirkt zusätzlich zum Innenabstand der Widgets selbst (**Frontend-Design → Typografie & Spacing**). `0 px` lässt die Widget-Karten bis an den Popup-Rand laufen — auf dem Handy die schmalste Variante. Den Scrollbalken-Streifen reserviert das Popup nur, solange sein Inhalt wirklich scrollt.
 
 Die Hintergrundfarbe gibt es zusätzlich als Theme-Token: `--popup-bg` (und `--popup-border`) in **Layouts & Theme** färbt jedes Popup eines Layouts, ohne pro Popup etwas zu setzen — siehe [Design-Tokens](./design-tokens.md).
 
@@ -47,6 +50,8 @@ Steht der Datenpunkt beim Laden der Seite schon auf dem Trigger-Wert, öffnet si
 | --- | --- |
 | `aura.0.popup.open` | Alle Geräte |
 | `aura.0.clients.<clientId>.popup.open` | Nur dieses Gerät |
+
+Die `<clientId>` steht in Einstellungen → Verbundene Geräte und lässt sich dort fest vergeben (siehe [Client-ID](./settings#client-id)).
 
 Wert: Name oder ID einer Popup-View, oder JSON `{"view":"…","dp":"…","title":"…"}`. Der Datenpunkt wird nach dem Öffnen automatisch geleert.
 

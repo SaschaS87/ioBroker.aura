@@ -6,8 +6,9 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const SunCalc = require('suncalc');
-const { handleMcpRequest } = require('./lib/mcp/httpEndpoint');
-const { maskClientConfig, resolveClientConfig } = require('./lib/mcp/clientConfig');
+const { handleAuthDiscovery, handleMcpRequest } = require('./lib/mcp/httpEndpoint');
+const { maskClientConfig, resolveBothConfigs } = require('./lib/mcp/clientConfig');
+const { mergeRenderReport, renderReportEntry } = require('./lib/mcp/auraConfig');
 
 // ── Calendar fetch helper ────────────────────────────────────────────────────
 
@@ -65,6 +66,25 @@ function fetchUrl(url, _depth = 0) {
 // the frontend only ever consumes finished entries from `messages.history` /
 // `messages.lastMessage`, so there is no second rule set to keep in sync.
 
+/**
+ * Normalise a client id before it becomes an object-id segment. Ids used to be
+ * pure hex fingerprints; since #620 a user can pin a speaking one ("kitchen-tablet"),
+ * so dots (which would nest the tree), whitespace and exotic characters have to go.
+ * Mirrors sanitizeClientId() in src-vis/store/connectionStore.ts — keep both in sync.
+ */
+const RESERVED_CLIENT_IDS = ['register', 'resolution', 'deleterequest'];
+
+function sanitizeClientId(raw) {
+    const clean = String(raw == null ? '' : raw)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40);
+    // The relay states live directly under clients.*, so those names cannot be clients.
+    return RESERVED_CLIENT_IDS.includes(clean) ? '' : clean;
+}
+
 const MESSAGE_SEVERITIES = ['info', 'success', 'warning', 'error'];
 
 const MESSAGE_POSITIONS = [
@@ -103,6 +123,61 @@ const MESSAGE_ALIGNS = ['left', 'center', 'right'];
 /** How the card prints `ts` when the timestamp is switched on. */
 const MESSAGE_TIME_FORMATS = ['time', 'datetime'];
 const MESSAGE_DEFAULT_TIME_FORMAT = 'time';
+
+// ── Update check (issue #617) ────────────────────────────────────────────────
+// The repository object that the admin already keeps up to date is the only
+// source: no HTTP request of our own, and it automatically honours whichever
+// repo (stable/beta) the user has activated.
+/** Delay after startup before the first check — the repo object may still be loading. */
+const UPDATE_CHECK_DELAY_MS = 30_000;
+/** How often the repo is re-read afterwards. Admin refreshes it roughly daily. */
+const UPDATE_CHECK_INTERVAL_MS = 6 * 3600_000;
+/** Message ids carry the version so a fresh release is a new entry, not a silent replace. */
+const UPDATE_MESSAGE_ID_PREFIX = 'aura-update-';
+
+/**
+ * Split a version into comparable parts. Returns null for anything that is not
+ * `x.y.z` with an optional `-prerelease` tail (build metadata is ignored).
+ */
+function parseVersion(raw) {
+    const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(raw ?? '').trim());
+    if (!m) return null;
+    return {
+        core: [Number(m[1]), Number(m[2]), Number(m[3])],
+        pre: m[4] ? m[4].split('.') : null,
+    };
+}
+
+/**
+ * Semver ordering, so a beta install is never told to "update" to the older
+ * stable it came from. Returns -1 / 0 / 1, or null when either side is unparsable.
+ */
+function compareVersions(a, b) {
+    const va = parseVersion(a);
+    const vb = parseVersion(b);
+    if (!va || !vb) return null;
+    for (let i = 0; i < 3; i++) {
+        if (va.core[i] !== vb.core[i]) return va.core[i] < vb.core[i] ? -1 : 1;
+    }
+    // 1.0.0-beta.1 < 1.0.0 — a release without a prerelease tail always wins.
+    if (va.pre && !vb.pre) return -1;
+    if (!va.pre && vb.pre) return 1;
+    if (!va.pre && !vb.pre) return 0;
+    for (let i = 0; i < Math.max(va.pre.length, vb.pre.length); i++) {
+        const x = va.pre[i];
+        const y = vb.pre[i];
+        if (x === undefined) return -1;
+        if (y === undefined) return 1;
+        const nx = /^\d+$/.test(x) ? Number(x) : null;
+        const ny = /^\d+$/.test(y) ? Number(y) : null;
+        if (nx !== null && ny !== null) {
+            if (nx !== ny) return nx < ny ? -1 : 1;
+        } else if (x !== y) {
+            return x < y ? -1 : 1;
+        }
+    }
+    return 0;
+}
 
 /** ioBroker object ids allow a restricted charset — layout slugs are free user text. */
 function sanitizeIdSegment(raw) {
@@ -588,7 +663,11 @@ class Aura extends utils.Adapter {
                 return;
             }
 
-            const cId = String(reg.clientId);
+            const cId = sanitizeClientId(reg.clientId);
+            if (!cId) {
+                await this.setStateAsync('clients.register', '', true);
+                return;
+            }
             const displayName = reg.name ? String(reg.name) : cId.slice(0, 8);
 
             await this._ensureClientTree(cId, displayName);
@@ -620,7 +699,7 @@ class Aura extends utils.Adapter {
                 await this.setStateAsync('clients.resolution', '', true);
                 return;
             }
-            const cId = payload && payload.clientId ? String(payload.clientId) : '';
+            const cId = payload ? sanitizeClientId(payload.clientId) : '';
             const width = Number(payload && payload.width);
             const height = Number(payload && payload.height);
             const userAgent = payload && payload.userAgent ? String(payload.userAgent) : '';
@@ -654,7 +733,7 @@ class Aura extends utils.Adapter {
 
         // Client delete relay: frontend writes clientId → adapter deletes all child objects explicitly
         if (id.endsWith('clients.deleteRequest') && state && !state.ack && state.val) {
-            const clientId = String(state.val).trim();
+            const clientId = sanitizeClientId(state.val);
             if (clientId) {
                 const base = `${this.namespace}.clients.${clientId}`;
                 const toDelete = [
@@ -902,6 +981,17 @@ class Aura extends utils.Adapter {
                 return;
             }
             const { pathname } = parsedUrl;
+
+            // Discovery probes must never reach the SPA fallback. An unknown path
+            // without a file extension is answered with index.html and status 200,
+            // so a client asking /.well-known/oauth-authorization-server got
+            // "<!doctype html>" where it expected JSON and died on JSON.parse —
+            // which is exactly what stops mcp-remote (Claude Desktop) from
+            // connecting. A plain 404 is the honest answer: /mcp authenticates
+            // with a static token, there is no authorization server to find. (#612)
+            if (handleAuthDiscovery(pathname, res, req.method)) {
+                return;
+            }
 
             // MCP endpoint for AI assistants. Off unless enabled in the instance
             // config, and it refuses everything without a token — this server has
@@ -2121,6 +2211,122 @@ class Aura extends utils.Adapter {
         }
     }
 
+    // ── Update check (issue #617) ────────────────────────────────────────────
+
+    /**
+     * Latest version of this adapter according to the activated repositories.
+     * Returns { version, repo } or null when the repo object holds nothing usable
+     * (fresh installation, repo never fetched, adapter not listed there).
+     */
+    async _readRepoVersion() {
+        const sys = await this.getForeignObjectAsync('system.config');
+        const active = sys?.common?.activeRepo ?? [];
+        const names = (typeof active === 'string' ? [active] : Array.isArray(active) ? active : []).map(String);
+        const repos = (await this.getForeignObjectAsync('system.repositories'))?.native?.repositories || {};
+        // js-controller 5 allows several repositories at once; the highest offer wins.
+        const usable = names.filter((n) => repos[n]);
+        let best = null;
+        for (const name of usable.length ? usable : Object.keys(repos)) {
+            const version = repos[name]?.json?.[this.name]?.version;
+            if (!parseVersion(version)) continue;
+            if (!best || compareVersions(best.version, version) === -1) {
+                best = { version: String(version).trim(), repo: name };
+            }
+        }
+        return best;
+    }
+
+    /** Language for the update notice. system.config decides, English otherwise. */
+    async _systemLanguage() {
+        if (this._sysLanguage === undefined) {
+            try {
+                const sys = await this.getForeignObjectAsync('system.config');
+                this._sysLanguage = sys?.common?.language || 'en';
+            } catch {
+                this._sysLanguage = 'en';
+            }
+        }
+        return this._sysLanguage;
+    }
+
+    /**
+     * Compare the installed version against the repository and cache the verdict
+     * for the `updateInfo` command. The admin badge always gets it; the frontend
+     * notice only when it is switched on in the instance config (off by default —
+     * nobody wants an update banner on a wall tablet unasked).
+     */
+    async _checkForUpdate() {
+        const installed = this._installedVersion || '';
+        try {
+            const latest = await this._readRepoVersion();
+            // Strictly newer only: a beta install must not be told to "update" to
+            // the older stable release it was built from.
+            const newer = !!latest && compareVersions(installed, latest.version) === -1;
+            const announced = this._updateInfo?.latest || null;
+            this._updateInfo = {
+                installed,
+                latest: latest ? latest.version : null,
+                repo: latest ? latest.repo : null,
+                updateAvailable: newer,
+                checkedAt: Date.now(),
+            };
+            if (newer) {
+                if (announced !== latest.version) {
+                    this.log.info(
+                        `[update] ${latest.version} available (installed ${installed}, repo "${latest.repo}")`,
+                    );
+                }
+                if (this.config.updateNotify === true) await this._notifyUpdate(latest.version, installed);
+            }
+        } catch (e) {
+            this.log.debug(`[update] check failed: ${e.message}`);
+        }
+        return this._updateInfo;
+    }
+
+    /**
+     * Raise the notice through the ordinary message pipeline, so it shows up in
+     * the toast layer, the bell and the archive without a second mechanism.
+     *
+     * The id carries the version, which makes the archive itself the memory: an
+     * entry for this version means every client was told already, and an adapter
+     * restart does not pop the same toast a second time. The notice for a version
+     * that has since been superseded is dropped in the same breath.
+     */
+    async _notifyUpdate(latest, installed) {
+        const id = `${UPDATE_MESSAGE_ID_PREFIX}${latest}`;
+        const history = await this._readMessageHistory();
+        if (history.some((m) => m && m.id === id)) return false;
+        const kept = history.filter(
+            (m) => !(m && typeof m.id === 'string' && m.id.startsWith(UPDATE_MESSAGE_ID_PREFIX)),
+        );
+        if (kept.length !== history.length) await this._writeMessageHistory(kept);
+        const de = (await this._systemLanguage()) === 'de';
+        await this._deliverMessage(
+            JSON.stringify({
+                id,
+                severity: 'info',
+                icon: 'mdi:package-up',
+                title: de ? 'Update verfügbar' : 'Update available',
+                text: de
+                    ? `Aura ${latest} ist verfügbar — installiert ist ${installed}.`
+                    : `Aura ${latest} is available — ${installed} is installed.`,
+            }),
+            { kind: 'global' },
+        );
+        return true;
+    }
+
+    /** First check shortly after startup, then on a slow interval. */
+    _startUpdateCheck() {
+        const run = () => this._checkForUpdate().catch(() => {});
+        this._updateCheckTimeout = this.setTimeout(() => {
+            this._updateCheckTimeout = null;
+            run();
+        }, UPDATE_CHECK_DELAY_MS);
+        this._updateCheckInterval = this.setInterval(run, UPDATE_CHECK_INTERVAL_MS);
+    }
+
     /**
      * One-time migration for the MCP token.
      *
@@ -2261,6 +2467,26 @@ class Aura extends utils.Adapter {
             native: {},
         });
 
+        // ── Rendered widget geometry (read-only, written by the frontend) ────
+        // What the widgets of the open tab actually measure in the browser. The
+        // MCP server can compute a height from its metrics table but cannot look
+        // at the result — and that table ages with every CSS change. The frontend
+        // reports rendered height, content height and "does it scroll" per widget
+        // once a tab has settled (src-vis/utils/renderReport.ts → sendTo
+        // 'renderReport'), and aura_rendered reads it back from here.
+        await this.setObjectNotExistsAsync('info.rendered', {
+            type: 'state',
+            common: {
+                name: 'Rendered widget geometry per tab (JSON, written by the frontend)',
+                type: 'string',
+                role: 'json',
+                read: true,
+                write: false,
+                def: '',
+            },
+            native: {},
+        });
+
         // ── Installed adapter version ────────────────────────────────────────
         // Read-only mirror of package.json/io-package common.version so the
         // running version can be bound anywhere in the frontend (or read by
@@ -2284,6 +2510,8 @@ class Aura extends utils.Adapter {
         } catch {
             /* ignore — leave empty */
         }
+        // Kept in memory too: the update check compares against it on every run.
+        this._installedVersion = installedVersion;
         await this.setStateAsync('info.version', { val: installedVersion, ack: true });
 
         // ── Theme mode DPs ───────────────────────────────────────────────────
@@ -2794,13 +3022,21 @@ class Aura extends utils.Adapter {
                         changed = true;
                         this.log.info(`localLinks updated to port ${port}${base ? ` (custom URL: ${base})` : ''}`);
                     }
-                    // The generated client block shows the token in full so it can be
-                    // copied; once it has been stored there is no reason for it to
-                    // stay readable on every later visit to the config page.
-                    const maskedMcp = maskClientConfig(obj.native?.mcpClientConfig);
-                    if (maskedMcp) {
-                        obj.native.mcpClientConfig = maskedMcp;
-                        changed = true;
+                    // The generated client blocks show the token in full so they can
+                    // be copied; once they have been stored there is no reason for it
+                    // to stay readable on every later visit to the config page. Both
+                    // blocks carry it, so both are masked — leaving one behind would
+                    // defeat the whole point.
+                    let maskedAny = false;
+                    for (const field of ['mcpClientConfig', 'mcpDesktopConfig']) {
+                        const masked = maskClientConfig(obj.native?.[field]);
+                        if (masked) {
+                            obj.native[field] = masked;
+                            changed = true;
+                            maskedAny = true;
+                        }
+                    }
+                    if (maskedAny) {
                         this.log.info(
                             'aura: MCP client configuration stored — token replaced by a placeholder. ' +
                                 'Generate a new token to see a complete block again.',
@@ -2825,6 +3061,7 @@ class Aura extends utils.Adapter {
         }
 
         await this.startHttpServer();
+        this._startUpdateCheck();
         this.setState('info.connection', true, true);
         this.log.info('aura ready');
     }
@@ -3118,7 +3355,7 @@ class Aura extends utils.Adapter {
                 // The adapter cannot know which address the client will use to reach
                 // it, so a configured customUrl wins and otherwise a placeholder is
                 // left in — better an obvious gap than a confidently wrong host.
-                const snippet = await resolveClientConfig(
+                const blocks = await resolveBothConfigs(
                     {
                         customUrl: this.config.customUrl,
                         port: this.config.port,
@@ -3127,9 +3364,22 @@ class Aura extends utils.Adapter {
                     token,
                 );
                 reply({
-                    native: { mcpToken: token, mcpClientConfig: snippet },
+                    native: {
+                        mcpToken: token,
+                        mcpClientConfig: blocks.http,
+                        mcpDesktopConfig: blocks.desktop,
+                    },
                     result: 'MCP token generated',
                 });
+                return;
+            }
+
+            // ── Update check (issue #617) ─────────────────────────────────────
+            // What the admin badge asks for on connect. Serves the cached verdict;
+            // { refresh: true } forces a fresh look at the repository object.
+            if (msg.command === 'updateInfo') {
+                const force = !!(msg.message && msg.message.refresh === true);
+                reply(force || !this._updateInfo ? await this._checkForUpdate() : this._updateInfo);
                 return;
             }
 
@@ -3343,6 +3593,33 @@ class Aura extends utils.Adapter {
             if (msg.command === 'ping') {
                 // No-op round-trip so the frontend can measure network RTT.
                 reply({ ok: true, t: Date.now() });
+                return;
+            }
+
+            // ── Rendered geometry from the frontend ──────────────────────────
+            // What the widgets of the open tab actually measure in the browser.
+            // Shape and cap live in lib/mcp/auraConfig.js next to the reader, so
+            // writer and reader cannot drift apart in silence.
+            if (msg.command === 'renderReport') {
+                const parsed = renderReportEntry(msg.message);
+                if (!parsed) {
+                    reply({ ok: false, error: 'missing tabId or widgets' });
+                    return;
+                }
+                let store = {};
+                try {
+                    const cur = await this.getStateAsync('info.rendered');
+                    const prev = cur && cur.val ? JSON.parse(cur.val) : null;
+                    if (prev && prev.tabs && typeof prev.tabs === 'object') store = prev.tabs;
+                } catch {
+                    // Unreadable or not JSON — start over rather than lose the new report.
+                }
+                const tabs = mergeRenderReport(store, parsed.tabId, parsed.entry);
+                await this.setStateAsync('info.rendered', {
+                    val: JSON.stringify({ ts: parsed.entry.ts, tabs }),
+                    ack: true,
+                });
+                reply({ ok: true, tabId: parsed.tabId, widgets: parsed.entry.widgets.length });
                 return;
             }
 
@@ -3583,6 +3860,14 @@ class Aura extends utils.Adapter {
                 this.clearTimeout(this._perfPersistTimer);
                 this._perfPersistTimer = null;
             }
+            if (this._updateCheckTimeout) {
+                this.clearTimeout(this._updateCheckTimeout);
+                this._updateCheckTimeout = null;
+            }
+            if (this._updateCheckInterval) {
+                this.clearInterval(this._updateCheckInterval);
+                this._updateCheckInterval = null;
+            }
             // Flush any pending load-time samples before shutting down.
             if (this._perfDirty) {
                 this._perfPersistNow().finally(finish);
@@ -3597,6 +3882,7 @@ class Aura extends utils.Adapter {
 
 if (require.main !== module) {
     module.exports = (options) => new Aura(options);
+    module.exports.sanitizeClientId = sanitizeClientId;
 } else {
     new Aura();
 }

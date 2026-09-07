@@ -33,7 +33,11 @@ const {
     designColumns,
     loggingInstances,
     allTabs,
+    findPopupView,
     findTab,
+    mergeRenderReport,
+    renderReportEntry,
+    RENDER_REPORT_TABS,
     findWidget,
     mergeWidget,
     NODE_FIELDS,
@@ -42,7 +46,7 @@ const {
     collectDefIds,
     replaceTabWidgets,
 } = require('../../lib/mcp/auraConfig.js');
-const { handleMcpRequest } = require('../../lib/mcp/httpEndpoint.js');
+const { handleAuthDiscovery, handleMcpRequest } = require('../../lib/mcp/httpEndpoint.js');
 const { LEVELS, levelIndex, toolsFor } = require('../../lib/mcp/tools.js');
 const { RECIPES, findRecipe, renderRecipe, renderRecipeIndex } = require('../../lib/mcp/recipes.js');
 const {
@@ -54,7 +58,7 @@ const {
 } = require('../../lib/mcp/review.js');
 const { auditDashboard, renderAudit } = require('../../lib/mcp/audit.js');
 const { collectDatapointRefs, historyFindings, historyReads, writeRefs } = require('../../lib/mcp/dpFit.js');
-const { measureWidget, renderMeasure, rowsToPx, pxToRows } = require('../../lib/mcp/measure.js');
+const { heightClass, measureWidget, renderMeasure, rowsToPx, pxToRows } = require('../../lib/mcp/measure.js');
 const { designCanvas, renderCanvas } = require('../../lib/mcp/canvas.js');
 const { activeThemes, renderPalette, renderTheme, themeValues } = require('../../lib/mcp/theme.js');
 const THEME_TOKENS = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/ai/aura-theme-tokens.json'), 'utf8'));
@@ -62,10 +66,12 @@ const {
     TOKEN_PLACEHOLDER,
     baseUrl,
     clientConfig,
+    desktopConfig,
     hostAddresses,
     maskClientConfig,
     outboundAddress,
     resolveBaseUrl,
+    resolveBothConfigs,
 } = require('../../lib/mcp/clientConfig.js');
 
 const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/ai/aura-widget-schema.json'), 'utf8'));
@@ -102,10 +108,22 @@ check('an unknown widget type is named, with a suggestion', () => {
     assert.ok(hasError(res, /meintest du "switch"/));
 });
 
-check('an option the widget never reads is an error, not silence', () => {
+// A warning rather than an error, deliberately: the rules run over the whole
+// widget, so one option that has been renamed since it was written made the
+// widget unwritable — a pure gridPos nudge came back over an option nobody had
+// touched. AURA ignores what it does not read, so nothing is lost by writing it;
+// a wrong TYPE on a KNOWN option stays an error (next check).
+check('an option the widget never reads is a warning, not silence', () => {
     const res = validateWidget({ ...OK_SWITCH, options: { showTitel: true } }, schema);
-    assert.ok(hasError(res, /liest die Option "showTitel" nicht/));
-    assert.ok(hasError(res, /meintest du "showTitle"/));
+    assert.deepEqual(res.errors, []);
+    assert.ok(hasWarning(res, /liest die Option "showTitel" nicht/));
+    assert.ok(hasWarning(res, /meintest du "showTitle"/));
+    assert.ok(hasWarning(res, /bleibt wirkungslos/));
+});
+
+check('a wrong type on an option the widget DOES read stays an error', () => {
+    const res = validateWidget({ ...OK_SWITCH, options: { showTitle: 'ja' } }, schema);
+    assert.ok(hasError(res, /Option "showTitle": string übergeben, erwartet boolean/));
 });
 
 // ── Row options the chosen display never reads ───────────────────────────────
@@ -212,12 +230,14 @@ check('the labels of a contact row are documented and checked', () => {
     assert.deepEqual(res.errors, [], res.errors.join(' | '));
     assert.deepEqual(res.warnings, [], res.warnings.join(' | '));
 
+    // A warning, like an unknown option one level up: a field the structure does
+    // not know is inert, and refusing the write over it locks the widget.
     const typo = listOfRows([{ id: 'demo.a', displayType: 'contact', contactAppearance: { closed: { labl: 'zu' } } }]);
-    assert.ok(hasError(validateWidget(typo, schema), /"labl" gibt es hier nicht/));
+    assert.ok(hasWarning(validateWidget(typo, schema), /"labl" gibt es hier nicht/));
     const wrongState = listOfRows([
         { id: 'demo.a', displayType: 'contact', contactAppearance: { geschlossen: { label: 'zu' } } },
     ]);
-    assert.ok(hasError(validateWidget(wrongState, schema), /"geschlossen" gibt es hier nicht/));
+    assert.ok(hasWarning(validateWidget(wrongState, schema), /"geschlossen" gibt es hier nicht/));
 });
 
 check('a separator is not a row with a display', () => {
@@ -688,7 +708,7 @@ check('the fields of the chosen kind are checked, and a valid one passes', () =>
         { ...button, options: { clickAction: { kind: 'popup-view', viewId: 'pv-1', wieId: 'x' } } },
         schema,
     );
-    assert.ok(hasError(stray, /"wieId" gibt es hier nicht — meintest du "viewId"/));
+    assert.ok(hasWarning(stray, /"wieId" gibt es hier nicht — meintest du "viewId"/));
 
     const good = validateWidget(
         { ...button, options: { clickAction: { kind: 'link-tab', layoutId: 'l1', tabId: 't1' } } },
@@ -795,9 +815,10 @@ check('a bare array still gets the rules that are about the whole list', () => {
     const at = (id, x) => ({ ...OK_SWITCH, id, gridPos: { x, y: 0, w: 8, h: 4 } });
     assert.ok(hasError(validateAny([at('a', 0), at('b', 4)], schema), /überlappen/), 'overlaps');
     assert.ok(hasError(validateAny([at('a', 0), at('a', 8)], schema), /mehrfach/), 'duplicate ids');
-    // And the per-widget rules, with the index in the path.
+    // And the per-widget rules, with the index in the path — an unknown option is
+    // a warning, so that is where the index has to show up.
     assert.ok(
-        hasError(validateAny([at('a', 0), { ...at('b', 8), options: { showTitel: true } }], schema), /widgets\[1\]/),
+        hasWarning(validateAny([at('a', 0), { ...at('b', 8), options: { showTitel: true } }], schema), /widgets\[1\]/),
     );
 });
 
@@ -850,8 +871,8 @@ check('a stray field inside a condition is caught, with a suggestion', () => {
         withConditions([{ id: 'c', logic: 'AND', clauses: [], style: {}, hideWidgt: true }]),
         schema,
     );
-    assert.ok(hasError(res, /"hideWidgt" gibt es hier nicht/));
-    assert.ok(hasError(res, /meintest du "hideWidget"/));
+    assert.ok(hasWarning(res, /"hideWidgt" gibt es hier nicht/));
+    assert.ok(hasWarning(res, /meintest du "hideWidget"/));
 });
 
 check('a wrong value for a nested union is caught', () => {
@@ -896,8 +917,8 @@ check('conditions.elements has a shape now, keys and fields included', () => {
             },
         ]);
     assert.deepEqual(validateWidget(withElements({ title: { text: 'Alarm', bold: true } }), schema).errors, []);
-    assert.ok(hasError(validateWidget(withElements({ titel: { text: 'x' } }), schema), /meintest du "title"/));
-    assert.ok(hasError(validateWidget(withElements({ title: { fett: true } }), schema), /"fett" gibt es hier nicht/));
+    assert.ok(hasWarning(validateWidget(withElements({ titel: { text: 'x' } }), schema), /meintest du "title"/));
+    assert.ok(hasWarning(validateWidget(withElements({ title: { fett: true } }), schema), /"fett" gibt es hier nicht/));
 });
 
 check('a correct condition passes all the way down', () => {
@@ -1027,6 +1048,77 @@ check('a type measured only as a minimum is compared against that', () => {
     assert.equal(m.verdict, 'zu klein');
 });
 
+// ── Height class: which of the three "no number" situations this is ─────────
+// Reported from the field: aura_measure said „nicht gemessen“ for a player that
+// would have taken any height, for a list that has to be computed to the row and
+// for an autolist whose rows do not exist yet. Told apart, the player is not
+// resized three times to find a number it never needed.
+
+check('every widget type is filed under one of the four height classes', () => {
+    for (const type of Object.keys(schema.widgets)) {
+        const cls = heightClass(type, METRICS);
+        assert.ok(['fills', 'content', 'runtime', 'children'].includes(cls), `${type}: unknown height class ${cls}`);
+    }
+    assert.equal(heightClass('list', METRICS), 'content');
+    assert.equal(heightClass('autolist', METRICS), 'runtime');
+    assert.equal(heightClass('mediaplayer', METRICS), 'fills');
+    assert.equal(heightClass('echart', METRICS), 'fills');
+    assert.equal(heightClass('group', METRICS), 'children');
+});
+
+check('the class is on every line of the answer, with its legend underneath', () => {
+    const player = {
+        id: 'p',
+        type: 'mediaplayer',
+        title: 'Echo',
+        datapoint: '',
+        gridPos: { x: 0, y: 0, w: 14, h: 9 },
+    };
+    const auto = { id: 'a', type: 'autolist', title: 'A', datapoint: '', gridPos: { x: 0, y: 9, w: 10, h: 8 } };
+    const rows = [player, auto].map((w) => measureWidget(w, { metrics: METRICS, grid: GRID }));
+    const out = renderMeasure(rows, { grid: GRID, metrics: METRICS });
+    assert.match(out, /- p — mediaplayer.*\[fills\]/);
+    assert.match(out, /- a — autolist.*\[runtime: /);
+    assert.match(out, /Höhenverhalten: /);
+});
+
+// ── An option the widget reads only on some layouts ─────────────────────────
+// mediaplayer.showTitle was accepted by the validator and ignored by the widget:
+// the player draws its own header. In layout "custom" a title cell does honour
+// it, so the key is not a phantom — it is conditional, and the schema says so.
+
+check('an option that only works on another layout is a warning, not silence', () => {
+    const player = {
+        id: 'p',
+        type: 'mediaplayer',
+        title: 'Echo',
+        datapoint: '',
+        gridPos: { x: 0, y: 0, w: 14, h: 9 },
+        options: { showTitle: false },
+    };
+    const res = validateWidget(player, schema);
+    assert.equal(res.errors.length, 0);
+    assert.ok(hasWarning(res, /showTitle.*nur im Layout "custom"/));
+    const custom = { ...player, layout: 'custom', options: { showTitle: false, customGrid: { cells: [] } } };
+    assert.ok(!hasWarning(validateWidget(custom, schema), /showTitle/), 'on the custom layout it does work');
+});
+
+// ── Every suggestion has to work as an input ────────────────────────────────
+// A popup was offered as „Popup Wohnzimmer“ and only its id was accepted; a tab
+// was offered as „Layout / Bereich / Tab“ and only the bare name was.
+
+check('a popup answers to the name the listings print, prefix and all', () => {
+    const views = [{ id: 'pv-1', name: 'Wohnzimmer', widgets: [] }];
+    assert.equal(findPopupView(views, 'Wohnzimmer').view.id, 'pv-1');
+    assert.equal(findPopupView(views, 'Popup Wohnzimmer').view.id, 'pv-1');
+    assert.equal(findPopupView(views, 'Popup „Wohnzimmer“').view.id, 'pv-1');
+    assert.equal(findPopupView(views, 'pv-1').view.id, 'pv-1');
+    assert.ok(findPopupView(views, 'Küche').error);
+    // A popup actually called „Popup X“ still answers to its own name.
+    const named = [{ id: 'pv-2', name: 'Popup X', widgets: [] }];
+    assert.equal(findPopupView(named, 'Popup X').view.id, 'pv-2');
+});
+
 check('a runtime-filled list says so, and computes once given a row count', () => {
     const auto = { id: 'a', type: 'autolist', title: 'A', datapoint: '', gridPos: { x: 0, y: 0, w: 10, h: 8 } };
     assert.ok(!measureWidget(auto, { metrics: METRICS, grid: GRID }).requiredPx);
@@ -1039,30 +1131,59 @@ check('a runtime-filled list says so, and computes once given a row count', () =
 // konfigurierte Balken". The reason belongs to the type, nothing here reads the
 // widget — but in the slot where a verdict goes it was read as a finding, and the
 // answer was a second look at a widget that is fine.
+//
+// energiebilanz itself is measured now (224 px with one bar); the rule is checked
+// on a type that genuinely cannot be sized — a map fills any height it is given.
 check('a type without a measurement says so, and does not sound like a finding', () => {
-    const pv = {
-        id: 'pv',
-        type: 'energiebilanz',
-        title: 'PV',
+    const w = {
+        id: 'karte',
+        type: 'map',
+        title: 'Standort',
         datapoint: '',
         gridPos: { x: 0, y: 0, w: 20, h: 14 },
-        options: { bars: [{ id: 'b1', title: 'Erzeugung', entries: [{ id: 'e1', datapointId: 'demo.value' }] }] },
     };
-    const m = measureWidget(pv, { metrics: METRICS, grid: GRID });
+    const m = measureWidget(w, { metrics: METRICS, grid: GRID });
     assert.ok(!m.requiredPx);
     assert.ok(!m.unknown, 'a type-level reason is not an ask the caller can answer');
     assert.ok(m.unmeasured, 'it is the absence of a number for the type');
     assert.ok(!/braucht/.test(m.unmeasured), 'the reason must not read as a demand on this widget');
     const out = renderMeasure([m], { grid: GRID, metrics: METRICS });
-    assert.match(out, /nicht gemessen \(energiebilanz:/);
+    assert.match(out, /nicht gemessen \(map:/);
     assert.match(out, /kein Befund/, 'the answer has to say once that this is not a finding');
+});
 
-    // Same type, chartStyle 'donut' — reported alongside the bar one, so the
-    // reason has to hold for both styles and must not talk only about bars.
-    const ring = { ...pv, id: 'donut', options: { ...pv.options, chartStyle: 'donut', pieSize: 70 } };
-    const r = measureWidget(ring, { metrics: METRICS, grid: GRID });
-    assert.equal(r.unmeasured, m.unmeasured, 'the reason belongs to the type, not to a style');
-    assert.match(r.unmeasured, /Ringe/, 'a donut is not a row of bars');
+check('energiebilanz has a number, and says what it does not cover', () => {
+    // It sat in the skip list with "the height follows the configuration" — true
+    // of every type here. Measured with one bar of two entries; the counted model
+    // (base + per bar) was tried and thrown out by the linearity guard, because
+    // the bars are fitted into the card instead of stacked.
+    const pv = {
+        id: 'pv',
+        type: 'energiebilanz',
+        title: 'PV',
+        datapoint: '',
+        gridPos: { x: 0, y: 0, w: 20, h: 4 },
+        options: { bars: [{ id: 'b1', title: 'Erzeugung', entries: [{ id: 'e1', datapointId: 'demo.value' }] }] },
+    };
+    const m = measureWidget(pv, { metrics: METRICS, grid: GRID });
+    assert.ok(m.requiredPx > 200, `expected a measured minimum, got ${m.requiredPx}`);
+    assert.ok(!m.unmeasured);
+    assert.equal(m.verdict, 'zu klein');
+    const out = renderMeasure([m], { grid: GRID, metrics: METRICS });
+    assert.match(out, /Nicht eingerechnet:.*eingepasst, nicht/s);
+});
+
+check('the types that were measured EMPTY now carry a real number', () => {
+    // The bug class: OPTIONS_FOR named an option the widget does not read (chips),
+    // or left out what the type needs to draw at all (a history instance), so the
+    // walk-down measured the empty state and filed it as the minimum.
+    assert.ok(METRICS.minimum.chips.minPx > 60, 'chips was 44 px — an empty chip row');
+    assert.ok(METRICS.minimum.chart.minPx > 120, 'chart was 52 px — the bare card with "Keine Daten"');
+    assert.ok(METRICS.minimum.mediaplayer, 'mediaplayer had no measurement at all');
+    assert.ok(METRICS.minimum.carousel, 'carousel had none either');
+    for (const type of ['mediaplayer', 'energiebilanz', 'carousel', 'chart', 'echart']) {
+        assert.ok(!METRICS.notMeasurable[type], `${type} must no longer be filed as unmeasurable`);
+    }
 });
 
 check('without the metrics file the geometry half still answers', () => {
@@ -1156,15 +1277,31 @@ check('where every row has one, both sums agree — which is why it stood', () =
     );
 });
 
-check('a capped list counts only the rows it shows', () => {
+check('a capped list counts only the rows it shows, plus the „+N weitere“ row', () => {
     // maxRows cuts the list off; the rows below the cap are not drawn and their
     // second line is not drawn either. On the DYNAMIC list — the static one does
     // not read the option (see below).
+    //
+    // The footer IS in the number now. It used to be a footnote ("not included,
+    // give it a row of reserve"), which left the caller to redo the arithmetic —
+    // and the reported height was then one row too small twice over in the field.
     const w = someSubDps(12, 12);
     const capped = { ...w, type: 'autolist', options: { ...w.options, maxRows: 4 } };
     const m = measureWidget(capped, { metrics: METRICS, grid: GRID });
     assert.equal(m.items, 4);
-    assert.equal(m.requiredPx, Math.round(METRICS.counted.list.basePx + 4 * (METRICS.counted.list.perItemPx + SUB_PX)));
+    const rows = Math.round(METRICS.counted.list.basePx + 4 * (METRICS.counted.list.perItemPx + SUB_PX));
+    assert.ok(m.moreRow, 'the footer is drawn');
+    // A plain row: the footer is a line of text and draws no second line of its own.
+    assert.equal(m.moreRowPx, Math.round(METRICS.counted.list.perItemPx));
+    assert.equal(m.requiredPx, rows + m.moreRowPx);
+
+    // showMore: false takes it away again.
+    const noFooter = measureWidget(
+        { ...capped, options: { ...capped.options, showMore: false } },
+        { metrics: METRICS, grid: GRID },
+    );
+    assert.ok(!noFooter.moreRow);
+    assert.equal(noFooter.requiredPx, rows);
 });
 
 check('a cap the widget does not read is not applied', () => {
@@ -1248,7 +1385,7 @@ check('the static list is not charged for an option it does not read', () => {
     const m = measureWidget(w, { metrics: METRICS, grid: GRID });
     const plain = measureWidget(listWidget(12, 25), { metrics: METRICS, grid: GRID });
     assert.equal(m.requiredPx, plain.requiredPx);
-    assert.ok(hasError(validateWidget(w, schema), /liest die Option "showEntryLastChange" nicht/));
+    assert.ok(hasWarning(validateWidget(w, schema), /liest die Option "showEntryLastChange" nicht/));
 });
 
 const DIVIDER_PX = METRICS.counted.list.rowTypes.divider.perItemPx;
@@ -1313,6 +1450,142 @@ check('the metrics file says what presentation it was measured at', () => {
     assert.ok(METRICS.$meta.reference, 'run npm run metrics — the file predates the presentation correction');
     assert.ok(METRICS.counted.list.fontScalePx, 'the list must carry what a font-scale step is worth');
 });
+// ── Two-column layouts and the usable chart minimum ─────────────────────────
+// Both are structural, so they are checked against a hand-built metrics object:
+// the committed file has to be free to change its numbers without moving these.
+
+check('a layout with its own measurement of a factor wins over the type-wide one', () => {
+    // Measured per layout: the timestamp per entry is +13.5 px a row by default,
+    // +21.5 in "card", +6.0 in "compact" and ±0 in "minimal", where the pill puts
+    // it in the row it already has. One number for all of them was wrong in three
+    // of the four — reported from the field as exactly that ±0, against an answer
+    // that charged 13.7 px a row for a line nothing draws.
+    const stamp = {
+        key: 'lastChangePerEntry',
+        label: 'Zeitstempel je Eintrag',
+        when: { path: 'entries[].showLastChange', equals: true },
+        basePx: 0,
+        perItemPx: 13.5,
+    };
+    const metrics = {
+        $meta: { reference: { fontScale: 1, widgetPaddingPx: 16 } },
+        counted: {
+            list: {
+                item: 'Zeile',
+                basePx: 66,
+                perItemPx: 33,
+                modifiers: [stamp],
+                variants: {
+                    minimal: {
+                        label: 'minimal',
+                        basePx: 66,
+                        perItemPx: 33,
+                        // The layout measured the same factor as nothing.
+                        modifiers: [{ ...stamp, perItemPx: 0 }],
+                    },
+                    // No modifiers of its own: it keeps the type-wide number.
+                    card: { label: 'card', basePx: 66, perItemPx: 33 },
+                },
+            },
+        },
+        minimum: {},
+    };
+    const at = (layout) =>
+        measureWidget(
+            {
+                id: 'l',
+                type: 'list',
+                title: 'x',
+                ...(layout ? { layout } : {}),
+                gridPos: { x: 0, y: 0, w: 10, h: 40 },
+                options: { entries: Array.from({ length: 8 }, (_, i) => ({ id: `d.${i}`, showLastChange: true })) },
+            },
+            { metrics, grid: GRID },
+        );
+    assert.equal(at(null).requiredPx, Math.round(66 + 8 * 33 + 8 * 13.5), 'default: the type-wide number');
+    assert.equal(at('minimal').requiredPx, 66 + 8 * 33, 'minimal: nothing is charged');
+    assert.equal(at('card').requiredPx, Math.round(66 + 8 * 33 + 8 * 13.5), 'card: falls back to the type-wide one');
+});
+
+check('a two-column variant charges for the empty half of its last row', () => {
+    // Measured row by row in the browser: 1→96, 2→96, 3→124, 4→124 … 9→214 px.
+    // The straight line through the EVEN counts is exact on those and half a pair
+    // short on every odd one — nine rows came back 199 px for a widget needing 214.
+    const metrics = {
+        $meta: { reference: { fontScale: 1, widgetPaddingPx: 16 } },
+        counted: {
+            list: {
+                item: 'Zeile',
+                basePx: 66,
+                perItemPx: 33,
+                variants: { compact: { label: 'compact', basePx: 66, perItemPx: 14.75, columns: 2 } },
+            },
+        },
+        minimum: {},
+    };
+    const at = (n) =>
+        measureWidget(
+            {
+                id: 'l',
+                type: 'list',
+                title: 'x',
+                layout: 'compact',
+                gridPos: { x: 0, y: 0, w: 10, h: 40 },
+                options: { entries: Array.from({ length: n }, (_, i) => ({ id: `d.${i}` })) },
+            },
+            { metrics, grid: GRID },
+        );
+    // Pairs, not rows: an odd count costs the same as the even one above it.
+    assert.equal(at(3).requiredPx, at(4).requiredPx);
+    assert.equal(at(5).requiredPx, at(6).requiredPx);
+    assert.equal(at(9).requiredPx, at(10).requiredPx);
+    assert.equal(at(9).requiredPx, Math.round(66 + 10 * 14.75));
+    assert.match(at(9).basis, /9 Zeilen in 2 Spalten/);
+    // And a single-column layout is untouched by it.
+    const plain = measureWidget(
+        {
+            id: 'l',
+            type: 'list',
+            title: 'x',
+            gridPos: { x: 0, y: 0, w: 10, h: 40 },
+            options: { entries: Array.from({ length: 9 }, (_, i) => ({ id: `d.${i}` })) },
+        },
+        { metrics, grid: GRID },
+    );
+    assert.equal(plain.requiredPx, 66 + 9 * 33);
+    assert.equal(plain.columns, 1);
+});
+
+check('a chart is judged by the height it is readable at, with the hard one named', () => {
+    // A chart never loses content — eCharts and recharts paint into whatever box
+    // they get. Reported from use: a diagram at h=5 (132 px) has a drawing surface
+    // of 59 px and the answer was "passt, 80 px Luft".
+    const metrics = {
+        $meta: { reference: { fontScale: 1, widgetPaddingPx: 16 }, usablePlotPx: 140 },
+        counted: {},
+        minimum: { echart: { minPx: 58, usablePx: 222, atWidthPx: 240 } },
+    };
+    const w = { id: 'c', type: 'echart', title: 'Verlauf', gridPos: { x: 0, y: 0, w: 12, h: 5 } };
+    const m = measureWidget(w, { metrics, grid: GRID });
+    assert.equal(m.requiredPx, 222, 'the usable height decides the verdict');
+    assert.equal(m.hardMinPx, 58);
+    assert.equal(m.verdict, 'zu klein');
+    assert.equal(m.needRows, pxToRows(222, GRID));
+    const out = renderMeasure([m], { grid: GRID, metrics });
+    assert.match(out, /BRAUCHBAREN Mindesthöhe/);
+    assert.match(out, /c: 58 px/, 'the hard minimum is named as the floor');
+
+    // A type without a usable number keeps answering with the hard one.
+    const plainMetrics = { ...metrics, minimum: { gauge: { minPx: 162, atWidthPx: 160 } } };
+    const g = measureWidget(
+        { id: 'g', type: 'gauge', title: 'x', gridPos: { x: 0, y: 0, w: 8, h: 6 } },
+        { metrics: plainMetrics, grid: GRID },
+    );
+    assert.equal(g.requiredPx, 162);
+    assert.ok(!g.usable);
+    assert.ok(!/BRAUCHBAREN Mindesthöhe/.test(renderMeasure([g], { grid: GRID, metrics: plainMetrics })));
+});
+
 const AT = (fontScale, widgetPadding) => ({
     metrics: METRICS,
     grid: GRID,
@@ -1321,13 +1594,23 @@ const AT = (fontScale, widgetPadding) => ({
 
 check('a dashboard drawn like the measurement gets the measured numbers', () => {
     const plain = measureWidget(listWidget(8, 25), { metrics: METRICS, grid: GRID });
-    const same = measureWidget(
-        listWidget(8, 25),
-        AT(REF_PRESENTATION.fontScale, REF_PRESENTATION.widgetPaddingPx),
-    );
+    const same = measureWidget(listWidget(8, 25), AT(REF_PRESENTATION.fontScale, REF_PRESENTATION.widgetPaddingPx));
     assert.equal(same.requiredPx, plain.requiredPx);
-    // And it does not say anything about a presentation nobody changed.
-    assert.ok(!/Darstellung dieses Dashboards/.test(renderMeasure([plain], { grid: GRID, metrics: METRICS })));
+    // And it SAYS which presentation it used, even when that is the measured one.
+    // Reported from the field: the answer was compared against the real DOM and
+    // every row was out by exactly the correction — the dashboard's settings had
+    // not been picked up, and staying silent at the reference values is what made
+    // that invisible.
+    const out = renderMeasure([plain], { grid: GRID, metrics: METRICS });
+    assert.match(out, /Darstellung dieses Dashboards: Schriftskalierung 1, Innenabstand 16 px/);
+    assert.match(out, /das ist auch die Messgrundlage/);
+    const scaled = renderMeasure([measureWidget(listWidget(8, 25), AT(1.3, 8))], {
+        grid: GRID,
+        metrics: METRICS,
+        presentation: { fontScale: 1.3, widgetPadding: 8 },
+    });
+    assert.match(scaled, /Schriftskalierung 1\.3, Innenabstand 8 px/);
+    assert.match(scaled, /sind darauf umgerechnet/);
 });
 
 check('the inner padding sits twice in the chrome — two pixels per pixel', () => {
@@ -1337,10 +1620,7 @@ check('the inner padding sits twice in the chrome — two pixels per pixel', () 
     assert.equal(at(ref + 8) - at(ref), 16);
     // A minimum is a card too — it carries the padding just the same.
     const gauge = { id: 'g', type: 'gauge', title: 'G', datapoint: 'demo.value', gridPos: { x: 0, y: 0, w: 8, h: 3 } };
-    assert.equal(
-        measureWidget(gauge, AT(1, ref)).requiredPx - measureWidget(gauge, AT(1, ref - 8)).requiredPx,
-        16,
-    );
+    assert.equal(measureWidget(gauge, AT(1, ref)).requiredPx - measureWidget(gauge, AT(1, ref - 8)).requiredPx, 16);
 });
 
 check('the frame types that have no padding are not corrected for it', () => {
@@ -1379,8 +1659,12 @@ check('a row of fixed height stops the surcharge instead of scaling it', () => {
     const plain = (f) => measureWidget(listWidget(6, 25), AT(f, 16)).requiredPx;
     // The text row: the surcharge survives the scale unchanged.
     assert.equal(px('contact', 1) - plain(1), px('contact', 1.3) - plain(1.3));
-    // The control: it does not grow at all between the two measured scales.
-    assert.equal(px('shutter', 1), px('shutter', 1.3));
+    // The control: it stays where it is while the text row underneath it grows by
+    // a fifth. Not exactly equal — the two ends are measured to a tenth of a
+    // pixel, and six rows carry that rounding.
+    const grew = px('shutter', 1.3) - px('shutter', 1);
+    assert.ok(Math.abs(grew) <= 6, `a fixed control must not follow the scale, grew ${grew} px over 6 rows`);
+    assert.ok(plain(1.3) - plain(1) > 20, 'while the text row does follow it');
     assert.ok(px('shutter', 1) > plain(1), 'and it is the taller row at scale 1');
 });
 
@@ -1388,11 +1672,11 @@ check('the reported dashboard is measured the way it is drawn', () => {
     // The case from the report, end to end: ten value rows and two section
     // separators at padding 8 and scale 1.3 — measured at 480 px in the browser.
     const entries = [
-        { id: 'demo.0' },
-        { id: 'demo.sep1', divider: true, dividerLabel: 'Abschnitt' },
         ...Array.from({ length: 5 }, (_, i) => ({ id: `demo.a${i}` })),
+        { id: 'demo.sep1', divider: true, dividerLabel: 'Abschnitt' },
+        ...Array.from({ length: 3 }, (_, i) => ({ id: `demo.b${i}` })),
         { id: 'demo.sep2', divider: true, dividerLabel: 'Abschnitt' },
-        ...Array.from({ length: 5 }, (_, i) => ({ id: `demo.b${i}` })),
+        ...Array.from({ length: 2 }, (_, i) => ({ id: `demo.c${i}` })),
     ];
     const w = { ...listWidget(12, 9), options: { entries } };
     const m = measureWidget(w, AT(1.3, 8));
@@ -1631,16 +1915,17 @@ check('a capped runtime list becomes measurable', () => {
     assert.equal(noCount.items, 4);
 });
 
-check('the footer row is named as not included, not silently added', () => {
+check('the footer row is counted and said to be counted', () => {
     const w = { id: 'a', type: 'autolist', title: 'x', gridPos: { x: 0, y: 0, w: 8, h: 10 }, options: { maxRows: 6 } };
-    const out = renderMeasure([measureWidget(w, { metrics: METRICS, grid: GRID })], { grid: GRID, metrics: METRICS });
-    assert.match(out, /„\+N weitere“-Zeile steckt nicht in der Zahl/);
+    const m = measureWidget(w, { metrics: METRICS, grid: GRID });
+    const out = renderMeasure([m], { grid: GRID, metrics: METRICS });
+    assert.match(out, /„\+N weitere“-Zeile ist eingerechnet/);
+    assert.match(m.basis, /„\+N weitere“-Zeile/);
     const off = { ...w, options: { maxRows: 6, showMore: false } };
-    const outOff = renderMeasure([measureWidget(off, { metrics: METRICS, grid: GRID })], {
-        grid: GRID,
-        metrics: METRICS,
-    });
-    assert.ok(!/weitere“-Zeile steckt nicht/.test(outOff));
+    const mOff = measureWidget(off, { metrics: METRICS, grid: GRID });
+    const outOff = renderMeasure([mOff], { grid: GRID, metrics: METRICS });
+    assert.ok(!/weitere“-Zeile ist eingerechnet/.test(outOff));
+    assert.equal(m.requiredPx - mOff.requiredPx, m.moreRowPx);
 });
 
 check('the answer says which factors are NOT in the number', () => {
@@ -2138,6 +2423,70 @@ check('findTab refuses to guess when a name is ambiguous', () => {
     assert.ok(/Kein Tab/.test(findTab(LAYOUTS, { tab: 'Garage' }).error ?? ''));
 });
 
+check('a tab answers to the printed Layout / Bereich / Tab path', () => {
+    const byPath = findTab(LAYOUTS, { tab: 'Wohnzimmer / Start / Licht' });
+    assert.ok(!byPath.error, byPath.error);
+    assert.equal(byPath.tab.name, 'Licht');
+    // The path disambiguates a name that exists twice — without it, an error.
+    assert.ok(findTab(LAYOUTS, { tab: 'Licht' }).error);
+    assert.equal(findTab(LAYOUTS, { tab: 'Tablet / Haupt / Licht' }).tab.layoutName, 'Tablet');
+    assert.ok(findTab(LAYOUTS, { tab: 'Wohnzimmer / Start / Gibtsnicht' }).error);
+});
+
+check('a report from a browser is cut to shape, and a useless one is refused', () => {
+    assert.equal(renderReportEntry({ widgets: [] }), null, 'no tab id, no entry');
+    assert.equal(renderReportEntry({ tabId: 't1' }), null, 'no widgets, no entry');
+    const { tabId, entry } = renderReportEntry({
+        tabId: 't1',
+        tab: 'Wohnzimmer / Start / Licht',
+        ts: 1000,
+        client: 'c1',
+        clientName: 'Flurtablet',
+        viewport: { w: '1280', h: 800 },
+        presentation: { fontScale: 1.3, widgetPadding: 8 },
+        grid: { rowHeight: 20, gap: 10, snapX: 20 },
+        hidden: ['w-2', '', 3],
+        widgets: [{ id: 'w-1', type: 'list', rows: '14', px: 388.4, contentPx: 452, scrolls: 'ja' }],
+    });
+    assert.equal(tabId, 't1');
+    assert.equal(entry.viewport.w, 1280, 'numbers arrive as numbers');
+    assert.equal(entry.presentation.fontScale, 1.3);
+    assert.deepEqual(entry.widgets[0], {
+        id: 'w-1',
+        type: 'list',
+        rows: 14,
+        px: 388,
+        contentPx: 452,
+        scrolls: true,
+        autoBox: false,
+    });
+    // Whether the box sizes itself decides whether contentPx is a requirement, so
+    // it has to survive the trip through the store.
+    assert.equal(
+        renderReportEntry({
+            tabId: 't1',
+            widgets: [{ id: 'w-1', px: 120, contentPx: 120, autoBox: true }],
+        }).entry.widgets[0].autoBox,
+        true,
+    );
+    assert.deepEqual(entry.hidden, ['w-2'], 'condition-hidden ids arrive as a clean list of strings');
+});
+
+check('the store keeps one measurement per tab and drops the oldest over the cap', () => {
+    let store = {};
+    for (let i = 0; i < RENDER_REPORT_TABS + 5; i++) {
+        store = mergeRenderReport(store, `t${i}`, { ts: 1000 + i, widgets: [] });
+    }
+    assert.equal(Object.keys(store).length, RENDER_REPORT_TABS);
+    assert.ok(!store.t0, 'the oldest tab must have been dropped');
+    assert.ok(store[`t${RENDER_REPORT_TABS + 4}`], 'the newest tab must be kept');
+    // A second report for a tab replaces the first instead of piling up.
+    const before = Object.keys(store).length;
+    store = mergeRenderReport(store, 't10', { ts: 9999, widgets: [] });
+    assert.equal(Object.keys(store).length, before);
+    assert.equal(store.t10.ts, 9999);
+});
+
 check('allTabs flattens and replaceTabWidgets touches only the target tab', () => {
     assert.equal(allTabs(LAYOUTS).length, 3);
     const next = replaceTabWidgets(LAYOUTS, 't2', [{ id: 'neu' }]);
@@ -2263,8 +2612,11 @@ const wrongToken = await fetch(base, {
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer falsch' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
 });
-check('a wrong token is rejected too', () => {
-    assert.equal(wrongToken.status, 401);
+check('a wrong token is rejected with 403, not 401', () => {
+    // 401 makes every client library start an OAuth flow it cannot finish, and
+    // the user then reads a registration error instead of "wrong token". (#612)
+    assert.equal(wrongToken.status, 403);
+    assert.equal(wrongToken.headers.get('www-authenticate'), null);
 });
 
 const noConfiguredToken = await new Promise((resolve) => {
@@ -2281,6 +2633,121 @@ const noConfiguredToken = await new Promise((resolve) => {
 check('enabled without a configured token serves nothing and says why', () => {
     assert.equal(noConfiguredToken.status, 503);
     assert.match(noConfiguredToken.body.error, /kein Token gesetzt/);
+});
+
+// ── Reachability for clients other than Claude Code (#612) ──────────────────
+// A bridge like mcp-remote probes for an authorization server first. Aura's
+// static handler answers unknown extension-less paths with index.html and 200,
+// so the probe used to receive HTML and the client died parsing it as JSON.
+
+const wellKnown = await new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+        if (handleAuthDiscovery(new URL(req.url, 'http://x').pathname, res, req.method)) {
+            return;
+        }
+        // Stand-in for the SPA fallback in main.js: HTML with status 200.
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><html></html>');
+    });
+    s.listen(0, '127.0.0.1', async () => {
+        const at = async (p, method = 'GET') => {
+            const r = await fetch(`http://127.0.0.1:${s.address().port}${p}`, { method });
+            return { status: r.status, type: r.headers.get('content-type'), body: await r.text() };
+        };
+        // Every path a real mcp-remote 0.8.3 run probed, in the order it did.
+        const out = {
+            resource: await at('/.well-known/oauth-protected-resource/mcp'),
+            authServer: await at('/.well-known/oauth-authorization-server'),
+            openid: await at('/.well-known/openid-configuration'),
+            // Nested under the endpoint — a prefix match on /.well-known/ misses it.
+            nested: await at('/mcp/.well-known/openid-configuration'),
+            register: await at('/register', 'POST'),
+            spa: await at('/some/router/route'),
+            registerGet: await at('/register'),
+        };
+        s.close();
+        resolve(out);
+    });
+});
+
+check('OAuth discovery answers 404 JSON instead of the SPA', () => {
+    for (const key of ['authServer', 'resource', 'openid', 'nested', 'register']) {
+        assert.equal(wellKnown[key].status, 404, key);
+        assert.match(wellKnown[key].type, /application\/json/, key);
+        // The whole point: parseable, so the client reports "no OAuth" and
+        // keeps the static token instead of throwing on "<!doctype".
+        assert.equal(JSON.parse(wellKnown[key].body).error, 'not_found', key);
+    }
+});
+
+check('other unknown paths still reach the SPA fallback', () => {
+    assert.equal(wellKnown.spa.status, 200);
+    assert.match(wellKnown.spa.body, /doctype/);
+    // Only the registration POST is intercepted; a navigation to the same path
+    // stays a frontend route.
+    assert.equal(wellKnown.registerGet.status, 200);
+});
+
+const transport = await new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+        handleMcpRequest(req, res, { adapter, token: TOKEN, mode: 'read', version: '1' }).catch(() => {});
+    });
+    s.listen(0, '127.0.0.1', async () => {
+        const url = `http://127.0.0.1:${s.address().port}/mcp`;
+        const preflight = await fetch(url, {
+            method: 'OPTIONS',
+            headers: { Origin: 'https://claude.ai', 'Access-Control-Request-Method': 'POST' },
+        });
+        const del = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${TOKEN}` } });
+        const get = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } });
+        const bad = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer nope' }, body: '{}' });
+        const none = await fetch(url, { method: 'POST', body: '{}' });
+        const bare = await fetch(url, {
+            method: 'POST',
+            headers: { Authorization: TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+        });
+        s.close();
+        resolve({
+            preflight: { status: preflight.status, headers: preflight.headers },
+            del: del.status,
+            get: { status: get.status, allow: get.headers.get('allow') },
+            bad: { status: bad.status, body: await bad.json() },
+            none: { status: none.status, auth: none.headers.get('www-authenticate') },
+            bare: { status: bare.status, body: await bare.json() },
+        });
+    });
+});
+
+check('the CORS preflight is answered before the token is checked', () => {
+    // A browser sends OPTIONS without the Authorization header — replying 401
+    // would refuse the request that asks whether the header may be sent.
+    assert.equal(transport.preflight.status, 204);
+    assert.equal(transport.preflight.headers.get('access-control-allow-origin'), '*');
+    assert.match(transport.preflight.headers.get('access-control-allow-headers'), /Authorization/i);
+    assert.match(transport.preflight.headers.get('access-control-allow-methods'), /POST/);
+});
+
+check('DELETE closes without an error, GET names the allowed methods', () => {
+    assert.equal(transport.del, 204);
+    assert.equal(transport.get.status, 405);
+    assert.match(transport.get.allow, /POST/);
+});
+
+check('a missing token gets the challenge, a wrong one does not', () => {
+    // Only "nothing presented" is worth telling a client to authenticate about.
+    assert.equal(transport.none.status, 401);
+    assert.match(transport.none.auth, /^Bearer/);
+    // resource_metadata would send the client to an authorization server that
+    // does not exist, and it would report that instead of the real cause.
+    assert.ok(!/resource_metadata/.test(transport.none.auth));
+    assert.equal(transport.bad.status, 403);
+    assert.match(transport.bad.body.error, /Token/);
+});
+
+check('a bare token without the Bearer prefix is accepted', () => {
+    assert.equal(transport.bare.status, 200);
+    assert.deepEqual(transport.bare.body.result, {});
 });
 
 const client = new Client({ name: 'aura-test', version: '1.0.0' }, { capabilities: {} });
@@ -2304,10 +2771,11 @@ check('the instructions tell the model where datapoints come from', () => {
 });
 
 const { tools } = await client.listTools();
-check('all twenty-eight tools are announced with descriptions', () => {
+check('all thirty-six tools are announced with descriptions', () => {
     assert.deepEqual(tools.map((t) => t.name).sort(), [
         'aura_add_widget',
         'aura_backups',
+        'aura_compact',
         'aura_copy_node',
         'aura_copy_widget',
         'aura_create_layout',
@@ -2324,6 +2792,7 @@ check('all twenty-eight tools are announced with descriptions', () => {
         'aura_presets',
         'aura_recipes',
         'aura_rename',
+        'aura_rendered',
         'aura_reorder',
         'aura_restore',
         'aura_review',
@@ -2333,6 +2802,7 @@ check('all twenty-eight tools are announced with descriptions', () => {
         'aura_types',
         'aura_update_node',
         'aura_update_widget',
+        'aura_update_widgets',
         'aura_validate',
         'aura_widget_schema',
         'aura_widget_types',
@@ -2349,6 +2819,12 @@ const dash = await client.callTool({ name: 'aura_dashboard', arguments: {} });
 check('aura_dashboard names the available history adapters', () => {
     // Nothing listed them, so a chart's historyInstance had to be guessed.
     assert.match(dash.content[0].text, /History-Adapter für Diagramme: influxdb\.0/);
+});
+
+check('aura_dashboard says where each tab ends, so the over-long ones are visible at once', () => {
+    // Reported from use: seventeen aura_measure calls, one per tab, only to find
+    // which ones run past the guideline. It is max(y+h) and it is free here.
+    assert.match(dash.content[0].text, /endet auf Zeile \d+/);
 });
 
 check('aura_dashboard reports tabs, grid and the design width', () => {
@@ -2760,6 +3236,21 @@ check('the recipe index lists every recipe and the ids are unique', () => {
     assert.equal(findRecipe('gibtsnicht'), null);
 });
 
+check('multiroom audio has a recipe: nothing covered mediaplayer before', () => {
+    // Reported from use: ten recipes, none of them for a player, so a music tab
+    // was built straight off the schema — showTitle set (ignored by the player)
+    // and three rounds of guessing the height.
+    const r = findRecipe('multiroom');
+    assert.ok(r, 'no multiroom recipe');
+    assert.ok(
+        r.widgets.some((w) => w.type === 'mediaplayer'),
+        'the multiroom recipe has to contain a player',
+    );
+    const text = renderRecipe(r);
+    assert.match(text, /showTitle wirkt hier NUR im Layout "custom"/);
+    assert.match(text, /list_devices/);
+});
+
 check('one row rule for a whole list has a recipe of its own', () => {
     // Reported from use: sixteen mode rules were written by hand because
     // rowConditions with {{parent}} was only mentioned in a note on another
@@ -2852,7 +3343,10 @@ ${t}`,
 const reviewUnknown = await client.callTool({ name: 'aura_review', arguments: { tab: 'Gibtsnicht' } });
 check('aura_review names the tabs there are instead of guessing', () => {
     assert.ok(reviewUnknown.isError);
-    assert.match(reviewUnknown.content[0].text, /Vorhanden:/);
+    // Every line of that list has to work as an input — see the findTab/
+    // findPopupView path form.
+    assert.match(reviewUnknown.content[0].text, /Vorhanden \(so, wie sie hier stehen/);
+    assert.match(reviewUnknown.content[0].text, /- Wohnzimmer \/ Start \/ Licht/);
 });
 
 const sweep = await client.callTool({ name: 'aura_review', arguments: {} });
@@ -2905,7 +3399,9 @@ const badValidate = await client.callTool({
     arguments: { json: JSON.stringify({ ...OK_SWITCH, options: { showTitel: true } }) },
 });
 check('aura_validate reports a bad option and checks live datapoints', () => {
-    assert.ok(badValidate.isError);
+    // Not an error any more — an option the widget does not read no longer
+    // refuses the write, so the check that mirrors the write must not either.
+    assert.ok(!badValidate.isError, badValidate.content[0].text);
     assert.match(badValidate.content[0].text, /liest die Option "showTitel" nicht/);
     assert.match(badValidate.content[0].text, /4 Datenpunkte gegengeprüft/);
 });
@@ -3306,13 +3802,27 @@ check('a popup can be created with create:true', () => {
 
 const popupBad = await client.callTool({
     name: 'aura_write_popup',
-    arguments: { view: 'Eigenes', widgets: JSON.stringify([{ ...OK_SWITCH, options: { showTitel: true } }]) },
+    arguments: { view: 'Eigenes', widgets: JSON.stringify([{ ...OK_SWITCH, options: { showTitle: 'ja' } }]) },
 });
-check('a popup with a bad option is refused and the view is untouched', () => {
+check('a popup with a bad option value is refused and the view is untouched', () => {
     assert.ok(popupBad.isError);
-    assert.match(popupBad.content[0].text, /showTitel/);
+    assert.match(popupBad.content[0].text, /showTitle/);
     const views = JSON.parse(adapter.states['config.popup-config']).state.views;
     assert.equal(views.find((v) => v.name === 'Eigenes').widgets[0].id, 'p1');
+});
+
+const popupStale = await client.callTool({
+    name: 'aura_write_popup',
+    arguments: {
+        view: 'Eigenes',
+        widgets: JSON.stringify([{ ...OK_SWITCH, id: 'p1', options: { showTitel: true } }]),
+    },
+});
+check('an option the widget does not read is written and named, not refused', () => {
+    // The reason: the rules run over the whole widget, so one leftover option
+    // made every later change to that widget impossible — including moving it.
+    assert.ok(!popupStale.isError, popupStale.content[0].text);
+    assert.match(popupStale.content[0].text, /liest die Option "showTitel" nicht/);
 });
 
 // ── Groups ───────────────────────────────────────────────────────────────────
@@ -3467,13 +3977,26 @@ check('an unknown child lists the ids that exist', () => {
 
 const patchInvalid = await client.callTool({
     name: 'aura_update_widget',
-    arguments: { defId: 'd1', widgetId: 'kind-a', patch: JSON.stringify({ options: { showTitel: true } }) },
+    arguments: { defId: 'd1', widgetId: 'kind-a', patch: JSON.stringify({ options: { showTitle: 'ja' } }) },
 });
-check('a patch that introduces a bad option is refused and nothing changes', () => {
+check('a patch with a value the option cannot take is refused and nothing changes', () => {
     assert.ok(patchInvalid.isError);
-    assert.match(patchInvalid.content[0].text, /showTitel/);
+    assert.match(patchInvalid.content[0].text, /showTitle/);
     const defs = JSON.parse(adapter.states['config.group-defs']).state.defs;
     assert.deepEqual(defs.d1[0].options, { iconSize: 32 });
+});
+
+const gridPosPatch = await client.callTool({
+    name: 'aura_update_widget',
+    arguments: { defId: 'd1', widgetId: 'kind-a', patch: JSON.stringify({ gridPos: { w: 6 } }) },
+});
+check('gridPos is merged key by key, like options', () => {
+    // It used to be replaced, so {"gridPos":{"w":6}} — the commonest single kind
+    // of edit there is — came back as "gridPos.x muss eine ganze Zahl sein",
+    // complaining about a value the caller never sent.
+    assert.ok(!gridPosPatch.isError, gridPosPatch.content[0].text);
+    const defs = JSON.parse(adapter.states['config.group-defs']).state.defs;
+    assert.deepEqual(defs.d1[0].gridPos, { ...OK_SWITCH.gridPos, w: 6 });
 });
 
 const idChange = await client.callTool({
@@ -3532,6 +4055,286 @@ check('a widget that exists nowhere says where it was looked for', () => {
     assert.ok(missingWidget.isError);
     assert.match(missingWidget.content[0].text, /weder in einem Tab, einem Popup noch in einer Gruppe/);
 });
+
+// ── aura_update_widgets: several widgets, one validation, one write ──────────
+// The reason it exists: a stack of single writes is checked one at a time, so an
+// intermediate overlap is refused even when the FINAL layout is clean — reported
+// from a session that had to work out a collision-free write order by hand.
+
+await client.callTool({
+    name: 'aura_write_tab',
+    arguments: {
+        tab: 'Klima',
+        widgets: JSON.stringify([
+            { ...OK_SWITCH, id: 'stack-a', title: 'Oben', gridPos: { x: 0, y: 0, w: 8, h: 4 } },
+            { ...OK_SWITCH, id: 'stack-b', title: 'Unten', gridPos: { x: 0, y: 4, w: 8, h: 4 } },
+        ]),
+    },
+});
+
+const growAlone = await client.callTool({
+    name: 'aura_update_widget',
+    arguments: { widgetId: 'stack-a', patch: JSON.stringify({ gridPos: { h: 8 } }) },
+});
+check('one widget grown on its own is refused because it would overlap its neighbour', () => {
+    assert.ok(growAlone.isError);
+    assert.match(growAlone.content[0].text, /überlappen/);
+});
+
+const growTogether = await client.callTool({
+    name: 'aura_update_widgets',
+    arguments: {
+        patches: JSON.stringify([
+            { widgetId: 'stack-a', patch: { gridPos: { h: 8 } } },
+            { widgetId: 'stack-b', patch: { gridPos: { y: 8 } } },
+        ]),
+    },
+});
+check('the same two changes together are written: only the end state is validated', () => {
+    assert.ok(!growTogether.isError, growTogether.content[0].text);
+    const layouts = JSON.parse(adapter.states['config.dashboard']).state.layouts;
+    const klima = layouts[0].sections[0].tabs[1].widgets;
+    assert.equal(klima.find((w) => w.id === 'stack-a').gridPos.h, 8);
+    assert.equal(klima.find((w) => w.id === 'stack-b').gridPos.y, 8);
+    // One backup for the batch, not one per widget.
+    assert.equal((growTogether.content[0].text.match(/Sicherung:/g) || []).length, 1);
+});
+
+const overlapEnd = await client.callTool({
+    name: 'aura_update_widgets',
+    arguments: {
+        patches: JSON.stringify([
+            { widgetId: 'stack-a', patch: { gridPos: { h: 12 } } },
+            { widgetId: 'stack-b', patch: { gridPos: { y: 8 } } },
+        ]),
+    },
+});
+check('an end state that still overlaps is refused and nothing is written', () => {
+    assert.ok(overlapEnd.isError);
+    assert.match(overlapEnd.content[0].text, /Nichts geändert/);
+    const layouts = JSON.parse(adapter.states['config.dashboard']).state.layouts;
+    assert.equal(
+        layouts[0].sections[0].tabs[1].widgets.find((w) => w.id === 'stack-a').gridPos.h,
+        8,
+        'the refused batch must not have written the first patch either',
+    );
+});
+
+const batchDry = await client.callTool({
+    name: 'aura_update_widgets',
+    arguments: {
+        dryRun: true,
+        patches: JSON.stringify([{ widgetId: 'stack-a', patch: { title: 'Anders' } }]),
+    },
+});
+check('dryRun reports the change and writes nothing', () => {
+    assert.ok(!batchDry.isError, batchDry.content[0].text);
+    assert.match(batchDry.content[0].text, /dryRun/);
+    const layouts = JSON.parse(adapter.states['config.dashboard']).state.layouts;
+    assert.equal(layouts[0].sections[0].tabs[1].widgets.find((w) => w.id === 'stack-a').title, 'Oben');
+});
+
+const batchTwice = await client.callTool({
+    name: 'aura_update_widgets',
+    arguments: {
+        patches: JSON.stringify([
+            { widgetId: 'stack-a', patch: { title: 'Eins' } },
+            { widgetId: 'stack-a', patch: { title: 'Zwei' } },
+        ]),
+    },
+});
+check('the same widget twice in one batch is refused instead of silently ordered', () => {
+    assert.ok(batchTwice.isError);
+    assert.match(batchTwice.content[0].text, /kommt zweimal vor/);
+});
+
+// The group defs the earlier block set up were rewritten in between — put a
+// known child back so the batch has a second kind of target.
+adapter.states['config.group-defs'] = JSON.stringify({
+    version: 0,
+    state: {
+        defs: { d1: [{ ...OK_SWITCH, id: 'kind-b', title: 'Kind B', gridPos: { x: 0, y: 0, w: 8, h: 4 } }] },
+        hydrated: true,
+    },
+});
+
+const batchMixed = await client.callTool({
+    name: 'aura_update_widgets',
+    arguments: {
+        patches: JSON.stringify([
+            { widgetId: 'stack-a', patch: { title: 'Aus dem Tab' } },
+            { widgetId: 'kind-b', defId: 'd1', patch: { title: 'Aus der Gruppe' } },
+        ]),
+    },
+});
+check('a batch reaches into a tab and a group in the same write', () => {
+    assert.ok(!batchMixed.isError, batchMixed.content[0].text);
+    const layouts = JSON.parse(adapter.states['config.dashboard']).state.layouts;
+    assert.equal(layouts[0].sections[0].tabs[1].widgets.find((w) => w.id === 'stack-a').title, 'Aus dem Tab');
+    const defs = JSON.parse(adapter.states['config.group-defs']).state.defs;
+    assert.equal(defs.d1.find((w) => w.id === 'kind-b').title, 'Aus der Gruppe');
+    assert.match(batchMixed.content[0].text, /2 Widget\(s\) in 2 Ziel\(en\)/);
+});
+
+// ── aura_rendered: what the browser actually drew ────────────────────────────
+
+const noReport = await client.callTool({ name: 'aura_rendered', arguments: {} });
+check('without a report from a browser aura_rendered says what to do about it', () => {
+    assert.ok(!noReport.isError, noReport.content[0].text);
+    assert.match(noReport.content[0].text, /keine Messung aus dem Browser/);
+    assert.match(noReport.content[0].text, /nicht im Editor/);
+});
+
+const klimaTabId = JSON.parse(adapter.states['config.dashboard']).state.layouts[0].sections[0].tabs[1].id;
+adapter.states['info.rendered'] = JSON.stringify({
+    ts: Date.now(),
+    tabs: {
+        [klimaTabId]: {
+            ts: Date.now(),
+            tab: 'Wohnzimmer / Start / Klima',
+            clientName: 'Flurtablet',
+            viewport: { w: 1280, h: 800 },
+            presentation: { fontScale: 1, widgetPadding: 16 },
+            grid: { rowHeight: 20, gap: 10, snapX: 20 },
+            widgets: [
+                { id: 'stack-a', type: 'switch', rows: 8, px: 230, contentPx: 300, scrolls: true },
+                { id: 'stack-b', type: 'switch', rows: 4, px: 110, contentPx: 110, scrolls: false },
+            ],
+        },
+    },
+});
+
+const rendered = await client.callTool({ name: 'aura_rendered', arguments: {} });
+check('aura_rendered reports rendered height, overflow and the age of the measurement', () => {
+    const t = rendered.content[0].text;
+    assert.ok(!rendered.isError, t);
+    assert.match(t, /Wohnzimmer \/ Start \/ Klima/);
+    assert.match(t, /Flurtablet/);
+    assert.match(t, /stack-a .*gerendert 230 px.*SCROLLT.*70 px/);
+    // The header promises an "Inhalt" column, so every line has to carry one —
+    // this was the column that was announced and never printed.
+    assert.match(t, /stack-b .*gerendert 110 px, Inhalt ≤ 110 px/);
+    // The row count, not only the pixels: that is what gets written.
+    assert.match(t, /stack-a .*→ h=\d+/);
+});
+
+// A card with reserve is the normal case, and it used to produce a finding per
+// widget: the comparison ran card height against minimum requirement, so every
+// deliberately tall card reported "N px zu wenig".
+adapter.states['info.rendered'] = JSON.stringify({
+    ts: Date.now(),
+    tabs: {
+        [klimaTabId]: {
+            ts: Date.now(),
+            tab: 'Wohnzimmer / Start / Klima',
+            viewport: { w: 1280, h: 800 },
+            presentation: { fontScale: 1, widgetPadding: 16 },
+            grid: { rowHeight: 20, gap: 10, snapX: 20 },
+            // Twice the height it needs, nothing scrolled away.
+            widgets: [{ id: 'stack-b', type: 'switch', rows: 20, px: 590, contentPx: 590, scrolls: false }],
+        },
+    },
+});
+const reserve = await client.callTool({ name: 'aura_rendered', arguments: {} });
+check('a card with reserve is not a deviation', () => {
+    const t = reserve.content[0].text;
+    assert.ok(!reserve.isError, t);
+    assert.match(t, /Inhalt ≤ 590 px/);
+    assert.doesNotMatch(t, /zu niedrig/);
+    assert.doesNotMatch(t, /weicht die Schätzung/);
+});
+
+// Everything the tab has but the browser never reported, plus a card that is in
+// the tree and measures nothing: both used to leave the table one line short.
+adapter.states['info.rendered'] = JSON.stringify({
+    ts: Date.now(),
+    tabs: {
+        [klimaTabId]: {
+            ts: Date.now(),
+            tab: 'Wohnzimmer / Start / Klima',
+            viewport: { w: 1280, h: 800 },
+            presentation: { fontScale: 1, widgetPadding: 16 },
+            grid: { rowHeight: 20, gap: 10, snapX: 20 },
+            widgets: [
+                { id: 'stack-a', type: 'switch', rows: 8, px: 230, contentPx: 230, scrolls: false },
+                { id: 'stack-b', type: 'switch', rows: 4, px: 0, contentPx: 0, scrolls: false },
+            ],
+        },
+    },
+});
+const silent = await client.callTool({ name: 'aura_rendered', arguments: {} });
+check('a widget that draws nothing gets a line instead of falling out of the table', () => {
+    const t = silent.content[0].text;
+    assert.ok(!silent.isError, t);
+    assert.match(t, /stack-b .*RENDERT NICHT.*0 px hoch/);
+    assert.match(t, /rendern nicht/);
+});
+
+const klimaTab = JSON.parse(adapter.states['config.dashboard']).state.layouts[0].sections[0].tabs[1];
+check('the tab is measured in full — a configured widget with no report is named', () => {
+    const t = silent.content[0].text;
+    // Every widget the tab has appears, whether the browser reported it or not.
+    for (const w of klimaTab.widgets) {
+        assert.match(t, new RegExp(w.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${w.id} missing from the table`);
+    }
+});
+delete adapter.states['info.rendered'];
+adapter.states['info.rendered'] = JSON.stringify({
+    ts: Date.now(),
+    tabs: {
+        [klimaTabId]: {
+            ts: Date.now(),
+            tab: 'Wohnzimmer / Start / Klima',
+            viewport: { w: 1280, h: 800 },
+            presentation: { fontScale: 1, widgetPadding: 16 },
+            grid: { rowHeight: 20, gap: 10, snapX: 20 },
+            hidden: ['stack-b'],
+            widgets: [{ id: 'stack-a', type: 'switch', rows: 8, px: 230, contentPx: 230, scrolls: false }],
+        },
+    },
+});
+const hiddenByCondition = await client.callTool({ name: 'aura_rendered', arguments: {} });
+check('a widget a condition took out of the layout says so, and is not a height problem', () => {
+    const t = hiddenByCondition.content[0].text;
+    assert.ok(!hiddenByCondition.isError, t);
+    assert.match(t, /stack-b .*RENDERT NICHT.*Bedingung/);
+});
+adapter.states['info.rendered'] = JSON.stringify({
+    ts: Date.now(),
+    tabs: {
+        [klimaTabId]: {
+            ts: Date.now(),
+            tab: 'Wohnzimmer / Start / Klima',
+            clientName: 'Flurtablet',
+            viewport: { w: 1280, h: 800 },
+            presentation: { fontScale: 1, widgetPadding: 16 },
+            grid: { rowHeight: 20, gap: 10, snapX: 20 },
+            widgets: [
+                { id: 'stack-a', type: 'switch', rows: 8, px: 230, contentPx: 300, scrolls: true },
+                { id: 'stack-b', type: 'switch', rows: 4, px: 110, contentPx: 110, scrolls: false },
+            ],
+        },
+    },
+});
+
+// The path form the listings print, handed straight back: this used to be
+// „Kein Tab gefunden“ with the same line in the list underneath.
+const renderedTab = await client.callTool({
+    name: 'aura_rendered',
+    arguments: { tab: 'Wohnzimmer / Start / Licht' },
+});
+check('a tab nobody has opened has no measurement, and says so instead of inventing one', () => {
+    assert.ok(!renderedTab.isError, renderedTab.content[0].text);
+    assert.match(renderedTab.content[0].text, /liegt keine Messung/);
+});
+
+const measuredLive = await client.callTool({ name: 'aura_measure', arguments: { tab: 'Klima' } });
+check('aura_measure points at the browser measurement when there is one for that tab', () => {
+    const t = measuredLive.content[0].text;
+    assert.match(t, /Der Browser hat diesen Tab wirklich gezeichnet/);
+    assert.match(t, /aura_rendered/);
+});
+delete adapter.states['info.rendered'];
 
 // ── Permission levels ────────────────────────────────────────────────────────
 
@@ -3647,6 +4450,380 @@ const initDelete = await atLevel('delete', {
 check('at delete the model is told to ask before removing anything', () => {
     assert.match(initDelete.result.instructions, /Permission: delete/);
     assert.match(initDelete.result.instructions, /Ask the user before deleting/);
+});
+
+const initRename = await atLevel('rename', {
+    jsonrpc: '2.0',
+    id: 6,
+    method: 'initialize',
+    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } },
+});
+check('below delete the model is warned that an omitting write counts as one', () => {
+    // The refusal it would otherwise run into only after building the whole call.
+    assert.match(initRename.result.instructions, /Permission: rename/);
+    assert.match(initRename.result.instructions, /leaves existing widgets out is a deletion too/);
+});
+
+// ── Removing by omission (#614) ──────────────────────────────────────────────
+// The list-replacing tools take the complete new content, so leaving a widget
+// out removes it. Reported from use: at „… und umbenennen“ there is no delete
+// tool, but rewriting the tab without the widget did the same job — while the
+// server had just told the model that deleting was not allowed.
+
+/** A dashboard of its own, so refusing or writing here disturbs no other check. */
+function seeded() {
+    const a = makeAdapter();
+    a.states['config.dashboard'] = JSON.stringify({
+        version: 0,
+        state: {
+            layouts: [
+                {
+                    id: 'l9',
+                    name: 'Haus',
+                    slug: 'haus',
+                    sections: [
+                        {
+                            id: 's9',
+                            name: 'Start',
+                            slug: 'start',
+                            tabs: [
+                                {
+                                    id: 't9',
+                                    name: 'Büro',
+                                    slug: 'buero',
+                                    widgets: [
+                                        { ...OK_SWITCH, id: 'bleibt', gridPos: { x: 0, y: 0, w: 8, h: 4 } },
+                                        {
+                                            ...OK_SWITCH,
+                                            id: 'test',
+                                            title: 'Test',
+                                            gridPos: { x: 8, y: 0, w: 8, h: 4 },
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    });
+    a.states['config.group-defs'] = JSON.stringify({
+        version: 0,
+        state: {
+            defs: {
+                d9: [
+                    { ...OK_SWITCH, id: 'kind-a' },
+                    { ...OK_SWITCH, id: 'kind-b' },
+                ],
+            },
+        },
+    });
+    return a;
+}
+
+/** Call one tool at a permission level, against its own adapter. */
+async function callAt(mode, name, args, on) {
+    const target = on || seeded();
+    const s = http.createServer((req, res) => {
+        handleMcpRequest(req, res, { adapter: target, token: TOKEN, mode, version: '1' }).catch(() => {});
+    });
+    await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const r = await fetch(`http://127.0.0.1:${s.address().port}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: args } }),
+    });
+    const json = await r.json();
+    s.close();
+    return { res: json.result, adapter: target };
+}
+
+const keptOne = JSON.stringify([{ ...OK_SWITCH, id: 'bleibt', gridPos: { x: 0, y: 0, w: 8, h: 4 } }]);
+
+const omitted = await callAt('rename', 'aura_write_tab', { tab: 'Büro', widgets: keptOne });
+check('at rename a write that drops a widget is refused, naming it', () => {
+    assert.equal(omitted.res.isError, true);
+    const t = omitted.res.content[0].text;
+    assert.match(t, /Nicht geschrieben/);
+    assert.match(t, /- test \(switch\) „Test“/, t);
+    assert.match(t, /braucht „delete“/);
+    // And nothing was written on the way to the refusal.
+    assert.ok(omitted.adapter.states['config.dashboard'].includes('"test"'));
+});
+
+const omittedAtWrite = await callAt('write', 'aura_write_tab', { tab: 'Büro', widgets: keptOne });
+check('the same holds one level lower', () => {
+    assert.equal(omittedAtWrite.res.isError, true);
+    assert.match(omittedAtWrite.res.content[0].text, /Berechtigung „write“/);
+});
+
+const omittedAtDelete = await callAt('delete', 'aura_write_tab', { tab: 'Büro', widgets: keptOne });
+check('at delete the same write goes through', () => {
+    assert.ok(!omittedAtDelete.res.isError, omittedAtDelete.res.content[0].text);
+    const layouts = JSON.parse(omittedAtDelete.adapter.states['config.dashboard']).state.layouts;
+    assert.deepEqual(
+        layouts[0].sections[0].tabs[0].widgets.map((w) => w.id),
+        ['bleibt'],
+    );
+});
+
+const reshuffled = await callAt('rename', 'aura_write_tab', {
+    tab: 'Büro',
+    widgets: JSON.stringify([
+        { ...OK_SWITCH, id: 'test', title: 'Test neu', gridPos: { x: 0, y: 0, w: 8, h: 4 } },
+        { ...OK_SWITCH, id: 'bleibt', gridPos: { x: 8, y: 0, w: 8, h: 4 } },
+    ]),
+});
+check('reordering, retitling and moving the same widgets is not a removal', () => {
+    // The guard compares ids — otherwise every ordinary edit would be refused.
+    assert.ok(!reshuffled.res.isError, reshuffled.res.content[0].text);
+    const layouts = JSON.parse(reshuffled.adapter.states['config.dashboard']).state.layouts;
+    assert.deepEqual(
+        layouts[0].sections[0].tabs[0].widgets.map((w) => w.id),
+        ['test', 'bleibt'],
+    );
+});
+
+const appendedAtRename = await callAt('rename', 'aura_add_widget', {
+    tab: 'Büro',
+    widget: JSON.stringify({ ...OK_SWITCH, id: 'neu', gridPos: { x: 0, y: 8, w: 8, h: 4 } }),
+});
+check('aura_add_widget still appends at rename', () => {
+    assert.ok(!appendedAtRename.res.isError, appendedAtRename.res.content[0].text);
+    assert.ok(appendedAtRename.adapter.states['config.dashboard'].includes('"neu"'));
+});
+
+const nameless = makeAdapter();
+nameless.states['config.dashboard'] = JSON.stringify({
+    version: 0,
+    state: {
+        layouts: [
+            {
+                id: 'l8',
+                name: 'Alt',
+                slug: 'alt',
+                sections: [
+                    {
+                        id: 's8',
+                        name: 'Start',
+                        slug: 'start',
+                        // Two widgets the editor never gave an id: they can only be
+                        // counted, and removing the id must not be the way past this.
+                        tabs: [
+                            { id: 't8', name: 'Alt', slug: 'alt', widgets: [{ type: 'switch' }, { type: 'switch' }] },
+                        ],
+                    },
+                ],
+            },
+        ],
+    },
+});
+const droppedNameless = await callAt(
+    'rename',
+    'aura_write_tab',
+    { tab: 'Alt', widgets: JSON.stringify([{ ...OK_SWITCH, id: 'eins' }]) },
+    nameless,
+);
+check('widgets without an id are counted, not waved through', () => {
+    assert.equal(droppedNameless.res.isError, true);
+    assert.match(droppedNameless.res.content[0].text, /ohne id/);
+});
+
+const droppedChild = await callAt('rename', 'aura_write_group', {
+    defId: 'd9',
+    widgets: JSON.stringify([{ ...OK_SWITCH, id: 'kind-a' }]),
+});
+check('a group child cannot be dropped either', () => {
+    assert.equal(droppedChild.res.isError, true);
+    assert.match(droppedChild.res.content[0].text, /kind-b/);
+    assert.match(droppedChild.res.content[0].text, /Gruppe d9/);
+});
+
+const viaDefs = await callAt('rename', 'aura_write_tab', {
+    tab: 'Büro',
+    widgets: JSON.stringify([
+        { ...OK_SWITCH, id: 'bleibt', gridPos: { x: 0, y: 0, w: 8, h: 4 } },
+        { ...OK_SWITCH, id: 'test', title: 'Test', gridPos: { x: 8, y: 0, w: 8, h: 4 } },
+    ]),
+    groupDefs: JSON.stringify({ d9: [{ ...OK_SWITCH, id: 'kind-a' }] }),
+});
+check('nor through the groupDefs a tab write carries along', () => {
+    assert.equal(viaDefs.res.isError, true);
+    assert.match(viaDefs.res.content[0].text, /kind-b/);
+});
+
+const popupSeed = seeded();
+popupSeed.states['config.popup-config'] = JSON.stringify({
+    version: 0,
+    state: {
+        views: [
+            {
+                id: 'v9',
+                name: 'Details',
+                widgets: [
+                    { ...OK_SWITCH, id: 'p-eins' },
+                    { ...OK_SWITCH, id: 'p-zwei' },
+                ],
+            },
+        ],
+    },
+});
+const droppedPopup = await callAt(
+    'rename',
+    'aura_write_popup',
+    { view: 'Details', widgets: JSON.stringify([{ ...OK_SWITCH, id: 'p-eins' }]) },
+    popupSeed,
+);
+check('a popup is a widget list like any other', () => {
+    assert.equal(droppedPopup.res.isError, true);
+    assert.match(droppedPopup.res.content[0].text, /p-zwei/);
+    assert.match(droppedPopup.res.content[0].text, /Popup „Details“/);
+});
+
+// ── A write that is acknowledged but not stored ──────────────────────────────
+// Reported from use: aura_update_widget answered "Widget geändert" and named a
+// backup, and the next read still showed the old height. A write reported as
+// done and not there is the worst answer this server can give — everything
+// planned on top of it is planned against a dashboard that does not exist.
+
+/** An adapter whose config.dashboard write silently does not stick. */
+function swallowing() {
+    const a = seeded();
+    const real = a.setStateAsync;
+    a.setStateAsync = async (id, v) => {
+        if (id === 'config.dashboard') {
+            return; // the write is accepted and dropped, like a stale editor doing it
+        }
+        return real(id, v);
+    };
+    return a;
+}
+
+const swallowed = await callAt(
+    'write',
+    'aura_update_widget',
+    { widgetId: 'test', patch: JSON.stringify({ title: 'Nicht angekommen' }) },
+    swallowing(),
+);
+check('a write that does not stick is reported, not acknowledged', () => {
+    const t = swallowed.res.content[0].text;
+    assert.match(t, /ACHTUNG: Zurückgelesen/);
+    assert.match(t, /ungespeicherten Änderungen im Editor/);
+});
+
+const landed = await callAt('write', 'aura_update_widget', {
+    widgetId: 'test',
+    patch: JSON.stringify({ title: 'Angekommen' }),
+});
+check('and a write that does stick says nothing extra', () => {
+    const t = landed.res.content[0].text;
+    assert.ok(!landed.res.isError, t);
+    assert.doesNotMatch(t, /ACHTUNG/);
+});
+
+// ── Overlaps that are already stored, and aura_compact ───────────────────────
+// Reported from use: a Startseite that renders perfectly carried three overlaps
+// in its stored gridPos (outside the editor the frontend packs the widgets
+// upward, so nobody ever saw them) — and every aura_update_widget on that tab was
+// refused over positions the caller had not touched.
+
+/** A tab whose stored positions overlap, the way a grown dashboard's do. */
+function overlapSeed() {
+    const a = makeAdapter();
+    a.states['config.dashboard'] = JSON.stringify({
+        version: 0,
+        state: {
+            layouts: [
+                {
+                    id: 'lo',
+                    name: 'Haus',
+                    slug: 'haus',
+                    sections: [
+                        {
+                            id: 'so',
+                            name: 'Start',
+                            slug: 'start',
+                            tabs: [
+                                {
+                                    id: 'to',
+                                    name: 'Startseite',
+                                    slug: 'startseite',
+                                    widgets: [
+                                        { ...OK_SWITCH, id: 'oben', gridPos: { x: 0, y: 0, w: 8, h: 4 } },
+                                        { ...OK_SWITCH, id: 'unten', gridPos: { x: 0, y: 2, w: 8, h: 4 } },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    });
+    return a;
+}
+
+const overlapTitle = await callAt(
+    'write',
+    'aura_update_widget',
+    { widgetId: 'oben', patch: JSON.stringify({ title: 'Neuer Titel' }) },
+    overlapSeed(),
+);
+check('an overlap this write does not touch is a warning, and the change goes through', () => {
+    assert.ok(!overlapTitle.res.isError, overlapTitle.res.content[0].text);
+    const t = overlapTitle.res.content[0].text;
+    assert.match(t, /überlappen sich im Raster/);
+    assert.match(t, /stand vorher schon so/);
+    assert.match(t, /aura_compact/);
+    const layouts = JSON.parse(overlapTitle.adapter.states['config.dashboard']).state.layouts;
+    assert.equal(layouts[0].sections[0].tabs[0].widgets[0].title, 'Neuer Titel');
+});
+
+const overlapMade = await callAt(
+    'write',
+    'aura_update_widget',
+    { widgetId: 'unten', patch: JSON.stringify({ gridPos: { y: 1 } }) },
+    overlapSeed(),
+);
+check('an overlap the write moves into stays an error', () => {
+    assert.equal(overlapMade.res.isError, true);
+    assert.match(overlapMade.res.content[0].text, /überlappen sich im Raster/);
+    assert.doesNotMatch(overlapMade.res.content[0].text, /stand vorher schon so/);
+});
+
+const compactDry = await callAt('write', 'aura_compact', { tab: 'Startseite', dryRun: true }, overlapSeed());
+check('aura_compact reports the moves before writing them', () => {
+    assert.ok(!compactDry.res.isError, compactDry.res.content[0].text);
+    assert.match(compactDry.res.content[0].text, /unten: y 2 → 4/);
+    const layouts = JSON.parse(compactDry.adapter.states['config.dashboard']).state.layouts;
+    assert.equal(layouts[0].sections[0].tabs[0].widgets[1].gridPos.y, 2);
+});
+
+const compacted = await callAt('write', 'aura_compact', { tab: 'Startseite' }, overlapSeed());
+check('aura_compact writes the rendered positions and leaves x/w/h alone', () => {
+    assert.ok(!compacted.res.isError, compacted.res.content[0].text);
+    const widgets = JSON.parse(compacted.adapter.states['config.dashboard']).state.layouts[0].sections[0].tabs[0]
+        .widgets;
+    // The stored order is kept; only y changes.
+    assert.deepEqual(
+        widgets.map((w) => [w.id, w.gridPos.x, w.gridPos.y, w.gridPos.w, w.gridPos.h]),
+        [
+            ['oben', 0, 0, 8, 4],
+            ['unten', 0, 4, 8, 4],
+        ],
+    );
+});
+
+const compactAgain = await callAt('write', 'aura_compact', { tab: 'Startseite' }, compacted.adapter);
+check('aura_compact on an already compact tab writes nothing', () => {
+    assert.match(compactAgain.res.content[0].text, /schon kompakt/);
+});
+
+const compactNothing = await callAt('write', 'aura_compact', {}, overlapSeed());
+check('aura_compact says what it needs instead of guessing a target', () => {
+    assert.equal(compactNothing.res.isError, true);
+    assert.match(compactNothing.res.content[0].text, /"tab" oder "defId"/);
 });
 
 // ── Navigation properties: conditions, badges, aggregate ─────────────────────
@@ -4754,6 +5931,39 @@ check('the client block is valid JSON and carries the token', () => {
     assert.match(parsed.mcpServers.aura.url, /\/mcp$/);
 });
 
+// The second block: for a client that can only start a local process (#612).
+
+check('the desktop block runs mcp-remote against the same URL', () => {
+    const token = genToken();
+    const parsed = JSON.parse(desktopConfig({ customUrl: 'http://192.168.188.140:8095' }, token));
+    const srv = parsed.mcpServers.aura;
+    assert.equal(srv.command, 'npx');
+    assert.ok(srv.args.includes('mcp-remote'));
+    assert.ok(srv.args.includes('http://192.168.188.140:8095/mcp'));
+    // Without http-only the bridge tries SSE first, which Aura does not serve.
+    assert.equal(srv.args[srv.args.indexOf('--transport') + 1], 'http-only');
+    // The token travels through env: the client splits its argument list on
+    // whitespace, and "Bearer <token>" has one.
+    assert.equal(srv.args[srv.args.indexOf('--header') + 1], 'Authorization:${AURA_TOKEN}');
+    assert.equal(srv.env.AURA_TOKEN, `Bearer ${token}`);
+});
+
+check('--allow-http only where it is needed', () => {
+    const plain = JSON.parse(desktopConfig({ customUrl: 'http://192.168.188.140:8095' }, 'tok'));
+    assert.ok(plain.mcpServers.aura.args.includes('--allow-http'));
+    const secure = JSON.parse(desktopConfig({ customUrl: 'https://aura.example.org' }, 'tok'));
+    assert.ok(!secure.mcpServers.aura.args.includes('--allow-http'));
+});
+
+check('both blocks come out of one address lookup and agree on the host', async () => {
+    const token = genToken();
+    const both = await resolveBothConfigs({ customUrl: 'https://aura.example.org/' }, token);
+    const url = JSON.parse(both.http).mcpServers.aura.url;
+    assert.equal(url, 'https://aura.example.org/mcp');
+    // A disagreement here would be the hardest bug to see: same shape, other host.
+    assert.ok(JSON.parse(both.desktop).mcpServers.aura.args.includes(url));
+});
+
 check('a configured base URL wins and loses its trailing slash', () => {
     assert.equal(baseUrl({ customUrl: 'https://aura.example.org/', port: 8095 }), 'https://aura.example.org');
     assert.equal(baseUrl({ customUrl: 'https://aura.example.org//' }), 'https://aura.example.org');
@@ -4831,6 +6041,15 @@ check('the stored block loses its token, and says where to get it', () => {
     assert.equal(JSON.parse(masked).mcpServers.aura.url, 'http://192.168.188.140:8095/mcp');
 });
 
+check('the desktop block loses its token as well', () => {
+    // It carries the token too — masking only the HTTP block would leave it
+    // readable on the config page, which is the whole reason for masking.
+    const masked = maskClientConfig(desktopConfig({ customUrl: 'http://x:1' }, 'abcdef0123456789abcdef0123456789'));
+    assert.ok(!masked.includes('abcdef0123456789abcdef0123456789'));
+    assert.ok(masked.includes(TOKEN_PLACEHOLDER));
+    assert.equal(JSON.parse(masked).mcpServers.aura.command, 'npx');
+});
+
 check('masking is idempotent, so it cannot restart the adapter in a loop', () => {
     const masked = maskClientConfig(clientConfig({ customUrl: 'http://x:1' }, 'tok'));
     // null means "nothing to do" — the caller skips the write, so no object change.
@@ -4869,8 +6088,8 @@ const nearMiss = await askWith(fresh.slice(0, -1) + (fresh.endsWith('a') ? 'b' :
 const truncated = await askWith(fresh.slice(0, -1));
 check('a valid token is accepted, a near-miss and a truncation are not', () => {
     assert.equal(okStatus, 200);
-    assert.equal(nearMiss, 401);
-    assert.equal(truncated, 401);
+    assert.equal(nearMiss, 403);
+    assert.equal(truncated, 403);
 });
 
 await client.close();
