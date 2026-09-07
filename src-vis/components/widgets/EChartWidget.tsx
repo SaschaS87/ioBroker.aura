@@ -739,6 +739,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             animation: echartAnimation,
             tooltip: {
                 trigger: 'axis',
+                confine: true,
                 backgroundColor: 'var(--app-surface, #1e1e1e)',
                 borderColor: 'var(--app-border, #333)',
                 textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },
@@ -956,6 +957,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
             animation: echartAnimation,
             tooltip: {
                 trigger: 'axis',
+                confine: true,
                 backgroundColor: 'var(--app-surface, #1e1e1e)',
                 borderColor: 'var(--app-border, #333)',
                 textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },
@@ -1177,6 +1179,7 @@ export function EChartWidget({ config, editMode }: WidgetProps) {
         animation: echartAnimation,
         tooltip: {
             trigger: 'axis',
+            confine: true,
             backgroundColor: 'var(--app-surface, #1e1e1e)',
             borderColor: 'var(--app-border, #333)',
             textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },

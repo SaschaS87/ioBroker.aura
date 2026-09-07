@@ -827,7 +827,15 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
             { left: CHART_PAD_X, right: CHART_PAD_X, top: GRID_TOP0, height: GRID_H0 },
             { left: CHART_PAD_X, right: CHART_PAD_X, top: GRID_TOP1, height: GRID_H1 },
         ],
-        tooltip: { trigger: 'axis' as const, axisPointer: { type: 'line' as const }, formatter: tooltipFormatter },
+        tooltip: {
+            trigger: 'axis' as const,
+            axisPointer: { type: 'line' as const },
+            confine: true,
+            backgroundColor: 'var(--app-surface, #1e1e1e)',
+            borderColor: 'var(--app-border, #333)',
+            textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },
+            formatter: tooltipFormatter,
+        },
         xAxis: [
             { gridIndex: 0, type: 'time' as const, min: core.chartStart, max: core.chartEnd, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
             {
