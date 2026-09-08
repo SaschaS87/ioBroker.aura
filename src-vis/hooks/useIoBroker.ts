@@ -240,6 +240,14 @@ interface ReconnectDiagEntry {
     subscribers?: number;
     maintained?: number;
     invalidDropped?: number;
+    /** Schritt 5: Wie viele Widgets nach diesem Aufbau ihren Wert selbst
+     *  nachgefragt haben (der Rettungsanker). War vor Schritt 5 immer 0, weil
+     *  handleConnected alle IDs vorab als "frisch" markierte. */
+    rescued?: number;
+    /** Schritt 5: `maintained` NACH der Nachlese. `maintained` oben zählt den
+     *  Stand beim Aufbau — der ist seit Schritt 5 immer 0 (nichts bestätigt);
+     *  erst dieses Feld zeigt, wie viele Werte die Nachlese bestätigt hat. */
+    maintainedAfter?: number;
     revalidate?: {
         asked: number;
         answered: number;
@@ -249,6 +257,9 @@ interface ReconnectDiagEntry {
         aborted: boolean;
         /** getStates-Antwort unbrauchbar/ausgeblieben, auf Einzelabfragen zurückgefallen. */
         fallback: boolean;
+        /** Dauer der Nachlese in ms (Start bis letzte verarbeitete Antwort).
+         *  Abnahmepunkt 1 des Fahrplans: nach Schritt 1 unter 150 ms statt 3.140 ms. */
+        ms?: number;
     };
 }
 
@@ -272,6 +283,33 @@ function flushDiagState(): void {
     const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
     if (shot) return;
     setStateDirect(DIAG_STATE_ID, JSON.stringify(diagLog), true);
+}
+
+// ── Rettungsanker-Zähler (Schritt 5) ─────────────────────────────────────────
+// Abnahmepunkt 3 des Fahrplans verlangt den Nachweis, dass nach einem Neuaufbau
+// tatsächlich wieder jedes Widget selbst nachfragt, statt sich blind auf die
+// Nachlese zu verlassen. Statt das nur einmal von Hand zu messen, zählt die
+// Diagnose es dauerhaft mit: jede getStateDirect-Anfrage im Fenster direkt nach
+// einem Aufbau erhöht `rescued` des zugehörigen Eintrags.
+const RESCUE_WINDOW_MS = 3000;
+let rescueEntry: ReconnectDiagEntry | null = null;
+let rescueUntil = 0;
+let rescueFlushTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+function noteRescueFetch(): void {
+    const entry = rescueEntry;
+    if (!entry || Date.now() > rescueUntil) return;
+    entry.rescued = (entry.rescued ?? 0) + 1;
+    // Genau ein Schreibvorgang je Aufbau: erst am Fensterende veröffentlichen,
+    // sonst würden ~65 Nachfragen ebenso viele setState auslösen.
+    if (rescueFlushTimer) return;
+    rescueFlushTimer = globalThis.setTimeout(
+        () => {
+            rescueFlushTimer = null;
+            flushDiagState();
+        },
+        Math.max(0, rescueUntil - Date.now()) + 100,
+    );
 }
 
 // Batched-request tuning, shared by prefetchStates and revalidateStates below
@@ -441,12 +479,30 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
     }
     if (ids.length === 0) return;
     const rv = diagEntry?.revalidate;
+    const startedAt = Date.now();
+
+    /** Publish the diag entry with the `maintained` size reached so far. Nach
+     *  Schritt 5 ist genau das die interessante Zahl: beim Aufbau 0 (nichts
+     *  bestätigt), hier dann so viele, wie die Nachlese bestätigt hat — der
+     *  Beleg für Abnahmepunkt 3 des Fahrplans. Der Aufbau-Stand in `maintained`
+     *  bleibt unangetastet, sonst wäre der Vorher-Nachher-Vergleich weg. */
+    const publish = (): void => {
+        if (diagEntry) diagEntry.maintainedAfter = maintained.size;
+        if (rv) rv.ms = Date.now() - startedAt;
+        flushDiagState();
+    };
 
     const applyOne = (id: string, next: ioBrokerState | null): void => {
         if (!next) return;
         if (rv) rv.answered++;
         const prev = stateCache.get(id);
         cacheState(id, next);
+        // Schritt 5 (Masterfahrplan 08.09.2026): ERST HIER gilt der Wert als
+        // bestätigt. `maintained` heißt "eine lebende Subscription hält diesen
+        // Wert aktuell" — das ist beim bloßen Abonnieren noch nicht wahr, denn
+        // ein ioBroker-Abo liefert nur *künftige* Änderungen mit. Ab der ersten
+        // bestätigten Antwort stimmt die Aussage aber, weil das Abo ja steht.
+        if (subscribers.get(id)?.size) maintained.add(id);
         // Only wake subscribers on an actual change — a reconnect on a large
         // dashboard would otherwise re-render every widget.
         if (prev && prev.val === next.val && prev.ts === next.ts && prev.ack === next.ack) return;
@@ -467,12 +523,12 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
             if (socket !== s) {
                 if (rv) {
                     rv.aborted = true;
-                    flushDiagState();
+                    publish();
                 }
                 return;
             }
             if (rv) rv.fallback = true;
-            fetchIndividuallyChunked(chunkIds, applyOne, () => rv && flushDiagState());
+            fetchIndividuallyChunked(chunkIds, applyOne, () => rv && publish());
         };
         const timer = globalThis.setTimeout(() => {
             if (settled) return;
@@ -486,7 +542,7 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
             if (socket !== s) {
                 if (rv) {
                     rv.aborted = true;
-                    flushDiagState();
+                    publish();
                 }
                 return;
             }
@@ -496,7 +552,7 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
             }
             const answers = obj as Record<string, ioBrokerState | null | undefined>;
             for (const id of chunkIds) applyOne(id, answers[id] ?? null);
-            if (rv) flushDiagState();
+            if (rv) publish();
         });
     }
 }
@@ -693,9 +749,21 @@ function createSocket(url: string): IoBrokerSocket {
                 invalidDropped++;
             }
         });
+        // Schritt 5 (Masterfahrplan 08.09.2026): Hier wurde die ID früher sofort
+        // als `maintained` markiert — und das war eine folgenreiche Lüge. Ein
+        // ioBroker-Abo liefert **nicht** den aktuellen Wert mit, nur künftige
+        // Änderungen. In genau dem Moment, in dem hier neu abonniert wird, ist
+        // also kein einziger Wert bestätigt; `isStateFresh` sagte trotzdem
+        // "frisch, frag nicht nach", worauf **jedes** Widget seinen eigenen
+        // Rettungsanker weglegte (gemessen in jedem Durchlauf, Fahrplan 1.3/2.3).
+        // Blieb die Nachlese dann stecken, fragte niemand je wieder nach und die
+        // Zeile stand dauerhaft falsch — der eigentliche Konstruktionsfehler.
+        // Jetzt markiert erst die bestätigte Antwort in revalidateStates, und
+        // solange die aussteht, greift der Rettungsanker jedes Widgets wieder so,
+        // wie er gedacht war. Der Preis dafür (kurzzeitig mehr Einzelabfragen)
+        // ist seit Schritt 1 klein: das Fenster ist nur noch ~40 ms breit.
         subscribers.forEach((_callbacks, id) => {
             s.emit('subscribe', id);
-            maintained.add(id);
         });
         const diagEntry = pushDiag({
             seq,
@@ -706,6 +774,10 @@ function createSocket(url: string): IoBrokerSocket {
             maintained: maintained.size,
             invalidDropped,
         });
+        // Fenster für den Rettungsanker-Zähler öffnen, bevor React die Effekte
+        // neu montiert — sonst zählt der erste Schwung Nachfragen nicht mit.
+        rescueEntry = diagEntry;
+        rescueUntil = Date.now() + RESCUE_WINDOW_MS;
         revalidateStates(s, diagEntry);
     };
 
@@ -1189,6 +1261,7 @@ const GET_STATE_DIRECT_TIMEOUT_MS = 8000;
  *  warten (Schritt 4) — kein Wiederholversuch, der ist im Fahrplan als
  *  optional markiert und bewusst weggelassen. */
 export function getStateDirect(id: string): Promise<ioBrokerState | null> {
+    noteRescueFetch();
     if (devGetState) {
         const handled = devGetState(id);
         if (handled !== undefined) {
