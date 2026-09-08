@@ -522,7 +522,12 @@ function checkConnectionAlive(opts?: { ignoreVisibility?: boolean }): void {
     const s = socket;
     if (!s) return; // nothing mounted yet — getSocket() will connect on demand
     if (!s.connected) {
-        bounceSocket();
+        // Schritt 2 (Masterfahrplan 08.09.2026): über den debounced Weg statt
+        // direkt bouncen. Gemessen (2.3, Versuch 2): Ein einziges Aufwach-Signal
+        // erzeugte hier einen zweiten, unabhängigen Neuaufbau, weil dieser Zweig
+        // resumeBounceInFlight nie setzte — der Schutz dagegen existiert seit dem
+        // Wetter-Vorfall und wurde hier einfach umgangen.
+        bounceSocketDebounced();
         return;
     }
 
@@ -534,7 +539,8 @@ function checkConnectionAlive(opts?: { ignoreVisibility?: boolean }): void {
     });
     globalThis.setTimeout(() => {
         // Still the same socket, still "connected", but no reply: zombie.
-        if (!answered && socket === s) bounceSocket();
+        // Schritt 2: derselbe Grund wie oben — debounced statt direkt.
+        if (!answered && socket === s) bounceSocketDebounced();
     }, 4000);
 }
 
@@ -658,6 +664,14 @@ function createSocket(url: string): IoBrokerSocket {
             return;
         }
         connectionActive = true;
+        // Schritt 3 (Masterfahrplan 08.09.2026): Der Kommentar auf
+        // resumeBounceInFlight behauptete schon immer "handleConnected clears
+        // it" — der Code tat es bis heute nicht (per grep bestätigt: nur an vier
+        // Stellen berührt, hier war keine davon). Erst hier lösen, nicht schon
+        // beim Absetzen des Bounces: der 20-Sekunden-Notausgang in
+        // bounceSocketDebounced() bleibt als Sicherheitsnetz stehen, falls der
+        // neue Socket nie verbindet.
+        resumeBounceInFlight = false;
         connectPerfMark = typeof performance !== 'undefined' ? performance.now() : 0;
         firstStateReported = false;
         console.log(
@@ -1164,7 +1178,16 @@ export function subscribeDpValue(
     return unsubscribe;
 }
 
-/** Get the current state of a datapoint without a React hook. */
+// Schritt 4 (Masterfahrplan 08.09.2026): Wird der Socket weggeworfen, während
+// eine getState-Anfrage unterwegs ist, ruft niemand je den Rückruf auf — das
+// Promise blieb bisher für immer offen (bewiesen, Abschnitt 2.6: nach 18 s noch
+// offen). Der Aufrufer in useDatapoint.ts wartet dann ebenfalls für immer.
+const GET_STATE_DIRECT_TIMEOUT_MS = 8000;
+
+/** Get the current state of a datapoint without a React hook. Gibt nach
+ *  GET_STATE_DIRECT_TIMEOUT_MS ohne Antwort `null` zurück, statt für immer zu
+ *  warten (Schritt 4) — kein Wiederholversuch, der ist im Fahrplan als
+ *  optional markiert und bewusst weggelassen. */
 export function getStateDirect(id: string): Promise<ioBrokerState | null> {
     if (devGetState) {
         const handled = devGetState(id);
@@ -1174,7 +1197,16 @@ export function getStateDirect(id: string): Promise<ioBrokerState | null> {
         }
     }
     return new Promise((resolve) => {
+        let settled = false;
+        const timer = globalThis.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve(null);
+        }, GET_STATE_DIRECT_TIMEOUT_MS);
         getSocket().emit('getState', id, (_err: unknown, state: ioBrokerState | null) => {
+            if (settled) return; // Timeout ist schon gelaufen, diese Antwort kommt zu spät
+            settled = true;
+            globalThis.clearTimeout(timer);
             if (state) cacheState(id, state);
             resolve(state ?? null);
         });
