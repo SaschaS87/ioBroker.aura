@@ -48,6 +48,23 @@ let socket: IoBrokerSocket | null = null;
 const subscribers = new Map<string, Set<(state: ioBrokerState) => void>>();
 const connectionListeners = new Set<(connected: boolean) => void>();
 
+// Schritt 7c (Masterfahrplan 08.09.2026): `connected` in React war reiner Push
+// — jede Meldung ging an die Listener, aber niemand glich sie je gegen die
+// Wirklichkeit (`socket.connected`) ab. Ein einmal falsch gesetzter Wert
+// korrigierte sich damit **nie**: Die Kopfzeile konnte dauerhaft „Verbunden"
+// zeigen, obwohl nichts mehr ankam (oder umgekehrt „Getrennt" bei stehender
+// Verbindung). Diese Hülle merkt sich den zuletzt gemeldeten Stand; der
+// Watchdog unten vergleicht ihn alle 5 Sekunden mit dem echten Socket und
+// korrigiert die Anzeige, wenn beide auseinanderlaufen.
+let lastPushedConnected: boolean | null = null;
+
+/** Melde den Verbindungszustand an alle Listener und merke ihn für den
+ *  Abgleich im Watchdog (Schritt 7c). Einziger Weg, `connected` zu setzen. */
+function pushConnectionState(connected: boolean): void {
+    lastPushedConnected = connected;
+    connectionListeners.forEach((fn) => fn(connected));
+}
+
 // Guards the resume-from-background bounce (see bounceSocketDebounced below).
 // Several independent "we just resumed" signals (visibilitychange, focus,
 // pageshow, the drift watchdog) can fire within a second or two of each other
@@ -235,8 +252,11 @@ interface ReconnectDiagEntry {
     seq: number;
     event: 'connect' | 'reconnect' | 'disconnect';
     ts: number; // Date.now() im Browser — Uhrenversatz ggü. dem Pi beachten (Fahrplan 2.2)
-    /** true = handleConnected wurde vom connectionActive-Riegel übersprungen (Doppelaufbau). */
+    /** true = handleConnected wurde vom Doppelaufbau-Riegel übersprungen. */
     guardSuppressed?: boolean;
+    /** Schritt 7b: Abschiedsgruß eines längst abgelösten Sockets — wurde
+     *  festgehalten, hat aber nichts mehr angefasst. */
+    stale?: boolean;
     subscribers?: number;
     maintained?: number;
     invalidDropped?: number;
@@ -678,7 +698,7 @@ function createSocket(url: string): IoBrokerSocket {
                     'is the ioBroker web/socketio adapter reachable? Showing offline and retrying…',
             );
         }
-        connectionListeners.forEach((fn) => fn(false));
+        pushConnectionState(false);
         scheduleIoRetry();
         return makeStubSocket();
     }
@@ -711,15 +731,30 @@ function createSocket(url: string): IoBrokerSocket {
     // connection indicator stayed "offline" and subscriptions were never
     // re-established after the first drop on a pure-ws server, until a full
     // page reload created a fresh socket.
-    let connectionActive = false;
+    //
+    // Schritt 7a (Masterfahrplan 08.09.2026): Der Riegel war ein Boolean **ohne
+    // Ablauf**, und zurückgesetzt hat ihn ausschließlich das
+    // `disconnect`-Ereignis. Bleibt das aus — genau der iOS-Fall, in dem der
+    // Client den Tod der Verbindung nicht mitbekommt —, dann wird der nächste
+    // `connect` für immer übersprungen: kein Neu-Abonnieren, keine Nachlese, und
+    // `connected` bleibt auf `true` stehen. Die App wäre dauerhaft taub bei
+    // grüner Anzeige, und nichts hätte sie je geweckt.
+    //
+    // Statt eines Riegels ohne Ablauf jetzt ein Zeitfenster: Zwei Meldungen
+    // derselben Verbindung kommen im selben Moment (gemessen: 1 ms Abstand,
+    // Fahrplan 2.3) und werden weiterhin zu einer zusammengefasst. Ein `connect`
+    // eine Sekunde später ist dagegen ein echter neuer Aufbau und läuft durch —
+    // im Zweifel einmal zu viel neu abonniert statt für immer taub.
+    const CONNECT_DEDUPE_MS = 1000;
+    let lastConnectRunAt = 0;
     const handleConnected = (reconnected: boolean): void => {
-        if (connectionActive) {
+        if (lastConnectRunAt > 0 && Date.now() - lastConnectRunAt < CONNECT_DEDUPE_MS) {
             // Riegel hat gegriffen — dieser Aufruf war ein Doppelaufbau (Fahrplan
             // 1.1/2.3) und wurde übersprungen. Für die Diagnose trotzdem festhalten.
             pushDiag({ seq, event: reconnected ? 'reconnect' : 'connect', ts: Date.now(), guardSuppressed: true });
             return;
         }
-        connectionActive = true;
+        lastConnectRunAt = Date.now();
         // Schritt 3 (Masterfahrplan 08.09.2026): Der Kommentar auf
         // resumeBounceInFlight behauptete schon immer "handleConnected clears
         // it" — der Code tat es bis heute nicht (per grep bestätigt: nur an vier
@@ -737,7 +772,7 @@ function createSocket(url: string): IoBrokerSocket {
             'background:#10b981;color:#fff;font-weight:bold;padding:2px 6px;',
             'background:#0f172a;color:#94a3b8;border-radius:0 3px 3px 0;padding:2px 6px;',
         );
-        connectionListeners.forEach((fn) => fn(true));
+        pushConnectionState(true);
         // Re-subscribe and fetch current state for all active subscriptions.
         // Drop any stale entries with invalid ID pattern (would crash backend with "Invalid pattern on subscribe").
         let invalidDropped = 0;
@@ -784,7 +819,18 @@ function createSocket(url: string): IoBrokerSocket {
     s.on('connect', () => handleConnected(false));
     s.on('reconnect', () => handleConnected(true));
     s.on('disconnect', () => {
-        connectionActive = false;
+        lastConnectRunAt = 0;
+        // Schritt 7b (Masterfahrplan 08.09.2026): Erst prüfen, ob dieser Socket
+        // überhaupt noch der aktuelle ist. Die Nachlese tut das längst
+        // (`socket !== s`), der Abschiedsgruß eines weggeworfenen Sockets lief
+        // dagegen ungefiltert durch — und traf damit seinen **Nachfolger**:
+        // `maintained.clear()` und `connected = false`, obwohl die neue
+        // Verbindung schon stand. Der Bounce räumt jetzt selbst auf (siehe
+        // bounceSocket), hier bleibt nur der Diagnose-Eintrag.
+        if (socket !== s) {
+            pushDiag({ seq, event: 'disconnect', ts: Date.now(), stale: true });
+            return;
+        }
         pushDiag({
             seq,
             event: 'disconnect',
@@ -801,7 +847,7 @@ function createSocket(url: string): IoBrokerSocket {
             'background:#6366f1;color:#fff;font-weight:bold;border-radius:3px 0 0 3px;padding:2px 6px;',
             'background:#ef4444;color:#fff;font-weight:bold;border-radius:0 3px 3px 0;padding:2px 6px;',
         );
-        connectionListeners.forEach((fn) => fn(false));
+        pushConnectionState(false);
     });
     s.on('stateChange', (...args: unknown[]) => {
         const id = args[0] as string;
@@ -900,6 +946,15 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         // everything else) was frozen for that long, not that the event loop
         // is merely busy — only a real suspend produces multi-x drift like this.
         if (drift > WATCHDOG_INTERVAL_MS * 3) bounceSocketDebounced();
+        // Schritt 7c (Masterfahrplan 08.09.2026): Nebenbei die Anzeige gegen die
+        // Wirklichkeit abgleichen. `connected` kam bisher ausschließlich per Push
+        // aus den Socket-Ereignissen — blieb eines davon aus, stand die Kopfzeile
+        // dauerhaft falsch, ohne dass irgendetwas das je bemerkt hätte. Der
+        // Watchdog läuft ohnehin alle 5 Sekunden; der Vergleich kostet nichts.
+        const live = socket;
+        if (live && lastPushedConnected !== null && live.connected !== lastPushedConnected) {
+            pushConnectionState(live.connected);
+        }
     }, WATCHDOG_INTERVAL_MS);
 
     document.addEventListener('visibilitychange', () => {
@@ -916,7 +971,12 @@ function bounceSocket(): void {
         socket.disconnect();
         socket = null;
     }
-    connectionListeners.forEach((fn) => fn(false));
+    // Schritt 7b (Masterfahrplan 08.09.2026): Das Aufräumen gehört hierher, wo
+    // der Socket bewusst weggeworfen wird — nicht in den disconnect-Handler des
+    // alten Sockets, der inzwischen den Nachfolger treffen kann. Die Abos sind
+    // mit dem Socket weg, also hält nichts mehr einen Wert aktuell.
+    maintained.clear();
+    pushConnectionState(false);
     getSocket();
 }
 
