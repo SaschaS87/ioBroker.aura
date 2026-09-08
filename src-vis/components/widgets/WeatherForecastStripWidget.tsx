@@ -40,7 +40,11 @@ import type { WidgetProps } from '../../types';
 
 const DEFAULT_BASE = 'javascript.0.Wetter';
 
-const C = {
+// Exported (alongside buildCoreSeries/buildDualGridOption/CHART_HEIGHT/Pt below)
+// so a dev-only preview page can render this exact chart with fake data —
+// see src-vis/pages/dev/WetterScrubPreview.tsx. Pure additive exports, no
+// behaviour change for the widget itself.
+export const C = {
     temp: '#e0922f',
     rain: '#2f7fd6',
     axis: '#888',
@@ -60,7 +64,7 @@ const C = {
 // below) — the rain-probability row reuses this exact value so its labels land
 // under the matching hour on the chart's time axis instead of just being
 // spread evenly across the widget's full width.
-const CHART_PAD_X = 34;
+export const CHART_PAD_X = 34;
 
 const asNum = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
@@ -465,7 +469,7 @@ function StripCell({ index, base, active, onSelect }: { index: number; base: str
     );
 }
 
-type Pt = { t: number; temp: number; rain: number; prob: number };
+export type Pt = { t: number; temp: number; rain: number; prob: number };
 
 // Temperature at an arbitrary timestamp between two hourly points (linear
 // interpolation) — used to give the "measured" and "Prognose" line segments
@@ -500,7 +504,7 @@ function confidenceMargin(t: number, bandStart: number, chartEnd: number, peakT:
 
 // `nowTs` is passed in rather than read here: it has to come from useNowTick()
 // so the measured/forecast split keeps moving while the app just sits there.
-function buildCoreSeries(
+export function buildCoreSeries(
     points: Pt[],
     sunrise: string | null,
     sunset: string | null,
@@ -745,11 +749,21 @@ const AXIS_COMMON = {
 // axisPointer, so a tap anywhere draws one crosshair through both and the
 // tooltip merges temperature, rain AND probability — alignment is guaranteed
 // because it's the same coordinate system, not matched CSS padding.
-const GRID_TOP0 = 16;
-const GRID_H0 = 90;
-const GRID_TOP1 = 112;
-const GRID_H1 = 24;
-const CHART_HEIGHT = 156;
+export const GRID_TOP0 = 16;
+export const GRID_H0 = 90;
+export const GRID_TOP1 = 112;
+export const GRID_H1 = 24;
+export const CHART_HEIGHT = 156;
+
+// Single-grid variant (temperature + rain amount only, no separate
+// probability strip) — used by buildSingleGridOption below, itself only used
+// by the dev-only scrub preview (pages/dev/WetterScrubPreview.tsx) while
+// exploring dropping the probability row per Sascha's request (08.09.2026).
+// Not used by the production widget. Grid grows into the space the second
+// grid used to occupy, kept inside the same CHART_HEIGHT for a fair
+// side-by-side comparison with the two-grid variants.
+export const GRID_TOP0_SINGLE = 12;
+export const GRID_H0_SINGLE = 124;
 
 // Sun/moon markers as small flat SVGs (filled circle + glyph) rendered
 // through ECharts' own markPoint — NOT a separate HTML/CSS overlay. An
@@ -791,7 +805,7 @@ const MOON_SVG =
 const SUN_IMAGE = `image://data:image/svg+xml;utf8,${encodeURIComponent(SUN_SVG)}`;
 const MOON_IMAGE = `image://data:image/svg+xml;utf8,${encodeURIComponent(MOON_SVG)}`;
 
-function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: Pt[], tooltipFormatter: (raw: unknown) => string) {
+export function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: Pt[], tooltipFormatter: (raw: unknown) => string) {
     const sunMoonMarkPoints: Record<string, unknown>[] = [];
     if (core.sunriseTs !== null && core.sunriseTs > core.chartStart && core.sunriseTs < core.chartEnd) {
         sunMoonMarkPoints.push({ coord: [core.sunriseTs, 0], symbol: SUN_IMAGE, symbolSize: 16 });
@@ -853,6 +867,57 @@ function buildDualGridOption(core: ReturnType<typeof buildCoreSeries>, points: P
             { gridIndex: 1, type: 'value' as const, min: 0, max: 100, show: false },
         ],
         series: [core.rainSeries, ...core.bandSeries, ...core.tempSeries, probSeries],
+    };
+}
+
+// Single-grid variant of buildDualGridOption: temperature + rain-amount (mm)
+// only, no separate probability strip below it. Exploratory (08.09.2026, see
+// pages/dev/WetterScrubPreview.tsx) — the production widget still uses
+// buildDualGridOption. Rain probability isn't dropped as data, only as its
+// own visualised row; a caller reads `points[i].prob` directly for a
+// readout instead of pulling it from a chart series.
+export function buildSingleGridOption(core: ReturnType<typeof buildCoreSeries>, tooltipFormatter: (raw: unknown) => string) {
+    const sunMoonMarkPoints: Record<string, unknown>[] = [];
+    if (core.sunriseTs !== null && core.sunriseTs > core.chartStart && core.sunriseTs < core.chartEnd) {
+        sunMoonMarkPoints.push({ coord: [core.sunriseTs, 0], symbol: SUN_IMAGE, symbolSize: 16 });
+    }
+    if (core.sunsetTs !== null && core.sunsetTs > core.chartStart && core.sunsetTs < core.chartEnd) {
+        sunMoonMarkPoints.push({ coord: [core.sunsetTs, 0], symbol: MOON_IMAGE, symbolSize: 16 });
+    }
+    // Anchored to the rain (mm) axis's zero line — the only secondary axis
+    // left in this grid — instead of the probability axis in
+    // buildDualGridOption. Same visual result: bottom edge of the chart.
+    const rainSeriesWithMarks = {
+        ...core.rainSeries,
+        markPoint: sunMoonMarkPoints.length ? { silent: true, symbolOffset: [0, 0], label: { show: false }, data: sunMoonMarkPoints } : undefined,
+    };
+    return {
+        animation: false,
+        grid: [{ left: CHART_PAD_X, right: CHART_PAD_X, top: GRID_TOP0_SINGLE, height: GRID_H0_SINGLE }],
+        tooltip: {
+            trigger: 'axis' as const,
+            axisPointer: { type: 'line' as const },
+            confine: true,
+            backgroundColor: 'var(--app-surface, #1e1e1e)',
+            borderColor: 'var(--app-border, #333)',
+            textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },
+            formatter: tooltipFormatter,
+        },
+        xAxis: [
+            {
+                gridIndex: 0,
+                type: 'time' as const,
+                min: core.chartStart,
+                max: core.chartEnd,
+                axisLabel: { color: C.axis, fontSize: 10 },
+                axisLine: { lineStyle: { color: C.axisLine } },
+            },
+        ],
+        yAxis: [
+            { gridIndex: 0, ...AXIS_COMMON.yAxisTemp },
+            { gridIndex: 0, ...AXIS_COMMON.yAxisRain },
+        ],
+        series: [rainSeriesWithMarks, ...core.bandSeries, ...core.tempSeries],
     };
 }
 
