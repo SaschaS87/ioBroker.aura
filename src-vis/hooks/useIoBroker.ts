@@ -65,6 +65,12 @@ let resumeBounceInFlight = false;
 let connectPerfMark = 0;
 let firstStateReported = false;
 
+// Schritt 6 (Masterfahrplan 08.09.2026): a running number for every socket
+// instance this tab has ever created, so the reconnect diagnostics below can
+// tell two connect attempts a few milliseconds apart (Abschnitt 2.3, Versuch
+// 2), instead of both just saying "connect".
+let socketSeq = 0;
+
 // Last-known-good state for every ID that was ever fetched or received.
 // Allows useDatapoint to initialize synchronously (no null-flash on mount).
 const stateCache = new Map<string, ioBrokerState>();
@@ -213,36 +219,159 @@ function isValidStateId(id: unknown): id is string {
     return typeof id === 'string' && id.length > 0 && !/[/?&=]/.test(id);
 }
 
-/** Fetch multiple state IDs in parallel and warm the cache. Returns when all have resolved (or 4 s timeout). */
+// ── Schritt 6 (Masterfahrplan 08.09.2026): Reconnect-Diagnose ──────────────────
+// Variante b, nur Frontend: statt des Ringpuffers über den Adapter-Kanal
+// (perfLog → main.js → aura.0.perfdata/loadHistory.json) schreibt der Client
+// die letzten Verbindungswechsel direkt in einen State — abrufbar mit dem
+// ohnehin erlaubten `iobroker state getvalue aura.0.diag.reconnect`, kein
+// Browser-Zugriff nötig. Verliert dafür die Feinheiten des Ringpuffers (kein
+// Zusammenführen mehrerer Geräte, keine Historie über einen Tab-Neustart
+// hinaus) — reicht aber, um die in Abschnitt 4 offene "letzte Meile" beim
+// nächsten Auftreten in Minuten statt einer Nacht aus Millisekunden zu klären.
+const DIAG_STATE_ID = `${NS}.diag.reconnect`;
+const DIAG_MAX_ENTRIES = 20;
+
+interface ReconnectDiagEntry {
+    seq: number;
+    event: 'connect' | 'reconnect' | 'disconnect';
+    ts: number; // Date.now() im Browser — Uhrenversatz ggü. dem Pi beachten (Fahrplan 2.2)
+    /** true = handleConnected wurde vom connectionActive-Riegel übersprungen (Doppelaufbau). */
+    guardSuppressed?: boolean;
+    subscribers?: number;
+    maintained?: number;
+    invalidDropped?: number;
+    revalidate?: {
+        asked: number;
+        answered: number;
+        changed: number;
+        delivered: number;
+        /** Antwort kam von einem inzwischen abgelösten Socket und wurde verworfen. */
+        aborted: boolean;
+        /** getStates-Antwort unbrauchbar/ausgeblieben, auf Einzelabfragen zurückgefallen. */
+        fallback: boolean;
+    };
+}
+
+const diagLog: ReconnectDiagEntry[] = [];
+
+/** Append a fresh diag entry, trim the log to the last DIAG_MAX_ENTRIES, and
+ *  persist it. Skipped during the screenshot harness — those runs create
+ *  artificial reconnects that would just be noise here, same as the perfLog
+ *  skip in the stateChange handler below. */
+function pushDiag(entry: ReconnectDiagEntry): ReconnectDiagEntry {
+    diagLog.push(entry);
+    if (diagLog.length > DIAG_MAX_ENTRIES) diagLog.shift();
+    flushDiagState();
+    return entry;
+}
+
+/** Persist the current log without adding an entry — used by revalidateStates
+ *  to publish updated counts after mutating the entry pushDiag already added
+ *  for this connection. */
+function flushDiagState(): void {
+    const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
+    if (shot) return;
+    setStateDirect(DIAG_STATE_ID, JSON.stringify(diagLog), true);
+}
+
+// Batched-request tuning, shared by prefetchStates and revalidateStates below
+// (Schritt 1, Masterfahrplan 08.09.2026).
+const GET_STATES_CHUNK = 500; // Sicherheitsnetz für sehr große Dashboards, heute ~195 IDs
+const GET_STATES_FALLBACK_MS = 2500; // grosszügig über den gemessenen 36–106 ms; danach: Einzelabfragen
+
+/** Fallback used when a batched getStates() answer is unusable or never
+ *  arrives: one getState per ID, staggered in blocks of 50 — exactly how
+ *  revalidateStates/prefetchStates worked before Schritt 1. Keeps a bad
+ *  answer (or a future hdering change to the response shape) from silently
+ *  stalling instead of just being slower. (Saschas Vorkehrung, 08.09.2026) */
+function fetchIndividuallyChunked(
+    ids: string[],
+    onEach: (id: string, state: ioBrokerState | null) => void,
+    onDone?: () => void,
+): void {
+    if (ids.length === 0) {
+        onDone?.();
+        return;
+    }
+    const CHUNK = 50;
+    const emitChunk = (from: number): void => {
+        for (const id of ids.slice(from, from + CHUNK)) {
+            getSocket().emit('getState', id, (_err: unknown, state: ioBrokerState | null) => onEach(id, state ?? null));
+        }
+        if (from + CHUNK < ids.length) globalThis.setTimeout(() => emitChunk(from + CHUNK), 25);
+        else onDone?.();
+    };
+    emitChunk(0);
+}
+
+/** Fetch multiple state IDs in one batched `getStates` request (chunked only as
+ *  a safety net for very large lists — GET_STATES_CHUNK IDs per request) and
+ *  warm the cache. Falls back once to the pre-Schritt-1 behaviour — one
+ *  getState per ID — when a chunk's answer is not a usable object or never
+ *  arrives. Returns when everything has resolved (or a 4 s timeout). */
 export function prefetchStates(ids: string[], onProgress?: (loaded: number, total: number) => void): Promise<void> {
     const unique = [...new Set(ids.filter(Boolean))].filter((id) => !stateCache.has(id));
     if (unique.length === 0) return Promise.resolve();
-    let loaded = 0;
     const total = unique.length;
-    const fetches = unique.map(
-        (id) =>
-            new Promise<void>((resolve) => {
-                // Route through the dev stub as well, so the harness controls every
-                // getState path. Otherwise the prefetch reaches the real socket for a
-                // fictional demo ID and caches whatever it answers.
-                if (devGetState) {
-                    const handled = devGetState(id);
-                    if (handled !== undefined) {
-                        if (handled) cacheState(id, handled);
-                        onProgress?.(++loaded, total);
-                        resolve();
-                        return;
-                    }
+    let loaded = 0;
+    const markLoaded = (): void => onProgress?.(++loaded, total);
+
+    // Route through the dev stub first, so the harness controls every getState
+    // path. Otherwise the prefetch reaches the real socket for a fictional demo
+    // ID and caches whatever it answers.
+    const remaining: string[] = [];
+    for (const id of unique) {
+        if (devGetState) {
+            const handled = devGetState(id);
+            if (handled !== undefined) {
+                if (handled) cacheState(id, handled);
+                markLoaded();
+                continue;
+            }
+        }
+        remaining.push(id);
+    }
+    if (remaining.length === 0) return Promise.resolve();
+
+    const fetchChunk = (chunkIds: string[]): Promise<void> =>
+        new Promise((resolve) => {
+            let settled = false;
+            const fallback = (): void => {
+                if (settled) return;
+                settled = true;
+                fetchIndividuallyChunked(
+                    chunkIds,
+                    (id, state) => {
+                        if (state) cacheState(id, state);
+                        markLoaded();
+                    },
+                    resolve,
+                );
+            };
+            const timer = globalThis.setTimeout(fallback, GET_STATES_FALLBACK_MS);
+            getSocket().emit('getStates', chunkIds, (err: unknown, obj: unknown) => {
+                if (settled) return; // fallback already ran on timeout
+                if (err || !obj || typeof obj !== 'object') {
+                    fallback();
+                    return;
                 }
-                getSocket().emit('getState', id, (_err: unknown, state: ioBrokerState | null) => {
+                settled = true;
+                globalThis.clearTimeout(timer);
+                const answers = obj as Record<string, ioBrokerState | null | undefined>;
+                for (const id of chunkIds) {
+                    const state = answers[id];
                     if (state) cacheState(id, state);
-                    onProgress?.(++loaded, total);
-                    resolve();
-                });
-            }),
-    );
-    const timeout = new Promise<void>((resolve) => globalThis.setTimeout(resolve, 4000));
-    return Promise.race([Promise.all(fetches).then(() => undefined), timeout]);
+                    markLoaded();
+                }
+                resolve();
+            });
+        });
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < remaining.length; i += GET_STATES_CHUNK) chunks.push(remaining.slice(i, i + GET_STATES_CHUNK));
+
+    const overallTimeout = new Promise<void>((resolve) => globalThis.setTimeout(resolve, 4000));
+    return Promise.race([Promise.all(chunks.map(fetchChunk)).then(() => undefined), overallTimeout]);
 }
 
 // Determine initial socket URL:
@@ -291,32 +420,85 @@ let currentUrl = getInitialUrl();
  * we were offline stays visibly stale until it happens to change again. Only a
  * full page reload cleared it, because the cache is module state. (issue #528)
  *
- * Emitted in chunks so a dashboard with hundreds of datapoints doesn't fire one
- * giant burst at a socket that has just come up.
+ * Schritt 1 (Masterfahrplan 08.09.2026): one batched `getStates` call instead
+ * of one `getState` per ID — measured 80x faster (3.140 ms → ~40 ms for ~195
+ * IDs, siehe Abschnitt 2.4/2.5), was fast das gesamte Zeitfenster schließt, in
+ * dem ein zweiter Reconnect die Erholung wieder zunichtemachen kann (Abschnitt
+ * 1.3/2.3). Chunked nur noch als Sicherheitsnetz für sehr große Dashboards —
+ * die heutige Liste passt in einen einzigen Chunk. Bleibt die Antwort eines
+ * Chunks unbrauchbar oder aus, fällt genau dieser Chunk einmalig auf das
+ * alte Verhalten zurück, statt stillstehend zu warten.
+ *
+ * `diagEntry` (Schritt 6, optional) sammelt gefragt/beantwortet/geändert/
+ * zugestellt/abgebrochen für `aura.0.diag.reconnect` — siehe Fahrplan 5,
+ * Schritt 6.
  */
-function revalidateStates(s: IoBrokerSocket): void {
+function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): void {
     const ids = [...new Set([...subscribers.keys(), ...stateCache.keys()])].filter(isValidStateId);
+    if (diagEntry) {
+        diagEntry.revalidate = { asked: ids.length, answered: 0, changed: 0, delivered: 0, aborted: false, fallback: false };
+        flushDiagState();
+    }
     if (ids.length === 0) return;
-    const CHUNK = 50;
-    const emitChunk = (from: number): void => {
-        // A socket swapped out mid-pass (reconnect / bounce) makes the rest of
-        // the chunks meaningless — the new socket runs its own pass.
-        if (socket !== s) return;
-        for (const id of ids.slice(from, from + CHUNK)) {
-            s.emit('getState', id, (_err: unknown, state: unknown) => {
-                if (!state) return;
-                const next = state as ioBrokerState;
-                const prev = stateCache.get(id);
-                cacheState(id, next);
-                // Only wake subscribers on an actual change — a reconnect on a
-                // large dashboard would otherwise re-render every widget.
-                if (prev && prev.val === next.val && prev.ts === next.ts && prev.ack === next.ack) return;
-                subscribers.get(id)?.forEach((fn) => fn(next));
-            });
+    const rv = diagEntry?.revalidate;
+
+    const applyOne = (id: string, next: ioBrokerState | null): void => {
+        if (!next) return;
+        if (rv) rv.answered++;
+        const prev = stateCache.get(id);
+        cacheState(id, next);
+        // Only wake subscribers on an actual change — a reconnect on a large
+        // dashboard would otherwise re-render every widget.
+        if (prev && prev.val === next.val && prev.ts === next.ts && prev.ack === next.ack) return;
+        if (rv) rv.changed++;
+        const subs = subscribers.get(id);
+        if (subs && subs.size > 0) {
+            if (rv) rv.delivered++;
+            subs.forEach((fn) => fn(next));
         }
-        if (from + CHUNK < ids.length) globalThis.setTimeout(() => emitChunk(from + CHUNK), 25);
     };
-    emitChunk(0);
+
+    for (let from = 0; from < ids.length; from += GET_STATES_CHUNK) {
+        const chunkIds = ids.slice(from, from + GET_STATES_CHUNK);
+        let settled = false;
+        const runFallback = (): void => {
+            // A socket swapped out mid-wait (reconnect / bounce) makes a late
+            // answer meaningless — the new socket runs its own pass.
+            if (socket !== s) {
+                if (rv) {
+                    rv.aborted = true;
+                    flushDiagState();
+                }
+                return;
+            }
+            if (rv) rv.fallback = true;
+            fetchIndividuallyChunked(chunkIds, applyOne, () => rv && flushDiagState());
+        };
+        const timer = globalThis.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            runFallback();
+        }, GET_STATES_FALLBACK_MS);
+        s.emit('getStates', chunkIds, (err: unknown, obj: unknown) => {
+            if (settled) return;
+            settled = true;
+            globalThis.clearTimeout(timer);
+            if (socket !== s) {
+                if (rv) {
+                    rv.aborted = true;
+                    flushDiagState();
+                }
+                return;
+            }
+            if (err || !obj || typeof obj !== 'object') {
+                runFallback();
+                return;
+            }
+            const answers = obj as Record<string, ioBrokerState | null | undefined>;
+            for (const id of chunkIds) applyOne(id, answers[id] ?? null);
+            if (rv) flushDiagState();
+        });
+    }
 }
 
 // ── Wake-up liveness check ────────────────────────────────────────────────────
@@ -447,6 +629,11 @@ function createSocket(url: string): IoBrokerSocket {
     // `path` (socket.io's default /socket.io is already correct, and @iobroker/ws
     // would mishandle it — it connects at the root).
     let s = io.connect(url, { transports: ['websocket', 'polling'] });
+    // Schritt 6 (Masterfahrplan 08.09.2026): identifiziert diese Socket-Instanz
+    // in der Reconnect-Diagnose unten — damit sich zwei Verbindungsaufbauten im
+    // Abstand weniger Millisekunden (Abschnitt 2.3, Versuch 2) im Nachhinein
+    // auseinanderhalten lassen.
+    const seq = ++socketSeq;
     // Dev only: every emit — including the two call sites that bypass the
     // setStateDirect/setObjectDirect helpers — runs through the write guard, so
     // the dev preview cannot switch real devices (see utils/devWriteGuard.ts).
@@ -464,7 +651,12 @@ function createSocket(url: string): IoBrokerSocket {
     // page reload created a fresh socket.
     let connectionActive = false;
     const handleConnected = (reconnected: boolean): void => {
-        if (connectionActive) return;
+        if (connectionActive) {
+            // Riegel hat gegriffen — dieser Aufruf war ein Doppelaufbau (Fahrplan
+            // 1.1/2.3) und wurde übersprungen. Für die Diagnose trotzdem festhalten.
+            pushDiag({ seq, event: reconnected ? 'reconnect' : 'connect', ts: Date.now(), guardSuppressed: true });
+            return;
+        }
         connectionActive = true;
         connectPerfMark = typeof performance !== 'undefined' ? performance.now() : 0;
         firstStateReported = false;
@@ -478,24 +670,42 @@ function createSocket(url: string): IoBrokerSocket {
         connectionListeners.forEach((fn) => fn(true));
         // Re-subscribe and fetch current state for all active subscriptions.
         // Drop any stale entries with invalid ID pattern (would crash backend with "Invalid pattern on subscribe").
+        let invalidDropped = 0;
         Array.from(subscribers.keys()).forEach((id) => {
             if (!isValidStateId(id)) {
                 if (import.meta.env.DEV)
                     console.warn('[useIoBroker] dropping stale invalid subscription on reconnect:', id);
                 subscribers.delete(id);
+                invalidDropped++;
             }
         });
         subscribers.forEach((_callbacks, id) => {
             s.emit('subscribe', id);
             maintained.add(id);
         });
-        revalidateStates(s);
+        const diagEntry = pushDiag({
+            seq,
+            event: reconnected ? 'reconnect' : 'connect',
+            ts: Date.now(),
+            guardSuppressed: false,
+            subscribers: subscribers.size,
+            maintained: maintained.size,
+            invalidDropped,
+        });
+        revalidateStates(s, diagEntry);
     };
 
     s.on('connect', () => handleConnected(false));
     s.on('reconnect', () => handleConnected(true));
     s.on('disconnect', () => {
         connectionActive = false;
+        pushDiag({
+            seq,
+            event: 'disconnect',
+            ts: Date.now(),
+            subscribers: subscribers.size,
+            maintained: maintained.size,
+        });
         // Nothing is being kept current while we are offline, so every cached value
         // now needs confirming — even for subscriptions that outlive the drop (the
         // non-hook `subscribeStateDirect` consumers, which don't watch `connected`).
