@@ -11,7 +11,7 @@ interface ScrollMetrics {
 
 const EMPTY: ScrollMetrics = { hasX: false, hasY: false, thumbW: 0, thumbX: 0, thumbH: 0, thumbY: 0 };
 const MIN_THUMB = 28; // px — keep the thumb grabbable even on very long content
-const BAR = 5; // px thickness — matches the desktop .aura-scroll thumb width
+const BAR = 3; // px thickness — thinner than the desktop .aura-scroll thumb (5px) on Saschas Wunsch
 const EDGE = 3; // px inset from the viewport edge
 
 /**
