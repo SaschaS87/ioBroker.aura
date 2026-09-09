@@ -17,6 +17,7 @@ import {
     Clock,
     Hourglass,
     Umbrella,
+    Thermometer,
     ThermometerSun,
     ThermometerSnowflake,
     Zap,
@@ -680,43 +681,6 @@ export function buildCoreSeries(
     return { rainSeries, tempSeries, bandSeries, chartStart, chartEnd, sunriseTs, sunsetTs };
 }
 
-// Shared axis-trigger tooltip. If the hovered point's series list doesn't
-// already include a probability series (variant B has its own), look the
-// value up from the raw hourly blob so A/C get "tap for the exact number"
-// without a dedicated series.
-function buildTooltipFormatter(hourly: HourlyBlob | null) {
-    return (raw: unknown) => {
-        const list = (Array.isArray(raw) ? raw : [raw]) as {
-            marker: string;
-            seriesName: string;
-            axisValue: number;
-            value: [number, number];
-        }[];
-        if (!list.length) return '';
-        const time = new Date(list[0].axisValue).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-        const rows = list.map((p) => {
-            const unit = p.seriesName === 'Regen' ? 'mm' : p.seriesName === 'Regenwahrscheinlichkeit' ? '%' : '°C';
-            const decimals = p.seriesName === 'Regenwahrscheinlichkeit' ? 0 : 1;
-            return `${p.marker}${p.seriesName}: ${formatNum(p.value[1], decimals)} ${unit}`;
-        });
-        const hasProb = list.some((p) => p.seriesName === 'Regenwahrscheinlichkeit');
-        if (!hasProb && hourly?.time) {
-            let bestIdx = -1;
-            let bestDiff = Infinity;
-            for (let i = 0; i < hourly.time.length; i++) {
-                const diff = Math.abs(new Date(hourly.time[i]).getTime() - list[0].axisValue);
-                if (diff < bestDiff) {
-                    bestDiff = diff;
-                    bestIdx = i;
-                }
-            }
-            const pct = bestIdx >= 0 ? hourly.precipitation_probability?.[bestIdx] : undefined;
-            if (typeof pct === 'number') rows.push(`Regenwahrsch.: ${formatNum(pct, 0)} %`);
-        }
-        return [time, ...rows].join('<br/>');
-    };
-}
-
 // Fixed default ranges (0–35°C / 0–5mm) so a normal day's chart doesn't jump
 // around scale-wise — but still expand via the min/max callbacks whenever the
 // actual data (incl. the confidence band) doesn't fit, rather than clipping it.
@@ -921,6 +885,73 @@ export function buildSingleGridOption(core: ReturnType<typeof buildCoreSeries>, 
     };
 }
 
+// Drag/tap read-out for the chart below, replacing ECharts' own axis
+// tooltip — that used to jump around near the touch point on mobile
+// (Sascha, 08.09.2026: "springendes Tooltip-Fenster"). While dragging, the
+// title row turns into an icon read-out (Uhrzeit/Temperatur/Regenmenge/
+// -wahrscheinlichkeit) and the legend hides; at rest, title and legend look
+// exactly as before. Chosen after three rounds of dev-only mockups (see
+// pages/dev/WetterScrubPreview.tsx, Variante 11).
+function useChartScrub(points: Pt[]) {
+    const chartRef = useRef<any>(null);
+    const [idx, setIdx] = useState(0);
+    const [scrubbing, setScrubbing] = useState(false);
+
+    const onEvents = useMemo(
+        () => ({
+            updateAxisPointer: (params: { axesInfo?: { value: number }[] }) => {
+                const info = params?.axesInfo?.[0];
+                if (!info || !points.length) return;
+                const val = info.value;
+                let bestI = 0;
+                let bestD = Infinity;
+                for (let i = 0; i < points.length; i++) {
+                    const d = Math.abs(points[i].t - val);
+                    if (d < bestD) {
+                        bestD = d;
+                        bestI = i;
+                    }
+                }
+                setIdx(bestI);
+            },
+        }),
+        [points],
+    );
+
+    const xPx = (i: number): number => {
+        const p = points[i];
+        if (!p) return 0;
+        const inst = chartRef.current?.getEchartsInstance?.();
+        const px = inst?.convertToPixel?.({ xAxisIndex: 0, yAxisIndex: 0 }, [p.t, p.temp]);
+        return Array.isArray(px) ? px[0] : 0;
+    };
+
+    const pointerHandlers = {
+        onPointerDown: () => setScrubbing(true),
+        onPointerUp: () => setScrubbing(false),
+        onPointerLeave: () => setScrubbing(false),
+    };
+
+    return { chartRef, idx, scrubbing, onEvents, pointerHandlers, xPx };
+}
+
+function ScrubCrosshair({ x }: { x: number }) {
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                left: x,
+                top: GRID_TOP0_SINGLE - 4,
+                bottom: 20,
+                width: 0,
+                borderLeft: '1px dashed var(--text-secondary)',
+                opacity: 0.45,
+                pointerEvents: 'none',
+            }}
+        />
+    );
+}
+
 // ── Shared detail panel for whichever day is selected ───────────────────────
 function DetailPanel({ index, base }: { index: number; base: string }) {
     const prefix = `${base}.Taeglich.Tag${index}`;
@@ -982,38 +1013,90 @@ function DetailPanel({ index, base }: { index: number; base: string }) {
     const option = useMemo(() => {
         if (!points.length) return null;
         const core = buildCoreSeries(points, sunrise, sunset, isToday, index, nowTs);
-        const formatter = buildTooltipFormatter(hourly);
-        return buildDualGridOption(core, points, formatter);
-    }, [points, sunrise, sunset, isToday, index, hourly, nowTs]);
+        const base = buildSingleGridOption(core, () => '');
+        // Own tooltip box stays invisible — the drag/tap read-out below the
+        // title (see useChartScrub/ScrubCrosshair) replaces it. trigger/
+        // axisPointer stay configured so the updateAxisPointer event keeps
+        // firing; only the floating box itself is neutralised.
+        return {
+            ...base,
+            tooltip: {
+                ...(base as { tooltip: Record<string, unknown> }).tooltip,
+                formatter: () => '',
+                backgroundColor: 'transparent',
+                borderColor: 'transparent',
+                borderWidth: 0,
+                padding: 0,
+                extraCssText: 'box-shadow:none; pointer-events:none;',
+            },
+        };
+    }, [points, sunrise, sunset, isToday, index, nowTs]);
+
+    const scrub = useChartScrub(points);
+    const scrubPoint = scrub.scrubbing ? points[scrub.idx] : undefined;
 
     return (
         <div style={{ padding: '12px 12px 14px' }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 650, color: 'var(--text-primary)' }}>
-                    {isToday ? 'Heute' : `${dayLabel(index)} ${dayDateStr(index)}`}
-                </span>
-                <span className="inline-flex items-center gap-2" style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>
-                    {isToday && (
-                        <span className="inline-flex items-center gap-1">
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.temp, display: 'inline-block' }} />
-                            gemessen
+            {/* Pointer handlers sit on this wrapper (title row + chart together),
+                not just the title row, so dragging anywhere on the chart itself
+                — not only the 20px title line — starts the read-out. */}
+            <div {...scrub.pointerHandlers}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 4, height: 20 }}>
+                    {scrubPoint ? (
+                        <span className="inline-flex items-center gap-2.5" style={{ fontSize: 12.5 }}>
+                            <span className="inline-flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+                                <Clock size={12} /> {new Date(scrubPoint.t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className="inline-flex items-center gap-1" style={{ color: C.temp, fontWeight: 600 }}>
+                                <Thermometer size={12} /> {formatNum(scrubPoint.temp, 0)}°
+                            </span>
+                            <span className="inline-flex items-center gap-1" style={{ color: C.rain, fontWeight: 600 }}>
+                                <Droplet size={12} /> {formatNum(scrubPoint.rain, 1)}
+                            </span>
+                            <span className="inline-flex items-center gap-1" style={{ color: C.rain, fontWeight: 600 }}>
+                                <Umbrella size={12} /> {formatNum(scrubPoint.prob, 0)}%
+                            </span>
+                        </span>
+                    ) : (
+                        <span style={{ fontSize: 13.5, fontWeight: 650, color: 'var(--text-primary)' }}>
+                            {isToday ? 'Heute' : `${dayLabel(index)} ${dayDateStr(index)}`}
                         </span>
                     )}
-                    <span className="inline-flex items-center gap-1">
-                        <span style={{ width: 10, height: 6, borderRadius: 2, background: C.band, display: 'inline-block' }} />
-                        Prognose
-                    </span>
-                </span>
-            </div>
+                    {!scrubPoint && (
+                        <span className="inline-flex items-center gap-2" style={{ fontSize: 10.5, color: 'var(--text-secondary)' }}>
+                            {isToday && (
+                                <span className="inline-flex items-center gap-1">
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.temp, display: 'inline-block' }} />
+                                    gemessen
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1">
+                                <span style={{ width: 10, height: 6, borderRadius: 2, background: C.band, display: 'inline-block' }} />
+                                Prognose
+                            </span>
+                        </span>
+                    )}
+                </div>
 
-            <div style={{ marginTop: 8 }}>
-                {option ? (
-                    <ReactECharts option={option} notMerge style={{ height: CHART_HEIGHT }} />
-                ) : (
-                    <div style={{ height: CHART_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
-                        Keine Stundendaten für diesen Tag
-                    </div>
-                )}
+                <div style={{ marginTop: 8, position: 'relative' }}>
+                    {option ? (
+                        <>
+                            <ReactECharts
+                                ref={scrub.chartRef}
+                                option={option}
+                                notMerge
+                                lazyUpdate
+                                style={{ height: CHART_HEIGHT, width: '100%' }}
+                                onEvents={scrub.onEvents}
+                            />
+                            {scrubPoint && <ScrubCrosshair x={scrub.xPx(scrub.idx)} />}
+                        </>
+                    ) : (
+                        <div style={{ height: CHART_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+                            Keine Stundendaten für diesen Tag
+                        </div>
+                    )}
+                </div>
             </div>
 
             <GroupLabel text="Sonne & Licht" />
