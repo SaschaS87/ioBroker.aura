@@ -52,6 +52,7 @@ import { MenuWidget } from './MenuWidget';
 import { RainStationWidget } from './RainStationWidget';
 import { RainDailyWidget } from './RainDailyWidget';
 import { RoomClimateWidget } from './RoomClimateWidget';
+import { DataSourceHealthWidget } from './DataSourceHealthWidget';
 
 // Chart widgets are heavy (recharts ~380 KB, echarts ~1.1 MB) — lazy-loaded so
 // dashboards without charts skip the cost. Consumers must render these inside
@@ -143,6 +144,7 @@ export function getWidgetMap() {
         raindaily: RainDailyWidget,
         heating: HeatingWidget,
         weatherforecaststrip: WeatherForecastStripWidget,
+        datasourcehealth: DataSourceHealthWidget,
         // `satisfies` makes a missing widget type a build error instead of a
         // "Unbekannter Widget-Typ" notice in mirrors, popups and tab embeds.
     } as const satisfies Record<WidgetType, unknown>;

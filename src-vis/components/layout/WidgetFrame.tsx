@@ -7413,7 +7413,10 @@ export function WidgetFrame({
         framingType === 'weatherforecaststrip' ||
         // shutterfloors: no outer frame (transparent) + no frame padding, so the
         // floor list spans the full column width, just like heating.
-        framingType === 'shutterfloors';
+        framingType === 'shutterfloors' ||
+        // datasourcehealth: DataSourceHealthBox brings its own card (background,
+        // border, radius) — no extra outer frame padding needed.
+        framingType === 'datasourcehealth';
     // Publish the padding that is actually applied, so widget content can align to
     // the card edge instead of assuming the default. Scrolling lists whose rows
     // bleed into this gutter need it to stay inside the card (.aura-bleed-* in

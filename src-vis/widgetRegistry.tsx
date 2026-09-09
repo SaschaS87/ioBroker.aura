@@ -62,6 +62,7 @@ import {
     CopyPlus,
     Menu,
     BellRing,
+    HeartPulse,
     type LucideIcon,
 } from 'lucide-react';
 import type { WidgetType, ConditionSlot } from './types';
@@ -361,6 +362,20 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         widgetGroup: 'control',
         mock: { t: 'Wetter', v: '23°C', u: '' },
         hint: 'Wischbarer 7-Tage-Streifen (DWD-Stil) mit einem gemeinsamen Detailpanel darunter: verbundenes Temperatur/Regen/Regenwahrscheinlichkeits-Chart mit Sonnenauf-/untergang-Markern + Sonne/Niederschlag/Temperatur-Kennzahlen',
+    },
+    {
+        type: 'datasourcehealth',
+        label: 'Datenquellen',
+        shortLabel: 'Datenquellen',
+        Icon: HeartPulse,
+        iconName: 'HeartPulse',
+        color: '#2f7fd6',
+        defaultW: 21,
+        defaultH: 2,
+        addMode: 'free',
+        widgetGroup: 'control',
+        mock: { t: 'Datenquellen', v: 'alles aktuell', u: '' },
+        hint: 'Klappbare Status-Box: prüft konfigurierte Datenquellen auf Aktualität, mit Neustart-Aktion je Quelle (options.healthSources als JSON konfiguriert)',
     },
     {
         type: 'echart',
