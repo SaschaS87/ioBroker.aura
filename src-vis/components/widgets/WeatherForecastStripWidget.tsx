@@ -1166,10 +1166,10 @@ function RainNowcast({ base }: { base: string }) {
 
     return (
         <div style={{ background: 'var(--widget-bg)', border: '1px solid var(--widget-border)', borderRadius: 'var(--widget-radius)', padding: '10px 12px' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Regen-Nowcast (15-Minuten-Takt)</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Regen-Vorhersage</span>
                 {nowcast.length > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 10 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 10, whiteSpace: 'nowrap' }}>
                         <span>
                             Summe <b style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatNum(nowcastSum, 1)} mm</b>
                         </span>
