@@ -27,7 +27,6 @@ import {
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
 import { localTime } from '../../utils/formatTime';
-import { DataSourceHealthBox, type HealthSourceDef } from './shared/DataSourceHealthBox';
 import type { WidgetProps } from '../../types';
 
 /**
@@ -1350,7 +1349,6 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     }
 
     const showFooter = config.options?.showFooter !== false;
-    const healthSources = (config.options?.healthSources as HealthSourceDef[] | undefined) ?? [];
 
     return (
         // marginTop:7 as this tab's first widget: matches the 15px Wohnklima/
@@ -1400,7 +1398,6 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
             </div>
             <RainNowcast base={base} />
             {showFooter && <DataFooter base={base} />}
-            <DataSourceHealthBox sources={healthSources} />
         </div>
     );
 }

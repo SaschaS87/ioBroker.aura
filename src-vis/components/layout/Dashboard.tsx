@@ -544,6 +544,9 @@ export function Dashboard({
                                                                 // shutterfloors grows with its floor/device list so the
                                                                 // tab scrolls as a whole instead of the widget itself.
                                                                 ew.type === 'shutterfloors' ||
+                                                                // datasourcehealth: DataSourceHealthBox grows when its
+                                                                // rows expand, so the box itself must grow with them.
+                                                                ew.type === 'datasourcehealth' ||
                                                                 (ew.type === 'weather' &&
                                                                     wl !== 'custom' &&
                                                                     wl !== 'minimal' &&
