@@ -84,6 +84,12 @@ const AdminLoadTimes = lazyWithReload(() =>
     import('./pages/admin/AdminLoadTimes').then((m) => ({ default: m.AdminLoadTimes })),
 );
 
+// DEV-only: throwaway UI-concept previews, never reachable in production
+// (route entry gated below, so a prod build's router has no path to it).
+const WetterScrubPreview = lazyWithReload(() =>
+    import('./pages/dev/WetterScrubPreview').then((m) => ({ default: m.WetterScrubPreview })),
+);
+
 function lazyRoute(Comp: ComponentType): JSX.Element {
     return (
         <Suspense fallback={<div style={{ padding: 24, color: 'var(--text-secondary)' }}>…</div>}>
@@ -99,6 +105,7 @@ const router = createHashRouter([
     { path: '/view/:layoutSlug/tab/:tabSlug', element: <App /> },
     { path: '/view/:layoutSlug/s/:sectionSlug', element: <App /> },
     { path: '/view/:layoutSlug/s/:sectionSlug/tab/:tabSlug', element: <App /> },
+    ...(import.meta.env.DEV ? [{ path: '/dev/wetter-scrub', element: lazyRoute(WetterScrubPreview) }] : []),
     { path: '/admin/login', element: lazyRoute(AdminLogin) },
     {
         path: '/admin',
