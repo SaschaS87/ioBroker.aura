@@ -1399,8 +1399,8 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
                 </div>
             </div>
             <RainNowcast base={base} />
-            <DataSourceHealthBox sources={healthSources} />
             {showFooter && <DataFooter base={base} />}
+            <DataSourceHealthBox sources={healthSources} />
         </div>
     );
 }
