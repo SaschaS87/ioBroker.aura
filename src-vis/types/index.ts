@@ -55,6 +55,7 @@ export type WidgetType =
     | 'trash'
     | 'shutter'
     | 'shutterfloors'
+    | 'garten'
     | 'jsontable'
     | 'windowcontact'
     | 'binarysensor'
@@ -197,6 +198,34 @@ export interface TimerWidgetOptions {
     holidaysDp?: string; // optional DP (JSON array of YYYY-MM-DD strings) — special days
     vacationDp?: string; // optional DP (JSON array of YYYY-MM-DD strings) — vacation days
     stateBaseId?: string; // the timers.<widgetId> base path used by the backend scheduler
+}
+
+// ── Garten / Bewässerung (sprinklecontrol) ────────────────────────────────────
+
+export interface GartenCircleDef {
+    sprinkleName: string; // z. B. 'Rasen_Küche' — zugleich Kanalname im Adapter
+    label: string; // Anzeigename, z. B. 'Küche'
+}
+
+/**
+ * Optionen des Garten-Widgets. Der Zeitplan lebt hier (also in
+ * aura.X.config.dashboard) und wird pro Kreis in das bestehende Timer-Backend
+ * gespiegelt — ein aura.X.timers.<seg>-<slug>-Kanal je Kreis. Ein Termin ist
+ * bewusst ein TimerEvent, weil der publizierte Payload exakt ein
+ * TimerConfigPayload ist; `value` trägt die Dauer in Minuten als Text.
+ */
+export interface GartenWidgetOptions {
+    instance?: string; // Standard 'sprinklecontrol.0'
+    stateBaseId?: string; // aura.X.timers.<seg> — Basis der Kreis-Kanäle
+    hiddenCircles?: string[]; // sprinkleNames, die nicht angezeigt werden
+    circleLabels?: Record<string, string>; // sprinkleName -> Anzeigename
+    schedules?: Record<string, TimerEvent[]>; // sprinkleName -> Termine
+    scheduleEnabled?: Record<string, boolean>; // sprinkleName -> Zeitplan scharf (Standard true)
+    activityDps?: Record<string, string>; // Stufe 3: smartgarden activity_value je Kreis
+    manualDefaultMinutes?: number; // Standard 10
+    confirmManualStart?: boolean; // Standard true
+    showSoilMoisture?: boolean; // Standard true
+    showCloudStatus?: boolean; // Standard true
 }
 
 // ── Custom-Grid layout ────────────────────────────────────────────────────────

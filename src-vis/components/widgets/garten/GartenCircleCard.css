@@ -1,0 +1,434 @@
+/* Kreiskarte des Garten-Widgets - Form und Masse aus dem Planungs-Artefakt vom
+   09.09.2026, Variante B ("Drei Zeitschaltuhren").
+
+   Die Farbwerte des Artefakts sind fest dunkel notiert ("weil die App so
+   aussieht"). Hier stehen stattdessen die Aura-Themevariablen, damit der Tab
+   auch im hellen Thema und in Saschas eigenen Themen stimmt. Uebernommen sind
+   die Verhaeltnisse, nicht die Hexwerte: Karte eine Stufe heller als der
+   Untergrund, Chips eine Stufe heller als die Karte, Trennlinien deutlich
+   schwaecher als der Kartenrand.
+
+   Enthaelt auch die Zeilen der Terminliste (GartenScheduleList) und den
+   Handbetrieb (GartenManualStart) - beide leben ausschliesslich innerhalb
+   einer Karte, deshalb steht ihr Aussehen hier und nicht in einer dritten
+   Datei. Alle :hover-Regeln stehen am Ende hinter
+   @media (hover: hover) and (pointer: fine): auf iOS bleibt eine
+   Hover-Hervorhebung sonst nach dem Antippen haengen.
+
+   Die Tokens --g-* setzt GartenWidget.css auf .garten-widget. */
+
+.garten-card {
+  /* Bezugsrahmen fuer die Vollflaechen-Abfrage beim Moduswechsel
+     (ConfirmOverlay nutzt absolute inset-0). */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border-radius: 11px;
+  background: var(--g-card);
+  border: 1px solid var(--g-border);
+}
+
+/* ── Kopfzeile: Name | Pille | Schalter ────────────────────────────────── */
+
+.garten-card-t {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.garten-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garten-head-right {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.garten-pill {
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.garten-pill.is-on {
+  color: var(--g-green);
+  background: color-mix(in srgb, var(--g-green) 16%, transparent);
+}
+
+.garten-pill.is-next {
+  color: var(--g-blue);
+  background: color-mix(in srgb, var(--g-blue) 15%, transparent);
+}
+
+.garten-pill.is-waiting {
+  color: var(--g-amber);
+  background: color-mix(in srgb, var(--g-amber) 16%, transparent);
+}
+
+.garten-pill.is-off {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+}
+
+/* ── Schalter (GartenSwitch) ───────────────────────────────────────────── */
+
+.garten-sw {
+  position: relative;
+  width: 34px;
+  height: 19px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--g-sw-off);
+  transition: background-color 0.15s ease;
+}
+
+/* Der Schalter ist im Artefakt 34 x 19 gross - fuer den Daumen zu klein.
+   Das Pseudoelement vergroessert die Tastflaeche, ohne das Bild zu aendern.
+   Die 4 px zur Seite bleiben innerhalb des 10-px-Abstands der Terminzeile,
+   verdecken also nichts, was selbst antippbar waere. */
+.garten-sw::before {
+  content: '';
+  position: absolute;
+  inset: -12px -4px;
+}
+
+.garten-sw.is-on {
+  background: var(--g-blue);
+}
+
+.garten-sw:disabled {
+  opacity: 0.5;
+}
+
+.garten-sw-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--text-secondary);
+  transition: left 0.15s ease, background-color 0.15s ease;
+}
+
+.garten-sw.is-on .garten-sw-knob {
+  left: 17px;
+  background: #fff;
+}
+
+/* ── Modusschalter ─────────────────────────────────────────────────────── */
+
+.garten-modes {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--g-chip);
+}
+
+.garten-mode {
+  flex: 1;
+  min-height: 38px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.garten-mode.is-active {
+  color: var(--g-blue);
+  background: color-mix(in srgb, var(--g-blue) 20%, transparent);
+  border-color: color-mix(in srgb, var(--g-blue) 45%, transparent);
+}
+
+.garten-mode:disabled {
+  opacity: 0.5;
+}
+
+/* ── Terminliste ───────────────────────────────────────────────────────── */
+
+.garten-schedule {
+  display: flex;
+  flex-direction: column;
+}
+
+.garten-schedule-empty {
+  padding: 9px 0 2px;
+  border-top: 1px solid var(--g-line);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+/* Jede Terminzeile traegt die Haarlinie oben - auch die erste, die dadurch
+   vom Modusschalter abgesetzt wird. Genau wie im Artefakt. */
+.garten-ev {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--g-line);
+}
+
+.garten-ev.is-off {
+  opacity: 0.5;
+}
+
+.garten-ev-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+}
+
+.garten-ev-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.garten-ev-time {
+  font-size: 13.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.garten-dur {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  background: var(--g-chip);
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.garten-ev-label {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garten-ev-warn {
+  display: flex;
+  align-items: center;
+  color: var(--g-amber);
+}
+
+.garten-days {
+  display: flex;
+  gap: 4px;
+}
+
+.garten-day {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--g-chip);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.garten-day.is-on {
+  color: var(--g-blue);
+  background: color-mix(in srgb, var(--g-blue) 20%, transparent);
+  border-color: color-mix(in srgb, var(--g-blue) 45%, transparent);
+}
+
+/* ── Tastenzeile: "+ Termin", "Jetzt gießen", "Stoppen" ────────────────── */
+
+.garten-btn-row {
+  /* Bezugsrahmen fuer das kleine Bestaetigungs-Popup ueber "Jetzt gießen". */
+  position: relative;
+  display: flex;
+  gap: 7px;
+}
+
+.garten-schedule .garten-btn-row {
+  margin-top: 9px;
+}
+
+.garten-btn {
+  flex: 1;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 9px;
+  border: 1px solid var(--g-line);
+  background: var(--g-chip);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.garten-btn.is-pri {
+  color: var(--g-blue);
+  background: color-mix(in srgb, var(--g-blue) 18%, transparent);
+  border-color: color-mix(in srgb, var(--g-blue) 45%, transparent);
+}
+
+.garten-btn.is-dan {
+  color: var(--g-red);
+  background: color-mix(in srgb, var(--g-red) 14%, transparent);
+  border-color: color-mix(in srgb, var(--g-red) 42%, transparent);
+}
+
+.garten-btn:disabled {
+  opacity: 0.5;
+}
+
+/* ── Dauer im Handbetrieb ──────────────────────────────────────────────── */
+
+.garten-dur-edit {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 0 3px;
+  border-radius: 9px;
+  border: 1px solid var(--g-line);
+  background: var(--g-chip);
+}
+
+.garten-chip-btn {
+  width: 30px;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.garten-chip-btn:disabled {
+  opacity: 0.35;
+}
+
+.garten-dur-input {
+  width: 34px;
+  min-height: 42px;
+  padding: 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+}
+
+/* Die Pfeilchen des Zahlenfeldes wuerden neben Minus und Plus doppelt
+   dastehen - und auf dem iPhone sind sie ohnehin nicht zu treffen. */
+.garten-dur-input::-webkit-outer-spin-button,
+.garten-dur-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.garten-dur-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.garten-dur-unit {
+  padding-right: 2px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Fusszeile ─────────────────────────────────────────────────────────── */
+
+.garten-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 9px;
+  border-top: 1px solid var(--g-line);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.garten-foot-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Zeitplan-Modus: die Bodenfeuchte wird nicht nachgefuehrt - sichtbar
+   ausgegraut, der Grund steht als Text darunter (nicht nur als title). */
+.garten-foot-item.is-muted {
+  opacity: 0.45;
+}
+
+.garten-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+/* ── Hover nur mit echtem Zeiger ───────────────────────────────────────── */
+
+@media (hover: hover) and (pointer: fine) {
+  .garten-mode:not(:disabled):not(.is-active):hover,
+  .garten-chip-btn:not(:disabled):hover,
+  .garten-btn:not(:disabled):not(.is-pri):not(.is-dan):hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--g-blue) 12%, var(--g-chip));
+  }
+
+  .garten-mode.is-active:not(:disabled):hover,
+  .garten-btn.is-pri:not(:disabled):hover,
+  .garten-btn.is-dan:not(:disabled):hover,
+  .garten-sw:not(:disabled):hover {
+    opacity: 0.85;
+  }
+
+  .garten-ev-main:not(:disabled):hover .garten-ev-time {
+    color: var(--g-blue);
+  }
+}

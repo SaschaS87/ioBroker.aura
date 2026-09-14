@@ -5,7 +5,7 @@ import { usePopupConfigStore } from '../store/popupConfigStore';
 import { isDirty, subscribeDirty } from '../store/persistManager';
 import { healthChecksSuppressed } from './healthChecks';
 import { sendToDirect } from './useIoBroker';
-import { timerBackendKey } from '../utils/publishTimerConfig';
+import { timerBackendKey, gartenBackendKeys } from '../utils/publishTimerConfig';
 import { NS } from '../utils/namespace';
 import type { WidgetConfig } from '../types';
 
@@ -70,6 +70,10 @@ export function useTimerOrphans(): OrphansState {
             visitAllWidgets((w) => {
                 const tKey = timerBackendKey(w);
                 if (tKey) knownTimer.add(tKey);
+                // Das Garten-Widget hält einen Timer-Kanal je Bewässerungskreis.
+                // Ohne diese Zeile gälte jeder davon als „Zeitschaltuhr-DP ohne
+                // Widget“ und der Aufräumen-Knopf löschte den ganzen Zeitplan.
+                for (const k of gartenBackendKeys(w)) knownTimer.add(k);
                 if (w.type === 'list' || w.type === 'autolist') knownList.add(w.id);
                 if (w.type === 'panels') knownPanel.add(w.id);
             });

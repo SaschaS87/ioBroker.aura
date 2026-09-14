@@ -1,0 +1,109 @@
+/* Garten-Widget: Farbtokens, Kopfkarte, Warnstreifen und die Liste der
+   Kreiskarten. Das Aussehen einer einzelnen Karte steht in
+   GartenCircleCard.css.
+
+   Die --g-*-Tokens bilden die drei Ebenen des Planungs-Artefakts nach -
+   Untergrund, Karte, Chip - aber aus Aura-Themevariablen statt aus festen
+   Hexwerten. color-mix mit --text-primary geht im dunklen Thema nach oben und
+   im hellen nach unten, der Abstand zwischen den Ebenen bleibt in beiden
+   gleich. */
+
+/* Die Tokens gelten auch fuer das Termin-Sheet: Es haengt in einem Portal
+   ausserhalb von .garten-widget. */
+.garten-widget,
+.garten-sheet-backdrop {
+  --g-blue: var(--accent, #3b82f6);
+  --g-green: var(--accent-green, #22c55e);
+  --g-amber: var(--accent-yellow, #f59e0b);
+  --g-red: var(--accent-red, #ef4444);
+
+  --g-surface: var(--widget-bg, var(--app-surface));
+  --g-card: color-mix(in srgb, var(--text-primary) 5%, var(--g-surface));
+  --g-chip: color-mix(in srgb, var(--text-primary) 11%, var(--g-surface));
+  --g-border: var(--app-border);
+  --g-line: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  --g-sw-off: color-mix(in srgb, var(--text-secondary) 35%, transparent);
+}
+
+.garten-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 7px;
+  padding-bottom: 10px;
+}
+
+/* Warnstreifen der Gardena-Cloud. Sitzt bewusst oben und nicht als Pille am
+   Fuss: Wer gleich gießen will, soll den Grund sehen, bevor er drueckt.
+   Getoenter Kasten mit duennem Rand - dieselbe Sprache wie der
+   Warnhinweis im Artefakt. */
+.garten-cloud-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background-color: color-mix(in srgb, var(--g-red) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--g-red) 42%, transparent);
+}
+
+.garten-cloud-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--g-red);
+}
+
+.garten-cloud-text {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Kopfkarte ─────────────────────────────────────────────────────────── */
+/* Schmale Karte im Stil des Artefakts (dort "Zeitplan aktiv"): Titel und
+   Erlaeuterung links, Schalter rechts. */
+
+.garten-tight {
+  padding: 10px 12px;
+  gap: 6px;
+}
+
+.garten-tight-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.garten-sub {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Kartenliste ───────────────────────────────────────────────────────── */
+
+.garten-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.garten-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Nur in der lokalen Vorschau sichtbar (DEV_WRITES_BLOCKED). */
+.garten-dev-note {
+  margin-top: 6px;
+  color: var(--g-amber);
+}

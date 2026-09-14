@@ -14,6 +14,8 @@
 import { setStateDirect, getSocket, sendToDirect } from '../hooks/useIoBroker';
 import type { TimerEvent } from '../types';
 import { NS } from './namespace';
+// Reine Konstanten/Funktionen ohne React — der Import zieht nichts vom Widget mit.
+import { circleSlug, clampMinutes, DEFAULT_MANUAL_MINUTES } from '../components/widgets/garten/gartenConstants';
 
 /** Promise wrapper around setObject so callers can await object creation
  *  before writing the corresponding state — otherwise iobroker logs
@@ -115,12 +117,102 @@ export async function unpublishTimer(widgetId: string): Promise<void> {
     console.info('[aura-timer] deleteTimer result', widgetId, result);
 }
 
+// ── Garten-Widget: ein Timer-Kanal je Bewässerungskreis ──────────────────────
+// Das Garten-Widget bringt keinen eigenen Scheduler mit. Es spiegelt seinen
+// Zeitplan pro Kreis in genau das Format, das der Adapter ohnehin liest —
+// deshalb steht die Spiegelung hier und nicht im Widget-Ordner: useTimerOrphans
+// importiert aus dieser Datei und soll nicht an einem Widget hängen.
+
+/** Backend-Schlüssel eines Kreises: `<seg>-<slug>`, z. B. 'a1b2c3-rasen-kueche'. */
+export function gartenCircleKey(seg: string, sprinkleName: string): string {
+    return `${seg}-${circleSlug(sprinkleName)}`;
+}
+
+/** seg → Schlüssel, die in dieser Sitzung tatsächlich publiziert wurden.
+ *  Ergänzt die aus den Optionen ableitbaren Schlüssel: ein neu erkannter Kreis
+ *  ohne Anzeigename und ohne Termin stünde sonst als „verwaist“ da. */
+const gartenPublished = new Map<string, Set<string>>();
+
+/**
+ * Alle Backend-Schlüssel, die ein Garten-Widget besitzt.
+ *
+ * Wichtig für den Verwaisten-Melder: ohne diese Liste hielte die Übersicht
+ * jeden Kreis-Kanal für einen „Zeitschaltuhr-DP ohne Widget“ und der
+ * „Aufräumen“-Knopf löschte den kompletten Bewässerungszeitplan.
+ */
+export function gartenBackendKeys(
+    widget: { type?: string; options?: Record<string, unknown> } | null | undefined,
+): string[] {
+    if (!widget || widget.type !== 'garten') return [];
+    const stateBaseId = widget.options?.stateBaseId;
+    if (typeof stateBaseId !== 'string') return [];
+    const seg = stateBaseId.split('.').pop();
+    if (!seg) return [];
+    const o = widget.options ?? {};
+    const hidden = new Set(Array.isArray(o.hiddenCircles) ? (o.hiddenCircles as string[]) : []);
+    const names = new Set<string>();
+    for (const map of [o.circleLabels, o.schedules, o.scheduleEnabled]) {
+        if (map && typeof map === 'object') for (const n of Object.keys(map)) names.add(n);
+    }
+    const keys = new Set<string>();
+    for (const n of names) if (!hidden.has(n)) keys.add(gartenCircleKey(seg, n));
+    for (const k of gartenPublished.get(seg) ?? []) keys.add(k);
+    return [...keys];
+}
+
+/**
+ * Einen Kreis publizieren — nutzt intern publishTimerConfig/publishTimerEnabled.
+ *
+ * Das `.map(...)` über die Termine ist die dritte und letzte Schranke des
+ * 59-Minuten-Deckels (nach Eingabefeld und Speichern-Knopf): Selbst ein von
+ * Hand in aura.X.config.dashboard eingetragener Wert von 120 erreicht das
+ * Backend als 59 — länger hält die Gardena-Box ohnehin nicht durch.
+ */
+export function publishGartenCircle(
+    seg: string,
+    sprinkleName: string,
+    targetDp: string,
+    events: TimerEvent[],
+    enabled: boolean,
+    title: string,
+): void {
+    const key = gartenCircleKey(seg, sprinkleName);
+    let published = gartenPublished.get(seg);
+    if (!published) {
+        published = new Set<string>();
+        gartenPublished.set(seg, published);
+    }
+    published.add(key);
+    const payload: TimerConfigPayload = {
+        events: events.map((e) => ({ ...e, value: String(clampMinutes(e.value)) })),
+        targetDp,
+        value: String(DEFAULT_MANUAL_MINUTES),
+        allowEventValue: true,
+        title,
+    };
+    publishTimerConfig(key, title, payload);
+    publishTimerEnabled(key, title, enabled);
+}
+
+/** Kanäle eines Kreises abräumen (Kreis ausgeblendet / Widget gelöscht). */
+export async function unpublishGartenCircle(seg: string, sprinkleName: string): Promise<void> {
+    const key = gartenCircleKey(seg, sprinkleName);
+    gartenPublished.get(seg)?.delete(key);
+    await unpublishTimer(key);
+}
+
 /** Cleanup backend DPs for a widget about to be deleted. Safe to call for any
- *  widget type — only acts on type==='timer' with a stamped stateBaseId. */
+ *  widget type — only acts on type==='timer' with a stamped stateBaseId, or on
+ *  type==='garten', where every circle channel goes. */
 export function unpublishTimerForWidget(
     widget: { type?: string; options?: Record<string, unknown> } | null | undefined,
 ): void {
-    if (!widget || widget.type !== 'timer') return;
+    if (!widget) return;
+    if (widget.type === 'garten') {
+        for (const key of gartenBackendKeys(widget)) void unpublishTimer(key);
+        return;
+    }
+    if (widget.type !== 'timer') return;
     const stateBaseId = widget.options?.stateBaseId;
     if (typeof stateBaseId !== 'string') return;
     const backendKey = stateBaseId.split('.').pop();

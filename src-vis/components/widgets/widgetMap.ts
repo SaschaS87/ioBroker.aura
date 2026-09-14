@@ -80,6 +80,8 @@ const WeatherForecastStripWidget = lazyWithReload(() =>
 const ShutterFloorsWidget = lazyWithReload(() =>
     import('./shutterfloors/ShutterFloorsWidget').then((m) => ({ default: m.ShutterFloorsWidget })),
 );
+// GartenWidget drives the sprinklecontrol irrigation circles (schedule, mode, manual run).
+const GartenWidget = lazyWithReload(() => import('./garten/GartenWidget').then((m) => ({ default: m.GartenWidget })));
 
 export function getWidgetMap() {
     return {
@@ -139,6 +141,7 @@ export function getWidgetMap() {
         messages: MessagesWidget,
         menu: MenuWidget,
         shutterfloors: ShutterFloorsWidget,
+        garten: GartenWidget,
         roomclimate: RoomClimateWidget,
         rainstation: RainStationWidget,
         raindaily: RainDailyWidget,

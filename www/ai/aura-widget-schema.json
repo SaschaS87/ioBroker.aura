@@ -1,7 +1,7 @@
 {
   "$meta": {
     "name": "AURA widget schema",
-    "auraVersion": "0.55.1",
+    "auraVersion": "0.55.2",
     "generator": "tools/schema/gen-widget-schema.mjs",
     "purpose": "Describes every AURA widget type so a JSON widget/tab config can be generated and pasted into the dashboard editor (\"Widget importieren\").",
     "usage": [
@@ -771,7 +771,26 @@
           "value": "popup-shutter"
         },
         {
+          "value": "popup-shutterfine"
+        },
+        {
           "value": "popup-mediaplayer"
+        },
+        {
+          "value": "popup-roomtemperature",
+          "fields": {
+            "temperatureDp": {
+              "type": "string",
+              "datapoint": true
+            },
+            "humidityDp": {
+              "type": "string",
+              "datapoint": true
+            },
+            "historyInstance": {
+              "type": "string"
+            }
+          }
         },
         {
           "value": "popup-image",
@@ -1637,6 +1656,79 @@
         "custom"
       ]
     },
+    "RainStationDef": {
+      "type": "object",
+      "fields": {
+        "name": {
+          "type": "string"
+        },
+        "todayDp": {
+          "type": "string",
+          "datapoint": true
+        },
+        "lastHourDp": {
+          "type": "string",
+          "datapoint": true
+        },
+        "yesterdayDp": {
+          "type": "string",
+          "datapoint": true
+        },
+        "currentDp": {
+          "type": "string",
+          "datapoint": true
+        }
+      }
+    },
+    "HealthSourceDef": {
+      "type": "object",
+      "fields": {
+        "id": {
+          "type": "string",
+          "required": true
+        },
+        "label": {
+          "type": "string",
+          "required": true
+        },
+        "watchDp": {
+          "type": "string",
+          "required": true,
+          "description": "datapoint whose ts (last write) is checked for freshness",
+          "datapoint": true
+        },
+        "maxAgeMin": {
+          "type": "number",
+          "required": true,
+          "description": "flagged unhealthy once older than this (ignored once requireTrueDps is set and non-empty)"
+        },
+        "restartAdapterId": {
+          "type": "string"
+        },
+        "detailDps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "fields": {
+              "label": {
+                "type": "string",
+                "required": true
+              },
+              "dp": {
+                "type": "string",
+                "required": true
+              }
+            }
+          }
+        },
+        "requireTrueDps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "EChartSeriesConfig": {
       "type": "object",
       "fields": {
@@ -1780,6 +1872,14 @@
           "type": "string",
           "ref": "NumberFormat",
           "description": "Thousands separator of this series' numbers, unset = follow the chart-wide setting."
+        },
+        "historyStepMs": {
+          "type": "number",
+          "description": "Override the automatic aggregation bucket. `0` forces RAW data (no bucketing) — right for sparse, minute-resolution helpers whose sharp ramps get flattened by the default 15-min/1-h buckets. A positive value sets the bucket size in ms."
+        },
+        "historyMaxCount": {
+          "type": "number",
+          "description": "Max points to fetch (default 1000). Raise for raw high-density fetches."
         }
       }
     },
@@ -7203,6 +7303,44 @@
         }
       }
     },
+    "datasourcehealth": {
+      "label": "Datenquellen",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Klappbare Status-Box: prüft konfigurierte Datenquellen auf Aktualität, mit Neustart-Aktion je Quelle (options.healthSources als JSON konfiguriert)",
+      "defaultSize": {
+        "w": 21,
+        "h": 2
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "healthSources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "HealthSourceDef"
+          }
+        }
+      }
+    },
     "datepicker": {
       "label": "Datumswähler",
       "group": "special",
@@ -8231,6 +8369,88 @@
         }
       }
     },
+    "garten": {
+      "label": "Gartenbewässerung",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Bewässerungskreise mit Zeitplan, Modusschalter und Handbetrieb (sprinklecontrol)",
+      "defaultSize": {
+        "w": 42,
+        "h": 30
+      },
+      "layouts": [
+        "default"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "activityDps": {
+          "type": "object",
+          "tsType": "Record<string, string>",
+          "description": "Stufe 3: smartgarden activity_value je Kreis"
+        },
+        "circleLabels": {
+          "type": "object",
+          "tsType": "Record<string, string>",
+          "description": "sprinkleName -> Anzeigename"
+        },
+        "confirmManualStart": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        },
+        "hiddenCircles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "sprinkleNames, die nicht angezeigt werden"
+        },
+        "instance": {
+          "type": "string",
+          "description": "Standard 'sprinklecontrol.0'",
+          "default": "sprinklecontrol.0"
+        },
+        "manualDefaultMinutes": {
+          "type": "number",
+          "description": "Standard 10"
+        },
+        "scheduleEnabled": {
+          "type": "object",
+          "tsType": "Record<string, boolean>",
+          "description": "sprinkleName -> Zeitplan scharf (Standard true)"
+        },
+        "schedules": {
+          "type": "object",
+          "tsType": "Record<string, TimerEvent[]>",
+          "description": "sprinkleName -> Termine"
+        },
+        "showCloudStatus": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        },
+        "showSoilMoisture": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        },
+        "stateBaseId": {
+          "type": "string",
+          "description": "aura.X.timers.<seg> — Basis der Kreis-Kanäle"
+        }
+      }
+    },
     "gauge": {
       "label": "Gauge",
       "group": "control",
@@ -8560,6 +8780,42 @@
         },
         "subtitle": {
           "type": "string"
+        }
+      }
+    },
+    "heating": {
+      "label": "Heizung (Wärmepumpe LWZ)",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Wärmepumpe Stiebel LWZ 304 Trend: Betriebsmodus (Heizen/Warmwasser), Kennzahlen und Steuerung",
+      "defaultSize": {
+        "w": 21,
+        "h": 4
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "historyInstance": {
+          "type": "string",
+          "default": "influxdb.0",
+          "description": "History-Adapterinstanz, z. B. \"history.0\" oder \"influxdb.0\"."
         }
       }
     },
@@ -10494,6 +10750,195 @@
         }
       }
     },
+    "raindaily": {
+      "label": "Regenmenge pro Tag (Balken/Monat)",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Ein Balken je Kalendertag aus rain_today (Tag / 7 Tage / Monat), Monatsansicht als Kalender-Raster; heutiger Balken läuft live mit",
+      "defaultSize": {
+        "w": 21,
+        "h": 8
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "decimals": {
+          "type": "number",
+          "default": 1,
+          "description": "Nachkommastellen. Ohne Angabe gilt die globale Einstellung."
+        },
+        "historyInstance": {
+          "type": "string",
+          "default": "influxdb.0",
+          "description": "History-Adapterinstanz, z. B. \"history.0\" oder \"influxdb.0\"."
+        },
+        "raindailyDefaultRange": {
+          "type": "string"
+        },
+        "raindailyMonthStyle": {
+          "type": "string",
+          "enum": [
+            "grid",
+            "bars"
+          ],
+          "default": "grid"
+        },
+        "stations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "RainStationDef"
+          }
+        }
+      }
+    },
+    "rainstation": {
+      "label": "Regen-Stationskarte (Wechsler)",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Karte mit Stations-Wechsler (◀ ▶ und Punkte): Tagesmenge und letzte Stunde groß, Gestern und Aktuell als Zusatzzeile",
+      "defaultSize": {
+        "w": 21,
+        "h": 7
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "decimals": {
+          "type": "number",
+          "default": 1,
+          "description": "Nachkommastellen. Ohne Angabe gilt die globale Einstellung."
+        },
+        "stations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "RainStationDef"
+          }
+        },
+        "subtitle": {
+          "type": "string",
+          "default": "Netatmo-Station"
+        }
+      }
+    },
+    "roomclimate": {
+      "label": "Raumklima-Balken (aufklappbar)",
+      "group": "control",
+      "addMode": "datapoint",
+      "hint": "Kompakter Temperatur-Balken; klappt Details mit Luftfeuchte, Min/Max und Verlaufsdiagramm auf",
+      "defaultSize": {
+        "w": 21,
+        "h": 3
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "decimals",
+        "icon",
+        "iconSize",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "cardStyle": {
+          "type": "boolean",
+          "default": false
+        },
+        "detailsHeaderValue": {
+          "type": "boolean",
+          "default": false
+        },
+        "detailsLastChange": {
+          "type": "boolean",
+          "default": false
+        },
+        "historyInstance": {
+          "type": "string",
+          "default": "",
+          "description": "History-Adapterinstanz, z. B. \"history.0\" oder \"influxdb.0\"."
+        },
+        "humidityDatapoint": {
+          "type": "string",
+          "default": "",
+          "datapoint": true
+        },
+        "mobileDetails": {},
+        "nameFontSize": {
+          "type": "number",
+          "default": 17
+        },
+        "responsiveHeight": {
+          "type": "boolean",
+          "default": false
+        },
+        "roomCount": {
+          "type": "number",
+          "default": 1
+        },
+        "showHeightSwitch": {
+          "type": "boolean",
+          "default": false
+        },
+        "unit": {
+          "type": "string",
+          "default": "°C",
+          "description": "Einheit hinter dem Wert, z. B. \"°C\", \"%\", \"kWh\"."
+        },
+        "valueFontSize": {
+          "type": "number",
+          "default": 20,
+          "description": "Schriftgröße des Werts in px. 0 = automatisch."
+        }
+      }
+    },
     "scriptstatus": {
       "label": "Skript-Status",
       "group": "special",
@@ -10793,6 +11238,36 @@
           "description": "Schriftgröße des Werts in px."
         }
       }
+    },
+    "shutterfloors": {
+      "label": "Rollos (Liste nach Etage)",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Rollläden-Übersicht nach Etagen mit Zeilen-Steuerung (TaHoma)",
+      "defaultSize": {
+        "w": 42,
+        "h": 40
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {}
     },
     "slider": {
       "label": "Schieberegler",
@@ -12087,6 +12562,45 @@
         "warningsScale": {
           "type": "number",
           "default": 1
+        }
+      }
+    },
+    "weatherforecaststrip": {
+      "label": "Wetter-Vorhersage (7 Tage)",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Wischbarer 7-Tage-Streifen (DWD-Stil) mit einem gemeinsamen Detailpanel darunter: verbundenes Temperatur/Regen/Regenwahrscheinlichkeits-Chart mit Sonnenauf-/untergang-Markern + Sonne/Niederschlag/Temperatur-Kennzahlen",
+      "defaultSize": {
+        "w": 21,
+        "h": 8
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "basePath": {
+          "type": "string"
+        },
+        "footerOnly": {},
+        "showFooter": {
+          "type": "boolean",
+          "default": true
         }
       }
     },

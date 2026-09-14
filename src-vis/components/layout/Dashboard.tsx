@@ -65,7 +65,7 @@ export function Dashboard({
 }: DashboardProps) {
     const t = useT();
     const activeLayout = useActiveLayout();
-    const { updateWidget, updateLayouts, removeWidget, addWidgetToLayoutTab } = useDashboardStore();
+    const { updateWidgetInLayoutTab, updateLayouts, removeWidget, addWidgetToLayoutTab } = useDashboardStore();
 
     // Resolve the section whose tabs this dashboard renders. The frontend passes an
     // explicit layoutId + sectionId (its layout may differ from the admin editor's
@@ -183,6 +183,14 @@ export function Dashboard({
     // In frontend view, use provided override; otherwise use the active section
     const tabs = viewTabs ?? section.tabs;
     const activeTabId = viewActiveTabId ?? section.activeTabId;
+
+    // Widget-Aenderungen gehen ausdruecklich an das Layout und den Tab, in dem
+    // das Widget steht. updateWidget() schreibt in den Tab, den der Store fuer
+    // aktiv haelt — im Frontend fuehrt App.tsx den sichtbaren Tab aber nur
+    // lokal (viewActiveTabId) und meldet ihn nie an den Store. Auf jedem anderen
+    // Tab verpuffte die Aenderung still (Garten-Termine, 14.09.2026).
+    const updateWidgetOfTab = (tabId: string) => (cfg: WidgetConfig) =>
+        updateWidgetInLayoutTab(effectiveLayoutId, tabId, cfg.id, cfg);
 
     // Track which tabs have ever been activated. Only those get their widgets
     // mounted — pre-mounting all tabs would defeat lazy widget chunks (echarts,
@@ -430,7 +438,7 @@ export function Dashboard({
                                         config={fillTabWidget}
                                         editMode={editMode}
                                         onRemove={removeWidget}
-                                        onConfigChange={(cfg) => updateWidget(cfg.id, cfg)}
+                                        onConfigChange={updateWidgetOfTab(activeTabId)}
                                     />
                                 </div>
                             )}
@@ -461,7 +469,7 @@ export function Dashboard({
                                                     config={w}
                                                     editMode={false}
                                                     onRemove={removeWidget}
-                                                    onConfigChange={(cfg) => updateWidget(cfg.id, cfg)}
+                                                    onConfigChange={updateWidgetOfTab(tab.id)}
                                                 />
                                             )),
                                     )}
@@ -544,6 +552,8 @@ export function Dashboard({
                                                                 // shutterfloors grows with its floor/device list so the
                                                                 // tab scrolls as a whole instead of the widget itself.
                                                                 ew.type === 'shutterfloors' ||
+                                                                // garten wächst mit der Kreisliste und den Terminen.
+                                                                ew.type === 'garten' ||
                                                                 // datasourcehealth: DataSourceHealthBox grows when its
                                                                 // rows expand, so the box itself must grow with them.
                                                                 ew.type === 'datasourcehealth' ||
@@ -578,9 +588,7 @@ export function Dashboard({
                                                                         config={w}
                                                                         editMode={editMode}
                                                                         onRemove={removeWidget}
-                                                                        onConfigChange={(cfg) =>
-                                                                            updateWidget(cfg.id, cfg)
-                                                                        }
+                                                                        onConfigChange={updateWidgetOfTab(tab.id)}
                                                                     />
                                                                 </div>
                                                             );
@@ -616,7 +624,7 @@ export function Dashboard({
                                 config={fillTabWidget}
                                 editMode={editMode}
                                 onRemove={removeWidget}
-                                onConfigChange={(cfg) => updateWidget(cfg.id, cfg)}
+                                onConfigChange={updateWidgetOfTab(activeTabId)}
                             />
                         </div>
                     )}
@@ -663,7 +671,7 @@ export function Dashboard({
                                                     config={w}
                                                     editMode={false}
                                                     onRemove={removeWidget}
-                                                    onConfigChange={(cfg) => updateWidget(cfg.id, cfg)}
+                                                    onConfigChange={updateWidgetOfTab(tab.id)}
                                                 />
                                             )),
                                     )}
@@ -974,7 +982,7 @@ export function Dashboard({
                                                                 config={w}
                                                                 editMode={isActive && editMode}
                                                                 onRemove={removeWidget}
-                                                                onConfigChange={(cfg) => updateWidget(cfg.id, cfg)}
+                                                                onConfigChange={updateWidgetOfTab(tab.id)}
                                                             />
                                                         </div>
                                                     ))}

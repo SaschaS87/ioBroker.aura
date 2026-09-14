@@ -51,6 +51,7 @@ export function getAvailableLayouts(widgetType: string): WidgetLayout[] {
         case 'alarm':
         case 'map':
         case 'energiebilanz':
+        case 'garten':
             return ['default'];
         case 'statusoverview':
             return ['default', 'compact', 'card', 'minimal', 'count'];
