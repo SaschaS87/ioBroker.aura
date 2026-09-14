@@ -305,6 +305,77 @@ function flushDiagState(): void {
     setStateDirect(DIAG_STATE_ID, JSON.stringify(diagLog), true);
 }
 
+// ── Befehl-Sende-Diagnose (12.09.2026) ────────────────────────────────────────
+// Sascha, 12.09.2026 ~06:54: "Auf" an Eltern rechts angetippt, Fahrbetrieb-
+// Anzeige (isActing, rein lokal über markPending — ShutterRow.tsx) erschien
+// sofort und korrekt, der Rollladen selbst fuhr aber erst 5-10s spaeter los.
+// Nicht reproduzierbar. Hypothese aus der Codeanalyse: setState() (unten)
+// ruft bedingungslos emit('setState', ...) auf, ohne zu pruefen, ob der Socket
+// gerade verbunden ist. War er es nicht (z. B. Zombie-Socket nach Stunden im
+// Hintergrund, siehe Fahrplan-Sessions vom 07./08.09.), puffert Socket.io den
+// Befehl intern und schickt ihn erst beim naechsten 'connect' raus — siehe
+// Kommentar bei setStateDirectAsync unten. Die Anzeige haengt daran nicht,
+// weil markPending() synchron und unabhaengig vom Transport laeuft.
+//
+// Eigener State statt im bestehenden aura.0.diag.reconnect: dessen
+// DIAG_MAX_ENTRIES=20 waere von Tastendruecken sofort verdraengt. Bezug zu
+// Verbindungsereignissen kommt stattdessen ueber msSinceLastConnect, aus
+// diagLog oben berechnet — ein Blick auf diesen State allein reicht.
+//
+// Nur an den Rollladen-Kommandos verdrahtet (ShutterRow.tsx, ShutterSheet.tsx
+// via setState(..., { diag: true })), keine Aenderung am Verhalten fuer alle
+// anderen Aufrufer von setState().
+const CMD_DIAG_STATE_ID = `${NS}.diag.commandSend`;
+const CMD_DIAG_MAX_ENTRIES = 30;
+
+interface CommandSendDiagEntry {
+    ts: number; // Date.now() im Browser beim Tastendruck — Uhrenversatz beachten (Fahrplan 2.2)
+    id: string;
+    /** s.connected im Moment des Tastendrucks — false wuerde die Hypothese direkt stuetzen. */
+    socketConnected: boolean;
+    /** Alter des letzten connect/reconnect-Eintrags aus diagLog, ms. null = keiner bekannt. */
+    msSinceLastConnect: number | null;
+    /** Zeit vom emit() bis zur Server-Bestaetigung, ms. null = Antwort steht noch aus
+     *  (z. B. App zwischenzeitlich neu geladen — dann bleibt es null, das ist selbst ein Befund). */
+    ackMs: number | null;
+}
+
+const cmdDiagLog: CommandSendDiagEntry[] = [];
+
+function flushCmdDiagState(): void {
+    const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
+    if (shot) return;
+    setStateDirect(CMD_DIAG_STATE_ID, JSON.stringify(cmdDiagLog), true);
+}
+
+/** Wie der emit()-Teil von setState() unten, zusaetzlich mit Zeitmessung
+ *  Tastendruck -> Server-Ack. Bewusst nicht in setState() selbst verdrahtet,
+ *  um dessen Verhalten fuer alle anderen ~50 Aufrufer unangetastet zu lassen. */
+function emitSetStateWithDiag(s: IoBrokerSocket, id: string, val: boolean | number | string): void {
+    const callTs = Date.now();
+    let lastConnectTs: number | null = null;
+    for (let i = diagLog.length - 1; i >= 0; i--) {
+        if (diagLog[i].event === 'connect' || diagLog[i].event === 'reconnect') {
+            lastConnectTs = diagLog[i].ts;
+            break;
+        }
+    }
+    const entry: CommandSendDiagEntry = {
+        ts: callTs,
+        id,
+        socketConnected: s.connected,
+        msSinceLastConnect: lastConnectTs !== null ? callTs - lastConnectTs : null,
+        ackMs: null,
+    };
+    cmdDiagLog.push(entry);
+    if (cmdDiagLog.length > CMD_DIAG_MAX_ENTRIES) cmdDiagLog.shift();
+    flushCmdDiagState();
+    s.emit('setState', id, { val, ack: false }, () => {
+        entry.ackMs = Date.now() - callTs;
+        flushCmdDiagState();
+    });
+}
+
 // ── Rettungsanker-Zähler (Schritt 5) ─────────────────────────────────────────
 // Abnahmepunkt 3 des Fahrplans verlangt den Nachweis, dass nach einem Neuaufbau
 // tatsächlich wieder jedes Widget selbst nachfragt, statt sich blind auf die
@@ -1089,9 +1160,14 @@ export function useIoBroker() {
         };
     }, []);
 
-    const setState = useCallback((id: string, val: boolean | number | string) => {
+    const setState = useCallback((id: string, val: boolean | number | string, opts?: { diag?: boolean }) => {
         noteWrite(id, val);
-        getSocket().emit('setState', id, { val, ack: false });
+        const s = getSocket();
+        if (opts?.diag) {
+            emitSetStateWithDiag(s, id, val);
+        } else {
+            s.emit('setState', id, { val, ack: false });
+        }
         if (optimisticEcho) {
             const prev = stateCache.get(id);
             const ts = Date.now();

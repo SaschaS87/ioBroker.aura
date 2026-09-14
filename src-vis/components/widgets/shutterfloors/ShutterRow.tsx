@@ -118,7 +118,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         // Ziel als Rohwert: 0 = ganz offen, 100 = ganz zu. Der Hook rechnet
         // daraus targetOpen = 100 - targetRaw; "Auf" muss also 0 setzen.
         const targetRaw = device.invertPosition ? 0 : 100;
-        setState(device.upDp, true);
+        setState(device.upDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
         // Stopp-Fenster sofort verwerfen: Solange der Auftrag laeuft, traegt
         // isActing die Anzeige. Der Auftrag endet aber vorzeitig, sobald die
@@ -133,7 +133,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
 
     const handleStop = () => {
         if (!device.stopDp) return;
-        setState(device.stopDp, true);
+        setState(device.stopDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         clearPending(device.key);
         // Stopp-Fenster setzen (Feature 17, Ziel C). Deckt zwei Symptome mit
         // einem Mechanismus ab:
@@ -153,7 +153,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, onOpe
         // Ziel als Rohwert: 0 = ganz offen, 100 = ganz zu. Der Hook rechnet
         // daraus targetOpen = 100 - targetRaw; "Zu" muss also 100 setzen.
         const targetRaw = device.invertPosition ? 100 : 0;
-        setState(device.downDp, true);
+        setState(device.downDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
         // Stopp-Fenster sofort verwerfen - Begruendung siehe handleOpen.
         setStoppedAt(null);
