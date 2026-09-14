@@ -105,7 +105,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const handleStop = () => {
         if (!device.stopDp) return;
         tapFeedback();
-        setState(device.stopDp, true);
+        setState(device.stopDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         // Stopp hat kein Ziel – Auftrags-Zustand beenden, Wort statt Bild.
         clearPending(device.key);
         showToast('Gestoppt');
@@ -124,7 +124,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
             const alreadyThere = state.ackedPos !== null
                 && Math.round(state.ackedPos) === Math.round(targetRaw);
             if (!alreadyThere) {
-                setState(device.posDp, targetRaw);
+                setState(device.posDp, targetRaw, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
                 markPending(device.key, targetRaw, state.lastKnownAckedPos);
             }
             setPositionDraft(null);
@@ -134,7 +134,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
             const alreadyThereSat = state.slatAckedPos !== null
                 && Math.round(state.slatAckedPos) === Math.round(slatDraft);
             if (!alreadyThereSat) {
-                setState(device.slatDp, slatDraft);
+                setState(device.slatDp, slatDraft, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
                 markPending(slatPendingKey(device.key), slatDraft);
             }
             setSlatDraft(null);
