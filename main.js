@@ -3213,10 +3213,14 @@ class Aura extends utils.Adapter {
 
     async _writeTarget(targetDp, baseValue, ev, override) {
         if (!targetDp) return;
-        const val = override !== undefined ? override : this._parseValue(baseValue);
+        let val = override !== undefined ? override : this._parseValue(baseValue);
         try {
+            const obj = await this.getForeignObjectAsync(targetDp);
+            if (obj?.common?.type === 'string' && (typeof val === 'number' || typeof val === 'boolean')) {
+                val = String(val);
+            }
             await this.setForeignStateAsync(targetDp, val, false);
-            this.log.info(`[timers] fired ${ev.label || ev.id}: ${targetDp} ← ${JSON.stringify(val)}`);
+            this.log.info(`[timers] fired ${ev.label || ev.id}: ${targetDp} ← ${JSON.stringify(val)} (${typeof val})`);
         } catch (e) {
             this.log.warn(`[timers] write failed (${targetDp}): ${e.message}`);
         }
