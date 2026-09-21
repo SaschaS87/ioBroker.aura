@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Square } from 'lucide-react';
+import { Square, Feather } from 'lucide-react';
 import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import { useIoBroker } from '../../../hooks/useIoBroker';
 import { useDatapoint } from '../../../hooks/useDatapoint';
@@ -55,6 +55,9 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
     const t = useT();
     const [positionDraft, setPositionDraft] = useState<number | null>(null);
     const [slatDraft, setSlatDraft] = useState<number | null>(null);
+    // Feder "leise fahren" (21.09.2026): scharf fuer genau die naechste OK-Fahrt,
+    // danach faellt sie von selbst zurueck - siehe handleConfirm/handleStop.
+    const [slowArmed, setSlowArmed] = useState(false);
     const [localSlatIsDragging, setLocalSlatIsDragging] = useState(false);
     const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -112,19 +115,25 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
         // Entwürfe verwerfen (F4)
         setPositionDraft(null);
         setSlatDraft(null);
+        setSlowArmed(false);
     };
 
     const handleConfirm = () => {
         tapFeedback();
         if (positionDraft !== null && device.posDp) {
             const targetRaw = device.invertPosition ? positionDraft : 100 - positionDraft;
+            // Feder scharf + Geraet hat einen Slow-Datenpunkt: auf den EIGENEN
+            // Ziel-Datenpunkt schreiben statt auf posDp - core:ClosureState:slow
+            // ist nur ein Echo, core:TargetClosureState:slow ist der Schreibkanal
+            // (belegt am 21.09.2026 an SPK). Einmal scharf, ein Datenpunkt.
+            const targetDp = slowArmed && device.slowPosDp ? device.slowPosDp : device.posDp;
             // Denselben Wert nochmal schreiben bewegt nichts, die Box quittiert
             // nichts – der Datenpunkt bliebe dauerhaft auf ack:false stehen und
             // die Anzeige waere blind. Also gar nicht erst senden.
             const alreadyThere = state.ackedPos !== null
                 && Math.round(state.ackedPos) === Math.round(targetRaw);
             if (!alreadyThere) {
-                setState(device.posDp, targetRaw, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
+                setState(targetDp, targetRaw, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
                 markPending(device.key, targetRaw, state.lastKnownAckedPos);
             }
             setPositionDraft(null);
@@ -139,6 +148,7 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
             }
             setSlatDraft(null);
         }
+        setSlowArmed(false);
     };
 
     // Wortzeilen für Position
@@ -244,6 +254,30 @@ export const ShutterSheet: React.FC<ShutterSheetProps> = ({
                                 ohnehin im Namen des Antriebs eine Zeile darueber. */}
                             {showFacade && effFacade && <p className="sheet-subtitle">{`${room} · ${effFacade}`}</p>}
                         </div>
+                        {/* Feder "leise fahren" (21.09.2026): Kopfzeile steckt in der
+                            Ziehflaeche (sheet-drag) - ohne die eigenen Pointer-Stops
+                            hier wuerde setPointerCapture des Wisch-Handlers den Tap
+                            schlucken oder als Mini-Wischen deuten. Nur zeigen, wenn
+                            das Geraet ueberhaupt einen Slow-Datenpunkt hat. */}
+                        {device.slowPosDp && (
+                            <span
+                                className="sheet-slow-wrap"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onPointerUp={(e) => e.stopPropagation()}
+                                onPointerMove={(e) => e.stopPropagation()}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <HapticButton
+                                    key={slowArmed ? 'slow-on' : 'slow-off'}
+                                    className={`sheet-slow ${slowArmed ? 'is-on' : ''}`}
+                                    onPress={() => setSlowArmed((v) => !v)}
+                                    title="Nächste Fahrt leise"
+                                    label={slowArmed ? 'Leise fahren: ein' : 'Leise fahren: aus'}
+                                >
+                                    <Feather size={18} strokeWidth={2} />
+                                </HapticButton>
+                            </span>
+                        )}
                     </div>
                 </div>
 

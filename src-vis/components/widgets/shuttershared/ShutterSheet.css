@@ -345,3 +345,12 @@
    der letzte bekannte Stand bleibt sichtbar, nur blasser. */
 .block-value.is-stale { opacity: 0.6; }        /* wie .is-estimate */
 .shutter-viz-wrapper.is-stale { opacity: 0.4; } /* wie .viz-unknown */
+
+/* Feder "leise fahren" (21.09.2026) in der Kopfzeile. */
+.sheet-slow-wrap { display: flex; align-items: center; }
+
+.sheet-slow { width: 30px; height: 30px; border-radius: 50%; display:flex; align-items:center; justify-content:center; border: 1px solid var(--app-border); color: var(--text-secondary); background: transparent; transition: color .15s, border-color .15s, background-color .15s, transform .09s; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+.sheet-slow.is-on { color: var(--accent-yellow); border-color: var(--accent-yellow); background-color: color-mix(in srgb, var(--accent-yellow) 14%, transparent); }
+
+.sheet-slow:active { transform: scale(0.94); }
