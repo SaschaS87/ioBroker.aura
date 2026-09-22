@@ -1458,8 +1458,11 @@ export function setObjectDirect(id: string, obj: object): void {
 /** Merge a partial object patch into an existing ioBroker object (used to toggle common.enabled). */
 export function extendObjectDirect(id: string, patch: object): Promise<void> {
     invalidateObjectCache(id);
-    return new Promise((resolve) => {
-        getSocket().emit('extendObject', id, patch, () => resolve());
+    return new Promise((resolve, reject) => {
+        getSocket().emit('extendObject', id, patch, (err: unknown) => {
+            if (err) reject(err instanceof Error ? err : new Error(String(err)));
+            else resolve();
+        });
     });
 }
 
