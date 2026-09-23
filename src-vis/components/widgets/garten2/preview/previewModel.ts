@@ -80,6 +80,8 @@ export interface G2Model {
     /** Naechster geplanter Lauf ueber alle Kreise im Zeitplan-Modus. */
     nextRun: { circle: G2Circle; text: string } | null;
     weekLiters: number | null;
+    /** Toggle „Beispieldaten" der Umschaltleiste. */
+    samples: boolean;
     setMode: (name: string, mode: 'evaporation' | 'schedule') => void;
     start: (name: string, minutes: number) => void;
     stop: () => void;
@@ -192,6 +194,80 @@ function buildPlan(p: CircleProbeData, index: number, useSamples: boolean): G2Pl
     return { days: new Set(), time: null, next: null, nextAt: null, sample: false };
 }
 
+// ── Wasserverbrauch (Beispieldaten) ─────────────────────────────────────────
+
+/** Platzhalter — Saschas echter Preis (inkl. oder ohne Abwasser?) steht aus. */
+export const WATER_PRICE_EUR_PER_M3 = 4;
+
+export interface WaterRun {
+    circle: string;
+    ts: number;
+    minutes: number;
+    liters: number;
+}
+
+/** Deterministischer Zufall je Tag und Kreis, damit Blaettern stabil bleibt. */
+function rand(a: number, b: number): number {
+    const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+}
+
+/**
+ * Erfundene Laeufe fuer die Verbrauchsansicht: auf dem Pi wird der Verbrauch
+ * pro Lauf nicht mitgeschrieben (lastConsumed ueberschreibt sich, InfluxDB
+ * speichert nur Aenderungen — zwei gleich grosse Laeufe waeren einer).
+ * Durchfluss ~25 l/min wie beim echten Lauf Terasse am 15.09. (225 l, 9 min).
+ */
+export function sampleWaterRuns(circles: G2Circle[], start: number, end: number): WaterRun[] {
+    const out: WaterRun[] = [];
+    const baseMin = [10, 34, 24, 18];
+    const d0 = new Date(start);
+    d0.setHours(0, 0, 0, 0);
+    for (let d = d0; d.getTime() < end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+        const month = d.getMonth();
+        if (month < 3 || month > 8) continue; // Saison April–September
+        const dayNo = Math.floor(d.getTime() / 86_400_000);
+        const wd = (['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as TimerWeekday[])[d.getDay()];
+        circles.forEach((c, i) => {
+            const plan = SAMPLE_PLANS[i % SAMPLE_PLANS.length];
+            if (!plan.days.includes(wd)) return;
+            if (rand(dayNo, i) < 0.22) return; // Regensperre
+            const minutes = Math.round(baseMin[i % baseMin.length] * (0.8 + rand(dayNo, i + 7) * 0.4));
+            const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate(), plan.hour, plan.minute).getTime();
+            if (ts < start || ts >= end) return;
+            out.push({ circle: c.name, ts, minutes, liters: Math.round(minutes * (24 + rand(dayNo, i + 3) * 4)) });
+        });
+    }
+    return out;
+}
+
+/** Die naechsten Laeufe ueber alle Kreise im Zeitplan-Modus (fuer Variante L). */
+export function upcomingRuns(circles: G2Circle[], limit: number): { circle: G2Circle; at: number }[] {
+    const out: { circle: G2Circle; at: number }[] = [];
+    const now = new Date();
+    for (const c of circles) {
+        if (c.mode !== 'schedule' || !c.plan.time) continue;
+        const [h, m] = c.plan.time.split(':').map(Number);
+        for (let k = 0; k < 8; k++) {
+            const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, h, m);
+            const wd = (['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as TimerWeekday[])[at.getDay()];
+            if (at.getTime() > now.getTime() && c.plan.days.has(wd)) out.push({ circle: c, at: at.getTime() });
+        }
+    }
+    return out.sort((a, b) => a.at - b.at).slice(0, limit);
+}
+
+/** "heute 06:00" / "morgen 06:15" / "Fr 07:00" */
+export function fmtWhen(at: number): string {
+    const d = new Date(at);
+    const t0 = new Date();
+    t0.setHours(0, 0, 0, 0);
+    const delta = Math.floor((d.getTime() - t0.getTime()) / 86_400_000);
+    const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const wd = (['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as TimerWeekday[])[d.getDay()];
+    return `${delta === 0 ? 'heute' : delta === 1 ? 'morgen' : WEEKDAY_SHORT[wd]} ${hm}`;
+}
+
 function countdownToSeconds(countdown: string): number | null {
     const m = /^(\d+):(\d{2})$/.exec(countdown.trim());
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -289,7 +365,16 @@ export function useG2PreviewModel(
         nextRun = { circle: c, text: c.plan.next };
     }
 
-    const weekVals = circles.map((c) => c.weekConsumed).filter((v): v is number => v !== null);
+    // Mit Beispieldaten passen Kopf, Kreis-Fenster und Verbrauchsfenster
+    // zusammen: dann stammt auch „diese Woche" aus den erfundenen Laeufen.
+    const monday = new Date();
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const sampleWeek = useSamples ? sampleWaterRuns(circles, monday.getTime(), Date.now()) : null;
+    const circlesOut = sampleWeek
+        ? circles.map((c) => ({ ...c, weekConsumed: sampleWeek.filter((r) => r.circle === c.name).reduce((s, r) => s + r.liters, 0) }))
+        : circles;
+    const weekVals = circlesOut.map((c) => c.weekConsumed).filter((v): v is number => v !== null);
     const weekLiters = weekVals.length ? weekVals.reduce((a, b) => a + b, 0) : null;
 
     const setMode = useCallback((name: string, mode: 'evaporation' | 'schedule') => {
@@ -302,5 +387,5 @@ export function useG2PreviewModel(
     }, []);
     const stop = useCallback(() => setSim(null), []);
 
-    return { circles, running, weather, lastRun, nextRun, weekLiters, setMode, start, stop, openSettings };
+    return { circles: circlesOut, running, weather, lastRun, nextRun, weekLiters, samples: useSamples, setMode, start, stop, openSettings };
 }

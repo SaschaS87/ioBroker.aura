@@ -3,7 +3,8 @@
  * Dev-Vorschau (import.meta.env.DEV), nie im Build fuer den Pi.
  *
  * „Ist" zeigt den bisherigen Aufbau (Garten2Widget rendert dann wie gehabt),
- * A–F die Entwuerfe aus variants.tsx. Die Wahl merkt sich der Browser.
+ * G–L die Entwuerfe der Runde 2 aus variants.tsx (Runde 1: A–F, Commit
+ * 115bb7da). Die Wahl merkt sich der Browser.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
@@ -15,17 +16,21 @@ import './Garten2Preview.css';
 
 const LS_KEY = 'aura.garten2.preview';
 
+const DEFAULT_VARIANT = VARIANTS[0].key;
+
 function readLs(): { variant: string; samples: boolean } {
     try {
         const raw = localStorage.getItem(LS_KEY);
         if (raw) {
             const v = JSON.parse(raw) as { variant?: string; samples?: boolean };
-            return { variant: v.variant ?? 'A', samples: v.samples ?? true };
+            // Gemerkte Wahl aus einer frueheren Runde (z. B. „A") gibt es nicht mehr.
+            const known = v.variant === 'IST' || VARIANTS.some((x) => x.key === v.variant);
+            return { variant: known && v.variant ? v.variant : DEFAULT_VARIANT, samples: v.samples ?? true };
         }
     } catch {
         /* Vorschau-Komfort, darf fehlen */
     }
-    return { variant: 'A', samples: true };
+    return { variant: DEFAULT_VARIANT, samples: true };
 }
 
 export function useGarten2PreviewChoice() {
@@ -74,7 +79,7 @@ export function Garten2PreviewBar({
     return (
         <div className="g2p-switch">
             <div className="g2p-switch-row">
-                <span>Entwurf:</span>
+                <span>Entwurf, Runde 2:</span>
                 {[{ key: 'IST', name: 'Bisheriger Stand' }, ...VARIANTS].map((v) => (
                     <button
                         key={v.key}
@@ -95,13 +100,13 @@ export function Garten2PreviewBar({
                             checked={choice.samples}
                             onChange={(e) => setChoice({ ...choice, samples: e.target.checked })}
                         />
-                        Beispieltermine
+                        Beispieldaten
                     </label>
                 )}
             </div>
             {current && (
                 <span>
-                    Nur lokal: „Gießen" und Moduswechsel werden hier simuliert, nichts geht an den Pi.
+                    Nur lokal: „Gießen" und Moduswechsel werden simuliert, nichts geht an den Pi. Beispieldaten = erfundene Termine und Verbräuche.
                 </span>
             )}
         </div>

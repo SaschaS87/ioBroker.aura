@@ -5,12 +5,21 @@
  */
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Minus, Play, Plus, Square } from 'lucide-react';
+import { ChevronRight, Minus, Play, Plus, Square } from 'lucide-react';
 import { usePortalTarget } from '../../../../contexts/PortalTargetContext';
 import { useSheetDismiss } from '../../useSheetDismiss';
 import { clampMinutes, MAX_MINUTES, MIN_MINUTES } from '../../garten/gartenConstants';
 import type { TimerWeekday } from '../../../../types';
-import { WEEKDAY_LETTER, WEEKDAY_ORDER, WEEKDAY_SHORT, type G2Circle, type G2Model } from './previewModel';
+import {
+    fmtLastOn,
+    fmtNum,
+    fmtRunTime,
+    WEEKDAY_LETTER,
+    WEEKDAY_ORDER,
+    WEEKDAY_SHORT,
+    type G2Circle,
+    type G2Model,
+} from './previewModel';
 
 export function Caption({ children, right }: { children: ReactNode; right?: ReactNode }) {
     return (
@@ -208,8 +217,13 @@ export function PreviewSheet({
     );
 }
 
-/** Inhalt des Kreis-Sheets (Varianten B und E). */
-export function CircleSheetBody({ circle, model }: { circle: G2Circle; model: G2Model }) {
+/** Inhalt des Kreis-Sheets: Modus, Plan, letzter Lauf, Verbrauch, Handbetrieb. */
+export function CircleSheetBody({ circle, model, onWater }: { circle: G2Circle; model: G2Model; onWater?: () => void }) {
+    const last = circle.lastOn
+        ? [fmtLastOn(circle.lastOn).replace(' Uhr', ''), circle.lastRunningTime && fmtRunTime(circle.lastRunningTime), circle.lastConsumed !== null && `${fmtNum(circle.lastConsumed, 0)} l`]
+              .filter(Boolean)
+              .join(' · ')
+        : '—';
     return (
         <>
             <div className="g2p-sheet-section">
@@ -221,16 +235,29 @@ export function CircleSheetBody({ circle, model }: { circle: G2Circle; model: G2
                 />
                 <div className="g2p-hint">
                     {circle.mode === 'evaporation'
-                        ? 'Gießt automatisch, sobald die Restfeuchte unter den Schaltpunkt fällt.'
+                        ? `Gießt automatisch, sobald die Restfeuchte unter den Schaltpunkt fällt (jetzt ${circle.moisture === null ? '—' : Math.round(circle.moisture)} %).`
                         : 'Gießt zu festen Zeiten. Termine ändern im Tab Garten.'}
                 </div>
+                {circle.mode === 'schedule' && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <DayLetters days={circle.plan.days} variant="short" />
+                        <span className="g2p-sub">{circle.plan.time ? `${circle.plan.time} Uhr` : 'keine Termine'}</span>
+                    </div>
+                )}
             </div>
-            {circle.mode === 'schedule' && (
-                <div className="g2p-sheet-section">
-                    <div className="g2p-label">Wochenplan{circle.plan.time ? ` · ${circle.plan.time} Uhr` : ''}</div>
-                    <DayLetters days={circle.plan.days} variant="short" />
+            <div className="g2p-sheet-section" style={{ gap: 0, paddingTop: 4, paddingBottom: 4 }}>
+                <div className="g2p-kv">
+                    <span className="g2p-sub">Letzter Lauf</span>
+                    <span>{last}</span>
                 </div>
-            )}
+                <button type="button" className="g2p-kv" onClick={onWater} disabled={!onWater}>
+                    <span className="g2p-sub">Diese Woche</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {circle.weekConsumed === null ? '—' : `${fmtNum(circle.weekConsumed, 0)} l`}
+                        {onWater && <ChevronRight size={15} className="g2p-row-icon" />}
+                    </span>
+                </button>
+            </div>
             <div className="g2p-sheet-section">
                 <div className="g2p-label">Jetzt gießen</div>
                 <ManualRow circle={circle} model={model} />
