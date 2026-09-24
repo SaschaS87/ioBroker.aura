@@ -283,7 +283,7 @@ function DenseOcc({ m, date, o, onClick, showDay }: { m: PlanModel; date: Date; 
 
 // ── Popup (Grundform A) mit Listenstufe L/M/N ──────────────────────────
 
-export function PlanPopup({ model, sheet, listStyle }: { model: PlanModel; sheet: Sheet; listStyle: ListStyle }) {
+export function PlanPopup({ model, sheet, listStyle, extraOpts }: { model: PlanModel; sheet: Sheet; listStyle: ListStyle; extraOpts?: ReactNode }) {
     const [tab, setTab] = useState<PopupTab>('plan');
     useEffect(() => {
         if (sheet.tab) setTab(sheet.tab);
@@ -312,6 +312,7 @@ export function PlanPopup({ model, sheet, listStyle }: { model: PlanModel; sheet
                     {tab === 'plan' && (listStyle === 'A' ? <EntryList model={model} setView={sheet.setView} /> : <EntryListR2 model={model} setView={sheet.setView} style={listStyle} />)}
                     {tab === 'scenes' && (listStyle === 'A' ? <SceneList model={model} setView={sheet.setView} /> : <SceneListR2 model={model} setView={sheet.setView} style={listStyle} />)}
                     {tab === 'opts' && <SettingsCard model={model} />}
+                    {tab === 'opts' && extraOpts}
                 </div>
             }
         />

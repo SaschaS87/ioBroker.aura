@@ -10,7 +10,7 @@
  * S Liste · T 2 Spalten · U 3 Spalten · V 4 Spalten ·
  * W 2 Spalten, weitere Szenen auf weiteren Seiten (je 6 pro Seite)
  */
-import { useState, type ComponentType } from 'react';
+import { useState, type ComponentType, type ReactNode } from 'react';
 import { ChevronRight, Play } from 'lucide-react';
 import type { PlanModel, Scene } from './planModel';
 import { PlayBtn, SceneGlyph, Toast } from './parts';
@@ -18,8 +18,8 @@ import { Dots, namesLine, PlanLink, PlanPopup, statusText, usePager, useSheet, t
 import { Head, NextPage, Stack, TodayPage } from './round3';
 
 export type FirstPage = 'today' | 'next';
-type Layout = 'list' | 2 | 3 | 4;
-type Props = { model: PlanModel; listStyle: ListStyle; first: FirstPage; favOnly: boolean };
+export type Layout = 'list' | 2 | 3 | 4;
+export type Props = { model: PlanModel; listStyle: ListStyle; first: FirstPage; favOnly: boolean };
 
 function useFlash() {
     const [flash, setFlash] = useState<string | null>(null);
@@ -108,42 +108,55 @@ function SceneBlock({
 }
 
 function makeKachel(layout: Layout, paged: boolean) {
-    return function Kachel({ model: m, listStyle, first, favOnly }: Props) {
-        const sh = useSheet();
-        const shown = favOnly ? m.scenes.filter((s) => s.favorite) : m.scenes;
-        const more = shown.length < m.scenes.length;
-        // W: je 6 Szenen eine eigene Seite; sonst alles auf einer Seite
-        const chunks: Scene[][] = paged ? Array.from({ length: Math.max(1, Math.ceil(shown.length / 6)) }, (_, i) => shown.slice(i * 6, i * 6 + 6)) : [shown];
-        const pg = usePager(1 + chunks.length);
-        const First = first === 'today' ? TodayPage : NextPage;
-        const hint = layout === 'list' ? '▷ fährt die Szene sofort' : 'Antippen fährt die Szene sofort';
-        const pages = [
-            <First key="f" m={m} pager={pg} sheet={sh} />,
-            ...chunks.map((c, i) => (
-                <ScenePage
-                    key={`s${i}`}
-                    m={m}
-                    pager={pg}
-                    sheet={sh}
-                    title={favOnly ? 'Favoriten' : 'Szenen'}
-                    sub={chunks.length > 1 ? `Seite ${i + 1} von ${chunks.length} · ${hint}` : hint}
-                    scenes={c}
-                    layout={layout}
-                    more={more && i === chunks.length - 1}
-                />
-            )),
-        ];
-        return (
-            <>
-                <div className="rpp-card rpp-pg" {...pg.handlers}>
-                    <Stack pager={pg} pages={pages} />
-                    <Dots pager={pg} left={<span className="rpp-pg-status">{statusText(m)}</span>} right={<PlanLink sheet={sh} />} />
-                </div>
-                <PlanPopup model={m} sheet={sh} listStyle={listStyle} />
-                <Toast model={m} />
-            </>
-        );
+    return function Kachel(p: Props) {
+        return <PlanKachel {...p} layout={layout} paged={paged} />;
     };
+}
+
+/** Grundgerüst der Kachel; Runde 5 (X) nutzt es mit Einstellungen im Popup. */
+export function PlanKachel({
+    model: m,
+    listStyle,
+    first,
+    favOnly,
+    layout,
+    paged,
+    extraOpts,
+}: Props & { layout: Layout; paged: boolean; extraOpts?: ReactNode }) {
+    const sh = useSheet();
+    const shown = favOnly ? m.scenes.filter((s) => s.favorite) : m.scenes;
+    const more = shown.length < m.scenes.length;
+    // W: je 6 Szenen eine eigene Seite; sonst alles auf einer Seite
+    const chunks: Scene[][] = paged ? Array.from({ length: Math.max(1, Math.ceil(shown.length / 6)) }, (_, i) => shown.slice(i * 6, i * 6 + 6)) : [shown];
+    const pg = usePager(1 + chunks.length);
+    const First = first === 'today' ? TodayPage : NextPage;
+    const hint = layout === 'list' ? '▷ fährt die Szene sofort' : 'Antippen fährt die Szene sofort';
+    const pages = [
+        <First key="f" m={m} pager={pg} sheet={sh} />,
+        ...chunks.map((c, i) => (
+            <ScenePage
+                key={`s${i}`}
+                m={m}
+                pager={pg}
+                sheet={sh}
+                title={favOnly ? 'Favoriten' : 'Szenen'}
+                sub={chunks.length > 1 ? `Seite ${i + 1} von ${chunks.length} · ${hint}` : hint}
+                scenes={c}
+                layout={layout}
+                more={more && i === chunks.length - 1}
+            />
+        )),
+    ];
+    return (
+        <>
+            <div className="rpp-card rpp-pg" {...pg.handlers}>
+                <Stack pager={pg} pages={pages} />
+                <Dots pager={pg} left={<span className="rpp-pg-status">{statusText(m)}</span>} right={<PlanLink sheet={sh} />} />
+            </div>
+            <PlanPopup model={m} sheet={sh} listStyle={listStyle} extraOpts={extraOpts} />
+            <Toast model={m} />
+        </>
+    );
 }
 
 function ScenePage(props: { m: PlanModel; pager: Pager; sheet: Sheet; title: string; sub: string; scenes: Scene[]; layout: Layout; more: boolean }) {

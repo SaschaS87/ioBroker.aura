@@ -3,6 +3,8 @@
  * Rolllaeden-Tab — erscheint NUR in der Dev-Vorschau (import.meta.env.DEV),
  * nie im Build fuer den Pi.
  *
+ * Runde 5: X – Ansicht (Popup A/L, Seite 1, Szenen S/W) als Einstellung im
+ * Popup. Runde 4 S–W bleibt zum Vergleich.
  * Runde 4: Kachel S–W (Slider: Fahrten + Szenen, verschiedene Raster),
  * Seite 1 Heute/Naechste 3, Popup A oder L, Favoriten an/aus. Frei
  * kombinierbar. Fruehere Runden: 1 a95beb15, 2 2a36dfc0, 3 76316852.
@@ -15,13 +17,16 @@ import { usePlanModel } from './planModel';
 import { parseSunDp } from './parts';
 import { type ListStyle } from './round2';
 import { POPUPS3 as POPUPS } from './round3';
-import { KACHELN4 as KACHELN, type FirstPage } from './round4';
+import { KACHELN4, type FirstPage } from './round4';
+import { KachelX } from './round5';
 import './RollPlanPreview.css';
+
+const KACHELN = [{ key: 'X', name: 'Ansicht in den Einstellungen', C: KachelX }, ...KACHELN4];
 
 const LS_KEY = 'aura.shutterfloors.preview.r4';
 
 type Choice = { variant: string; popup: ListStyle; samples: boolean; first: FirstPage; favOnly: boolean };
-const DEFAULT: Choice = { variant: 'T', popup: 'L', samples: true, first: 'today', favOnly: true };
+const DEFAULT: Choice = { variant: 'X', popup: 'L', samples: true, first: 'today', favOnly: true };
 
 function readLs(): Choice {
     try {
@@ -61,7 +66,7 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
     return (
         <div className="rpp-switch">
             <div className="rpp-switch-row">
-                <span>Runde 4 · Kachel:</span>
+                <span>Runde 5 · Kachel:</span>
                 {[{ key: 'IST', name: 'Bisheriger Stand' }, ...KACHELN].map((v) => (
                     <button
                         key={v.key}
@@ -73,7 +78,7 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
                     </button>
                 ))}
             </div>
-            {current && (
+            {current && current.key !== 'X' && (
                 <div className="rpp-switch-row">
                     <span>Popup:</span>
                     {POPUPS.map((p) => (
@@ -106,10 +111,10 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
             )}
             {current && (
                 <div className="rpp-switch-row">
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    {current.key !== 'X' && (<label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         <input type="checkbox" checked={choice.favOnly} onChange={(e) => setChoice({ ...choice, favOnly: e.target.checked })} />
                         Nur Favoriten auf der Kachel
-                    </label>
+                    </label>)}
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}>
                         <input type="checkbox" checked={choice.samples} onChange={(e) => setChoice({ ...choice, samples: e.target.checked })} />
                         Beispieldaten
@@ -118,12 +123,12 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
             )}
             <span className="rpp-switch-name">
                 {current ? `${current.key} · ${current.name}` : 'Bisheriger Stand'}
-                {current && popup ? ` — ${popup.key} · ${popup.name}` : ''}
+                {current && popup && current.key !== 'X' ? ` — ${popup.key} · ${popup.name}` : ''}
             </span>
             {current && (
                 <span>
                     Nur lokal: Szenen fahren nicht wirklich, nichts geht an den Pi. Echt sind Rollladen-Stellungen und Sonnenzeiten.
-                    Kachel wischen oder Pfeile tippen; „Planen“ öffnet das Popup.
+                    Kachel wischen oder Pfeile tippen; „Planen“ öffnet das Popup.{current.key === 'X' ? ' Ansicht umstellen: Planen → Einstellungen → Ansicht.' : ''}
                 </span>
             )}
         </div>
