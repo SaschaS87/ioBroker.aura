@@ -17,6 +17,7 @@ import {
     Plus,
     Sun,
     Sunrise,
+    Star,
     Sunset,
     Trash2,
     Tv,
@@ -159,6 +160,25 @@ export function PlayBtn({ onClick, label }: { onClick: () => void; label: string
     );
 }
 
+/** Favoriten-Stern: Umriss wie alle Aura-Icons, aktiv gelb. */
+export function FavStar({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
+    return (
+        <button
+            type="button"
+            className={`rpp-fav${on ? ' is-on' : ''}`}
+            aria-pressed={on}
+            aria-label={label}
+            title={label}
+            onClick={(e) => {
+                e.stopPropagation();
+                onClick();
+            }}
+        >
+            <Star size={18} strokeWidth={2} />
+        </button>
+    );
+}
+
 export function Toast({ model }: { model: PlanModel }) {
     const adminPortalTarget = usePortalTarget();
     if (!model.toast) return null;
@@ -277,7 +297,7 @@ export function isOpening(model: PlanModel, tg: PlanTarget): boolean {
 
 // ── Popup mit Navigation ───────────────────────────────────────────────
 
-export type SceneDraft = { name: string; icon: SceneIcon; targets: Record<string, { closed: number; slat?: number }> };
+export type SceneDraft = { name: string; icon: SceneIcon; favorite: boolean; targets: Record<string, { closed: number; slat?: number }> };
 
 /** `back` = wohin „Zurück“ und „Speichern“ führen (z. B. zurück in die Szene). */
 export type SheetView =
@@ -391,6 +411,7 @@ function SceneEditor({
 }) {
     const [name, setName] = useState(draft?.name ?? scene?.name ?? '');
     const [icon, setIcon] = useState<SceneIcon>(draft?.icon ?? scene?.icon ?? 'sun');
+    const [favorite, setFavorite] = useState<boolean>(draft?.favorite ?? scene?.favorite ?? false);
     const [targets, setTargets] = useState<Record<string, { closed: number; slat?: number }>>(() =>
         draft?.targets ?? Object.fromEntries(
             (scene?.targets ?? []).map((t) => [
@@ -424,6 +445,7 @@ function SceneEditor({
             id: scene?.id ?? newId('s'),
             name: name.trim() || 'Ohne Namen',
             icon,
+            favorite,
             targets: Object.entries(targets).map(([key, v]) => ({ key, closed: v.closed, slat: v.slat })),
         };
         model.saveScene(s);
@@ -431,7 +453,7 @@ function SceneEditor({
     };
 
     const usedBy = scene ? model.entriesOfScene(scene.id) : [];
-    const backHere = (): SheetView => ({ v: 'scene', id: scene?.id ?? null, draft: { name, icon, targets } });
+    const backHere = (): SheetView => ({ v: 'scene', id: scene?.id ?? null, draft: { name, icon, favorite, targets } });
 
     return (
         <div className="rpp-editor">
@@ -459,6 +481,13 @@ function SceneEditor({
                             <SceneGlyph icon={k} />
                         </button>
                     ))}
+                </div>
+                <div className="rpp-kv">
+                    <span className="rpp-row-main">
+                        <span className="rpp-title">Favorit</span>
+                        <span className="rpp-sub">Als Schnellknopf auf der Kachel zeigen</span>
+                    </span>
+                    <Toggle on={favorite} onChange={setFavorite} label="Favorit" />
                 </div>
             </div>
 
@@ -852,6 +881,7 @@ export function SceneList({ model, setView, withTimes = true }: { model: PlanMod
                                 {withTimes && (ent.length ? ` · ${ent.map((e) => `${daysText(e.days)} ${e.trigger.kind === 'time' ? e.trigger.time : e.trigger.kind === 'sunrise' ? 'Aufgang' : 'Untergang'}`).join(', ')}` : ' · nur per Hand')}
                             </span>
                         </span>
+                        <FavStar on={!!s.favorite} onClick={() => model.toggleFavorite(s.id)} label={s.favorite ? "Favorit entfernen" : "Als Favorit markieren"} />
                         <PlayBtn onClick={() => model.runScene(s.id)} label={`${s.name} jetzt fahren`} />
                     </div>
                 );

@@ -1729,3 +1729,94 @@ button.rpp-track-dot {
     animation: none;
   }
 }
+
+/* ═════ Runde 4: Favoriten, mehr Szenen ══════════════════════════════════ */
+
+.rpp-fav {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  opacity: 0.55;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rpp-fav.is-on {
+  color: var(--rpp-yellow);
+  opacity: 1;
+}
+
+.rpp-qtiles--3 {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.rpp-qtiles--4 {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* 3 Spalten: Symbol oben, Name bis zwei Zeilen */
+.rpp-qtiles--3 .rpp-qtile {
+  min-height: 64px;
+  padding: 9px 9px 8px;
+}
+
+.rpp-qtiles--3 .rpp-qtile-name,
+.rpp-qtiles--4 .rpp-qtile-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.rpp-qtiles--3 .rpp-qtile-name {
+  font-size: 13px;
+}
+
+/* 4 Spalten: zentriert wie App-Symbole */
+.rpp-qtiles--4 .rpp-qtile {
+  align-items: center;
+  text-align: center;
+  min-height: 70px;
+  padding: 10px 4px 8px;
+  gap: 5px;
+}
+
+.rpp-qtiles--4 .rpp-qtile-top {
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+.rpp-qtiles--4 .rpp-qtile-name {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.rpp-qtile--more {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--rpp-line);
+}
+
+.rpp-qtile-more-n {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--rpp-accent);
+  line-height: 1.1;
+}
+
+.rpp-qtiles-empty {
+  grid-column: 1 / -1;
+}

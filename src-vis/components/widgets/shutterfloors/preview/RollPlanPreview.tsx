@@ -3,8 +3,9 @@
  * Rolllaeden-Tab — erscheint NUR in der Dev-Vorschau (import.meta.env.DEV),
  * nie im Build fuer den Pi.
  *
- * Runde 3: Kachel O–R (Slider: Fahrten + Szenen), Popup A oder L. Frei
- * kombinierbar. Runde 1 in a95beb15 (variants.tsx), Runde 2 in 2a36dfc0.
+ * Runde 4: Kachel S–W (Slider: Fahrten + Szenen, verschiedene Raster),
+ * Seite 1 Heute/Naechste 3, Popup A oder L, Favoriten an/aus. Frei
+ * kombinierbar. Fruehere Runden: 1 a95beb15, 2 2a36dfc0, 3 76316852.
  * Die Etagenliste darunter bleibt in allen Entwuerfen unveraendert.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -13,13 +14,14 @@ import type { ShutterFloorDef } from '../types';
 import { usePlanModel } from './planModel';
 import { parseSunDp } from './parts';
 import { type ListStyle } from './round2';
-import { KACHELN3 as KACHELN, POPUPS3 as POPUPS } from './round3';
+import { POPUPS3 as POPUPS } from './round3';
+import { KACHELN4 as KACHELN, type FirstPage } from './round4';
 import './RollPlanPreview.css';
 
-const LS_KEY = 'aura.shutterfloors.preview.r3';
+const LS_KEY = 'aura.shutterfloors.preview.r4';
 
-type Choice = { variant: string; popup: ListStyle; samples: boolean };
-const DEFAULT: Choice = { variant: KACHELN[0].key, popup: 'L', samples: true };
+type Choice = { variant: string; popup: ListStyle; samples: boolean; first: FirstPage; favOnly: boolean };
+const DEFAULT: Choice = { variant: 'T', popup: 'L', samples: true, first: 'today', favOnly: true };
 
 function readLs(): Choice {
     try {
@@ -31,6 +33,8 @@ function readLs(): Choice {
                 variant: known && v.variant ? v.variant : DEFAULT.variant,
                 popup: POPUPS.some((p) => p.key === v.popup) ? (v.popup as ListStyle) : DEFAULT.popup,
                 samples: v.samples ?? true,
+                first: v.first === 'next' ? 'next' : 'today',
+                favOnly: v.favOnly ?? true,
             };
         }
     } catch {
@@ -57,7 +61,7 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
     return (
         <div className="rpp-switch">
             <div className="rpp-switch-row">
-                <span>Runde 3 · Kachel:</span>
+                <span>Runde 4 · Kachel:</span>
                 {[{ key: 'IST', name: 'Bisheriger Stand' }, ...KACHELN].map((v) => (
                     <button
                         key={v.key}
@@ -82,6 +86,30 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
                             {p.key}
                         </button>
                     ))}
+                    <span style={{ marginLeft: 8 }}>Seite 1:</span>
+                    {(
+                        [
+                            ['today', 'Heute'],
+                            ['next', 'Nächste 3'],
+                        ] as const
+                    ).map(([k, label]) => (
+                        <button
+                            key={k}
+                            type="button"
+                            className={`rpp-switch-btn${choice.first === k ? ' is-active' : ''}`}
+                            onClick={() => setChoice({ ...choice, first: k })}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            )}
+            {current && (
+                <div className="rpp-switch-row">
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <input type="checkbox" checked={choice.favOnly} onChange={(e) => setChoice({ ...choice, favOnly: e.target.checked })} />
+                        Nur Favoriten auf der Kachel
+                    </label>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}>
                         <input type="checkbox" checked={choice.samples} onChange={(e) => setChoice({ ...choice, samples: e.target.checked })} />
                         Beispieldaten
@@ -116,11 +144,15 @@ export function RollPlanVariant({
     variant,
     popup,
     samples,
+    first,
+    favOnly,
     floors,
 }: {
     variant: string;
     popup: ListStyle;
     samples: boolean;
+    first: FirstPage;
+    favOnly: boolean;
     floors: ShutterFloorDef[];
 }) {
     const [positions, setPositions] = useState<Record<string, number | null>>({});
@@ -150,7 +182,7 @@ export function RollPlanVariant({
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
             <div className="rpp">
-                <K model={model} listStyle={popup} />
+                <K model={model} listStyle={popup} first={first} favOnly={favOnly} />
             </div>
         </>
     );

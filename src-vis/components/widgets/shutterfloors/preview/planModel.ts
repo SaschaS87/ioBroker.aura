@@ -39,6 +39,8 @@ export interface Scene {
     name: string;
     icon: SceneIcon;
     targets: SceneTarget[];
+    /** Favorit = erscheint als Schnellknopf auf der Kachel; alle anderen nur im Popup. */
+    favorite?: boolean;
 }
 
 export type TriggerKind = 'time' | 'sunrise' | 'sunset';
@@ -326,8 +328,34 @@ function sampleScenes(devices: PlanDevice[]): Scene[] {
             ]),
         },
         { id: 's-abend', name: 'Gute Nacht', icon: 'moon', targets: devices.map((d) => ({ key: d.key, closed: 100 })) },
-    ];
+        // Weitere Beispiele, damit es mehr Szenen als Platz auf der Kachel gibt
+        { id: 's-mittag', name: 'Mittagsruhe', icon: 'moon', targets: pick(['Kinderzimmer', 'Kinderzimmer_2'].map((key) => ({ key, closed: 100 }))) },
+        {
+            id: 's-terrasse',
+            name: 'Terrasse offen',
+            icon: 'sun',
+            targets: pick([
+                { key: 'Raffstore_(Garten)', closed: 0, slat: 0 },
+                { key: 'Raffstore_(Nachbar)', closed: 0, slat: 0 },
+            ]),
+        },
+        { id: 's-bad', name: 'Sichtschutz Bad', icon: 'home', targets: pick(['Bad', 'Bad_Dachfenster'].map((key) => ({ key, closed: 75 }))) },
+        { id: 's-lueften', name: 'Lüften OG', icon: 'home', targets: devices.filter((d) => d.floor !== 'Erdgeschoss').map((d) => ({ key: d.key, closed: 0 })) },
+        {
+            id: 's-essen',
+            name: 'Abendessen',
+            icon: 'sunset',
+            targets: pick([
+                { key: 'Küchenfenster', closed: 100 },
+                { key: 'Wohnz_gross', closed: 50 },
+                { key: 'Wohnz_klein', closed: 50 },
+            ]),
+        },
+        { id: 's-eltern-zu', name: 'Eltern schlafen', icon: 'moon', targets: pick(['Eltern_links', 'Eltern_rechts', 'Ankleide'].map((key) => ({ key, closed: 100 }))) },
+    ].map((sc) => ({ ...sc, favorite: FAVORITES.includes(sc.id) })) as Scene[];
 }
+
+const FAVORITES = ['s-morgen', 's-kinder', 's-hitze', 's-tv', 's-abend', 's-mittag'];
 
 const WK = [true, true, true, true, true, false, false];
 const WE = [false, false, false, false, false, true, true];
@@ -385,6 +413,7 @@ export interface PlanModel {
     setHolidayMode: (m: HolidayMode) => void;
     saveScene: (s: Scene) => void;
     deleteScene: (id: string) => void;
+    toggleFavorite: (id: string) => void;
     saveEntry: (e: PlanEntry) => void;
     deleteEntry: (id: string) => void;
     toggleEntry: (id: string) => void;
@@ -538,6 +567,9 @@ export function usePlanModel(
     const saveScene = useCallback((s: Scene) => {
         setScenes((prev) => (prev.some((x) => x.id === s.id) ? prev.map((x) => (x.id === s.id ? s : x)) : [...prev, s]));
     }, []);
+    const toggleFavorite = useCallback((id: string) => {
+        setScenes((prev) => prev.map((x) => (x.id === id ? { ...x, favorite: !x.favorite } : x)));
+    }, []);
     const deleteScene = useCallback((id: string) => {
         setScenes((prev) => prev.filter((x) => x.id !== id));
         setEntries((prev) => prev.filter((e) => !(e.target.kind === 'scene' && e.target.sceneId === id)));
@@ -584,6 +616,7 @@ export function usePlanModel(
         setHolidayMode,
         saveScene,
         deleteScene,
+        toggleFavorite,
         saveEntry,
         deleteEntry,
         toggleEntry,

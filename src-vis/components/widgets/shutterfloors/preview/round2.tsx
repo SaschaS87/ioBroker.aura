@@ -10,7 +10,7 @@
  * Einstellungen), drei Stufen, wie deutlich die beteiligten Rolllaeden
  * schon in der Liste zu sehen sind.
  */
-import { useRef, useState, type ComponentType, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentType, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { CalendarClock, ChevronLeft, ChevronRight, Pause, Plus } from 'lucide-react';
 import {
     addDays,
@@ -37,6 +37,7 @@ import {
     DayLetters,
     DayTrack,
     DeviceGlyph,
+    FavStar,
     EntryList,
     OccRow,
     PlanSheet,
@@ -59,20 +60,25 @@ export function useSheet() {
     const [open, setOpen] = useState(false);
     const [seq, setSeq] = useState(0);
     const [view, setView] = useState<SheetView>({ v: 'home' });
+    const [tab, setTab] = useState<PopupTab | null>(null);
     return {
         open,
         seq,
         view,
         setView,
-        show: (v: SheetView = { v: 'home' }) => {
+        tab,
+        /** `tab`: Popup direkt auf diesem Reiter öffnen (z. B. „Alle Szenen“). */
+        show: (v: SheetView = { v: 'home' }, t: PopupTab | null = null) => {
             setSeq((n) => n + 1);
             setView(v);
+            setTab(t);
             setOpen(true);
         },
         close: () => setOpen(false),
     };
 }
 export type Sheet = ReturnType<typeof useSheet>;
+export type PopupTab = 'plan' | 'scenes' | 'opts';
 
 export function statusText(m: PlanModel): string {
     if (!m.master) return 'Plan aus';
@@ -278,7 +284,10 @@ function DenseOcc({ m, date, o, onClick, showDay }: { m: PlanModel; date: Date; 
 // ── Popup (Grundform A) mit Listenstufe L/M/N ──────────────────────────
 
 export function PlanPopup({ model, sheet, listStyle }: { model: PlanModel; sheet: Sheet; listStyle: ListStyle }) {
-    const [tab, setTab] = useState<'plan' | 'scenes' | 'opts'>('plan');
+    const [tab, setTab] = useState<PopupTab>('plan');
+    useEffect(() => {
+        if (sheet.tab) setTab(sheet.tab);
+    }, [sheet.seq, sheet.tab]);
     if (!sheet.open) return null;
     return (
         <PlanSheet
@@ -417,6 +426,7 @@ function SceneListR2({ model: m, setView, style }: { model: PlanModel; setView: 
                             {style === 'L' ? <span className="rpp-sub rpp-ellipsis">{namesLine(m, tg)}</span> : <GlyphStrip m={m} tg={tg} />}
                             <span className="rpp-sub rpp-ellipsis">{sceneTimes(m, s)}</span>
                         </span>
+                        <FavStar on={!!s.favorite} onClick={() => m.toggleFavorite(s.id)} label={s.favorite ? "Favorit entfernen" : "Als Favorit markieren"} />
                         <PlayBtn onClick={() => m.runScene(s.id)} label={`${s.name} jetzt fahren`} />
                     </div>
                 );

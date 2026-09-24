@@ -35,7 +35,7 @@ import {
 type Props = { model: PlanModel; listStyle: ListStyle };
 
 /** Zwei Seiten; nur die aktive wird angezeigt. */
-function Stack({ pager, pages }: { pager: Pager; pages: ReactNode[] }) {
+export function Stack({ pager, pages }: { pager: Pager; pages: ReactNode[] }) {
     return (
         <div className="rpp-stack">
             {pages.map((p, i) => (
@@ -51,7 +51,7 @@ function Stack({ pager, pages }: { pager: Pager; pages: ReactNode[] }) {
     );
 }
 
-function Head({ pager, title, sub }: { pager: Pager; title: string; sub: string }) {
+export function Head({ pager, title, sub }: { pager: Pager; title: string; sub: string }) {
     return (
         <div className="rpp-pg-head">
             <Chevron pager={pager} d={-1} />
@@ -66,7 +66,7 @@ function Head({ pager, title, sub }: { pager: Pager; title: string; sub: string 
 
 // ── Seite 1: Fahrten ───────────────────────────────────────────────────
 
-function TodayPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: Sheet }) {
+export function TodayPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: Sheet }) {
     const occ = m.occurrences(m.today);
     const h = dayHead(m, m.today);
     return (
@@ -82,7 +82,7 @@ function TodayPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: She
     );
 }
 
-function NextPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: Sheet }) {
+export function NextPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: Sheet }) {
     const up = m.upcoming(3);
     const sun = m.sunFor(m.today);
     return (
