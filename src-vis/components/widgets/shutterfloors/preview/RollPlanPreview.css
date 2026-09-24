@@ -1,0 +1,1157 @@
+/* Planer-Entwuerfe Rolllaeden (nur Dev-Vorschau).
+   Grundregel: Karten sehen aus wie die Etagenkarten desselben Tabs
+   (aura.1 Custom-CSS .floor-devices): --widget-bg, Rand
+   --widget-border-width/--widget-border, --widget-radius. Zeilen 52 px hoch,
+   Name 14 px/400, Trennlinie --app-border wie ShutterRow. Abschnittstitel wie
+   FloorHeader (12 px, 600, Versalien, Linie bis zum Rand). Das Popup hat
+   Grund, Griff und Kopf des Rollladen-Popups (ShutterSheet.css). */
+
+.rpp,
+.rpp-sheet-backdrop,
+.rpp-toast {
+  --rpp-bg: var(--widget-bg, var(--app-surface));
+  --rpp-border: var(--widget-border, var(--app-border));
+  --rpp-bw: var(--widget-border-width, 1px);
+  --rpp-radius: var(--widget-radius, 0.75rem);
+  --rpp-line: var(--app-border);
+  --rpp-fill: color-mix(in srgb, var(--text-primary) 7%, var(--rpp-bg));
+  --rpp-accent: var(--accent, #3b82f6);
+  --rpp-yellow: var(--accent-yellow, #f59e0b);
+  --rpp-red: var(--accent-red, #ef4444);
+}
+
+.rpp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 7px;
+  margin-bottom: 18px;
+  color: var(--text-primary);
+}
+
+/* ── Umschaltleiste (gehoert NICHT zum Entwurf) ─────────────────────── */
+
+.rpp-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent-yellow, #f59e0b) 70%, transparent);
+  background: color-mix(in srgb, var(--accent-yellow, #f59e0b) 8%, transparent);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.rpp-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.rpp-switch-btn {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--widget-bg);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.rpp-switch-btn.is-active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.rpp-switch-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ── Grundbausteine ─────────────────────────────────────────────────── */
+
+.rpp-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--rpp-bg);
+  border: var(--rpp-bw) solid var(--rpp-border);
+  border-radius: var(--rpp-radius);
+  overflow: hidden;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.rpp-pad {
+  padding: 12px;
+  gap: 8px;
+}
+
+button.rpp-card {
+  width: 100%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.rpp-card:active {
+  background: color-mix(in srgb, var(--rpp-accent) 6%, var(--rpp-bg));
+}
+
+.rpp-caption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 7px;
+  min-height: 18px;
+}
+
+.rpp-caption-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.rpp-caption-line {
+  flex: 1;
+  height: 1px;
+  background: var(--app-border);
+}
+
+.rpp-caption-extra {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rpp-label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.rpp-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rpp-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.rpp-hint b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.rpp-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.rpp-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.rpp-dot-sep {
+  margin: 0 6px;
+  color: var(--text-secondary);
+}
+
+.rpp-empty {
+  padding: 14px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.rpp-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--rpp-accent);
+  background: color-mix(in srgb, var(--rpp-accent) 12%, transparent);
+}
+
+.rpp-pill.is-off {
+  color: var(--rpp-yellow);
+  background: color-mix(in srgb, var(--rpp-yellow) 14%, transparent);
+}
+
+/* Zeilen: exakt die Masse der ShutterRow (52 px, 0 12px, Linie app-border) */
+.rpp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rpp-line);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.rpp-card > .rpp-row:last-child,
+.rpp-card > .rpp-dev:last-child {
+  border-bottom: none;
+}
+
+.rpp-row--tap {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rpp-row--tap:active {
+  background: color-mix(in srgb, var(--rpp-accent) 10%, transparent);
+}
+
+.rpp-row--add {
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--rpp-accent);
+}
+
+.rpp-row.is-past {
+  opacity: 0.45;
+}
+
+.rpp-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rpp-row-icon {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.rpp-chev {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.rpp-time {
+  flex-shrink: 0;
+  min-width: 44px;
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.rpp-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+}
+
+/* Segment-Schalter (wie Garten2) */
+.rpp-seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--rpp-fill);
+}
+
+.rpp-seg-btn {
+  flex: 1;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rpp-seg--md .rpp-seg-btn {
+  min-height: 32px;
+  font-size: 13px;
+}
+
+.rpp-seg--sm .rpp-seg-btn {
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.rpp-seg-btn.is-active {
+  color: var(--text-primary);
+  background: var(--rpp-bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 0 0 0.5px var(--rpp-border);
+}
+
+/* Schalter */
+.rpp-toggle {
+  flex-shrink: 0;
+  position: relative;
+  width: 42px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-secondary) 35%, transparent);
+  transition: background-color 0.18s ease;
+  cursor: pointer;
+}
+
+.rpp-toggle.is-on {
+  background: var(--rpp-accent);
+}
+
+.rpp-toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.18s ease;
+}
+
+.rpp-toggle.is-on .rpp-toggle-knob {
+  transform: translateX(16px);
+}
+
+/* Tagesbuchstaben */
+.rpp-days {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.rpp-day {
+  min-width: 10px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--text-secondary) 50%, transparent);
+}
+
+.rpp-day.is-on {
+  color: var(--rpp-accent);
+  font-weight: 700;
+}
+
+.rpp-days.is-dim .rpp-day.is-on {
+  color: var(--text-secondary);
+}
+
+.rpp-round {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  color: var(--rpp-accent);
+  background: color-mix(in srgb, var(--rpp-accent) 12%, transparent);
+  cursor: pointer;
+}
+
+.rpp-round:active {
+  transform: scale(0.94);
+}
+
+.rpp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rpp-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.rpp-btn--primary {
+  flex: 1;
+  color: #fff;
+  background: var(--rpp-accent);
+}
+
+.rpp-btn--soft {
+  color: var(--rpp-accent);
+  background: color-mix(in srgb, var(--rpp-accent) 12%, transparent);
+}
+
+.rpp-btn--soft.is-on {
+  color: var(--stop-fg, #1c1917);
+  background: var(--rpp-yellow);
+}
+
+.rpp-btn--danger {
+  color: var(--rpp-red);
+  background: color-mix(in srgb, var(--rpp-red) 12%, transparent);
+}
+
+.rpp-btn--icon {
+  width: 44px;
+  padding: 0;
+}
+
+.rpp-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rpp-textbtn {
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--rpp-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── Tages-Zeitstrahl ───────────────────────────────────────────────── */
+
+.rpp-track {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--rpp-fill);
+}
+
+.rpp-track.is-compact {
+  height: 14px;
+  border-radius: 4px;
+}
+
+/* Nacht = dunkler hinterlegt, Tag = heller Grund */
+.rpp-track-night {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+
+.rpp-track-night:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.rpp-track-night + .rpp-track-night {
+  border-radius: 0 6px 6px 0;
+}
+
+.rpp-track-now {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--rpp-yellow);
+}
+
+.rpp-track-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--rpp-bg);
+  box-sizing: content-box;
+  background: var(--rpp-accent);
+}
+
+.rpp-track.is-compact .rpp-track-dot {
+  width: 7px;
+  height: 7px;
+  margin: -4.5px 0 0 -4.5px;
+  border-width: 1px;
+}
+
+.rpp-track-dot.is-down {
+  background: var(--text-secondary);
+}
+
+.rpp-track-dot.is-past {
+  opacity: 0.4;
+}
+
+button.rpp-track-dot {
+  cursor: pointer;
+}
+
+.rpp-track-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  padding-top: 3px;
+}
+
+.rpp-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.rpp-legend-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--rpp-accent);
+}
+
+.rpp-legend-dot.is-down {
+  background: var(--text-secondary);
+}
+
+/* ── Wochenraster ───────────────────────────────────────────────────── */
+
+.rpp-week {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rpp-week.is-big {
+  gap: 10px;
+}
+
+.rpp-week-row {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.rpp-week-day {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.rpp-week-row.is-today .rpp-week-day {
+  color: var(--rpp-accent);
+  font-weight: 700;
+}
+
+.rpp-week-hol {
+  color: var(--rpp-yellow);
+  margin-left: 1px;
+}
+
+/* ── Kacheln (Szenen) ───────────────────────────────────────────────── */
+
+.rpp-tiles {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.rpp-tiles::-webkit-scrollbar {
+  display: none;
+}
+
+.rpp-tiles > .rpp-tile {
+  flex: 0 0 132px;
+}
+
+.rpp-tiles--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+}
+
+.rpp-tile {
+  gap: 4px;
+  padding: 10px 12px 12px;
+  min-height: 96px;
+  justify-content: flex-start;
+}
+
+.rpp-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.rpp-tile--add {
+  align-items: center;
+  justify-content: center;
+  color: var(--rpp-accent);
+  border-style: dashed;
+  background: transparent;
+}
+
+/* ── A: Nächste Fahrt ───────────────────────────────────────────────── */
+
+.rpp-a {
+  padding: 12px;
+  gap: 10px;
+}
+
+.rpp-a-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rpp-a-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rpp-a-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rpp-accent);
+  background: color-mix(in srgb, var(--rpp-accent) 12%, transparent);
+}
+
+.rpp-a-time {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-a-track {
+  padding-top: 2px;
+}
+
+.rpp-a-foot {
+  font-size: 11px;
+}
+
+/* ── B / D ──────────────────────────────────────────────────────────── */
+
+.rpp-b,
+.rpp-d {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── E: Kalenderblatt ───────────────────────────────────────────────── */
+
+.rpp-e-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-bottom: 1px solid var(--rpp-line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rpp-e-date {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.rpp-e-foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--rpp-line);
+}
+
+.rpp-e-foot .rpp-btn {
+  flex: 1;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+/* ── Popup (Grundgerüst wie ShutterSheet, aber höher) ───────────────── */
+
+.rpp-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.45);
+  animation: rpp-backdrop-in 280ms ease-out;
+}
+
+@keyframes rpp-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.rpp-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 600px;
+  height: 92dvh;
+  background-color: var(--app-bg);
+  color: var(--text-primary);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  overflow: hidden;
+  animation: rpp-sheet-in 280ms ease-out;
+}
+
+@keyframes rpp-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.rpp-sheet-drag {
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.rpp-sheet-grip {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.rpp-grip-handle {
+  width: 36px;
+  height: 4px;
+  background-color: var(--app-border);
+  border-radius: 2px;
+}
+
+.rpp-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.rpp-sheet-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.rpp-sheet-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.rpp-back {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-left: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rpp-accent);
+  cursor: pointer;
+}
+
+.rpp-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 14px 12px calc(env(safe-area-inset-bottom) + 20px);
+}
+
+.rpp-home {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rpp-home > .rpp-caption {
+  margin-top: 8px;
+}
+
+.rpp-agenda-day {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.rpp-sun-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-sun-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rpp-sun-row svg {
+  color: var(--text-secondary);
+}
+
+/* ── Editoren ───────────────────────────────────────────────────────── */
+
+.rpp-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rpp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--rpp-bg);
+  border: var(--rpp-bw) solid var(--rpp-border);
+  border-radius: var(--rpp-radius);
+}
+
+.rpp-section--flush {
+  background: transparent;
+  border: none;
+  padding: 0 4px;
+}
+
+.rpp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rpp-presets {
+  display: inline-flex;
+  gap: 12px;
+}
+
+.rpp-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--app-border);
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.rpp-input:focus {
+  outline: 2px solid var(--rpp-accent);
+  outline-offset: -1px;
+}
+
+.rpp-time-input {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: none;
+  background: var(--rpp-fill);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color-scheme: light dark;
+}
+
+.rpp-time-input--sm {
+  min-height: 30px;
+  font-size: 14px;
+}
+
+.rpp-icon-pick {
+  display: flex;
+  gap: 8px;
+}
+
+.rpp-icon-opt {
+  flex: 1;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: var(--rpp-fill);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.rpp-icon-opt.is-active {
+  color: var(--rpp-accent);
+  border-color: var(--rpp-accent);
+  background: color-mix(in srgb, var(--rpp-accent) 12%, transparent);
+}
+
+.rpp-editor-floor {
+  display: flex;
+  flex-direction: column;
+}
+
+.rpp-dev {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rpp-line);
+}
+
+.rpp-dev-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rpp-dev.is-off .rpp-dev-head {
+  opacity: 0.55;
+}
+
+.rpp-chips {
+  display: flex;
+  gap: 5px;
+}
+
+.rpp-chips--wrap {
+  flex-wrap: wrap;
+}
+
+.rpp-chips--slat {
+  align-items: center;
+  gap: 6px;
+}
+
+.rpp-chips--slat .rpp-sub {
+  margin-right: 2px;
+}
+
+.rpp-chip {
+  flex: 1;
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--rpp-fill);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rpp-chip.is-active {
+  color: #fff;
+  background: var(--rpp-accent);
+}
+
+.rpp-chip.is-none.is-active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-secondary) 30%, transparent);
+}
+
+.rpp-chip--sm {
+  flex: 0 1 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.rpp-chip--scene {
+  flex: 0 1 auto;
+  padding: 0 12px;
+}
+
+.rpp-daypick {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+.rpp-daypick-btn {
+  height: 38px;
+  border-radius: 9px;
+  border: none;
+  background: var(--rpp-fill);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rpp-daypick-btn.is-on {
+  color: #fff;
+  background: var(--rpp-accent);
+}
+
+.rpp-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--rpp-fill);
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.rpp-stepper-btn {
+  width: 32px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.rpp-stepper-btn:disabled {
+  opacity: 0.35;
+}
+
+.rpp-stepper-val {
+  min-width: 56px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-stepper-unit {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.rpp-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* ── Rückmeldung ────────────────────────────────────────────────────── */
+
+.rpp-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 90px);
+  transform: translateX(-50%);
+  z-index: 1100;
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-primary) 88%, transparent);
+  color: var(--app-bg);
+  font-size: 13px;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rpp-sheet,
+  .rpp-sheet-backdrop {
+    animation: none;
+  }
+}
+
+/* Karte, die selbst eine Zeile ist (D: Wochenplan-Einstieg) */
+.rpp-card.rpp-card--row {
+  flex-direction: row;
+  border-bottom: var(--rpp-bw) solid var(--rpp-border);
+}

@@ -9,6 +9,7 @@ import { SignalStrengthBox } from '../shared/SignalStrengthBox';
 import { FloorHeader } from './FloorHeader';
 import { ShutterRow } from './ShutterRow';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
+import { RollPlanBar, RollPlanVariant, useRollPlanChoice } from './preview/RollPlanPreview';
 import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
@@ -36,6 +37,12 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         showSignalBox,
     } = options;
     const signalBoxVisible = showSignalBox !== false;
+
+    // Planer-Entwuerfe (Szenen + Wochenplan), nur Dev-Vorschau. Die Leiste
+    // und der Entwurf stehen hinter import.meta.env.DEV und fallen aus dem
+    // Pi-Build heraus.
+    const [planChoice, setPlanChoice] = useRollPlanChoice();
+    const planVariant = import.meta.env.DEV && planChoice.variant !== 'IST' ? planChoice.variant : null;
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -232,6 +239,9 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                         </span>
                     </div>
                 )}
+
+                {import.meta.env.DEV && <RollPlanBar choice={planChoice} setChoice={setPlanChoice} />}
+                {planVariant && <RollPlanVariant variant={planVariant} samples={planChoice.samples} floors={floors} />}
 
                 <div className="floors-scroll">
                     {floors.map((floor) => (
