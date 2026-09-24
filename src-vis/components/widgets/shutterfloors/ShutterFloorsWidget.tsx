@@ -241,7 +241,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                 )}
 
                 {import.meta.env.DEV && <RollPlanBar choice={planChoice} setChoice={setPlanChoice} />}
-                {planVariant && <RollPlanVariant variant={planVariant} samples={planChoice.samples} floors={floors} />}
+                {planVariant && <RollPlanVariant variant={planVariant} popup={planChoice.popup} samples={planChoice.samples} floors={floors} />}
 
                 <div className="floors-scroll">
                     {floors.map((floor) => (

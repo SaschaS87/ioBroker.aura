@@ -3,34 +3,39 @@
  * Rolllaeden-Tab — erscheint NUR in der Dev-Vorschau (import.meta.env.DEV),
  * nie im Build fuer den Pi.
  *
- * „Ist" zeigt den Tab wie bisher, A–E die Entwuerfe der Runde 1. Die
- * Etagenliste darunter bleibt in allen Entwuerfen unveraendert.
+ * Runde 2: Kachel F–K (Einstieg) und Popup L–N (Listenstufe) frei
+ * kombinierbar. Runde 1 (A–E) liegt in Commit a95beb15, variants.tsx.
+ * Die Etagenliste darunter bleibt in allen Entwuerfen unveraendert.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
 import type { ShutterFloorDef } from '../types';
 import { usePlanModel } from './planModel';
 import { parseSunDp } from './parts';
-import { VARIANTS } from './variants';
+import { KACHELN, POPUPS, type ListStyle } from './round2';
 import './RollPlanPreview.css';
 
-const LS_KEY = 'aura.shutterfloors.preview';
-const DEFAULT_VARIANT = VARIANTS[0].key;
+const LS_KEY = 'aura.shutterfloors.preview.r2';
 
-type Choice = { variant: string; samples: boolean };
+type Choice = { variant: string; popup: ListStyle; samples: boolean };
+const DEFAULT: Choice = { variant: KACHELN[0].key, popup: 'L', samples: true };
 
 function readLs(): Choice {
     try {
         const raw = localStorage.getItem(LS_KEY);
         if (raw) {
             const v = JSON.parse(raw) as Partial<Choice>;
-            const known = v.variant === 'IST' || VARIANTS.some((x) => x.key === v.variant);
-            return { variant: known && v.variant ? v.variant : DEFAULT_VARIANT, samples: v.samples ?? true };
+            const known = v.variant === 'IST' || KACHELN.some((x) => x.key === v.variant);
+            return {
+                variant: known && v.variant ? v.variant : DEFAULT.variant,
+                popup: POPUPS.some((p) => p.key === v.popup) ? (v.popup as ListStyle) : DEFAULT.popup,
+                samples: v.samples ?? true,
+            };
         }
     } catch {
         /* Vorschau-Komfort, darf fehlen */
     }
-    return { variant: DEFAULT_VARIANT, samples: true };
+    return DEFAULT;
 }
 
 export function useRollPlanChoice() {
@@ -46,12 +51,13 @@ export function useRollPlanChoice() {
 }
 
 export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: (c: Choice) => void }) {
-    const current = VARIANTS.find((v) => v.key === choice.variant);
+    const current = KACHELN.find((v) => v.key === choice.variant);
+    const popup = POPUPS.find((p) => p.key === choice.popup);
     return (
         <div className="rpp-switch">
             <div className="rpp-switch-row">
-                <span>Entwurf Planer, Runde 1:</span>
-                {[{ key: 'IST', name: 'Bisheriger Stand' }, ...VARIANTS].map((v) => (
+                <span>Runde 2 · Kachel:</span>
+                {[{ key: 'IST', name: 'Bisheriger Stand' }, ...KACHELN].map((v) => (
                     <button
                         key={v.key}
                         type="button"
@@ -62,19 +68,33 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
                     </button>
                 ))}
             </div>
-            <div className="rpp-switch-row" style={{ justifyContent: 'space-between' }}>
-                <span className="rpp-switch-name">{current ? `${current.key} · ${current.name}` : 'Bisheriger Stand'}</span>
-                {current && (
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            {current && (
+                <div className="rpp-switch-row">
+                    <span>Popup:</span>
+                    {POPUPS.map((p) => (
+                        <button
+                            key={p.key}
+                            type="button"
+                            className={`rpp-switch-btn${choice.popup === p.key ? ' is-active' : ''}`}
+                            onClick={() => setChoice({ ...choice, popup: p.key })}
+                        >
+                            {p.key}
+                        </button>
+                    ))}
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}>
                         <input type="checkbox" checked={choice.samples} onChange={(e) => setChoice({ ...choice, samples: e.target.checked })} />
                         Beispieldaten
                     </label>
-                )}
-            </div>
+                </div>
+            )}
+            <span className="rpp-switch-name">
+                {current ? `${current.key} · ${current.name}` : 'Bisheriger Stand'}
+                {current && popup ? ` — ${popup.key} · ${popup.name}` : ''}
+            </span>
             {current && (
                 <span>
                     Nur lokal: Szenen fahren nicht wirklich, nichts geht an den Pi. Echt sind Rollladen-Stellungen und Sonnenzeiten.
-                    Beispieldaten = erfundene Szenen und Zeitpunkte.
+                    Kachel wischen oder Pfeile tippen; „Planen“ öffnet das Popup.
                 </span>
             )}
         </div>
@@ -91,7 +111,17 @@ function PosProbe({ k, dp, onUpdate }: { k: string; dp: string; onUpdate: (k: st
     return null;
 }
 
-export function RollPlanVariant({ variant, samples, floors }: { variant: string; samples: boolean; floors: ShutterFloorDef[] }) {
+export function RollPlanVariant({
+    variant,
+    popup,
+    samples,
+    floors,
+}: {
+    variant: string;
+    popup: ListStyle;
+    samples: boolean;
+    floors: ShutterFloorDef[];
+}) {
     const [positions, setPositions] = useState<Record<string, number | null>>({});
     const onPos = useCallback((k: string, v: number | null) => {
         setPositions((prev) => (prev[k] === v ? prev : { ...prev, [k]: v }));
@@ -111,15 +141,15 @@ export function RollPlanVariant({ variant, samples, floors }: { variant: string;
         },
         samples,
     );
-    const V = VARIANTS.find((v) => v.key === variant)?.C;
-    if (!V) return null;
+    const K = KACHELN.find((v) => v.key === variant)?.C;
+    if (!K) return null;
     return (
         <>
             {floors.flatMap((f) => f.devices).map((d) => (
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
             <div className="rpp">
-                <V model={model} />
+                <K model={model} listStyle={popup} />
             </div>
         </>
     );

@@ -275,7 +275,13 @@ export function isOpening(model: PlanModel, tg: PlanTarget): boolean {
 
 // ── Popup mit Navigation ───────────────────────────────────────────────
 
-export type SheetView = { v: 'home' } | { v: 'scene'; id: string | null } | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> };
+export type SceneDraft = { name: string; icon: SceneIcon; targets: Record<string, { closed: number; slat?: number }> };
+
+/** `back` = wohin „Zurück“ und „Speichern“ führen (z. B. zurück in die Szene). */
+export type SheetView =
+    | { v: 'home' }
+    | { v: 'scene'; id: string | null; draft?: SceneDraft }
+    | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry>; back?: SheetView };
 
 export function PlanSheet({
     title,
@@ -297,7 +303,7 @@ export function PlanSheet({
     const adminPortalTarget = usePortalTarget();
     const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
     const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick } = useSheetDismiss(onClose);
-    const back = () => setView({ v: 'home' });
+    const back = () => setView(view.v === 'entry' && view.back ? view.back : { v: 'home' });
     let head = title;
     let sub = subtitle;
     let body: ReactNode = home;
@@ -305,7 +311,7 @@ export function PlanSheet({
         const s = view.id ? model.sceneOf(view.id) : undefined;
         head = s ? s.name : 'Neue Szene';
         sub = 'Welche Rollläden fahren wohin?';
-        body = <SceneEditor key={view.id ?? 'new'} model={model} scene={s} onDone={back} />;
+        body = <SceneEditor key={view.id ?? 'new'} model={model} scene={s} draft={view.draft} onDone={back} setView={setView} />;
     } else if (view.v === 'entry') {
         const e = view.id ? model.entries.find((x) => x.id === view.id) : undefined;
         head = e ? 'Zeitpunkt bearbeiten' : 'Neuer Zeitpunkt';
@@ -341,7 +347,10 @@ export function PlanSheet({
                         </div>
                     </div>
                 </div>
-                <div className="rpp-sheet-body">{body}</div>
+                {/* key: jede Ansicht beginnt oben, statt die Scrollhöhe der vorigen zu erben */}
+                <div className="rpp-sheet-body" key={view.v === 'home' ? 'home' : `${view.v}-${view.id ?? 'new'}`}>
+                    {body}
+                </div>
             </div>
         </div>,
         portalTarget ?? document.body,
@@ -365,11 +374,23 @@ const SLAT_CHIPS: { v: number; label: string }[] = [
     { v: 90, label: 'geschlossen' },
 ];
 
-function SceneEditor({ model, scene, onDone }: { model: PlanModel; scene?: Scene; onDone: () => void }) {
-    const [name, setName] = useState(scene?.name ?? '');
-    const [icon, setIcon] = useState<SceneIcon>(scene?.icon ?? 'sun');
+function SceneEditor({
+    model,
+    scene,
+    draft,
+    onDone,
+    setView,
+}: {
+    model: PlanModel;
+    scene?: Scene;
+    draft?: SceneDraft;
+    onDone: () => void;
+    setView: (v: SheetView) => void;
+}) {
+    const [name, setName] = useState(draft?.name ?? scene?.name ?? '');
+    const [icon, setIcon] = useState<SceneIcon>(draft?.icon ?? scene?.icon ?? 'sun');
     const [targets, setTargets] = useState<Record<string, { closed: number; slat?: number }>>(() =>
-        Object.fromEntries(
+        draft?.targets ?? Object.fromEntries(
             (scene?.targets ?? []).map((t) => [
                 t.key,
                 { closed: t.closed, slat: model.deviceOf(t.key)?.hasSlat ? (t.slat ?? 0) : undefined },
@@ -408,6 +429,7 @@ function SceneEditor({ model, scene, onDone }: { model: PlanModel; scene?: Scene
     };
 
     const usedBy = scene ? model.entriesOfScene(scene.id) : [];
+    const backHere = (): SheetView => ({ v: 'scene', id: scene?.id ?? null, draft: { name, icon, targets } });
 
     return (
         <div className="rpp-editor">
@@ -505,18 +527,38 @@ function SceneEditor({ model, scene, onDone }: { model: PlanModel; scene?: Scene
             ))}
 
             {scene && (
-                <div className="rpp-section">
-                    <span className="rpp-label">Im Wochenplan</span>
-                    {usedBy.length === 0 ? (
-                        <span className="rpp-sub">Diese Szene startet bisher nur per Hand.</span>
-                    ) : (
-                        usedBy.map((e) => (
-                            <div key={e.id} className="rpp-kv">
+                // Kreis schliessen: Zeitpunkt antippen oder anlegen; „Zurück“
+                // fuehrt wieder hierher – mit den noch ungespeicherten Aenderungen.
+                <div className="rpp-editor-floor">
+                <Caption>Im Wochenplan</Caption>
+                <div className="rpp-card">
+                    {usedBy.length === 0 && <div className="rpp-empty">Diese Szene startet bisher nur per Hand.</div>}
+                    {usedBy.map((e) => (
+                        <div
+                            key={e.id}
+                            role="button"
+                            tabIndex={0}
+                            className={`rpp-row rpp-row--tap${e.enabled ? '' : ' is-past'}`}
+                            onClick={() => setView({ v: 'entry', id: e.id, back: backHere() })}
+                        >
+                            <span className="rpp-row-main">
+                                <span className="rpp-title">{triggerText(e.trigger)}</span>
                                 <DayLetters days={e.days} dim={!e.enabled} />
-                                <span className="rpp-sub">{triggerText(e.trigger)}</span>
-                            </div>
-                        ))
-                    )}
+                            </span>
+                            <Toggle on={e.enabled} onChange={() => model.toggleEntry(e.id)} label="Zeitpunkt aktiv" />
+                            <ChevronRight size={16} className="rpp-chev" />
+                        </div>
+                    ))}
+                    <button
+                        type="button"
+                        className="rpp-row rpp-row--tap rpp-row--add"
+                        onClick={() =>
+                            setView({ v: 'entry', id: null, preset: { target: { kind: 'scene', sceneId: scene.id } }, back: backHere() })
+                        }
+                    >
+                        <Plus size={16} /> Zeit hinzufügen
+                    </button>
+                </div>
                 </div>
             )}
 

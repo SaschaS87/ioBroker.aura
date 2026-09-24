@@ -1155,3 +1155,476 @@ button.rpp-track-dot {
   flex-direction: row;
   border-bottom: var(--rpp-bw) solid var(--rpp-border);
 }
+
+/* ═════ Runde 2 ═════════════════════════════════════════════════════════
+   Blaettern wie RainStationWidget (Wetter-Tab): Pfeile 18 px in
+   --text-secondary, Punkte 6 px (aktiv --accent, sonst --app-border),
+   Titel 15 px/500, Unterzeile 11 px. */
+
+.rpp-pg {
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.rpp-pg-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  border-bottom: 1px solid var(--rpp-line);
+}
+
+.rpp-pg-head--tall {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.rpp-pg-chev {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rpp-pg-chev:active {
+  opacity: 0.6;
+}
+
+.rpp-pg-headtext {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.rpp-pg-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.rpp-pg-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.rpp-pg-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.rpp-pg-list > .rpp-row:last-child {
+  border-bottom: none;
+}
+
+.rpp-pg-dots {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-top: 1px solid var(--rpp-line);
+}
+
+.rpp-pg-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--app-border);
+  cursor: pointer;
+}
+
+.rpp-pg-dot.is-active {
+  background: var(--rpp-accent);
+}
+
+.rpp-pg-side {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.rpp-pg-side.is-left {
+  left: 12px;
+}
+
+.rpp-pg-side.is-right {
+  right: 12px;
+}
+
+.rpp-pg-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.rpp-textbtn--sm {
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.rpp-pg-page {
+  animation: rpp-pg-in 0.2s ease-out;
+}
+
+.rpp-pg-page.is-prev {
+  animation-name: rpp-pg-in-prev;
+}
+
+@keyframes rpp-pg-in {
+  from {
+    transform: translateX(14px);
+  }
+}
+
+@keyframes rpp-pg-in-prev {
+  from {
+    transform: translateX(-14px);
+  }
+}
+
+.rpp-center {
+  text-align: center;
+}
+
+.rpp-nowrap {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rpp-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-row--dense {
+  min-height: 40px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.rpp-row--dense .rpp-time {
+  font-size: 14px;
+}
+
+.rpp-row--tall {
+  align-items: center;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+/* G: eine Fahrt pro Seite */
+.rpp-g-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rpp-g-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 0 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.rpp-g-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.rpp-g-icon {
+  display: inline-flex;
+  color: var(--rpp-accent);
+}
+
+.rpp-g-name {
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-g-btn .rpp-sub {
+  max-width: 100%;
+}
+
+/* H: Zeitstrahl + Uhrzeit-Chips */
+.rpp-h-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 10px;
+}
+
+.rpp-h-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.rpp-h-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: none;
+  border-radius: 999px;
+  background: var(--rpp-fill);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rpp-h-chip b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-h-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-h-chip svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.rpp-h-chip.is-past {
+  opacity: 0.45;
+}
+
+/* I: schlanke Zeile, 52 px wie eine Rollladen-Zeile */
+.rpp-card.rpp-i {
+  flex-direction: row;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 4px;
+  gap: 2px;
+}
+
+.rpp-i-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rpp-i-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rpp-i-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-i-plan {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: 2px;
+  border: none;
+  border-left: 1px solid var(--rpp-line);
+  background: transparent;
+  color: var(--rpp-accent);
+  cursor: pointer;
+}
+
+/* J: Wochenzeilen */
+.rpp-j-day {
+  flex-shrink: 0;
+  min-width: 78px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rpp-j-count {
+  flex-shrink: 0;
+  min-width: 18px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rpp-accent);
+}
+
+/* K: Kalenderblatt schlank */
+.rpp-k-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rpp-line);
+}
+
+.rpp-k-date {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rpp-round.is-on {
+  color: var(--rpp-yellow);
+  background: color-mix(in srgb, var(--rpp-yellow) 16%, transparent);
+}
+
+.rpp-k-foot {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--rpp-line);
+  padding: 0 4px;
+}
+
+.rpp-k-foot .rpp-pg-dots {
+  flex: 1;
+  border-top: none;
+}
+
+/* Popup M: Symbolreihe je Etage */
+.rpp-glyphs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 2px 0;
+}
+
+.rpp-glyphs-floor {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rpp-glyphs-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+
+.rpp-glyph {
+  display: inline-flex;
+  color: var(--text-primary);
+}
+
+/* Popup N: jeder Rollladen mit Ziel */
+.rpp-card--tap {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rpp-card--tap:active {
+  background: color-mix(in srgb, var(--rpp-accent) 5%, var(--rpp-bg));
+}
+
+.rpp-card.is-dim > * {
+  opacity: 0.5;
+}
+
+.rpp-card--tap > .rpp-row {
+  border-bottom: 1px solid var(--rpp-line);
+}
+
+.rpp-members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.rpp-members-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.rpp-members-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+}
+
+.rpp-member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.rpp-member svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.rpp-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-member-val {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rpp-pg-page {
+    animation: none;
+  }
+}
