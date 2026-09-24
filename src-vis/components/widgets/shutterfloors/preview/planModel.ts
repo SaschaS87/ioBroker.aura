@@ -24,7 +24,7 @@ export const WD_LETTER = ['M', 'D', 'M', 'D', 'F', 'S', 'S'];
 export const WD_LONG = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
-export type SceneIcon = 'sunrise' | 'sun' | 'sunset' | 'moon' | 'home' | 'heat';
+export type SceneIcon = 'sunrise' | 'sun' | 'sunset' | 'moon' | 'home' | 'heat' | 'tv';
 
 export interface SceneTarget {
     key: string;
@@ -314,6 +314,15 @@ function sampleScenes(devices: PlanDevice[]): Scene[] {
                 { key: 'Raffstore_(Nachbar)', closed: 100, slat: 50 },
                 { key: 'Wohnz_gross', closed: 70 },
                 { key: 'Wohnz_klein', closed: 70 },
+            ]),
+        },
+        {
+            id: 's-tv',
+            name: 'Fernsehen',
+            icon: 'tv',
+            targets: pick([
+                { key: 'Wohnz_gross', closed: 100 },
+                { key: 'Wohnz_klein', closed: 100 },
             ]),
         },
         { id: 's-abend', name: 'Gute Nacht', icon: 'moon', targets: devices.map((d) => ({ key: d.key, closed: 100 })) },

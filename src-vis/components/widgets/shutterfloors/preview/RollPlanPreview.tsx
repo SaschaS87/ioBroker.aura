@@ -3,8 +3,8 @@
  * Rolllaeden-Tab — erscheint NUR in der Dev-Vorschau (import.meta.env.DEV),
  * nie im Build fuer den Pi.
  *
- * Runde 2: Kachel F–K (Einstieg) und Popup L–N (Listenstufe) frei
- * kombinierbar. Runde 1 (A–E) liegt in Commit a95beb15, variants.tsx.
+ * Runde 3: Kachel O–R (Slider: Fahrten + Szenen), Popup A oder L. Frei
+ * kombinierbar. Runde 1 in a95beb15 (variants.tsx), Runde 2 in 2a36dfc0.
  * Die Etagenliste darunter bleibt in allen Entwuerfen unveraendert.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -12,10 +12,11 @@ import { useDatapoint } from '../../../../hooks/useDatapoint';
 import type { ShutterFloorDef } from '../types';
 import { usePlanModel } from './planModel';
 import { parseSunDp } from './parts';
-import { KACHELN, POPUPS, type ListStyle } from './round2';
+import { type ListStyle } from './round2';
+import { KACHELN3 as KACHELN, POPUPS3 as POPUPS } from './round3';
 import './RollPlanPreview.css';
 
-const LS_KEY = 'aura.shutterfloors.preview.r2';
+const LS_KEY = 'aura.shutterfloors.preview.r3';
 
 type Choice = { variant: string; popup: ListStyle; samples: boolean };
 const DEFAULT: Choice = { variant: KACHELN[0].key, popup: 'L', samples: true };
@@ -56,7 +57,7 @@ export function RollPlanBar({ choice, setChoice }: { choice: Choice; setChoice: 
     return (
         <div className="rpp-switch">
             <div className="rpp-switch-row">
-                <span>Runde 2 · Kachel:</span>
+                <span>Runde 3 · Kachel:</span>
                 {[{ key: 'IST', name: 'Bisheriger Stand' }, ...KACHELN].map((v) => (
                     <button
                         key={v.key}

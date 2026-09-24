@@ -19,6 +19,7 @@ import {
     Sunrise,
     Sunset,
     Trash2,
+    Tv,
 } from 'lucide-react';
 import { usePortalTarget } from '../../../../contexts/PortalTargetContext';
 import { useSheetDismiss } from '../../useSheetDismiss';
@@ -59,6 +60,7 @@ export const SCENE_ICONS: Record<SceneIcon, typeof Sun> = {
     moon: Moon,
     home: House,
     heat: Flame,
+    tv: Tv,
 };
 
 export function SceneGlyph({ icon, size = 18 }: { icon: SceneIcon; size?: number }) {
@@ -189,7 +191,7 @@ export function OccRow({
             </span>
             <span className="rpp-row-main">
                 <span className="rpp-title">{model.targetName(tg)}</span>
-                <span className="rpp-sub">
+                <span className="rpp-sub rpp-ellipsis">
                     {showDate ? `${dayLabel(showDate, model.today)} · ` : ''}
                     {triggerShort(occ.entry.trigger)}
                     {tg.kind === 'scene' ? ` · ${model.targetCount(tg)} Rollläden` : ` · auf ${closedWord(tg.closed)}`}

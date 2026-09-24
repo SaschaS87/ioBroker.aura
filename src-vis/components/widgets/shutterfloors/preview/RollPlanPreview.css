@@ -1628,3 +1628,104 @@ button.rpp-track-dot {
     animation: none;
   }
 }
+
+/* ═════ Runde 3: Slider mit zwei Seiten ══════════════════════════════════ */
+
+/* Nur die aktive Seite wird angezeigt; die Kachel nimmt ihre Hoehe an.
+   (Beide uebereinander im Rasterfeld liess unter „Heute“ eine Luecke.) */
+
+.rpp-stack-page {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rpp-stack-page.is-on {
+  display: flex;
+  animation: rpp-pg-in 0.2s ease-out;
+}
+
+.rpp-stack-page.is-on.is-prev {
+  animation-name: rpp-pg-in-prev;
+}
+
+.rpp-stack-page > .rpp-pg-list {
+  flex: 1;
+}
+
+/* Szenen als Schnellkacheln, zwei Spalten */
+.rpp-qtiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.rpp-qtile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 10px 11px;
+  border: none;
+  border-radius: 12px;
+  background: var(--rpp-fill);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.2s;
+}
+
+.rpp-qtile:active,
+.rpp-qtile.is-flash {
+  background: color-mix(in srgb, var(--rpp-accent) 22%, var(--rpp-bg));
+}
+
+.rpp-qtile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  color: var(--rpp-accent);
+  margin-bottom: 2px;
+}
+
+.rpp-qtile-play {
+  color: var(--text-secondary);
+}
+
+.rpp-qtile-name {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-qtile-sub {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rpp-qtile--add {
+  align-items: center;
+  justify-content: center;
+  color: var(--rpp-accent);
+  background: transparent;
+  border: 1px dashed var(--rpp-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rpp-stack-page.is-on {
+    animation: none;
+  }
+}

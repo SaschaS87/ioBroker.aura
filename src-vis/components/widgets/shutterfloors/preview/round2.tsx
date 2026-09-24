@@ -37,10 +37,12 @@ import {
     DayLetters,
     DayTrack,
     DeviceGlyph,
+    EntryList,
     OccRow,
     PlanSheet,
     PlayBtn,
     SceneGlyph,
+    SceneList,
     Seg,
     SettingsCard,
     Toast,
@@ -49,11 +51,11 @@ import {
     type SheetView,
 } from './parts';
 
-export type ListStyle = 'L' | 'M' | 'N';
+export type ListStyle = 'A' | 'L' | 'M' | 'N';
 
 // ── Gemeinsames ────────────────────────────────────────────────────────
 
-function useSheet() {
+export function useSheet() {
     const [open, setOpen] = useState(false);
     const [seq, setSeq] = useState(0);
     const [view, setView] = useState<SheetView>({ v: 'home' });
@@ -70,9 +72,9 @@ function useSheet() {
         close: () => setOpen(false),
     };
 }
-type Sheet = ReturnType<typeof useSheet>;
+export type Sheet = ReturnType<typeof useSheet>;
 
-function statusText(m: PlanModel): string {
+export function statusText(m: PlanModel): string {
     if (!m.master) return 'Plan aus';
     if (m.pausedToday) return 'heute ausgesetzt';
     return 'Plan aktiv';
@@ -83,7 +85,7 @@ function nowMin(m: PlanModel) {
 }
 
 /** Ist diese Ausführung schon vorbei bzw. fällt aus? */
-function isPast(m: PlanModel, date: Date, o: Occurrence) {
+export function isPast(m: PlanModel, date: Date, o: Occurrence) {
     if (!m.master) return true;
     const today = date.toDateString() === m.today.toDateString();
     return today && (m.pausedToday || o.min <= nowMin(m));
@@ -112,7 +114,7 @@ function membersOf(m: PlanModel, tg: PlanTarget): { dev: PlanDevice; closed: num
 }
 
 /** „ganzes Erdgeschoss, Büro Maxi, Mika +2“ – volle Etagen zusammengefasst. */
-function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
+export function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
     if (tg.kind === 'device') return `auf ${closedWord(tg.closed)}`;
     const mem = membersOf(m, tg);
     if (mem.length && mem.length === m.devices.length) return `alle ${mem.length} Rollläden`;
@@ -131,7 +133,7 @@ function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
  * Blaettern wie RainStationWidget, dazu Wischen. Nach einer Wischgeste wird
  * der folgende Klick geschluckt, damit die Kachel nicht zusaetzlich aufgeht.
  */
-function usePager(n: number) {
+export function usePager(n: number) {
     const [idx, setIdx] = useState(0);
     const [dir, setDir] = useState<1 | -1>(1);
     const start = useRef<{ x: number; y: number } | null>(null);
@@ -173,9 +175,9 @@ function usePager(n: number) {
     };
     return { idx: safe, dir, go, set, handlers, n };
 }
-type Pager = ReturnType<typeof usePager>;
+export type Pager = ReturnType<typeof usePager>;
 
-function Chevron({ pager, d }: { pager: Pager; d: 1 | -1 }) {
+export function Chevron({ pager, d }: { pager: Pager; d: 1 | -1 }) {
     const Icon = d < 0 ? ChevronLeft : ChevronRight;
     return (
         <button
@@ -193,7 +195,7 @@ function Chevron({ pager, d }: { pager: Pager; d: 1 | -1 }) {
     );
 }
 
-function Dots({ pager, right, left }: { pager: Pager; right?: ReactNode; left?: ReactNode }) {
+export function Dots({ pager, right, left }: { pager: Pager; right?: ReactNode; left?: ReactNode }) {
     return (
         <div className="rpp-pg-dots">
             {left && <span className="rpp-pg-side is-left">{left}</span>}
@@ -223,7 +225,7 @@ function Page({ pager, children, className = '' }: { pager: Pager; children: Rea
     );
 }
 
-function PlanLink({ sheet }: { sheet: Sheet }) {
+export function PlanLink({ sheet }: { sheet: Sheet }) {
     return (
         <button
             type="button"
@@ -238,7 +240,7 @@ function PlanLink({ sheet }: { sheet: Sheet }) {
     );
 }
 
-function dayHead(m: PlanModel, d: Date) {
+export function dayHead(m: PlanModel, d: Date) {
     const sun = m.sunFor(d);
     const hol = holidayName(d);
     return {
@@ -248,7 +250,7 @@ function dayHead(m: PlanModel, d: Date) {
     };
 }
 
-function emptyText(m: PlanModel, d: Date) {
+export function emptyText(m: PlanModel, d: Date) {
     if (!m.master) return 'Wochenplan ist ausgeschaltet.';
     if (holidayName(d) && m.holidayMode === 'skip') return 'Feiertag – es fährt nichts.';
     return m.entries.length ? 'Nichts geplant.' : 'Noch keine Zeitpunkte – über „Planen“ einrichten.';
@@ -275,7 +277,7 @@ function DenseOcc({ m, date, o, onClick, showDay }: { m: PlanModel; date: Date; 
 
 // ── Popup (Grundform A) mit Listenstufe L/M/N ──────────────────────────
 
-function PlanPopup({ model, sheet, listStyle }: { model: PlanModel; sheet: Sheet; listStyle: ListStyle }) {
+export function PlanPopup({ model, sheet, listStyle }: { model: PlanModel; sheet: Sheet; listStyle: ListStyle }) {
     const [tab, setTab] = useState<'plan' | 'scenes' | 'opts'>('plan');
     if (!sheet.open) return null;
     return (
@@ -298,8 +300,8 @@ function PlanPopup({ model, sheet, listStyle }: { model: PlanModel; sheet: Sheet
                             { value: 'opts', label: 'Einstellungen' },
                         ]}
                     />
-                    {tab === 'plan' && <EntryListR2 model={model} setView={sheet.setView} style={listStyle} />}
-                    {tab === 'scenes' && <SceneListR2 model={model} setView={sheet.setView} style={listStyle} />}
+                    {tab === 'plan' && (listStyle === 'A' ? <EntryList model={model} setView={sheet.setView} /> : <EntryListR2 model={model} setView={sheet.setView} style={listStyle} />)}
+                    {tab === 'scenes' && (listStyle === 'A' ? <SceneList model={model} setView={sheet.setView} /> : <SceneListR2 model={model} setView={sheet.setView} style={listStyle} />)}
                     {tab === 'opts' && <SettingsCard model={model} />}
                 </div>
             }
