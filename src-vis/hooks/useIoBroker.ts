@@ -376,6 +376,94 @@ function emitSetStateWithDiag(s: IoBrokerSocket, id: string, val: boolean | numb
     });
 }
 
+// ── Aufwach-Diagnose je Gerät (26.09.2026) ────────────────────────────────────
+// Anlass: Auf dem Galaxy (Chrome 153, Homescreen-App) dauert es nach dem Öffnen
+// oft viele Sekunden bis zu frischen Werten, manchmal kommen gar keine, bis die
+// App beendet wird. Auf dem iPhone nicht. aura.0.diag.reconnect hilft hier
+// nicht: ein einziger State für alle Geräte, jeder Flush überschreibt den des
+// anderen, und die Aufwach-Signale selbst stehen nicht drin.
+//
+// Hypothese aus der Codeanalyse: Android lässt Timer im Hintergrund gedrosselt
+// weiterlaufen (iOS friert komplett ein). Der Watchdog sieht dann ~60 s Lücke,
+// bounct im Hintergrund, der neue Socket kommt dort nicht durch, und die Sperre
+// resumeBounceInFlight verschluckt beim Öffnen jeden weiteren Neuaufbau — seit
+// Schritt 2 (08.09.) auch den der Lebendprobe, die vorher direkt bouncte.
+//
+// Dieser Log zeichnet jedes Signal, jeden Neuaufbau, jedes Verschlucken und die
+// Socket-Ereignisse auf — in einem State je Gerät, damit nichts überschrieben
+// wird. Rein lesend, ändert kein Verhalten. Nach der Klärung wieder entfernen.
+const WAKE_DIAG_MAX_ENTRIES = 80;
+
+interface WakeDiagEntry {
+    t: number; // Date.now() im Browser — Uhrenversatz beachten
+    e: string;
+    /** document.visibilityState, abgekürzt: v = visible, h = hidden */
+    vis: 'v' | 'h' | '-';
+    [key: string]: unknown;
+}
+
+const wakeDiagLog: WakeDiagEntry[] = [];
+let wakeDiagTag: string | null = null;
+let wakeDiagFlushTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+function getWakeDiagTag(): string {
+    if (wakeDiagTag) return wakeDiagTag;
+    let id = '';
+    try {
+        id = localStorage.getItem('aura-diag-wake-id') ?? '';
+        if (!id) {
+            id = Math.random().toString(36).slice(2, 10);
+            localStorage.setItem('aura-diag-wake-id', id);
+        }
+    } catch {
+        id = Math.random().toString(36).slice(2, 10);
+    }
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    const platform = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : 'desktop';
+    wakeDiagTag = `${platform}_${id}`;
+    return wakeDiagTag;
+}
+
+function wakeDiag(e: string, extra?: Record<string, unknown>): void {
+    const vis = typeof document === 'undefined' ? '-' : document.visibilityState === 'visible' ? 'v' : 'h';
+    wakeDiagLog.push({ t: Date.now(), e, vis, ...extra });
+    if (wakeDiagLog.length > WAKE_DIAG_MAX_ENTRIES) wakeDiagLog.shift();
+    // Gebündelt schreiben: ein Aufwachen erzeugt ein Dutzend Einträge binnen
+    // Millisekunden. Während der Socket steht, puffert Socket.io den Schreib-
+    // vorgang; ein Bounce verwirft den Puffer, der nächste Flush holt es nach.
+    if (wakeDiagFlushTimer) return;
+    wakeDiagFlushTimer = globalThis.setTimeout(() => {
+        wakeDiagFlushTimer = null;
+        flushWakeDiag();
+    }, 1500);
+}
+
+function flushWakeDiag(): void {
+    const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
+    if (shot) return;
+    const payload = {
+        ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        standalone: typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches,
+        log: wakeDiagLog,
+    };
+    setStateDirect(`${NS}.diag.wake.${getWakeDiagTag()}`, JSON.stringify(payload), true);
+}
+
+// Zeitpunkt, zu dem die Sperre gesetzt wurde — damit ein Verschlucken zeigt,
+// wie alt die Sperre war (Hintergrund-Bounce vor Minuten vs. eben gerade).
+let resumeBounceSetAt = 0;
+// Zeitpunkt des letzten Sichtbarwerdens, für "wie lange bis zum ersten Wert".
+let lastVisibleAt = 0;
+let firstDataAfterVisibleLogged = true;
+
+/** Erste frische Antwort vom Server nach dem Sichtbarwerden — die Zahl, die
+ *  Saschas Frau als "dauert viele Sekunden" erlebt. */
+function noteFirstDataAfterVisible(via: string): void {
+    if (firstDataAfterVisibleLogged) return;
+    firstDataAfterVisibleLogged = true;
+    wakeDiag('first-data', { via, ms: Date.now() - lastVisibleAt });
+}
+
 // ── Rettungsanker-Zähler (Schritt 5) ─────────────────────────────────────────
 // Abnahmepunkt 3 des Fahrplans verlangt den Nachweis, dass nach einem Neuaufbau
 // tatsächlich wieder jedes Widget selbst nachfragt, statt sich blind auf die
@@ -643,6 +731,7 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
             }
             const answers = obj as Record<string, ioBrokerState | null | undefined>;
             for (const id of chunkIds) applyOne(id, answers[id] ?? null);
+            noteFirstDataAfterVisible('revalidate');
             if (rv) publish();
         });
     }
@@ -658,7 +747,7 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
 // live and only need fresh values.
 let livenessProbeAt = 0;
 
-function checkConnectionAlive(opts?: { ignoreVisibility?: boolean }): void {
+function checkConnectionAlive(opts?: { ignoreVisibility?: boolean; source?: string }): void {
     // Hidden tabs are normally left alone — but a detected freeze/long gap wants
     // the probe regardless, since that is exactly when the socket went stale.
     if (!opts?.ignoreVisibility && typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
@@ -674,20 +763,25 @@ function checkConnectionAlive(opts?: { ignoreVisibility?: boolean }): void {
         // erzeugte hier einen zweiten, unabhängigen Neuaufbau, weil dieser Zweig
         // resumeBounceInFlight nie setzte — der Schutz dagegen existiert seit dem
         // Wetter-Vorfall und wurde hier einfach umgangen.
-        bounceSocketDebounced();
+        wakeDiag('probe-offline', { src: opts?.source });
+        bounceSocketDebounced(`probe-offline:${opts?.source ?? '?'}`);
         return;
     }
 
     let answered = false;
     const probeId = subscribers.keys().next().value ?? 'system.config';
+    const probeStart = Date.now();
+    wakeDiag('probe', { src: opts?.source });
     s.emit('getState', probeId, () => {
         answered = true;
+        wakeDiag('probe-ok', { ms: Date.now() - probeStart, same: socket === s });
         if (socket === s) revalidateStates(s);
     });
     globalThis.setTimeout(() => {
         // Still the same socket, still "connected", but no reply: zombie.
         // Schritt 2: derselbe Grund wie oben — debounced statt direkt.
-        if (!answered && socket === s) bounceSocketDebounced();
+        if (!answered) wakeDiag('probe-timeout', { same: socket === s });
+        if (!answered && socket === s) bounceSocketDebounced('probe-timeout');
     }, 4000);
 }
 
@@ -729,19 +823,42 @@ export function chromiumFlavour(): 'edge' | 'chrome' | null {
 
 if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') checkConnectionAlive();
+        const visible = document.visibilityState === 'visible';
+        wakeDiag(visible ? 'visible' : 'hidden', {
+            connected: socket?.connected ?? null,
+            inFlight: resumeBounceInFlight,
+            online: navigator.onLine,
+        });
+        if (visible) {
+            lastVisibleAt = Date.now();
+            firstDataAfterVisibleLogged = false;
+        } else {
+            // Beim Verlassen sofort schreiben — danach friert das Gerät womöglich ein.
+            flushWakeDiag();
+        }
+        if (visible) checkConnectionAlive({ source: 'visible' });
     });
-    window.addEventListener('online', () => checkConnectionAlive({ ignoreVisibility: true }));
-    window.addEventListener('focus', () => checkConnectionAlive());
+    window.addEventListener('online', () => {
+        wakeDiag('online', { connected: socket?.connected ?? null, inFlight: resumeBounceInFlight });
+        checkConnectionAlive({ ignoreVisibility: true, source: 'online' });
+    });
+    window.addEventListener('offline', () => wakeDiag('offline', { connected: socket?.connected ?? null }));
+    window.addEventListener('focus', () => {
+        wakeDiag('focus', { connected: socket?.connected ?? null, inFlight: resumeBounceInFlight });
+        checkConnectionAlive({ source: 'focus' });
+    });
+    window.addEventListener('pagehide', (e) => wakeDiag('pagehide', { persisted: (e as PageTransitionEvent).persisted }));
+    document.addEventListener('freeze', () => wakeDiag('freeze'));
 
     // Page Lifecycle API — not in the TS DOM lib, hence the string event names.
     document.addEventListener('resume', () => {
+        wakeDiag('resume', { connected: socket?.connected ?? null, inFlight: resumeBounceInFlight });
         if (!tabWasSuspended) {
             tabWasSuspended = true;
             suspendListeners.forEach((fn) => fn(true));
         }
         console.warn('[Aura] the browser suspended this tab (sleeping tabs / tab freezing) — refreshing datapoints');
-        checkConnectionAlive({ ignoreVisibility: true });
+        checkConnectionAlive({ ignoreVisibility: true, source: 'resume' });
     });
 
     // Coarse fallback: a wall-clock gap far beyond the worst-case background
@@ -755,7 +872,10 @@ if (typeof document !== 'undefined') {
         const now = Date.now();
         const gap = now - lastBeat;
         lastBeat = now;
-        if (gap > GAP_THRESHOLD_MS) checkConnectionAlive({ ignoreVisibility: true });
+        if (gap > GAP_THRESHOLD_MS) {
+            wakeDiag('heartbeat-gap', { gap });
+            checkConnectionAlive({ ignoreVisibility: true, source: 'heartbeat-gap' });
+        }
     }, HEARTBEAT_MS);
 }
 
@@ -887,6 +1007,21 @@ function createSocket(url: string): IoBrokerSocket {
         revalidateStates(s, diagEntry);
     };
 
+    // Aufwach-Diagnose (26.09.2026): Lebenslauf dieses Sockets. Die Fehler-
+    // ereignisse sind der interessante Teil — ein Socket, der im Hintergrund
+    // angelegt wird und dort nicht durchkommt, hängt bis zu 20 s im Verbinden
+    // (Socket.io-Standard `timeout`), bevor er es erneut versucht.
+    const createdAt = Date.now();
+    wakeDiag('sock-new', { seq });
+    s.on('connect', () => wakeDiag('sock-connect', { seq, ms: Date.now() - createdAt, cur: socket === s }));
+    s.on('reconnect', () => wakeDiag('sock-reconnect', { seq, cur: socket === s }));
+    s.on('connect_error', (err) =>
+        wakeDiag('sock-error', { seq, msg: String((err as Error)?.message ?? err).slice(0, 60), cur: socket === s }),
+    );
+    s.on('connect_timeout', () => wakeDiag('sock-timeout', { seq, ms: Date.now() - createdAt, cur: socket === s }));
+    s.on('reconnect_attempt', (n) => wakeDiag('sock-retry', { seq, n, cur: socket === s }));
+    s.on('disconnect', (reason) => wakeDiag('sock-disconnect', { seq, reason: String(reason), cur: socket === s }));
+
     s.on('connect', () => handleConnected(false));
     s.on('reconnect', () => handleConnected(true));
     s.on('disconnect', () => {
@@ -925,6 +1060,7 @@ function createSocket(url: string): IoBrokerSocket {
         const state = args[1] as ioBrokerState;
         if (state) cacheState(id, state);
         subscribers.get(id)?.forEach((fn) => fn(state));
+        noteFirstDataAfterVisible('stateChange');
         // Perf: first live data after connect. Reported inline (rather than via
         // perfMetrics) to avoid an import cycle back into this module.
         if (!firstStateReported && connectPerfMark > 0 && typeof performance !== 'undefined') {
@@ -975,15 +1111,20 @@ export function getSocket(): IoBrokerSocket {
 // kept as fast-path extras (they do work on some devices/iOS versions), and a
 // short cooldown stops several signals firing at once from bouncing the
 // socket repeatedly in a burst.
-function bounceSocketDebounced(): void {
+function bounceSocketDebounced(source: string): void {
     // Already mid-bounce (waiting for the new socket to finish reconnecting
     // and re-subscribing everything) — a second trigger right now would only
     // cancel that in-progress resubscribe burst, which is exactly the bug this
     // guard exists to prevent. handleConnected() clears the flag once the
     // full subscriber list has been re-sent, not after a fixed delay, so this
     // can never get stuck open on a slow (but successful) reconnect.
-    if (resumeBounceInFlight) return;
+    if (resumeBounceInFlight) {
+        wakeDiag('swallow', { src: source, lockAge: Date.now() - resumeBounceSetAt, connected: socket?.connected ?? null });
+        return;
+    }
     resumeBounceInFlight = true;
+    resumeBounceSetAt = Date.now();
+    wakeDiag('bounce', { src: source, connected: socket?.connected ?? null });
     bounceSocket();
     // Safety net: if the new socket never manages to connect at all (genuinely
     // offline, not just mid-reconnect), handleConnected() never runs and the
@@ -1009,6 +1150,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // per minute — negligible next to a resubscribe burst.
     const WATCHDOG_INTERVAL_MS = 5000;
     let lastTick = Date.now();
+    // Kaltstart vs. Aufwachen auseinanderhalten: nur ein Neustart der App
+    // erzeugt diesen Eintrag.
+    wakeDiag('boot', { online: navigator.onLine });
+    lastVisibleAt = Date.now();
+    firstDataAfterVisibleLogged = document.visibilityState !== 'visible';
     setInterval(() => {
         const now = Date.now();
         const drift = now - lastTick;
@@ -1016,7 +1162,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         // Expected drift per tick is ~0; a huge overshoot means the timer (and
         // everything else) was frozen for that long, not that the event loop
         // is merely busy — only a real suspend produces multi-x drift like this.
-        if (drift > WATCHDOG_INTERVAL_MS * 3) bounceSocketDebounced();
+        if (drift > WATCHDOG_INTERVAL_MS * 3) bounceSocketDebounced(`watchdog:${Math.round(drift / 1000)}s`);
         // Schritt 7c (Masterfahrplan 08.09.2026): Nebenbei die Anzeige gegen die
         // Wirklichkeit abgleichen. `connected` kam bisher ausschließlich per Push
         // aus den Socket-Ereignissen — blieb eines davon aus, stand die Kopfzeile
@@ -1029,11 +1175,12 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }, WATCHDOG_INTERVAL_MS);
 
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') bounceSocketDebounced();
+        if (document.visibilityState === 'visible') bounceSocketDebounced('visible');
     });
-    window.addEventListener('focus', () => bounceSocketDebounced());
+    window.addEventListener('focus', () => bounceSocketDebounced('focus'));
     window.addEventListener('pageshow', (e) => {
-        if ((e as PageTransitionEvent).persisted) bounceSocketDebounced();
+        wakeDiag('pageshow', { persisted: (e as PageTransitionEvent).persisted });
+        if ((e as PageTransitionEvent).persisted) bounceSocketDebounced('pageshow');
     });
 }
 
