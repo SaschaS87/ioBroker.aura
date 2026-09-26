@@ -392,7 +392,11 @@ function emitSetStateWithDiag(s: IoBrokerSocket, id: string, val: boolean | numb
 // Dieser Log zeichnet jedes Signal, jeden Neuaufbau, jedes Verschlucken und die
 // Socket-Ereignisse auf — in einem State je Gerät, damit nichts überschrieben
 // wird. Rein lesend, ändert kein Verhalten. Nach der Klärung wieder entfernen.
-const WAKE_DIAG_MAX_ENTRIES = 80;
+const WAKE_DIAG_MAX_ENTRIES = 200;
+// Überlebt einen Neustart der App: Android verwirft Hintergrund-Tabs gern ganz,
+// und ohne das hätte jeder Kaltstart die Einträge davor überschrieben (so am
+// 26.09. um 13:38 passiert — die Tests von 13:14 und 13:28 waren weg).
+const WAKE_DIAG_STORAGE_KEY = 'aura-diag-wake-log';
 
 interface WakeDiagEntry {
     t: number; // Date.now() im Browser — Uhrenversatz beachten
@@ -402,7 +406,14 @@ interface WakeDiagEntry {
     [key: string]: unknown;
 }
 
-const wakeDiagLog: WakeDiagEntry[] = [];
+const wakeDiagLog: WakeDiagEntry[] = (() => {
+    try {
+        const stored = JSON.parse(localStorage.getItem(WAKE_DIAG_STORAGE_KEY) ?? '[]') as unknown;
+        return Array.isArray(stored) ? (stored as WakeDiagEntry[]).slice(-WAKE_DIAG_MAX_ENTRIES) : [];
+    } catch {
+        return [];
+    }
+})();
 let wakeDiagTag: string | null = null;
 let wakeDiagFlushTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
@@ -428,6 +439,11 @@ function wakeDiag(e: string, extra?: Record<string, unknown>): void {
     const vis = typeof document === 'undefined' ? '-' : document.visibilityState === 'visible' ? 'v' : 'h';
     wakeDiagLog.push({ t: Date.now(), e, vis, ...extra });
     if (wakeDiagLog.length > WAKE_DIAG_MAX_ENTRIES) wakeDiagLog.shift();
+    try {
+        localStorage.setItem(WAKE_DIAG_STORAGE_KEY, JSON.stringify(wakeDiagLog));
+    } catch {
+        /* Speicher voll oder gesperrt — dann eben nur bis zum nächsten Neustart */
+    }
     // Gebündelt schreiben: ein Aufwachen erzeugt ein Dutzend Einträge binnen
     // Millisekunden. Während der Socket steht, puffert Socket.io den Schreib-
     // vorgang; ein Bounce verwirft den Puffer, der nächste Flush holt es nach.
