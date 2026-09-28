@@ -7313,10 +7313,16 @@ export function WidgetFrame({
     const groupActionType = (config.options?.groupActionType ?? 'switch') as GroupActionType;
     // Warm the datapoint cache so list entries without an explicit label show
     // their resolved name (same as the list) instead of the bare DP-id tail.
+    // Only while a list's edit panel is open — the cache is the whole object DB
+    // (~7.5 MB, sent uncompressed). Unconditionally on every widget mount it rode
+    // along with every cold start and queued all value replies behind it
+    // (iPhone 28.09.2026: ~10 s until the first values arrived).
     const [dpCacheReady, setDpCacheReady] = useState(false);
+    const needsDpNames = openPanel === 'edit' && (config.type === 'list' || config.type === 'autolist');
     useEffect(() => {
+        if (!needsDpNames) return;
         void ensureDatapointCache().then(() => setDpCacheReady(true));
-    }, []);
+    }, [needsDpNames]);
     const groupActionCandidates =
         config.type === 'group'
             ? groupGroupCandidates(groupChildren, groupActionType, (t) => WIDGET_BY_TYPE[t as WidgetType]?.label)
