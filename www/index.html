@@ -20,25 +20,20 @@
     <script>
       /* Statusleisten-Symbole (Uhr/WLAN/Akku) an Auras Hell/Dunkel-Modus koppeln:
          dunkler Modus -> weisse Symbole (black-translucent), heller Modus ->
-         dunkle Symbole (default). Aura setzt dazu die Klasse 'dark' auf <html>.
-         iOS liest den Wert beim App-Start; nach einem Live-Wechsel ggf. die App
-         einmal schliessen und neu oeffnen, damit die Symbolfarbe umspringt. */
+         dunkle Symbole (default). Hier nur der Startwert aus dem letzten Lauf;
+         danach setzt ThemeProvider.tsx den Wert, sobald das Design feststeht.
+         Frueher glich dieses Skript beim DOMContentLoaded mit der Klasse 'dark'
+         ab - die setzt React aber erst danach, also sprang die Leiste bei jedem
+         Kaltstart im Dunkelmodus kurz auf dunkle Schrift (iOS 27 zeigt das
+         sofort an: Uhr blitzt schwarz auf, 28.09.2026). */
       (function () {
         var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-        var KEY = 'aura-status-dark';
         try {
-          var cached = localStorage.getItem(KEY);
+          var cached = localStorage.getItem('aura-status-dark');
           if (meta && cached !== null) {
             meta.setAttribute('content', cached === '1' ? 'black-translucent' : 'default');
           }
         } catch (e) {}
-        function sync() {
-          var dark = document.documentElement.classList.contains('dark');
-          if (meta) meta.setAttribute('content', dark ? 'black-translucent' : 'default');
-          try { localStorage.setItem(KEY, dark ? '1' : '0'); } catch (e) {}
-        }
-        new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        document.addEventListener('DOMContentLoaded', sync);
       })();
     </script>
     <script>
@@ -220,7 +215,7 @@
         }
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="./assets/index-ChRcpAmK.js"></script>
+    <script type="module" crossorigin src="./assets/index-KPb2W2Ra.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/react-CMd_R4qx.js">
     <link rel="modulepreload" crossorigin href="./assets/react-dom-DnNQTdJz.js">
     <link rel="modulepreload" crossorigin href="./assets/router-CqM3g0x1.js">
