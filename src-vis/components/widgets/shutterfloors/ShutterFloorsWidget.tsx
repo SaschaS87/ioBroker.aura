@@ -9,6 +9,7 @@ import { SignalStrengthBox } from '../shared/SignalStrengthBox';
 import { FloorHeader } from './FloorHeader';
 import { ShutterRow } from './ShutterRow';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
+import { RollPlanTile } from './planner/RollPlanTile';
 import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
@@ -23,6 +24,13 @@ interface ShutterFloorsOptions {
     /** Signalstaerke-Aufklappbox (Feature 16). Default sichtbar - kein Eintrag
      *  in aura.0.config.dashboard noetig, bis Sascha sie abschalten will. */
     showSignalBox?: boolean;
+    /** Rolllaeden-Planer-Kachel (Feature 23). Default aus - auf aura.0
+     *  (Familie) bleibt sie vorerst unsichtbar (S1-Entscheidung Sascha). */
+    showPlanner?: boolean;
+    /** Wurzel der drei Planer-Datenpunkte (Szenen/Wochenplan/Einstellungen/
+     *  Befehl). Im Dev-Build IMMER durch Rollladen_Dev ersetzt, siehe die
+     *  Sicherheits-Weiche weiter unten - diese Option zaehlt nur im Pi-Build. */
+    plannerRoot?: string;
 }
 
 export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
@@ -34,8 +42,19 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         instanceLabel = 'tahoma.1',
         showFooter = false,
         showSignalBox,
+        showPlanner = false,
+        plannerRoot = '0_userdata.0.Rollladen',
     } = options;
     const signalBoxVisible = showSignalBox !== false;
+
+    // Sicherheits-Weiche (Feature 23, S1-Entscheidung Sascha): die lokale
+    // Dev-Vorschau darf NIE gegen die echten Familien-Datenpunkte schreiben,
+    // egal was in der Widget-Konfiguration steht. Deshalb hart auf
+    // Rollladen_Dev verdrahtet im Dev-Build (import.meta.env.DEV faellt im
+    // Pi-Build zur Kompilierzeit auf false, dieser Zweig verschwindet dort
+    // komplett) - keine Konfigurationsoption, die sich versehentlich
+    // umschalten liesse.
+    const effectivePlannerRoot = import.meta.env.DEV ? '0_userdata.0.Rollladen_Dev' : plannerRoot;
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -232,6 +251,10 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                         </span>
                     </div>
                 )}
+
+                {/* Rolllaeden-Planer-Kachel (Feature 23): ueber der
+                    Etagenliste, nur wenn showPlanner===true. */}
+                {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
 
                 <div className="floors-scroll">
                     {floors.map((floor) => (

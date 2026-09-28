@@ -135,11 +135,20 @@ function isOwnNamespace(id: unknown): boolean {
     return typeof id === 'string' && (id === NS || id.startsWith(`${NS}.`));
 }
 
+// Rolllaeden-Planer (Feature 23): eigene Testdatenpunkte fürs Entwickeln, ohne
+// die echten Szenen/den echten Wochenplan der Familie zu berühren — bewusst
+// zusätzlich zu NS.* erlaubt, nicht als Ersatz dafür.
+const ROLL_PLAN_DEV_PREFIX = '0_userdata.0.Rollladen_Dev.';
+
+function isRollPlanDevPrefix(id: unknown): boolean {
+    return typeof id === 'string' && id.startsWith(ROLL_PLAN_DEV_PREFIX);
+}
+
 /** null = let it through, string = why it is being stopped. */
 function blockReason(command: string, args: unknown[]): string | null {
     if (ID_WRITE_COMMANDS.has(command) || FILE_WRITE_COMMANDS.has(command)) {
-        if (isOwnNamespace(args[0])) return null;
-        return `Schreiben ausserhalb von ${NS}.*`;
+        if (isOwnNamespace(args[0]) || isRollPlanDevPrefix(args[0])) return null;
+        return `Schreiben ausserhalb von ${NS}.* / ${ROLL_PLAN_DEV_PREFIX}*`;
     }
     if (command === 'sendTo') {
         const cmd = typeof args[1] === 'string' ? args[1] : '';
