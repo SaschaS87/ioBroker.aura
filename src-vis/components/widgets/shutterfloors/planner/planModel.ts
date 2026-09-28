@@ -1,6 +1,13 @@
 /**
- * Gemeinsames Datenmodell der Planer-Entwuerfe (Szenen + Wochenplan) fuer den
- * Rolllaeden-Tab — NUR Dev-Vorschau.
+ * Gemeinsames Datenmodell für Szenen + Wochenplan im Rolllaeden-Tab.
+ *
+ * Übernommen aus dem inzwischen entfernten Dev-Entwurf als Produktionscode.
+ * Typen, Zeit-Helfer, SunCalc- und Feiertagsrechnung sind unverändert. Neu
+ * gegenüber dem Entwurf: `parseScenes`/`parsePlan`/`parseSettings` (tolerante
+ * JSON-Parser für die drei Datenpunkte) — die Persistenz selbst liegt in
+ * `useRollPlanData.ts`, NICHT hier. `usePlanModel` unten hält seinen State
+ * weiterhin nur im Speicher (Dev-Vorschau mit Beispieldaten); die Produktion
+ * verdrahtet die Widgets stattdessen gegen `useRollPlanData`.
  *
  * Echt vom Pi: Geraeteliste (Widget-Konfiguration), aktuelle Stellung je
  * Antrieb (core:ClosureState, 0 = offen / 100 = zu) und die Sonnenzeiten von
@@ -8,8 +15,6 @@
  * Lokal gerechnet: Sonnenzeiten der anderen Wochentage (fuer Mühlacker, gegen
  * die Pi-Werte von heute abgeglichen) und die Feiertage. feiertage.0 ist auf
  * dem Pi seit Mai 2026 abgeschaltet und meldet noch Pfingstmontag.
- * Szenen und Zeitpunkte gibt es auf dem Pi noch nicht — ohne Haken
- * „Beispieldaten" sind die Listen deshalb leer. Nichts wird geschrieben.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from '../types';
@@ -64,6 +69,8 @@ export interface PlanEntry {
     trigger: Trigger;
     target: PlanTarget;
     enabled: boolean;
+    /** Leise Fahrt (core:TargetClosureState:slow), nur bei Geräten mit slowPosDp, sonst normal */
+    quiet?: boolean;
 }
 
 export type HolidayMode = 'sunday' | 'normal' | 'skip';
@@ -74,6 +81,7 @@ export interface PlanDevice {
     kind: ShutterFloorDeviceDef['kind'];
     floor: string;
     hasSlat: boolean;
+    hasSlow: boolean;
     /** Aktuelle Stellung vom Pi (Prozent zu) oder null, solange unbekannt. */
     closed: number | null;
 }
@@ -282,6 +290,56 @@ export function effectiveWeekday(d: Date, mode: HolidayMode): Weekday | null {
     return weekdayOf(d);
 }
 
+// ── Überschneidungs-Prüfung ─────────────────────────────────────────────
+// Zwei Zeitpunkte, die dieselben Rollläden an einem gemeinsamen Wochentag
+// innerhalb weniger Minuten ansteuern, sind kein Fehler (letzter Befehl
+// gewinnt), aber leicht ein Versehen. Nicht blockierend, nur ein Hinweis.
+
+export const KOLLISION_FENSTER_MIN = 15;
+
+export interface Collision {
+    other: PlanEntry;
+    date: Date;
+    minSelf: number;
+    minOther: number;
+    deviceKeys: string[];
+}
+
+/** Welche Geräte ein Ziel (Szene oder Einzelgerät) tatsächlich ansteuert. */
+export function devicesOfTarget(t: PlanTarget, scenes: Scene[]): string[] {
+    if (t.kind === 'device') return [t.key];
+    const s = scenes.find((sc) => sc.id === t.sceneId);
+    return s ? s.targets.map((tg) => tg.key) : [];
+}
+
+/** Findet, für einen Eintrag, alle anderen aktiven Einträge, die in den
+ *  nächsten 7 Tagen an einem gemeinsamen Wochentag dieselben Rollläden
+ *  innerhalb von {@link KOLLISION_FENSTER_MIN} Minuten ansteuern. */
+export function findCollisions(entry: PlanEntry, all: PlanEntry[], scenes: Scene[], sunFor: (d: Date) => SunDay, today: Date): Collision[] {
+    const myDevices = devicesOfTarget(entry.target, scenes);
+    if (myDevices.length === 0) return [];
+    const out: Collision[] = [];
+    for (const o of all) {
+        if (o.id === entry.id || !o.enabled) continue;
+        const otherDevices = devicesOfTarget(o.target, scenes);
+        const shared = myDevices.filter((k) => otherDevices.includes(k));
+        if (shared.length === 0) continue;
+        for (let i = 0; i < 7; i++) {
+            const d = addDays(today, i);
+            const wd = weekdayOf(d);
+            if (!entry.days[wd] || !o.days[wd]) continue;
+            const sun = sunFor(d);
+            const a = triggerMinutes(entry.trigger, sun).min;
+            const b = triggerMinutes(o.trigger, sun).min;
+            if (Math.abs(a - b) <= KOLLISION_FENSTER_MIN) {
+                out.push({ other: o, date: d, minSelf: a, minOther: b, deviceKeys: shared });
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 // ── Beispieldaten (nur mit Haken) ──────────────────────────────────────
 
 const t = (time: string): Trigger => ({ kind: 'time', time, offset: 0, earliest: null, latest: null });
@@ -449,6 +507,7 @@ export function usePlanModel(
                     kind: d.kind,
                     floor: f.name,
                     hasSlat: !!d.slatDp,
+                    hasSlow: !!d.slowPosDp,
                     closed: positions[d.key] ?? null,
                 })),
             ),
@@ -624,4 +683,142 @@ export function usePlanModel(
         toast,
         showToast,
     };
+}
+
+// ── Persistierte Einstellungen ─────────────────────────────────────────
+// Hauptschalter, „Heute aussetzen" (mit Datum, damit ein alter Haken nicht am
+// nächsten Tag noch greift) und der Feiertagsmodus. Wird als eigener JSON-
+// Datenpunkt (`${root}.Einstellungen`) gehalten, siehe useRollPlanData.ts.
+
+export interface Settings {
+    master: boolean;
+    /** Datum ("YYYY-MM-DD"), fuer das „Heute aussetzen" gesetzt wurde, oder null. */
+    pausedTodayDate: string | null;
+    holidayMode: HolidayMode;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+    master: false,
+    pausedTodayDate: null,
+    holidayMode: 'sunday',
+};
+
+// ── Tolerante Parser ─────────────────────────────────────────────────────
+// Lesen die drei JSON-Datenpunkte. Kaputtes/leeres JSON oder ein falsch
+// geformter Eintrag darf NIE werfen — im Zweifel wird der einzelne Eintrag
+// ausgelassen (Szenen/Plan) bzw. auf den Default zurückgefallen
+// (Einstellungen), und `error` trägt eine Kurzbeschreibung für einen
+// Status-Datenpunkt. `error: null` heisst: alles wie erwartet gelesen.
+
+export interface ParseResult<T> {
+    value: T;
+    error: string | null;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function parseJsonArray(raw: string): unknown[] | { error: string } {
+    const trimmed = (raw ?? '').trim();
+    if (!trimmed) return [];
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch (e) {
+        return { error: `Ungültiges JSON: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    if (!Array.isArray(parsed)) return { error: 'Erwartete eine JSON-Liste (Array)' };
+    return parsed;
+}
+
+function toSceneTarget(v: unknown): SceneTarget | null {
+    if (!isRecord(v) || typeof v.key !== 'string' || typeof v.closed !== 'number') return null;
+    const out: SceneTarget = { key: v.key, closed: v.closed };
+    if (typeof v.slat === 'number') out.slat = v.slat;
+    return out;
+}
+
+const SCENE_ICONS: SceneIcon[] = ['sunrise', 'sun', 'sunset', 'moon', 'home', 'heat', 'tv'];
+
+function toScene(v: unknown): Scene | null {
+    if (!isRecord(v) || typeof v.id !== 'string' || typeof v.name !== 'string') return null;
+    if (!Array.isArray(v.targets)) return null;
+    const targets = v.targets.map(toSceneTarget).filter((t): t is SceneTarget => t !== null);
+    const icon = SCENE_ICONS.includes(v.icon as SceneIcon) ? (v.icon as SceneIcon) : 'home';
+    const scene: Scene = { id: v.id, name: v.name, icon, targets };
+    if (typeof v.favorite === 'boolean') scene.favorite = v.favorite;
+    return scene;
+}
+
+/** Liest den `Szenen`-Datenpunkt. Fehlerhafte Einzeleinträge werden
+ *  übersprungen statt die ganze Liste zu verwerfen. */
+export function parseScenes(raw: string): ParseResult<Scene[]> {
+    const parsed = parseJsonArray(raw);
+    if (!Array.isArray(parsed)) return { value: [], error: parsed.error };
+    const scenes = parsed.map(toScene).filter((s): s is Scene => s !== null);
+    const skipped = parsed.length - scenes.length;
+    return { value: scenes, error: skipped > 0 ? `${skipped} Szene(n) übersprungen (falsches Format)` : null };
+}
+
+function toTrigger(v: unknown): Trigger | null {
+    if (!isRecord(v)) return null;
+    const kind = v.kind;
+    if (kind !== 'time' && kind !== 'sunrise' && kind !== 'sunset') return null;
+    if (typeof v.time !== 'string' || typeof v.offset !== 'number') return null;
+    const earliest = typeof v.earliest === 'string' ? v.earliest : null;
+    const latest = typeof v.latest === 'string' ? v.latest : null;
+    return { kind, time: v.time, offset: v.offset, earliest, latest };
+}
+
+function toPlanTarget(v: unknown): PlanTarget | null {
+    if (!isRecord(v)) return null;
+    if (v.kind === 'scene' && typeof v.sceneId === 'string') return { kind: 'scene', sceneId: v.sceneId };
+    if (v.kind === 'device' && typeof v.key === 'string' && typeof v.closed === 'number') {
+        return { kind: 'device', key: v.key, closed: v.closed };
+    }
+    return null;
+}
+
+function toPlanEntry(v: unknown): PlanEntry | null {
+    if (!isRecord(v) || typeof v.id !== 'string' || typeof v.enabled !== 'boolean') return null;
+    if (!Array.isArray(v.days) || v.days.length !== 7 || !v.days.every((d) => typeof d === 'boolean')) return null;
+    const trigger = toTrigger(v.trigger);
+    const target = toPlanTarget(v.target);
+    if (!trigger || !target) return null;
+    const out: PlanEntry = { id: v.id, days: v.days as boolean[], trigger, target, enabled: v.enabled };
+    if (typeof v.quiet === 'boolean' && v.quiet === true) out.quiet = true;
+    return out;
+}
+
+/** Liest den `Wochenplan`-Datenpunkt. Fehlerhafte Einzeleinträge werden
+ *  übersprungen statt die ganze Liste zu verwerfen. */
+export function parsePlan(raw: string): ParseResult<PlanEntry[]> {
+    const parsed = parseJsonArray(raw);
+    if (!Array.isArray(parsed)) return { value: [], error: parsed.error };
+    const entries = parsed.map(toPlanEntry).filter((e): e is PlanEntry => e !== null);
+    const skipped = parsed.length - entries.length;
+    return { value: entries, error: skipped > 0 ? `${skipped} Eintrag/Einträge übersprungen (falsches Format)` : null };
+}
+
+const HOLIDAY_MODES: HolidayMode[] = ['sunday', 'normal', 'skip'];
+
+/** Liest den `Einstellungen`-Datenpunkt. Fällt bei kaputtem/leerem JSON oder
+ *  falschem Feldtyp auf `DEFAULT_SETTINGS` zurück, wirft nie. */
+export function parseSettings(raw: string): ParseResult<Settings> {
+    const trimmed = (raw ?? '').trim();
+    if (!trimmed) return { value: DEFAULT_SETTINGS, error: null };
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch (e) {
+        return { value: DEFAULT_SETTINGS, error: `Ungültiges JSON: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    if (!isRecord(parsed)) return { value: DEFAULT_SETTINGS, error: 'Erwartete ein JSON-Objekt' };
+    const master = typeof parsed.master === 'boolean' ? parsed.master : DEFAULT_SETTINGS.master;
+    const pausedTodayDate = typeof parsed.pausedTodayDate === 'string' ? parsed.pausedTodayDate : null;
+    const holidayMode = HOLIDAY_MODES.includes(parsed.holidayMode as HolidayMode)
+        ? (parsed.holidayMode as HolidayMode)
+        : DEFAULT_SETTINGS.holidayMode;
+    return { value: { master, pausedTodayDate, holidayMode }, error: null };
 }

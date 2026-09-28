@@ -1,25 +1,101 @@
 /**
- * Planer-Entwuerfe Runde 4 (nur Dev-Vorschau).
+ * Seiten der Rolllaeden-Planer-Kachel (Produktion, Feature 23): Slider mit
+ * zwei Bereichen — Seite 1 die Fahrten (Heute oder die naechsten drei),
+ * dahinter die Favoriten-Szenen als Schnellknoepfe, ggf. ueber mehrere
+ * Seiten zu je 6 (Ansicht „Kacheln", siehe useRollPlanView.ts).
  *
- * Grundform aus Runde 3: Slider, Seite 1 = Fahrten (heute oder naechste 3,
- * in der Leiste umschaltbar), dahinter die Szenen als Schnellknoepfe.
- * Neu: Favoriten. Nur als Favorit markierte Szenen stehen auf der Kachel,
- * alle anderen im Popup (Reiter Szenen, Stern zum Umschalten). Und: Was
- * passiert bei mehr Szenen?
- *
- * S Liste · T 2 Spalten · U 3 Spalten · V 4 Spalten ·
- * W 2 Spalten, weitere Szenen auf weiteren Seiten (je 6 pro Seite)
+ * Herkunft: Runde 3 des inzwischen entfernten Entwurfs (TodayPage/NextPage/Stack/Head) und
+ * Runde 4 (PlanKachel/SceneBlock/Favoriten). Die reinen
+ * Szenen-als-Liste/Kacheln-Kacheln ohne Favoriten (SceneRowsPage/
+ * SceneTilesPage aus Runde 3) waren nur Entwurfs-Zwischenschritte und sind
+ * hier nicht mehr enthalten — Runde 5 (RollPlanTile.tsx) nutzt ausschliesslich
+ * `PlanKachel` mit `favOnly=true`.
  */
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronRight, Play } from 'lucide-react';
-import type { PlanModel, Scene } from './planModel';
-import { PlayBtn, SceneGlyph, Toast } from './parts';
-import { Dots, namesLine, PlanLink, PlanPopup, statusText, usePager, useSheet, type ListStyle, type Pager, type Sheet } from './round2';
-import { Head, NextPage, Stack, TodayPage } from './round3';
+import { fmtDate, hhmm, WD_SHORT, weekdayOf, type PlanModel, type Scene } from './planModel';
+import { OccRow, PlayBtn, SceneGlyph, Toast } from './parts';
+import { Chevron, dayHead, Dots, emptyText, isPast, namesLine, PlanLink, PlanPopup, statusText, usePager, useSheet, type Pager, type Sheet } from './PlanPopup';
+import type { ListStyle } from './useRollPlanView';
+
+/** Zwei Seiten; nur die aktive wird angezeigt. */
+export function Stack({ pager, pages }: { pager: Pager; pages: ReactNode[] }) {
+    return (
+        <div className="rpp-stack">
+            {pages.map((p, i) => (
+                <div
+                    key={i === pager.idx ? `on-${i}-${pager.dir}` : `off-${i}`}
+                    className={`rpp-stack-page${i === pager.idx ? ` is-on ${pager.dir > 0 ? 'is-next' : 'is-prev'}` : ''}`}
+                    aria-hidden={i !== pager.idx}
+                >
+                    {p}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+export function Head({ pager, title, sub }: { pager: Pager; title: string; sub: string }) {
+    return (
+        <div className="rpp-pg-head">
+            <Chevron pager={pager} d={-1} />
+            <div className="rpp-pg-headtext">
+                <span className="rpp-pg-title">{title}</span>
+                <span className="rpp-pg-sub">{sub}</span>
+            </div>
+            <Chevron pager={pager} d={1} />
+        </div>
+    );
+}
+
+// ── Seite 1: Fahrten ───────────────────────────────────────────────────
+
+export function TodayPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: Sheet }) {
+    const occ = m.occurrences(m.today);
+    const h = dayHead(m, m.today);
+    return (
+        <>
+            <Head pager={pager} title="Heute" sub={`${h.hol ? `${h.hol} · ` : ''}${h.sub}`} />
+            <div className="rpp-pg-list">
+                {occ.length === 0 && <div className="rpp-empty rpp-center">{emptyText(m, m.today)}</div>}
+                {occ.map((o) => (
+                    <OccRow key={o.entry.id} model={m} occ={o} past={isPast(m, m.today, o)} onClick={() => sheet.show({ v: 'entry', id: o.entry.id })} />
+                ))}
+            </div>
+        </>
+    );
+}
+
+export function NextPage({ m, pager, sheet }: { m: PlanModel; pager: Pager; sheet: Sheet }) {
+    const up = m.upcoming(3);
+    const sun = m.sunFor(m.today);
+    return (
+        <>
+            <Head
+                pager={pager}
+                title="Als Nächstes"
+                sub={`${WD_SHORT[weekdayOf(m.today)]} ${fmtDate(m.today)} · ↑ ${hhmm(sun.sunrise)} · ↓ ${hhmm(sun.sunset)}`}
+            />
+            <div className="rpp-pg-list">
+                {up.length === 0 && <div className="rpp-empty rpp-center">{emptyText(m, m.today)}</div>}
+                {up.map(({ date, occ }) => (
+                    <OccRow
+                        key={`${date.toDateString()}-${occ.entry.id}`}
+                        model={m}
+                        occ={occ}
+                        showDate={date}
+                        onClick={() => sheet.show({ v: 'entry', id: occ.entry.id })}
+                    />
+                ))}
+            </div>
+        </>
+    );
+}
+
+// ── Seite 2+: Favoriten-Szenen als Schnellknöpfe ───────────────────────
 
 export type FirstPage = 'today' | 'next';
 export type Layout = 'list' | 2 | 3 | 4;
-export type Props = { model: PlanModel; listStyle: ListStyle; first: FirstPage; favOnly: boolean };
 
 function useFlash() {
     const [flash, setFlash] = useState<string | null>(null);
@@ -32,7 +108,7 @@ function useFlash() {
     };
 }
 
-/** „Alle 12 Szenen“ – öffnet das Popup direkt auf dem Reiter Szenen. */
+/** „Alle 12 Szenen" – öffnet das Popup direkt auf dem Reiter Szenen. */
 function AllScenesLink({ sheet, total, tile }: { sheet: Sheet; total: number; tile?: boolean }) {
     if (tile) {
         return (
@@ -61,7 +137,7 @@ function SceneBlock({
     sheet: Sheet;
     scenes: Scene[];
     layout: Layout;
-    /** Link „alle Szenen“ zeigen (nur wenn im Popup mehr liegt als hier) */
+    /** Link „alle Szenen" zeigen (nur wenn im Popup mehr liegt als hier) */
     more: boolean;
 }) {
     const { flash, fire } = useFlash();
@@ -107,13 +183,7 @@ function SceneBlock({
     );
 }
 
-function makeKachel(layout: Layout, paged: boolean) {
-    return function Kachel(p: Props) {
-        return <PlanKachel {...p} layout={layout} paged={paged} />;
-    };
-}
-
-/** Grundgerüst der Kachel; Runde 5 (X) nutzt es mit Einstellungen im Popup. */
+/** Grundgerüst der Kachel: Seite 1 Fahrten, Seite 2+ Favoriten-Szenen. */
 export function PlanKachel({
     model: m,
     listStyle,
@@ -121,12 +191,18 @@ export function PlanKachel({
     favOnly,
     layout,
     paged,
-    extraOpts,
-}: Props & { layout: Layout; paged: boolean; extraOpts?: ReactNode }) {
+}: {
+    model: PlanModel;
+    listStyle: ListStyle;
+    first: FirstPage;
+    favOnly: boolean;
+    layout: Layout;
+    paged: boolean;
+}) {
     const sh = useSheet();
     const shown = favOnly ? m.scenes.filter((s) => s.favorite) : m.scenes;
     const more = shown.length < m.scenes.length;
-    // W: je 6 Szenen eine eigene Seite; sonst alles auf einer Seite
+    // Ansicht „Kacheln": je 6 Szenen eine eigene Seite; sonst alles auf einer Seite
     const chunks: Scene[][] = paged ? Array.from({ length: Math.max(1, Math.ceil(shown.length / 6)) }, (_, i) => shown.slice(i * 6, i * 6 + 6)) : [shown];
     const pg = usePager(1 + chunks.length);
     const First = first === 'today' ? TodayPage : NextPage;
@@ -153,7 +229,7 @@ export function PlanKachel({
                 <Stack pager={pg} pages={pages} />
                 <Dots pager={pg} left={<span className="rpp-pg-status">{statusText(m)}</span>} right={<PlanLink sheet={sh} />} />
             </div>
-            <PlanPopup model={m} sheet={sh} listStyle={listStyle} extraOpts={extraOpts} />
+            <PlanPopup model={m} sheet={sh} listStyle={listStyle} />
             <Toast model={m} />
         </>
     );
@@ -167,11 +243,3 @@ function ScenePage(props: { m: PlanModel; pager: Pager; sheet: Sheet; title: str
         </>
     );
 }
-
-export const KACHELN4: { key: string; name: string; C: ComponentType<Props> }[] = [
-    { key: 'S', name: 'Szenen als Liste', C: makeKachel('list', false) },
-    { key: 'T', name: 'Szenen, 2 Spalten', C: makeKachel(2, false) },
-    { key: 'U', name: 'Szenen, 3 Spalten', C: makeKachel(3, false) },
-    { key: 'V', name: 'Szenen, 4 Spalten', C: makeKachel(4, false) },
-    { key: 'W', name: 'Szenen, 2 Spalten, je 6 pro Seite', C: makeKachel(2, true) },
-];
