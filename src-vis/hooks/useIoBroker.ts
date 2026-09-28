@@ -392,7 +392,7 @@ function emitSetStateWithDiag(s: IoBrokerSocket, id: string, val: boolean | numb
 // Dieser Log zeichnet jedes Signal, jeden Neuaufbau, jedes Verschlucken und die
 // Socket-Ereignisse auf — in einem State je Gerät, damit nichts überschrieben
 // wird. Rein lesend, ändert kein Verhalten. Nach der Klärung wieder entfernen.
-const WAKE_DIAG_MAX_ENTRIES = 200;
+const WAKE_DIAG_MAX_ENTRIES = 400;
 // Überlebt einen Neustart der App: Android verwirft Hintergrund-Tabs gern ganz,
 // und ohne das hätte jeder Kaltstart die Einträge davor überschrieben (so am
 // 26.09. um 13:38 passiert — die Tests von 13:14 und 13:28 waren weg).
@@ -463,6 +463,67 @@ function flushWakeDiag(): void {
         log: wakeDiagLog,
     };
     setStateDirect(`${NS}.diag.wake.${getWakeDiagTag()}`, JSON.stringify(payload), true);
+}
+
+// Ereignisse, die Socket.io lokal auslöst statt sie zu versenden — zählen nicht
+// als gesendete Nachricht.
+const SOCKET_RESERVED_EVENTS = new Set([
+    'connect',
+    'connect_error',
+    'connect_timeout',
+    'connecting',
+    'disconnect',
+    'error',
+    'reconnect',
+    'reconnect_attempt',
+    'reconnect_failed',
+    'reconnect_error',
+    'reconnecting',
+    'ping',
+    'pong',
+]);
+
+/** Zustand der Transportschicht unter dem Socket (Socket.io v2 intern):
+ *  wb = Nachrichten, die noch im Postausgang des Geräts liegen,
+ *  tr = Transport (websocket/polling), w = Transport gerade beschreibbar. */
+function engineSnapshot(s: IoBrokerSocket): { wb: number | null; tr: string | null; w: boolean | null } {
+    const engine = (
+        s as unknown as { io?: { engine?: { writeBuffer?: unknown[]; transport?: { name?: string; writable?: boolean } } } }
+    ).io?.engine;
+    return {
+        wb: engine?.writeBuffer?.length ?? null,
+        tr: engine?.transport?.name ?? null,
+        w: engine?.transport?.writable ?? null,
+    };
+}
+
+/** Sekündliche Probe-Anfrage nach jedem Verbinden, bis drei Antworten in Folge
+ *  unter 300 ms kamen oder 45 s um sind. Normalfall: sechs Einträge. */
+function startStartupPing(s: IoBrokerSocket, raw: IoBrokerSocket, seq: number, emitCount: () => number): void {
+    const started = Date.now();
+    let n = 0;
+    let pending = 0;
+    let fastStreak = 0;
+    const tick = (): void => {
+        if (socket !== s || !s.connected) return;
+        if (fastStreak >= 3 || Date.now() - started > 45000) {
+            wakeDiag('ping-end', { seq, n, pending, out: emitCount(), ...engineSnapshot(raw) });
+            return;
+        }
+        n++;
+        const nr = n;
+        const sentAt = Date.now();
+        wakeDiag('ping', { seq, n: nr, pending, out: emitCount(), ...engineSnapshot(raw) });
+        pending++;
+        s.emit('getState', 'system.config', () => {
+            pending--;
+            const rtt = Date.now() - sentAt;
+            fastStreak = rtt < 300 ? fastStreak + 1 : 0;
+            wakeDiag('pong', { seq, n: nr, rtt });
+        });
+        globalThis.setTimeout(tick, 1000);
+    };
+    tick();
 }
 
 // Zeitpunkt, zu dem die Sperre gesetzt wurde — damit ein Verschlucken zeigt,
@@ -918,6 +979,7 @@ function createSocket(url: string): IoBrokerSocket {
     // `path` (socket.io's default /socket.io is already correct, and @iobroker/ws
     // would mishandle it — it connects at the root).
     let s = io.connect(url, { transports: ['websocket', 'polling'] });
+    const rawSocket = s; // ungehüllt — für den Blick in die Transportschicht (Startphasen-Messung)
     // Schritt 6 (Masterfahrplan 08.09.2026): identifiziert diese Socket-Instanz
     // in der Reconnect-Diagnose unten — damit sich zwei Verbindungsaufbauten im
     // Abstand weniger Millisekunden (Abschnitt 2.3, Versuch 2) im Nachhinein
@@ -1029,6 +1091,20 @@ function createSocket(url: string): IoBrokerSocket {
     // (Socket.io-Standard `timeout`), bevor er es erneut versucht.
     const createdAt = Date.now();
     wakeDiag('sock-new', { seq });
+
+    // Startphasen-Messung (28.09.2026): Befund vom 27./28.09. — nach einem
+    // Kaltstart steht die Verbindung nach 50 ms, aber 12–34 s lang kommt nichts,
+    // und die Anmeldung erreicht den Pi erst nach 11 s. Offen ist, WO es hängt:
+    // im Postausgang des Handys (writeBuffer voll) oder hinter dem Versand
+    // (Pi/Netz). Dafür zählt der Socket seine gesendeten Nachrichten, und nach
+    // jedem Verbinden läuft sekündlich eine winzige Probe-Anfrage mit.
+    let emitsSinceCreate = 0;
+    const rawEmit = s.emit.bind(s);
+    s.emit = (event: string, ...args: unknown[]): void => {
+        if (!SOCKET_RESERVED_EVENTS.has(event)) emitsSinceCreate++;
+        rawEmit(event, ...args);
+    };
+    s.on('connect', () => startStartupPing(s, rawSocket, seq, () => emitsSinceCreate));
     s.on('connect', () => wakeDiag('sock-connect', { seq, ms: Date.now() - createdAt, cur: socket === s }));
     s.on('reconnect', () => wakeDiag('sock-reconnect', { seq, cur: socket === s }));
     s.on('connect_error', (err) =>
