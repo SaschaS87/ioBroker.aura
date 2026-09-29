@@ -283,6 +283,47 @@ interface ReconnectDiagEntry {
     };
 }
 
+// Diese drei Diagnose-States (hier und bei CMD_DIAG_STATE_ID/flushWakeDiag
+// unten) wurden bislang nur per setState geschrieben, nie mit einem Objekt
+// angelegt — der web-Adapter loggt deshalb bei jedem Schreiben "has no
+// existing object" (bestätigt im Pi-Log: durchgehend seit mind. 22.09.2026,
+// keine neue Ursache).
+//
+// ensureDiagObject legt das Objekt pro ID an, blockiert das setState danach
+// aber NICHT — reines Fire-and-forget, wie der Rest dieser Datei. Zwei
+// Varianten davor sind auf dem Pi durchgefallen (28.09.2026, per echtem
+// Reconnect-Burst reproduziert: drei 'focus'-Events knapp hintereinander):
+//  1. Nur einmal je Session versuchen, ohne das Ack zu prüfen — geht das
+//     EINE setObject unter (createSocket() baut bei jedem Reconnect eine
+//     neue Socket-Instanz auf, ein Schreibvorgang mitten in der Ablösung
+//     kann verlorengehen), bleibt das Objekt für den Rest der Session fehlen.
+//  2. Das setState auf das Ack warten lassen — bei genau demselben
+//     Verlust-Fall wartet es auf ein Ack, das nie kommt: mehr Warnungen als
+//     vorher, nicht weniger.
+// Der Ausweg: `ensuredDiagObjects` wird erst nach bestätigtem Ack gesetzt,
+// ein Fehlversuch wird nach DIAG_OBJECT_RETRY_MS automatisch wiederholt.
+// setState läuft in der Zwischenzeit unverändert sofort durch.
+const ensuredDiagObjects = new Set<string>();
+const diagObjectAttemptedAt = new Map<string, number>();
+const DIAG_OBJECT_RETRY_MS = 4000;
+
+function ensureDiagObject(id: string, name: string): void {
+    if (ensuredDiagObjects.has(id)) return;
+    const lastAttempt = diagObjectAttemptedAt.get(id);
+    const now = Date.now();
+    if (lastAttempt !== undefined && now - lastAttempt < DIAG_OBJECT_RETRY_MS) return;
+    diagObjectAttemptedAt.set(id, now);
+    setObjectDirect(
+        id,
+        {
+            type: 'state',
+            common: { name, type: 'string', role: 'json', read: true, write: true, def: '' },
+            native: {},
+        },
+        () => ensuredDiagObjects.add(id),
+    );
+}
+
 const diagLog: ReconnectDiagEntry[] = [];
 
 /** Append a fresh diag entry, trim the log to the last DIAG_MAX_ENTRIES, and
@@ -302,6 +343,7 @@ function pushDiag(entry: ReconnectDiagEntry): ReconnectDiagEntry {
 function flushDiagState(): void {
     const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
     if (shot) return;
+    ensureDiagObject(DIAG_STATE_ID, 'Aura Reconnect-Diagnose');
     setStateDirect(DIAG_STATE_ID, JSON.stringify(diagLog), true);
 }
 
@@ -345,6 +387,7 @@ const cmdDiagLog: CommandSendDiagEntry[] = [];
 function flushCmdDiagState(): void {
     const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
     if (shot) return;
+    ensureDiagObject(CMD_DIAG_STATE_ID, 'Aura Befehl-Sende-Diagnose');
     setStateDirect(CMD_DIAG_STATE_ID, JSON.stringify(cmdDiagLog), true);
 }
 
@@ -462,7 +505,9 @@ function flushWakeDiag(): void {
         standalone: typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches,
         log: wakeDiagLog,
     };
-    setStateDirect(`${NS}.diag.wake.${getWakeDiagTag()}`, JSON.stringify(payload), true);
+    const wakeStateId = `${NS}.diag.wake.${getWakeDiagTag()}`;
+    ensureDiagObject(wakeStateId, 'Aura Aufweck-Diagnose');
+    setStateDirect(wakeStateId, JSON.stringify(payload), true);
 }
 
 // Ereignisse, die Socket.io lokal auslöst statt sie zu versenden — zählen nicht
@@ -1726,11 +1771,13 @@ export function setStateDirectAsync(id: string, val: boolean | number | string, 
     });
 }
 
-/** Create or update an ioBroker object definition without a React hook. */
-export function setObjectDirect(id: string, obj: object): void {
+/** Create or update an ioBroker object definition without a React hook.
+ *  `onAck` fires once the server confirms the write — used by
+ *  ensureDiagObject above to know a retry isn't needed. */
+export function setObjectDirect(id: string, obj: object, onAck?: () => void): void {
     invalidateObjectCache(id);
     getSocket().emit('setObject', id, obj, () => {
-        /* ignore result */
+        onAck?.();
     });
 }
 
