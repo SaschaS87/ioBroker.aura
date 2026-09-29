@@ -6,14 +6,6 @@ import { getTheme } from './themes';
 import { BOOT_COLORS_KEY } from './utils/themeModeCache';
 import { bumpThemeEpoch } from './store/themeEpoch';
 
-/** theme-color takes a plain colour only — a gradient background yields its first hex stop. */
-function solidColor(bg: string | undefined): string | null {
-    if (!bg) return null;
-    if (!bg.includes('gradient')) return bg.trim();
-    const stop = bg.match(/#[0-9a-fA-F]{3,8}\b/);
-    return stop ? stop[0] : null;
-}
-
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const customVars = useThemeStore((s) => s.customVars);
     const fontScale = useConfigStore((s) => s.frontend.fontScale ?? 1);
@@ -35,19 +27,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
         if (statusMeta && statusMeta.getAttribute('content') !== statusBarStyle) {
             statusMeta.setAttribute('content', statusBarStyle);
-        }
-        // Dark hint for iOS (theme-color + color-scheme metas, index.html): follow
-        // the theme so a light Aura design does not keep announcing "dark". Both
-        // metas exist on iOS only — index.html removes them elsewhere.
-        const themeColorMeta = document.querySelector('meta[name="theme-color"]');
-        const themeColor = solidColor(vars['--app-bg']);
-        if (themeColorMeta && themeColor && themeColorMeta.getAttribute('content') !== themeColor) {
-            themeColorMeta.setAttribute('content', themeColor);
-        }
-        const schemeMeta = document.querySelector('meta[name="color-scheme"]');
-        const scheme = theme.dark ? 'dark' : 'light';
-        if (schemeMeta && schemeMeta.getAttribute('content') !== scheme) {
-            schemeMeta.setAttribute('content', scheme);
         }
         // Match native form-control chrome to the theme (like AdminLayout does).
         // Without this, dark themes keep color-scheme:light, so a native

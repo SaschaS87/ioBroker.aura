@@ -15,14 +15,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <!-- Dunkel-Hinweis fuer iOS (Versuch 29.09.2026): sagt iOS schon vor dem
-         App-Code, dass Aura dunkel ist - gegen die Uhr, die im hellen iOS-Modus
-         beim Oeffnen/Zurueckholen kurz schwarz aufblitzt. Das Skript darunter
-         entfernt beide auf allen Nicht-iOS-Geraeten (theme-color faerbt sonst
-         Chromes Adressleiste auf Android) und passt sie sonst dem letzten
-         Design an; ThemeProvider.tsx zieht sie bei jedem Designwechsel nach. -->
-    <meta name="theme-color" content="#111827" />
-    <meta name="color-scheme" content="dark" />
     <meta name="apple-mobile-web-app-title" content="Aura" />
     <title>Aura – ioBroker Dashboard</title>
     <script>
@@ -36,26 +28,11 @@
          sofort an: Uhr blitzt schwarz auf, 28.09.2026). */
       (function () {
         var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-        var themeColor = document.querySelector('meta[name="theme-color"]');
-        var scheme = document.querySelector('meta[name="color-scheme"]');
-        if (!/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-          if (themeColor) themeColor.parentNode.removeChild(themeColor);
-          if (scheme) scheme.parentNode.removeChild(scheme);
-          themeColor = scheme = null;
-        }
         try {
           var cached = localStorage.getItem('aura-status-dark');
-          if (cached !== null) {
-            if (meta) meta.setAttribute('content', cached === '1' ? 'black-translucent' : 'default');
-            if (scheme) scheme.setAttribute('content', cached === '1' ? 'dark' : 'light');
+          if (meta && cached !== null) {
+            meta.setAttribute('content', cached === '1' ? 'black-translucent' : 'default');
           }
-          /* theme-color nimmt nur eine Vollfarbe: bei einem Verlauf die erste Farbe. */
-          var bg = (localStorage.getItem('aura-boot-colors') || '').split('|')[0];
-          if (bg.indexOf('gradient') !== -1) {
-            var stop = bg.match(/#[0-9a-fA-F]{3,8}\b/);
-            bg = stop ? stop[0] : '';
-          }
-          if (themeColor && bg) themeColor.setAttribute('content', bg);
         } catch (e) {}
       })();
     </script>
