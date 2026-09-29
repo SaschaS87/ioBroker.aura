@@ -473,7 +473,11 @@ function getWakeDiagTag(): string {
         id = Math.random().toString(36).slice(2, 10);
     }
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-    const platform = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : 'desktop';
+    // Neueres iOS (Homescreen-App, Safari 27) meldet sich mit Mac-Kennung. Ein
+    // echter Mac hat keinen Touchscreen, ein iPhone/iPad schon.
+    const macUaWithTouch =
+        /Macintosh/i.test(ua) && typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 1;
+    const platform = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) || macUaWithTouch ? 'ios' : 'desktop';
     wakeDiagTag = `${platform}_${id}`;
     return wakeDiagTag;
 }
@@ -584,6 +588,21 @@ function noteFirstDataAfterVisible(via: string): void {
     if (firstDataAfterVisibleLogged) return;
     firstDataAfterVisibleLogged = true;
     wakeDiag('first-data', { via, ms: Date.now() - lastVisibleAt });
+}
+
+/** Perf `socketToFirstState`: Zeit von der Verbindung bis zum ersten gelieferten
+ *  Wert — egal ob als Antwort auf die Nachfrage (getStates) oder als gepushte
+ *  Änderung. Früher zählte nur der Push, die Zahl hing dann an der Aktivität im
+ *  Haus. Gemeldet wird direkt (nicht über perfMetrics), um einen Importzyklus
+ *  zurück in dieses Modul zu vermeiden. */
+function noteFirstStateAfterConnect(): void {
+    if (firstStateReported || connectPerfMark <= 0 || typeof performance === 'undefined') return;
+    firstStateReported = true;
+    const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
+    if (shot) return;
+    const dt = performance.now() - connectPerfMark;
+    if (dt < 0) return;
+    void sendToDirect(NS, 'perfLog', { metric: 'socketToFirstState', value: Math.round(dt), ts: Date.now() });
 }
 
 // ── Rettungsanker-Zähler (Schritt 5) ─────────────────────────────────────────
@@ -854,6 +873,7 @@ function revalidateStates(s: IoBrokerSocket, diagEntry?: ReconnectDiagEntry): vo
             const answers = obj as Record<string, ioBrokerState | null | undefined>;
             for (const id of chunkIds) applyOne(id, answers[id] ?? null);
             noteFirstDataAfterVisible('revalidate');
+            noteFirstStateAfterConnect();
             if (rv) publish();
         });
     }
@@ -1198,22 +1218,7 @@ function createSocket(url: string): IoBrokerSocket {
         if (state) cacheState(id, state);
         subscribers.get(id)?.forEach((fn) => fn(state));
         noteFirstDataAfterVisible('stateChange');
-        // Perf: first live data after connect. Reported inline (rather than via
-        // perfMetrics) to avoid an import cycle back into this module.
-        if (!firstStateReported && connectPerfMark > 0 && typeof performance !== 'undefined') {
-            firstStateReported = true;
-            const shot = typeof window !== 'undefined' && Boolean((window as { __auraShot?: unknown }).__auraShot);
-            if (!shot) {
-                const dt = performance.now() - connectPerfMark;
-                if (dt >= 0) {
-                    void sendToDirect(NS, 'perfLog', {
-                        metric: 'socketToFirstState',
-                        value: Math.round(dt),
-                        ts: Date.now(),
-                    });
-                }
-            }
-        }
+        noteFirstStateAfterConnect();
     });
 
     return s;
