@@ -21,13 +21,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         });
         root.style.setProperty('--font-scale', String(fontScale));
         root.classList.toggle('dark', theme.dark);
-        // iOS status bar icons (clock/Wi-Fi/battery): white on dark themes. Set here,
-        // once the theme is known — index.html only seeds the value from the last run.
-        const statusBarStyle = theme.dark ? 'black-translucent' : 'default';
-        const statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-        if (statusMeta && statusMeta.getAttribute('content') !== statusBarStyle) {
-            statusMeta.setAttribute('content', statusBarStyle);
-        }
         // Match native form-control chrome to the theme (like AdminLayout does).
         // Without this, dark themes keep color-scheme:light, so a native
         // <input type=range> gets a WHITE UA background — the semi-transparent
@@ -42,7 +35,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             const bg = vars['--app-bg'];
             const fg = vars['--text-secondary'];
             if (bg && fg) localStorage.setItem(BOOT_COLORS_KEY, `${bg}|${fg}`);
-            localStorage.setItem('aura-status-dark', theme.dark ? '1' : '0');
         } catch {
             /* quota / private mode */
         }

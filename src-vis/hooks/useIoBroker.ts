@@ -1290,7 +1290,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // Kaltstart vs. Aufwachen auseinanderhalten: nur ein Neustart der App
     // erzeugt diesen Eintrag.
     wakeDiag('boot', { online: navigator.onLine });
-    startStatusBarDiag();
     lastVisibleAt = Date.now();
     firstDataAfterVisibleLogged = document.visibilityState !== 'visible';
     setInterval(() => {
@@ -1319,45 +1318,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     window.addEventListener('pageshow', (e) => {
         wakeDiag('pageshow', { persisted: (e as PageTransitionEvent).persisted });
         if ((e as PageTransitionEvent).persisted) bounceSocketDebounced('pageshow');
-    });
-}
-
-// ── Statusleisten-Diagnose (28.09.2026) ──────────────────────────────────────
-// Auf dem iPhone blitzt die Uhr im Dunkelmodus beim Zurückholen aus dem
-// Hintergrund kurz schwarz auf. Aufgezeichnet wird, ob Aura dabei selbst etwas
-// an Dunkelmodus oder Statusleisten-Meta ändert, was ganz oben unter der
-// Leiste liegt und wann nach dem Sichtbarwerden die ersten Bilder kommen.
-// Nur Diagnose — nach der Klärung wieder ausbauen.
-function statusBarSnapshot(): Record<string, unknown> {
-    const root = document.documentElement;
-    const meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-    const top = document.elementFromPoint(window.innerWidth / 2, 8);
-    return {
-        dark: root.classList.contains('dark'),
-        sb: meta?.getAttribute('content') ?? null,
-        cs: root.style.colorScheme || null,
-        top: top ? `${top.tagName.toLowerCase()}.${String(top.className).slice(0, 40)}` : null,
-        topBg: top ? getComputedStyle(top).backgroundColor : null,
-    };
-}
-
-function startStatusBarDiag(): void {
-    const root = document.documentElement;
-    const meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-    const onChange = (src: string) => wakeDiag('sb-change', { src, ...statusBarSnapshot() });
-    new MutationObserver(() => onChange('html-class')).observe(root, { attributes: true, attributeFilter: ['class'] });
-    if (meta) new MutationObserver(() => onChange('meta')).observe(meta, { attributes: true });
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState !== 'visible') return;
-        const t0 = performance.now();
-        wakeDiag('sb-visible', statusBarSnapshot());
-        requestAnimationFrame(() => {
-            const f1 = Math.round(performance.now() - t0);
-            requestAnimationFrame(() => {
-                wakeDiag('sb-frames', { f1, f2: Math.round(performance.now() - t0), ...statusBarSnapshot() });
-            });
-        });
-        globalThis.setTimeout(() => wakeDiag('sb-500', statusBarSnapshot()), 500);
     });
 }
 
