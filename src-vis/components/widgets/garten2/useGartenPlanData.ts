@@ -44,6 +44,16 @@ export interface GartenPlanStatus {
 
 const EMPTY_STATUS: GartenPlanStatus = { version: null, trockenlauf: false, letzterTickMs: null, letzterFehler: null };
 
+/** Das Skript schreibt letzterFehler als Objekt {zeit, quelle, meldung} (oder null); aeltere Staende/Tests liefern einen String. Beides lesen, sonst null. */
+function fehlerMeldung(v: unknown): string | null {
+    if (typeof v === 'string') return v || null;
+    if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        const m = (v as Record<string, unknown>).meldung;
+        if (typeof m === 'string' && m) return m;
+    }
+    return null;
+}
+
 /** Tolerant: kaputtes/leeres JSON ergibt den leeren Status, wirft nie. */
 export function parseStatus(raw: string | null | undefined): GartenPlanStatus {
     const trimmed = (raw ?? '').trim();
@@ -57,7 +67,7 @@ export function parseStatus(raw: string | null | undefined): GartenPlanStatus {
             version: typeof r.version === 'string' ? r.version : null,
             trockenlauf: r.trockenlauf === true,
             letzterTickMs: Number.isNaN(tick) ? null : tick,
-            letzterFehler: typeof r.letzterFehler === 'string' && r.letzterFehler ? r.letzterFehler : null,
+            letzterFehler: fehlerMeldung(r.letzterFehler),
         };
     } catch {
         return EMPTY_STATUS;

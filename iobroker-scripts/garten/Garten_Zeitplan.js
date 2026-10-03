@@ -230,6 +230,7 @@ function statusSchreiben() {
 // ── Laden der beiden Datenpunkte (bei hartem Fehler bleibt die alte Fassung) ─
 
 async function rohwertVon(id) {
+    if (!existsState(id)) return '';   // frisch angelegt/noch nicht da: kein getState-Warnlog beim allerersten Start
     const s = await getStateAsync(id);
     return s && typeof s.val === 'string' ? s.val : '';
 }
@@ -270,12 +271,12 @@ function ausloesenZuTermin(termin, jetzt, kreisGestartetInDieserMinute) {
         const modus = await getStateAsync(`${INSTANZ}.sprinkle.${kreis}.autoOn`);
         const verdunstung = !!modus && modus.val === true;
         if (verdunstung && !ansaat) {
-            log(`${LOGPRAEFIX} uebersprungen: Verdunstungsmodus ${termin.id} ${kreis} (autoOn=true, keine Neuansaat)`, 'info');
+            log(`${LOGPRAEFIX} übersprungen: Verdunstungsmodus ${termin.id} ${kreis} (autoOn=true, keine Neuansaat)`, 'info');
             return;
         }
 
         if (kreisGestartetInDieserMinute[kreis]) {
-            log(`${LOGPRAEFIX} uebersprungen: ${termin.id} ${kreis} - in dieser Minute startet schon ein anderer Termin dieses Kreises`, 'warn');
+            log(`${LOGPRAEFIX} übersprungen: ${termin.id} ${kreis} - in dieser Minute startet schon ein anderer Termin dieses Kreises`, 'warn');
             return;
         }
 
