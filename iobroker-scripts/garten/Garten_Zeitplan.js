@@ -229,21 +229,21 @@ function statusSchreiben() {
 
 // ── Laden der beiden Datenpunkte (bei hartem Fehler bleibt die alte Fassung) ─
 
-function rohwertVon(id) {
-    const s = getState(id);
+async function rohwertVon(id) {
+    const s = await getStateAsync(id);
     return s && typeof s.val === 'string' ? s.val : '';
 }
 
-function ladeZeitplan() {
-    const r = parseZeitplan(rohwertVon(`${ROOT}.Zeitplan`));
+async function ladeZeitplan() {
+    const r = parseZeitplan(await rohwertVon(`${ROOT}.Zeitplan`));
     if (r.schwer) { setzeQuellenFehler('Zeitplan', r.fehler, 'alte gueltige Fassung bleibt aktiv'); return; }
     zeitplan = r.werte;
     if (r.fehler) setzeQuellenFehler('Zeitplan', r.fehler);
     else loescheQuellenFehler('Zeitplan');
 }
 
-function ladeEinstellungen() {
-    const r = parseEinstellungen(rohwertVon(`${ROOT}.Einstellungen`));
+async function ladeEinstellungen() {
+    const r = parseEinstellungen(await rohwertVon(`${ROOT}.Einstellungen`));
     if (r.schwer) { setzeQuellenFehler('Einstellungen', r.fehler, 'alte gueltige Fassung bleibt aktiv'); return; }
     einstellungen = r.werte;
     loescheQuellenFehler('Einstellungen');
@@ -421,7 +421,7 @@ async function sicherstellenObjekte() {
 
         // Doppelschutz nach Neustart: Status der letzten Ausloesung vor dem Ueberschreiben lesen.
         try {
-            const alterStatus = JSON.parse(rohwertVon(`${ROOT}.Status`) || '{}');
+            const alterStatus = JSON.parse((await rohwertVon(`${ROOT}.Status`)) || '{}');
             const l = alterStatus && alterStatus.letzteAusloesung;
             if (l && typeof l.id === 'string' && typeof l.ts === 'string' && !Number.isNaN(Date.parse(l.ts))) {
                 const t = berlinTeile(new Date(l.ts));
@@ -436,14 +436,14 @@ async function sicherstellenObjekte() {
         status.version = VERSION;
         status.trockenlauf = TROCKENLAUF;
 
-        ladeZeitplan();
-        ladeEinstellungen();
+        await ladeZeitplan();
+        await ladeEinstellungen();
         await waechterVollstaendig();
         statusSchreiben();
 
-        on({ id: `${ROOT}.Zeitplan`, change: 'ne' }, () => { ladeZeitplan(); statusSchreiben(); });
+        on({ id: `${ROOT}.Zeitplan`, change: 'ne' }, async () => { await ladeZeitplan(); statusSchreiben(); });
         on({ id: `${ROOT}.Einstellungen`, change: 'ne' }, async () => {
-            ladeEinstellungen();
+            await ladeEinstellungen();
             await waechterVollstaendig();
             statusSchreiben();
         });
