@@ -144,11 +144,20 @@ function isRollPlanDevPrefix(id: unknown): boolean {
     return typeof id === 'string' && id.startsWith(ROLL_PLAN_DEV_PREFIX);
 }
 
+// Garten-Zeitplan (Feature 24): eigene Testdatenpunkte fürs Entwickeln, ohne den
+// echten Zeitplan unter 0_userdata.0.Garten zu berühren. Gilt nur für den
+// Ausnahme-Präfix; sprinklecontrol.0.* bleibt weiter gesperrt.
+const GARTEN_PLAN_DEV_PREFIX = '0_userdata.0.Garten_Dev.';
+
+function isGartenPlanDevPrefix(id: unknown): boolean {
+    return typeof id === 'string' && id.startsWith(GARTEN_PLAN_DEV_PREFIX);
+}
+
 /** null = let it through, string = why it is being stopped. */
 function blockReason(command: string, args: unknown[]): string | null {
     if (ID_WRITE_COMMANDS.has(command) || FILE_WRITE_COMMANDS.has(command)) {
-        if (isOwnNamespace(args[0]) || isRollPlanDevPrefix(args[0])) return null;
-        return `Schreiben ausserhalb von ${NS}.* / ${ROLL_PLAN_DEV_PREFIX}*`;
+        if (isOwnNamespace(args[0]) || isRollPlanDevPrefix(args[0]) || isGartenPlanDevPrefix(args[0])) return null;
+        return `Schreiben ausserhalb von ${NS}.* / ${ROLL_PLAN_DEV_PREFIX}* / ${GARTEN_PLAN_DEV_PREFIX}*`;
     }
     if (command === 'sendTo') {
         const cmd = typeof args[1] === 'string' ? args[1] : '';

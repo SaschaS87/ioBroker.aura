@@ -230,15 +230,17 @@ export interface GartenWidgetOptions {
 }
 
 /**
- * Optionen des Garten2-Widgets ("Steuerpult"). Anders als das Garten-Widget
- * schreibt Garten2 KEINE Zeitpläne — die bleiben exklusiv beim Tab „Garten“.
- * Der Wochenplan wird nur gelesen, aus dem bestehenden Timer-Spiegel des
- * Garten-Widgets (`sourceStateBaseId` + „-“ + Kreis-Slug + „.config“/„.enabled“).
+ * Optionen des Garten2-Widgets ("Steuerpult"). Garten2 bearbeitet den
+ * Zeitplan: Termine, „Zeitplan scharf“ und Neuansaat je Kreis liegen als JSON
+ * in `<planRoot>.Zeitplan` / `.Einstellungen` (0_userdata.0.Garten). Ausgelöst
+ * wird er vom ioBroker-Skript Garten_Zeitplan, nicht vom Aura-Adapter — es gibt
+ * hier keinen Timer-Kanal und damit nie zwei Schreiber/Ausführer. Der Dev-Build
+ * ignoriert `planRoot` und arbeitet immer auf 0_userdata.0.Garten_Dev.
  */
 export interface Garten2WidgetOptions {
     instance?: string; // Standard 'sprinklecontrol.0'
-    /** aura.X.timers.<seg> des BESTEHENDEN Garten-Widgets — nur lesend. */
-    sourceStateBaseId?: string;
+    /** Wurzel der Zeitplan-Datenpunkte, Standard '0_userdata.0.Garten'. */
+    planRoot?: string;
     hiddenCircles?: string[]; // sprinkleNames, die nicht angezeigt werden
     circleLabels?: Record<string, string>; // sprinkleName -> Anzeigename
     showSoilMoisture?: boolean; // Standard true

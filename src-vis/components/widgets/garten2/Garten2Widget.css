@@ -230,6 +230,68 @@
   pointer-events: none;
 }
 
+/* Kopfzeile eines Kreises = Taste, die die Terminliste auf-/zuklappt. Die
+   Hoehe entspricht den uebrigen Tasten der Karte (.garten-btn: 44 px). */
+.garten2-week-head {
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.garten2-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.garten2-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+/* Aufgeklappter Bereich: Schalter „Zeitplan scharf"/„Neuansaat" und Terminliste. */
+.garten2-plan-open {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.garten2-opt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.garten2-opt-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.garten2-opt-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+/* Dauerhafter Hinweis auf der Karte, solange Neuansaat an ist. */
+.garten2-ansaat-note {
+  color: var(--g-amber);
+  opacity: 1;
+}
+
+.garten2-plan-error {
+  color: var(--g-red);
+  opacity: 1;
+}
+
 /* ── Einstellungen-Sheet ───────────────────────────────────────────────── */
 
 .garten2-sheet-backdrop {

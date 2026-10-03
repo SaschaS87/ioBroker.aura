@@ -8455,7 +8455,7 @@
       "label": "Gartenbewässerung — Steuerpult",
       "group": "control",
       "addMode": "free",
-      "hint": "Bewässerungs-Übersicht: Hero, Wetter/Boden, Wochenplan (nur Anzeige — Termine bleiben im Tab Garten)",
+      "hint": "Bewässerungs-Steuerpult: Hero, Wetter/Boden, Wochenplan mit Terminbearbeitung (Zeitplan liegt in 0_userdata.0.Garten, Ausführung über das Skript Garten_Zeitplan)",
       "defaultSize": {
         "w": 42,
         "h": 30
@@ -8502,15 +8502,15 @@
           "type": "number",
           "description": "Standard 10"
         },
+        "planRoot": {
+          "type": "string",
+          "description": "Wurzel der Zeitplan-Datenpunkte, Standard '0_userdata.0.Garten'.",
+          "default": "0_userdata.0.Garten"
+        },
         "showSoilMoisture": {
           "type": "boolean",
           "description": "Standard true",
           "default": true
-        },
-        "sourceStateBaseId": {
-          "type": "string",
-          "description": "aura.X.timers.<seg> des BESTEHENDEN Garten-Widgets — nur lesend.",
-          "default": ""
         }
       }
     },
