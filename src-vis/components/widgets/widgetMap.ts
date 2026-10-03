@@ -82,6 +82,10 @@ const ShutterFloorsWidget = lazyWithReload(() =>
 );
 // GartenWidget drives the sprinklecontrol irrigation circles (schedule, mode, manual run).
 const GartenWidget = lazyWithReload(() => import('./garten/GartenWidget').then((m) => ({ default: m.GartenWidget })));
+// Garten2Widget: read-only "Steuerpult" overview (hero, weather/soil, week plan) — schedules stay in "garten".
+const Garten2Widget = lazyWithReload(() =>
+    import('./garten2/Garten2Widget').then((m) => ({ default: m.Garten2Widget })),
+);
 
 export function getWidgetMap() {
     return {
@@ -142,6 +146,7 @@ export function getWidgetMap() {
         menu: MenuWidget,
         shutterfloors: ShutterFloorsWidget,
         garten: GartenWidget,
+        garten2: Garten2Widget,
         roomclimate: RoomClimateWidget,
         rainstation: RainStationWidget,
         raindaily: RainDailyWidget,

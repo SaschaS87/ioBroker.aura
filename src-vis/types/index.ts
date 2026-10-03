@@ -56,6 +56,7 @@ export type WidgetType =
     | 'shutter'
     | 'shutterfloors'
     | 'garten'
+    | 'garten2'
     | 'jsontable'
     | 'windowcontact'
     | 'binarysensor'
@@ -226,6 +227,23 @@ export interface GartenWidgetOptions {
     confirmManualStart?: boolean; // Standard true
     showSoilMoisture?: boolean; // Standard true
     showCloudStatus?: boolean; // Standard true
+}
+
+/**
+ * Optionen des Garten2-Widgets ("Steuerpult"). Anders als das Garten-Widget
+ * schreibt Garten2 KEINE Zeitpläne — die bleiben exklusiv beim Tab „Garten“.
+ * Der Wochenplan wird nur gelesen, aus dem bestehenden Timer-Spiegel des
+ * Garten-Widgets (`sourceStateBaseId` + „-“ + Kreis-Slug + „.config“/„.enabled“).
+ */
+export interface Garten2WidgetOptions {
+    instance?: string; // Standard 'sprinklecontrol.0'
+    /** aura.X.timers.<seg> des BESTEHENDEN Garten-Widgets — nur lesend. */
+    sourceStateBaseId?: string;
+    hiddenCircles?: string[]; // sprinkleNames, die nicht angezeigt werden
+    circleLabels?: Record<string, string>; // sprinkleName -> Anzeigename
+    showSoilMoisture?: boolean; // Standard true
+    confirmManualStart?: boolean; // Standard true
+    manualDefaultMinutes?: number; // Standard 10
 }
 
 // ── Custom-Grid layout ────────────────────────────────────────────────────────

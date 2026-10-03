@@ -1,0 +1,331 @@
+/* Garten2-Steuerpult ("Garten2"): Hero, Wetter+Boden, Wochenplan und das
+   Einstellungen-Sheet.
+
+   Die --g-*-Tokens sind dieselben wie in GartenWidget.css (Tab „Garten") —
+   hier erneut gesetzt, weil Garten2 ein eigener Wurzelknoten ist und
+   GartenWidget.css laut Plan unveraendert bleibt. .garten-card,
+   .garten-card-t, .garten-pill, .garten-sw, .garten-modes, .garten-mode,
+   .garten-btn*, .garten-dur-*, .garten-note, .garten-days, .garten-day
+   kommen unveraendert aus GartenCircleCard.css/GartenWidget.css (importiert
+   in Garten2Widget.tsx). */
+
+.garten2-widget,
+.garten2-sheet-backdrop {
+  --g-blue: var(--accent, #3b82f6);
+  --g-green: var(--accent-green, #22c55e);
+  --g-amber: var(--accent-yellow, #f59e0b);
+  --g-red: var(--accent-red, #ef4444);
+
+  --g-surface: var(--widget-bg, var(--app-surface));
+  --g-card: color-mix(in srgb, var(--text-primary) 5%, var(--g-surface));
+  --g-chip: color-mix(in srgb, var(--text-primary) 11%, var(--g-surface));
+  --g-border: var(--app-border);
+  --g-line: color-mix(in srgb, var(--text-primary) 11%, transparent);
+  --g-sw-off: color-mix(in srgb, var(--text-secondary) 35%, transparent);
+}
+
+.garten2-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 7px;
+  padding-bottom: 10px;
+}
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+
+.garten2-hero-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 0;
+  color: var(--text-secondary);
+}
+
+.garten2-hero-idle-text {
+  font-size: 12.5px;
+}
+
+.garten2-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 6px 0 2px;
+}
+
+/* Ring als reiner Fortschritt — nicht antippbar. conic-gradient statt SVG:
+   eine einzige Custom Property (--g2-ring-pct) steuert den Anteil, keine
+   Umrechnung in Bogenlaenge noetig. */
+.garten2-hero-ring {
+  --g2-ring-pct: 0%;
+  width: 108px;
+  height: 108px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    var(--g-blue) var(--g2-ring-pct),
+    var(--g-chip) var(--g2-ring-pct)
+  );
+  flex-shrink: 0;
+}
+
+.garten2-hero-ring-inner {
+  width: 88px;
+  height: 88px;
+  border-radius: 999px;
+  background: var(--g-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.garten2-hero-time {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.garten2-hero-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garten2-hero-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.garten2-hero-fact {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  background: var(--g-chip);
+  border-radius: 9px;
+  padding: 6px 10px;
+}
+
+/* ── Wetter & Boden ────────────────────────────────────────────────────── */
+
+.garten2-etp-row {
+  display: flex;
+  gap: 8px;
+}
+
+.garten2-etp-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--g-chip);
+}
+
+.garten2-etp-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.garten2-etp-value {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.garten2-etp-value--sub {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.garten2-etp-unit {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.garten2-etp-trend.is-up {
+  color: var(--g-blue);
+}
+
+.garten2-etp-trend.is-down {
+  color: var(--g-amber);
+}
+
+.garten2-soil-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.garten2-soil-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-top: 1px solid var(--g-line);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.garten2-soil-row.is-muted {
+  opacity: 0.45;
+}
+
+.garten2-soil-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+/* ── Wochenplan ────────────────────────────────────────────────────────── */
+
+.garten2-gear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--g-line);
+  background: var(--g-chip);
+  color: var(--text-secondary);
+}
+
+.garten2-week-row {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.garten2-week-row-sep {
+  padding-top: 12px;
+  margin-top: 3px;
+  border-top: 1px solid var(--g-line);
+}
+
+/* Plaettchen sind reine Anzeige in Garten2 — kein Zeigercursor, kein Hover. */
+.garten2-days-readonly {
+  pointer-events: none;
+}
+
+/* ── Einstellungen-Sheet ───────────────────────────────────────────────── */
+
+.garten2-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in srgb, black 45%, transparent);
+}
+
+.garten2-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--g-surface);
+  border-radius: 18px 18px 0 0;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  animation: garten2-sheet-in 220ms ease-out;
+}
+
+@keyframes garten2-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.garten2-sheet-drag {
+  cursor: grab;
+  touch-action: none;
+}
+
+.garten2-sheet-grip {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.garten2-sheet-grip-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--g-line);
+}
+
+.garten2-sheet-header {
+  padding: 4px 18px 10px;
+}
+
+.garten2-sheet-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.garten2-sheet-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.garten2-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 18px 6px;
+}
+
+.garten2-sheet-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.garten2-sheet-row-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.garten2-threshold-edit {
+  align-self: flex-start;
+  gap: 6px;
+}
+
+.garten2-threshold-value {
+  min-width: 44px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}

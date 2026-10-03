@@ -7423,6 +7423,9 @@ export function WidgetFrame({
         // garten: same idea — every circle brings its own card, so the list
         // spans the full column width without a second frame around it.
         framingType === 'garten' ||
+        // garten2: same idea — hero, weather/soil and week-plan cards bring
+        // their own frame, so the list spans the full column width.
+        framingType === 'garten2' ||
         // datasourcehealth: DataSourceHealthBox brings its own card (background,
         // border, radius) — no extra outer frame padding needed.
         framingType === 'datasourcehealth';

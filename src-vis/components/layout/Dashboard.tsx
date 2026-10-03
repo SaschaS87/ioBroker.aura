@@ -554,6 +554,8 @@ export function Dashboard({
                                                                 ew.type === 'shutterfloors' ||
                                                                 // garten wächst mit der Kreisliste und den Terminen.
                                                                 ew.type === 'garten' ||
+                                                                // garten2 wächst mit Hero/Wetter-Boden/Wochenplan.
+                                                                ew.type === 'garten2' ||
                                                                 // datasourcehealth: DataSourceHealthBox grows when its
                                                                 // rows expand, so the box itself must grow with them.
                                                                 ew.type === 'datasourcehealth' ||

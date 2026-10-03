@@ -8451,6 +8451,69 @@
         }
       }
     },
+    "garten2": {
+      "label": "Gartenbewässerung — Steuerpult",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Bewässerungs-Übersicht: Hero, Wetter/Boden, Wochenplan (nur Anzeige — Termine bleiben im Tab Garten)",
+      "defaultSize": {
+        "w": 42,
+        "h": 30
+      },
+      "layouts": [
+        "default"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "circleLabels": {
+          "type": "object",
+          "tsType": "Record<string, string>",
+          "description": "sprinkleName -> Anzeigename"
+        },
+        "confirmManualStart": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        },
+        "hiddenCircles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "sprinkleNames, die nicht angezeigt werden"
+        },
+        "instance": {
+          "type": "string",
+          "description": "Standard 'sprinklecontrol.0'",
+          "default": "sprinklecontrol.0"
+        },
+        "manualDefaultMinutes": {
+          "type": "number",
+          "description": "Standard 10"
+        },
+        "showSoilMoisture": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        },
+        "sourceStateBaseId": {
+          "type": "string",
+          "description": "aura.X.timers.<seg> des BESTEHENDEN Garten-Widgets — nur lesend.",
+          "default": ""
+        }
+      }
+    },
     "gauge": {
       "label": "Gauge",
       "group": "control",
