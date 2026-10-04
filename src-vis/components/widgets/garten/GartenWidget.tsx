@@ -2,25 +2,24 @@
  * Garten-Widget — Bewaesserungskreise mit Zeitplan, Modusschalter und
  * Handbetrieb (Adapter sprinklecontrol).
  *
- * Das Widget ist Oberflaeche und Speicher, der Motor ist der bestehende
- * 30-Sekunden-Scheduler des Aura-Adapters: Der Zeitplan lebt in
- * `WidgetConfig.options` (also in aura.X.config.dashboard) und wird pro Kreis
- * in einen `aura.X.timers.<seg>-<slug>`-Kanal gespiegelt. Alles danach —
- * Einreihen, Oeffnen, Herunterzaehlen, Schliessen — macht der
- * Sprinklecontrol-Adapter selbst. Kein zweiter Scheduler, kein zweiter
- * Config-State.
+ * STILLGELEGT (Feature 24): Der Zeitplan ist nach 0_userdata.0.Garten
+ * umgezogen und wird im Garten2-Widget bearbeitet; ausgeloest wird er vom
+ * Skript Garten_Zeitplan. Dieses Widget spiegelt NICHTS mehr nach
+ * aura.X.timers.* (Publish-Effekt entfernt). Die Terminliste zeigt nur noch den
+ * alten Stand aus `WidgetConfig.options`; Modus und Handbetrieb bleiben
+ * bedienbar. Vorher: Der Zeitplan lebte in `WidgetConfig.options` und wurde pro
+ * Kreis in einen `aura.X.timers.<seg>-<slug>`-Kanal gespiegelt.
  *
  * Beim Anlegen des Widgets wird nichts an der Anlage geschrieben: weder
  * `runningTime` noch `autoOn`, nur auf ausdrueckliche Bedienung.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { CloudOff } from 'lucide-react';
 import type { GartenWidgetOptions, TimerEvent, WidgetProps } from '../../../types';
 import { useDatapoint } from '../../../hooks/useDatapoint';
 import { setStateDirect } from '../../../hooks/useIoBroker';
 import { saveAll, saveToIoBroker } from '../../../store/persistManager';
 import { NS } from '../../../utils/namespace';
-import { publishGartenCircle } from '../../../utils/publishTimerConfig';
 import { DEFAULT_MANUAL_MINUTES, PARALLEL_HINT } from './gartenConstants';
 import { GartenCircleCard } from './GartenCircleCard';
 import { GartenSwitch } from './GartenSwitch';
@@ -102,8 +101,6 @@ export function GartenWidget({ config, editMode, onConfigChange }: WidgetProps) 
         if (!editMode) setTimeout(flushDashboard, 0);
     }, [o.stateBaseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const backendKey = (o.stateBaseId as string | undefined)?.split('.').pop() || null;
-
     // ── b) Kopfbereich ───────────────────────────────────────────────────────
     const autoOnOff = useDatapoint(`${instance}.control.autoOnOff`);
     const nextAutoStart = useDatapoint(`${instance}.info.nextAutoStart`);
@@ -141,37 +138,14 @@ export function GartenWidget({ config, editMode, onConfigChange }: WidgetProps) 
         return hit;
     }, [circles, schedules]);
 
-    // ── e) Publish-Effekt ────────────────────────────────────────────────────
-    // Ein Effekt fuer alle sichtbaren Kreise (React laesst keinen Hook je
-    // Listeneintrag zu), der Serialisierungs-Vergleich laeuft je Kreis. Ohne
-    // ihn publiziert das Widget bei jedem Tastendruck neu und flutet den
-    // Objektbaum.
-    const lastPublishedRef = useRef<Map<string, string>>(new Map());
-    useEffect(() => {
-        if (!backendKey) return;
-        for (const c of circles) {
-            const events = schedules[c.sprinkleName] ?? [];
-            const armed = scheduleEnabled[c.sprinkleName] !== false;
-            const title = `${config.title || 'Garten'} – ${c.label}`;
-            const targetDp = `${instance}.sprinkle.${c.sprinkleName}.runningTime`;
-            const serialized = JSON.stringify({ events, armed, title, targetDp });
-            if (lastPublishedRef.current.get(c.sprinkleName) === serialized) continue;
-            publishGartenCircle(backendKey, c.sprinkleName, targetDp, events, armed, title);
-            lastPublishedRef.current.set(c.sprinkleName, serialized);
-        }
-    }, [backendKey, circles, schedules, scheduleEnabled, instance, config.title]);
-
-    // ── f) Speichern ─────────────────────────────────────────────────────────
-    const patchOptions = (patch: Partial<GartenWidgetOptions>) => {
-        onConfigChange({ ...config, options: { ...o, ...patch } });
-        setTimeout(flushDashboard, 0);
-    };
-
-    const setEvents = (sprinkleName: string, events: TimerEvent[]) =>
-        patchOptions({ schedules: { ...schedules, [sprinkleName]: events } });
-
-    const setArmed = (sprinkleName: string, armed: boolean) =>
-        patchOptions({ scheduleEnabled: { ...scheduleEnabled, [sprinkleName]: armed } });
+    // ── e) Publish-Effekt: entfernt (Feature 24) ─────────────────────────────
+    // Der Zeitplan ist nach 0_userdata.0.Garten umgezogen und wird vom Skript
+    // Garten_Zeitplan ausgeloest. Dieses Widget spiegelt nichts mehr nach
+    // aura.X.timers.* — sonst koennte ein veraltetes Handy die alten
+    // Timer-Kanaele wieder scharf stellen (zwei Ausfuehrer). Die Publish-Funktion
+    // bleibt in publishTimerConfig.ts, wird hier aber nicht mehr aufgerufen.
+    // Die Terminliste unten ist nur noch Anzeige.
+    const noop = () => {};
 
     const [busy, setBusy] = useState(false);
     const toggleMaster = () => {
@@ -221,6 +195,10 @@ export function GartenWidget({ config, editMode, onConfigChange }: WidgetProps) 
                     />
                 </div>
                 <p className="garten-note">{PARALLEL_HINT}</p>
+                <p className="garten-note garten-dev-note">
+                    Der Zeitplan ist umgezogen – bearbeiten im Tab Garten (neu). Die Termine hier sind nur noch eine
+                    Anzeige und lösen nichts mehr aus.
+                </p>
                 {DEV_WRITES_BLOCKED && (
                     <p className="garten-note garten-dev-note">
                         Lokale Vorschau: Hauptschalter, Modus und „Jetzt gießen“ sind hier ausgegraut – sie
@@ -251,10 +229,12 @@ export function GartenWidget({ config, editMode, onConfigChange }: WidgetProps) 
                         confirmManualStart={confirmManualStart}
                         manualDefaultMinutes={manualDefaultMinutes}
                         showSoilMoisture={showSoilMoisture}
-                        interactive={interactive}
+                        // Termine nur noch lesbar (Zeitplan ist umgezogen); Modus und
+                        // Handbetrieb bleiben ueber plantInteractive bedienbar.
+                        interactive={false}
                         plantInteractive={plantInteractive}
-                        onEventsChange={(events) => setEvents(c.sprinkleName, events)}
-                        onScheduleEnabledChange={(armed) => setArmed(c.sprinkleName, armed)}
+                        onEventsChange={noop}
+                        onScheduleEnabledChange={noop}
                     />
                 ))}
             </div>

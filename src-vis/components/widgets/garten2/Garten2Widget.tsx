@@ -1,27 +1,30 @@
 /**
- * Garten2 — Bewaesserungs-Steuerpult (Übersicht).
+ * Garten2 — Bewaesserungs-Steuerpult.
  *
- * Anders als das bestehende Garten-Widget (Tab „Garten") ist Garten2 KEIN
- * Zeitplan-Editor. Es schreibt ausschliesslich über den unveraenderten Hook
- * `useSprinkleCircle` (Handstart/Stopp = `runningTime`, Modus = `autoOn`) und
- * — im Einstellungen-Sheet — die Regensperre der Adapterinstanz. Termine
- * (`options.schedules`, `aura.X.timers.*` Config) bleiben exklusiv beim Tab
- * „Garten": Garten2 liest sie nur read-only aus dessen Timer-Spiegel
- * (siehe useGartenSchedule), damit es nie zwei Schreiber fuer denselben
- * Zeitplan-Kanal gibt.
+ * Seit Feature 24 liegt der Zeitplan NICHT mehr im Dashboard bzw. in
+ * `aura.X.timers.*`, sondern als JSON in `0_userdata.0.Garten.*` (Dev-Build:
+ * `0_userdata.0.Garten_Dev.*`). Ausgeloest wird er vom ioBroker-Skript
+ * `Garten_Zeitplan` (iobroker-scripts/garten/Garten_Zeitplan.js) — Garten2 ist
+ * Oberflaeche und Speicher, nie Ausfuehrer. Es schreibt:
+ *   - Zeitplan/Einstellungen ueber `useGartenPlanData` (Termine, „Zeitplan
+ *     scharf", Neuansaat je Kreis),
+ *   - Handstart/Stopp (`runningTime`) und Modus (`autoOn`) ueber den
+ *     unveraenderten Hook `useSprinkleCircle`,
+ *   - im Einstellungen-Sheet die Regensperre der Adapterinstanz.
  *
  * Aufbau von oben nach unten:
  *   Hero          laufender Kreis (valveOn/countdown) oder Ruhezustand.
  *   Wetter+Boden  ETp heute/gestern, Regen heute/gestern/morgen, Restfeuchte.
- *   Wochenplan    reine Anzeige (Plaettchen, „Naechster Lauf"), Modusschalter
- *                 bedienbar, Zahnrad oeffnet das Einstellungen-Sheet.
+ *   Wochenplan    je Kreis Modusschalter, Plaettchen, „Naechster Lauf"; Tipp auf
+ *                 den Kreis klappt die Terminliste auf (auch im Verdunstungs-
+ *                 modus). Zahnrad oeffnet das Einstellungen-Sheet.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Garten2WidgetOptions, WidgetProps } from '../../../types';
 import { DEFAULT_MANUAL_MINUTES } from '../garten/gartenConstants';
 import { useSprinkleCircle, type SprinkleCircleState } from '../garten/useSprinkleCircle';
 import { useSprinkleCircles } from '../garten/useSprinkleCircles';
-import { useGartenSchedule, type GartenScheduleState } from './useGartenSchedules';
+import { useGartenPlanData } from './useGartenPlanData';
 import { useSprinkleWeather } from './useSprinkleWeather';
 import { Garten2Hero } from './Garten2Hero';
 import { Garten2WeatherSoil } from './Garten2WeatherSoil';
@@ -35,7 +38,6 @@ export interface CircleProbeData {
     label: string;
     sprinkleName: string;
     state: SprinkleCircleState;
-    schedule: GartenScheduleState;
 }
 
 /** In der Dev-Vorschau haelt devWriteGuard.ts jeden Schreibbefehl ausserhalb
@@ -51,19 +53,16 @@ const DEV_WRITES_BLOCKED = import.meta.env.DEV && import.meta.env.VITE_AURA_ALLO
  */
 function Garten2CircleProbe({
     instance,
-    sourceStateBaseId,
     sprinkleName,
     label,
     onUpdate,
 }: {
     instance: string;
-    sourceStateBaseId: string;
     sprinkleName: string;
     label: string;
     onUpdate: (sprinkleName: string, data: CircleProbeData) => void;
 }) {
     const state = useSprinkleCircle(instance, sprinkleName);
-    const schedule = useGartenSchedule(sourceStateBaseId, sprinkleName);
 
     // Serialisierter Vergleich statt Objekt-Referenz: useSprinkleCircle liefert
     // bei jedem Render ein frisches Objekt (frische Closures fuer
@@ -77,15 +76,13 @@ function Garten2CircleProbe({
         lastOn: state.lastOn,
         mode: state.mode,
         status: state.status,
-        events: schedule.events,
-        enabled: schedule.enabled,
         label,
     });
     const lastSig = useRef('');
     useEffect(() => {
         if (lastSig.current === sig) return;
         lastSig.current = sig;
-        onUpdate(sprinkleName, { label, sprinkleName, state, schedule });
+        onUpdate(sprinkleName, { label, sprinkleName, state });
     });
 
     return null;
@@ -94,7 +91,11 @@ function Garten2CircleProbe({
 export function Garten2Widget({ config, editMode }: WidgetProps) {
     const o = (config.options ?? {}) as Garten2WidgetOptions;
     const instance = o.instance || 'sprinklecontrol.0';
-    const sourceStateBaseId = o.sourceStateBaseId || '';
+    // Sicherheits-Weiche (Feature 24, wie plannerRoot im Rollladen-Widget): die
+    // lokale Dev-Vorschau arbeitet IMMER auf Garten_Dev, egal was in der
+    // Widget-Konfiguration steht. import.meta.env.DEV ist im Pi-Build zur
+    // Kompilierzeit false, der Zweig verschwindet dort.
+    const planRoot = import.meta.env.DEV ? '0_userdata.0.Garten_Dev' : o.planRoot || '0_userdata.0.Garten';
     const manualDefaultMinutes = o.manualDefaultMinutes ?? DEFAULT_MANUAL_MINUTES;
     const confirmManualStart = o.confirmManualStart !== false;
     const showSoilMoisture = o.showSoilMoisture !== false;
@@ -132,6 +133,7 @@ export function Garten2Widget({ config, editMode }: WidgetProps) {
     const anyRunning = orderedProbes.some((p) => p.state.valveOn === true);
 
     const weather = useSprinkleWeather(instance);
+    const plan = useGartenPlanData(planRoot);
 
     const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -141,7 +143,6 @@ export function Garten2Widget({ config, editMode }: WidgetProps) {
                 <Garten2CircleProbe
                     key={c.sprinkleName}
                     instance={instance}
-                    sourceStateBaseId={sourceStateBaseId}
                     sprinkleName={c.sprinkleName}
                     label={c.label}
                     onUpdate={onUpdate}
@@ -165,6 +166,8 @@ export function Garten2Widget({ config, editMode }: WidgetProps) {
 
                     <Garten2WeekPlan
                         circles={orderedProbes}
+                        plan={plan}
+                        interactive={interactive}
                         plantInteractive={plantInteractive}
                         confirmManualStart={confirmManualStart}
                         manualDefaultMinutes={manualDefaultMinutes}
@@ -176,7 +179,7 @@ export function Garten2Widget({ config, editMode }: WidgetProps) {
             {DEV_WRITES_BLOCKED && (
                 <p className="garten-note garten-dev-note">
                     Lokale Vorschau: Modus, Handbetrieb und die Regensperre sind hier ausgegraut – sie schalten erst auf
-                    dem Pi.
+                    dem Pi. Termine gehen nur in die Testdatenpunkte (Garten_Dev) und laufen dort im Trockenlauf.
                 </p>
             )}
 

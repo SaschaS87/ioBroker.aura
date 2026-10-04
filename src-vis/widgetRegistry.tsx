@@ -200,7 +200,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         addMode: 'free',
         widgetGroup: 'control',
         mock: { t: 'Garten2', v: '' },
-        hint: 'Bewässerungs-Übersicht: Hero, Wetter/Boden, Wochenplan (nur Anzeige — Termine bleiben im Tab Garten)',
+        hint: 'Bewässerungs-Steuerpult: Hero, Wetter/Boden, Wochenplan mit Terminbearbeitung (Zeitplan liegt in 0_userdata.0.Garten, Ausführung über das Skript Garten_Zeitplan)',
     },
     {
         type: 'dimmer',
