@@ -8451,6 +8451,69 @@
         }
       }
     },
+    "garten2": {
+      "label": "Gartenbewässerung — Steuerpult",
+      "group": "control",
+      "addMode": "free",
+      "hint": "Bewässerungs-Steuerpult: Hero, Wetter/Boden, Wochenplan mit Terminbearbeitung (Zeitplan liegt in 0_userdata.0.Garten, Ausführung über das Skript Garten_Zeitplan)",
+      "defaultSize": {
+        "w": 42,
+        "h": 30
+      },
+      "layouts": [
+        "default"
+      ],
+      "conditionSlots": [
+        "icon",
+        "title"
+      ],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {
+        "circleLabels": {
+          "type": "object",
+          "tsType": "Record<string, string>",
+          "description": "sprinkleName -> Anzeigename"
+        },
+        "confirmManualStart": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        },
+        "hiddenCircles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "sprinkleNames, die nicht angezeigt werden"
+        },
+        "instance": {
+          "type": "string",
+          "description": "Standard 'sprinklecontrol.0'",
+          "default": "sprinklecontrol.0"
+        },
+        "manualDefaultMinutes": {
+          "type": "number",
+          "description": "Standard 10"
+        },
+        "planRoot": {
+          "type": "string",
+          "description": "Wurzel der Zeitplan-Datenpunkte, Standard '0_userdata.0.Garten'.",
+          "default": "0_userdata.0.Garten"
+        },
+        "showSoilMoisture": {
+          "type": "boolean",
+          "description": "Standard true",
+          "default": true
+        }
+      }
+    },
     "gauge": {
       "label": "Gauge",
       "group": "control",
