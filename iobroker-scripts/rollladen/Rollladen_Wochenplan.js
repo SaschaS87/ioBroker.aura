@@ -676,16 +676,11 @@ async function fahreEinzelgeraet(ziel) {
     return { key: ziel.key, position: posErgebnis, lamelle: lamelleErgebnis };
 }
 
-// Mehrere Ziele einer Szene um 300-500ms versetzt "senden" (im Trockenlauf
-// nur zeitlich versetzt protokollieren, siehe Auftrag Punkt 6).
+// Alle Ziele einer Szene gleichzeitig senden, ohne Versatz. Verlorene Befehle
+// fängt sendeMitWiederholung je Gerät ab (Bestätigung prüfen, bis zu 3 Versuche,
+// danach Fehlermeldung über setzeQuellenFehler).
 async function fahreZiele(ziele) {
-    const ergebnisse = [];
-    for (let index = 0; index < ziele.length; index++) {
-        const verzoegerung = index === 0 ? 0 : 300 + Math.floor(Math.random() * 200);
-        if (verzoegerung > 0) await new Promise((r) => setTimeout(r, verzoegerung));
-        ergebnisse.push(await fahreEinzelgeraet(ziele[index]));
-    }
-    return ergebnisse;
+    return Promise.all(ziele.map((ziel) => fahreEinzelgeraet(ziel)));
 }
 
 function letzte30Hinzufuegen(eintrag) {
