@@ -137,6 +137,16 @@ if (bootEl) {
     bootEl.addEventListener('transitionend', () => bootEl.remove(), { once: true });
 }
 
+// Chrome on Android only offers a real app install ("Install app") when a service
+// worker is registered; without one it falls back to a plain shortcut. The worker
+// (public/sw.js) is a pass-through and caches nothing. Relative URL so it resolves
+// under both roots (/ and /aura/). Production only, never in the ?shot=1 harness.
+if ('serviceWorker' in navigator && import.meta.env.PROD && !isScreenshotMode()) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+}
+
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <ThemeProvider>
