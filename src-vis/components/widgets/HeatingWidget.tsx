@@ -3,6 +3,7 @@ import { Flame, Droplet, Power, RefreshCw, Snowflake, Zap, ChevronDown, type Luc
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
 import { HeatingDetails } from './HeatingDetails';
+import { SensorCheckPreviewBar, VARIANTS, useSensorCheckPreviewChoice } from './heating/preview/SensorCheckPreview';
 import type { WidgetProps } from '../../types';
 
 /**
@@ -48,6 +49,12 @@ const DEFAULT_DP = {
     wmWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_WW_SUMME',
     pHeizungDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LEISTUNGSAUFNAHME.P_HEIZUNG_SUMME',
     pWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LEISTUNGSAUFNAHME.P_WW_SUMME',
+    // Außenfühler-Check (Entwürfe in der Dev-Vorschau): Netatmo-Stationen + Sonnensensor.
+    // Der Fühler selbst ist aussenDp.
+    netatmo1Dp: 'netatmo-crawler.0.stationData.1.temperature',
+    netatmo2Dp: 'netatmo-crawler.0.stationData.2.temperature',
+    netatmo3Dp: 'netatmo-crawler.0.stationData.3.temperature',
+    luxVorneDp: 'tahoma.1.devices.Sonnensensor_vorne.states.core:LuminanceState',
 } as const;
 type DpKey = keyof typeof DEFAULT_DP;
 
@@ -138,12 +145,42 @@ function CollapsibleBox({
     );
 }
 
+/**
+ * Dev-Vorschau der Box „Außenfühler-Check": Umschaltleiste plus gewählter Entwurf.
+ * Wird ausschließlich hinter `import.meta.env.DEV` gerendert; Vite entfernt sie
+ * samt preview/-Ordner aus dem Pi-Build.
+ */
+function SensorCheckDev({
+    historyInstance,
+    dps,
+    open,
+    onToggle,
+}: {
+    historyInstance: string;
+    dps: { fuehlerDp: string; netatmo1Dp: string; netatmo2Dp: string; netatmo3Dp: string; luxDp: string };
+    open: boolean;
+    onToggle: () => void;
+}) {
+    const [choice, setChoice] = useSensorCheckPreviewChoice();
+    const V = VARIANTS.find((v) => v.key === choice)?.C;
+    return (
+        <>
+            <SensorCheckPreviewBar choice={choice} setChoice={setChoice} />
+            {choice !== 'IST' && V && (
+                <CollapsibleBox title="Außenfühler-Check" subtitle="Fühler · Netatmo · Sonne" open={open} onToggle={onToggle}>
+                    <V historyInstance={historyInstance} dps={dps} />
+                </CollapsibleBox>
+            )}
+        </>
+    );
+}
+
 export function HeatingWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const dp = (k: DpKey) => (o[k] as string) || DEFAULT_DP[k];
     const historyInstance = (o.historyInstance as string) || 'influxdb.0';
-    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | null>(null);
-    const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser') => {
+    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | null>(null);
+    const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen') => {
         if (editMode) return;
         setOpenBox((cur) => (cur === b ? null : b));
     };
@@ -285,6 +322,20 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
                         wwHysUntenDp={dp('wwHysUntenDp')}
                     />
                 </CollapsibleBox>
+                {import.meta.env.DEV && (
+                    <SensorCheckDev
+                        historyInstance={historyInstance}
+                        dps={{
+                            fuehlerDp: dp('aussenDp'),
+                            netatmo1Dp: dp('netatmo1Dp'),
+                            netatmo2Dp: dp('netatmo2Dp'),
+                            netatmo3Dp: dp('netatmo3Dp'),
+                            luxDp: dp('luxVorneDp'),
+                        }}
+                        open={openBox === 'aussen'}
+                        onToggle={() => toggleBox('aussen')}
+                    />
+                )}
             </div>
         </div>
     );
