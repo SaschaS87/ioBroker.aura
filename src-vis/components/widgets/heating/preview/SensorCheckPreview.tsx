@@ -40,11 +40,7 @@ export function useSensorCheckPreviewChoice() {
 export function SensorCheckPreviewBar({ choice, setChoice }: { choice: string; setChoice: (c: string) => void }) {
     const current = VARIANTS.find((v) => v.key === choice);
     return (
-        <div
-            className="scp-switch"
-            onClick={(e) => e.stopPropagation()}
-            data-widget-interactive
-        >
+        <div className="scp-switch" onClick={(e) => e.stopPropagation()} data-widget-interactive>
             <div className="scp-row">
                 <span>Entwurf Außenfühler-Check, Runde 1:</span>
                 {[{ key: 'IST', name: 'Ist' }, ...VARIANTS].map((v) => (
@@ -62,7 +58,9 @@ export function SensorCheckPreviewBar({ choice, setChoice }: { choice: string; s
                 ))}
             </div>
             <div className="scp-row" style={{ justifyContent: 'space-between' }}>
-                <span className="scp-name">{current ? `${current.key} · ${current.name}` : 'Ist · Box nicht vorhanden'}</span>
+                <span className="scp-name">
+                    {current ? `${current.key} · ${current.name}` : 'Ist · Box nicht vorhanden'}
+                </span>
                 <span>nur lokal</span>
             </div>
         </div>

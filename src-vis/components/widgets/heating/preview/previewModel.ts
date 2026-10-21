@@ -105,15 +105,19 @@ export function useSensorCheckData(
             historyStart: win.start - hold,
             historyEnd: win.end,
         });
-        // Fuehler: Tag roh (~870 Punkte), 7 Tage/Monat gebuendelt (Monat roh waeren ~27 000).
-        // Netatmo: immer roh (~210 Punkte/Tag), wegen der Luecke s. o.
+        // Fuehler: Tag und 7 Tage roh (~870 Punkte/Tag, ~6 100 pro Woche), Monat gebuendelt
+        // (roh waeren ~27 000). Bekannte Grenze: gebuendelt fuellt der Adapter Fuehler-Ausfaelle
+        // im Monat mit dem letzten Wert zu (aktuell kein Ausfall).
+        // Netatmo und Helligkeit: immer roh (Netatmo ~210, Lux 81-181 Punkte/Tag): wegen der
+        // Netatmo-Luecke s. o.; bei Lux haette fill(previous) sonst das Mittel des letzten
+        // Abschnitts (z. B. 73 statt 50 lx) die ganze Nacht weitergetragen.
         const list: EChartSeriesConfig[] = [];
-        if (dps.fuehlerDp) list.push(mk('fuehler', dps.fuehlerDp, HOLD_MS.fuehler, mode === 'day'));
+        if (dps.fuehlerDp) list.push(mk('fuehler', dps.fuehlerDp, HOLD_MS.fuehler, mode !== 'month'));
         if (dps.netatmo1Dp) list.push(mk('st1', dps.netatmo1Dp, HOLD_MS.netatmo, true));
         if (dps.netatmo2Dp) list.push(mk('st2', dps.netatmo2Dp, HOLD_MS.netatmo, true));
         if (dps.netatmo3Dp) list.push(mk('st3', dps.netatmo3Dp, HOLD_MS.netatmo, true));
-        // Helligkeit immer gebuendelt gemittelt (nie 'last': Spitzen gingen verloren).
-        if (dps.luxDp) list.push(mk('lux', dps.luxDp, HOLD_MS.lux, false));
+        // Helligkeit roh; toGrid mittelt die Punkte je Abschnitt (nie 'last': Spitzen gingen verloren).
+        if (dps.luxDp) list.push(mk('lux', dps.luxDp, HOLD_MS.lux, true));
         return list;
     }, [mode, win, stepMs, historyInstance, dps.fuehlerDp, dps.netatmo1Dp, dps.netatmo2Dp, dps.netatmo3Dp, dps.luxDp]);
 

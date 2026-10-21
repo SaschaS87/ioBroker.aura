@@ -159,7 +159,14 @@ function stripsOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
 
 function StripsChart({ m, mode }: { m: SensorCheckModel; mode: PeriodMode }) {
     const option = useMemo(() => stripsOption(m, mode), [m, mode]);
-    return <ReactECharts option={option} style={{ width: '100%', height: '100%' }} opts={{ renderer: 'canvas' }} notMerge />;
+    return (
+        <ReactECharts
+            option={option}
+            style={{ width: '100%', height: '100%' }}
+            opts={{ renderer: 'canvas' }}
+            notMerge
+        />
+    );
 }
 
 const LEGEND_A: LegendItem[] = [
@@ -222,7 +229,11 @@ function fillOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
             band('_coldBase', 'cold', coldBase, null),
             band('_coldDelta', 'cold', coldDelta, COL.minusFill),
             ...m.stationen.map((g, i) => line(`st${i + 1}`, g, m, STATION_COLORS[i], 1, { yAxisIndex: 0, z: 3 })),
-            line('mittel', m.mittel, m, COL.mittel, 1.2, { yAxisIndex: 0, z: 4, lineStyle: { color: COL.mittel, width: 1.2, type: 'dashed' } }),
+            line('mittel', m.mittel, m, COL.mittel, 1.2, {
+                yAxisIndex: 0,
+                z: 4,
+                lineStyle: { color: COL.mittel, width: 1.2, type: 'dashed' },
+            }),
             line('fuehler', m.fuehler, m, COL.fuehler, 2.5, { yAxisIndex: 0, z: 5 }),
         ],
     } as unknown as EChartsOption;
@@ -230,7 +241,14 @@ function fillOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
 
 function FillChart({ m, mode }: { m: SensorCheckModel; mode: PeriodMode }) {
     const option = useMemo(() => fillOption(m, mode), [m, mode]);
-    return <ReactECharts option={option} style={{ width: '100%', height: '100%' }} opts={{ renderer: 'canvas' }} notMerge />;
+    return (
+        <ReactECharts
+            option={option}
+            style={{ width: '100%', height: '100%' }}
+            opts={{ renderer: 'canvas' }}
+            notMerge
+        />
+    );
 }
 
 const LEGEND_B: LegendItem[] = [
@@ -353,7 +371,10 @@ function ScatterBlock({ m, mode, offset }: { m: SensorCheckModel; mode: PeriodMo
                         notMerge
                     />
                 ) : (
-                    <div className="flex items-center justify-center h-full text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <div
+                        className="flex items-center justify-center h-full text-xs"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
                         Keine Abschnitte mit Helligkeit und Abweichung
                     </div>
                 )}

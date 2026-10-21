@@ -98,7 +98,9 @@ export function tooltipFor(m: SensorCheckModel, mode: PeriodMode, idx: number): 
     lines.push(`${dot(C.fuehler)}Fühler: ${t(m.fuehler[idx])}`);
     m.stationen.forEach((g, i) => lines.push(`${dot(STATION_COLORS[i])}Station ${i + 1}: ${t(g[idx])}`));
     const n = m.n[idx] ?? 0;
-    lines.push(`${dot(C.mittel)}Mittel${n > 0 ? ` (${n} ${n === 1 ? 'Station' : 'Stationen'})` : ''}: ${t(m.mittel[idx])}`);
+    lines.push(
+        `${dot(C.mittel)}Mittel${n > 0 ? ` (${n} ${n === 1 ? 'Station' : 'Stationen'})` : ''}: ${t(m.mittel[idx])}`,
+    );
     const dv = m.abweichung[idx];
     lines.push(
         typeof dv === 'number'
@@ -130,7 +132,10 @@ export type LegendItem = { label: string; color: string; kind?: 'line' | 'thick'
 
 export function Legend({ items }: { items: LegendItem[] }) {
     return (
-        <div className="flex flex-wrap items-center" style={{ gap: '3px 10px', fontSize: 10, color: 'var(--text-secondary)' }}>
+        <div
+            className="flex flex-wrap items-center"
+            style={{ gap: '3px 10px', fontSize: 10, color: 'var(--text-secondary)' }}
+        >
             {items.map((it) => (
                 <span key={it.label} className="inline-flex items-center" style={{ gap: 4 }}>
                     <span
@@ -194,7 +199,10 @@ export function SensorFrame({
             <Legend items={legend} />
             <div className="relative w-full" style={{ height }}>
                 {m.loading && !m.hasData && (
-                    <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
+                    <div
+                        className="absolute inset-0 flex items-center justify-center"
+                        style={{ color: 'var(--text-secondary)' }}
+                    >
                         <Loader size={20} className="animate-spin" />
                     </div>
                 )}

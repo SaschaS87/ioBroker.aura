@@ -167,7 +167,12 @@ function SensorCheckDev({
         <>
             <SensorCheckPreviewBar choice={choice} setChoice={setChoice} />
             {choice !== 'IST' && V && (
-                <CollapsibleBox title="Außenfühler-Check" subtitle="Fühler · Netatmo · Sonne" open={open} onToggle={onToggle}>
+                <CollapsibleBox
+                    title="Außenfühler-Check"
+                    subtitle="Fühler · Netatmo · Sonne"
+                    open={open}
+                    onToggle={onToggle}
+                >
                     <V historyInstance={historyInstance} dps={dps} />
                 </CollapsibleBox>
             )}
