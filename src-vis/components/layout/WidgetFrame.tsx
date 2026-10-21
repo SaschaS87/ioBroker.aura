@@ -2266,6 +2266,10 @@ const HEATING_DEFAULT_DP: Record<string, string> = {
     spreizungDp: 'javascript.0.LWZ.SPREIZUNG',
     volumenstromDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.VOLUMENSTROM',
     aussenDp: 'stiebel-isg.0.Info.ANLAGE.HEIZEN.AUSSENTEMPERATUR',
+    netatmo1Dp: 'netatmo-crawler.0.stationData.1.temperature',
+    netatmo2Dp: 'netatmo-crawler.0.stationData.2.temperature',
+    netatmo3Dp: 'netatmo-crawler.0.stationData.3.temperature',
+    luxVorneDp: 'tahoma.1.devices.Sonnensensor_vorne.states.core:LuminanceState',
 };
 
 // Grouped so the panel reads like the widget: mode switch, process icons, tiles.
@@ -2293,7 +2297,16 @@ const HEATING_DP_GROUPS: { title: string; fields: { key: string; label: string }
             { key: 'ruecklaufDp', label: 'Rücklauftemperatur' },
             { key: 'spreizungDp', label: 'Spreizung' },
             { key: 'volumenstromDp', label: 'Volumenstrom' },
-            { key: 'aussenDp', label: 'Außentemperatur' },
+            { key: 'aussenDp', label: 'Außentemperatur (zugleich Fühler im Außenfühler-Check)' },
+        ],
+    },
+    {
+        title: 'Außenfühler-Check (Klappbox)',
+        fields: [
+            { key: 'netatmo1Dp', label: 'Vergleichstemperatur Netatmo-Station 1' },
+            { key: 'netatmo2Dp', label: 'Vergleichstemperatur Netatmo-Station 2' },
+            { key: 'netatmo3Dp', label: 'Vergleichstemperatur Netatmo-Station 3' },
+            { key: 'luxVorneDp', label: 'Helligkeit (Sonnensensor)' },
         ],
     },
 ];

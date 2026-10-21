@@ -6,6 +6,7 @@ import { useMultiSeriesData, type EChartSeriesConfig } from '../../hooks/useMult
 import { formatNum } from '../../utils/formatValue';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
+import { SensorCheckDetails } from './heating/SensorCheckChart';
 
 /**
  * Collapsible-box charts for the heating widget (STIEBEL LWZ 304 Trend).
@@ -104,10 +105,10 @@ function onIntervals(pts: Pt[], windowEnd: number): [number, number, number][] {
 }
 
 export interface HeatingDetailsProps {
-    variant: 'circuit' | 'operation' | 'water';
+    variant: 'circuit' | 'operation' | 'water' | 'sensor';
     historyInstance: string;
-    vorlaufDp: string;
-    ruecklaufDp: string;
+    vorlaufDp?: string;
+    ruecklaufDp?: string;
     sollDp?: string;
     verdichterDp?: string;
     pumpeDp?: string;
@@ -116,15 +117,34 @@ export interface HeatingDetailsProps {
     wwSollDp?: string;
     wwHysObenDp?: string;
     wwHysUntenDp?: string;
+    // Außenfühler-Check ('sensor') variant: Fühler, Netatmo-Stationen, Sonnensensor.
+    aussenDp?: string;
+    netatmoDps?: string[];
+    luxDp?: string;
     initialMode?: PeriodMode;
     chartHeight?: number;
 }
 
-export function HeatingDetails({
+/** The 'sensor' variant has its own data model (heating/); the others share the charts below. */
+export function HeatingDetails(props: HeatingDetailsProps) {
+    if (props.variant === 'sensor') {
+        return (
+            <SensorCheckDetails
+                historyInstance={props.historyInstance}
+                aussenDp={props.aussenDp ?? ''}
+                netatmoDps={props.netatmoDps ?? []}
+                luxDp={props.luxDp ?? ''}
+            />
+        );
+    }
+    return <HeatingDetailsCharts {...props} />;
+}
+
+function HeatingDetailsCharts({
     variant,
     historyInstance,
-    vorlaufDp,
-    ruecklaufDp,
+    vorlaufDp = '',
+    ruecklaufDp = '',
     sollDp = '',
     verdichterDp = '',
     pumpeDp = '',

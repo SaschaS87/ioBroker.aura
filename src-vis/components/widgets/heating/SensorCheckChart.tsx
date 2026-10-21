@@ -1,34 +1,31 @@
 /**
- * Entwuerfe A–C des „Aussenfuehler-Checks" (nur Dev-Vorschau, Runde 1).
- *
- *  A „Zwei Streifen"            oben Linien + Helligkeitsflaeche, unten Abweichung als Balken
- *  B „Eingefuellte Flaeche"     ein Diagramm, Flaeche zwischen Fuehler und Netatmo-Mittel
- *  C „Streifen + Streudiagramm" A plus Helligkeit gegen Abweichung
+ * Klappbox „Aussenfuehler-Check" (Heizung-Tab): Fuehler der Waermepumpe gegen
+ * Netatmo-Stationen und Sonnensensor. Oben Linien + Helligkeitsflaeche, darunter
+ * die Abweichung als Balken, ganz unten ein Streudiagramm Helligkeit gegen
+ * Abweichung. Die Rechnung steckt in utils/sensorCheck.ts.
  */
 import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
-import { formatNum } from '../../../../utils/formatValue';
-import { periodLabel, periodWindow, type PeriodMode } from '../../../../utils/chartPeriod';
-import { gridToSeries, type Grid } from '../../../../utils/sensorCheck';
-import type { SensorCheckModel } from './previewModel';
+import { formatNum } from '../../../utils/formatValue';
+import { periodLabel, periodWindow, type PeriodMode } from '../../../utils/chartPeriod';
+import { gridToSeries, type Grid } from '../../../utils/sensorCheck';
+import type { SensorCheckModel } from './sensorCheckModel';
 import {
     C as COL,
-    LEGEND_BASE,
     STATION_COLORS,
     SensorFrame,
     axisLabel,
     axisLineStyle,
     axisTooltip,
+    legendFor,
     devAxis,
     luxAxis,
     signed,
     tempAxis,
     tooltipBase,
     toKlx,
-    type LegendItem,
-    type VariantProps,
-} from './parts';
+} from './sensorCheckParts';
 
 type Opt = Record<string, unknown>;
 
@@ -105,7 +102,7 @@ function tempLines(m: SensorCheckModel, yAxisIndex: number, xAxisIndex: number):
     ];
 }
 
-/* ── A: Zwei Streifen ─────────────────────────────────────────────────── */
+/* ── Streifen: Linien oben, Abweichung unten ─────────────────────────────────────────────────── */
 
 function stripsOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
     const da = devAxis(m.abweichung);
@@ -169,107 +166,7 @@ function StripsChart({ m, mode }: { m: SensorCheckModel; mode: PeriodMode }) {
     );
 }
 
-const LEGEND_A: LegendItem[] = [
-    ...LEGEND_BASE,
-    { label: 'Abweichung zu warm', color: COL.plus, kind: 'dot' },
-    { label: 'zu kalt', color: COL.minus, kind: 'dot' },
-];
-
-export function VariantA(props: VariantProps) {
-    return (
-        <SensorFrame
-            props={props}
-            height={280}
-            legend={LEGEND_A}
-            chart={(m, mode, offset) => <StripsChart key={`${mode}-${offset}`} m={m} mode={mode} />}
-        />
-    );
-}
-
-/* ── B: Eingefaerbte Flaeche ──────────────────────────────────────────── */
-
-function fillOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
-    const warmBase: Grid = [];
-    const warmDelta: Grid = [];
-    const coldBase: Grid = [];
-    const coldDelta: Grid = [];
-    for (let i = 0; i < m.count; i++) {
-        const f = m.fuehler[i];
-        const mi = m.mittel[i];
-        if (typeof f === 'number' && typeof mi === 'number') {
-            warmBase.push(mi);
-            warmDelta.push(Math.max(0, f - mi));
-            coldBase.push(f);
-            coldDelta.push(Math.max(0, mi - f));
-        } else {
-            warmBase.push(null);
-            warmDelta.push(null);
-            coldBase.push(null);
-            coldDelta.push(null);
-        }
-    }
-    const band = (id: string, stack: string, g: Grid, fill: string | null): Opt =>
-        line(id, g, m, 'transparent', 0, {
-            stack,
-            silent: true,
-            z: 2,
-            areaStyle: { color: fill ?? 'transparent' },
-        });
-    return {
-        backgroundColor: 'transparent',
-        animation: false,
-        grid: { left: 40, right: 40, top: 8, bottom: 26 },
-        xAxis: timeAxis(m, 0, true),
-        yAxis: [tempY(m, 0), luxY(m, 0)],
-        tooltip: axisTooltip(m, mode),
-        series: [
-            luxSeries(m, 0, 1),
-            band('_warmBase', 'warm', warmBase, null),
-            band('_warmDelta', 'warm', warmDelta, COL.plusFill),
-            band('_coldBase', 'cold', coldBase, null),
-            band('_coldDelta', 'cold', coldDelta, COL.minusFill),
-            ...m.stationen.map((g, i) => line(`st${i + 1}`, g, m, STATION_COLORS[i], 1, { yAxisIndex: 0, z: 3 })),
-            line('mittel', m.mittel, m, COL.mittel, 1.2, {
-                yAxisIndex: 0,
-                z: 4,
-                lineStyle: { color: COL.mittel, width: 1.2, type: 'dashed' },
-            }),
-            line('fuehler', m.fuehler, m, COL.fuehler, 2.5, { yAxisIndex: 0, z: 5 }),
-        ],
-    } as unknown as EChartsOption;
-}
-
-function FillChart({ m, mode }: { m: SensorCheckModel; mode: PeriodMode }) {
-    const option = useMemo(() => fillOption(m, mode), [m, mode]);
-    return (
-        <ReactECharts
-            option={option}
-            style={{ width: '100%', height: '100%' }}
-            opts={{ renderer: 'canvas' }}
-            notMerge
-        />
-    );
-}
-
-const LEGEND_B: LegendItem[] = [
-    ...LEGEND_BASE,
-    { label: 'Netatmo-Mittel', color: COL.mittel, kind: 'dash' },
-    { label: 'Fühler zu warm', color: COL.plus, kind: 'area' },
-    { label: 'zu kalt', color: COL.minus, kind: 'area' },
-];
-
-export function VariantB(props: VariantProps) {
-    return (
-        <SensorFrame
-            props={props}
-            height={240}
-            legend={LEGEND_B}
-            chart={(m, mode, offset) => <FillChart key={`${mode}-${offset}`} m={m} mode={mode} />}
-        />
-    );
-}
-
-/* ── C: Streifen + Streudiagramm ──────────────────────────────────────── */
+/* ── Streudiagramm ──────────────────────────────────────── */
 
 interface ScatterPt {
     klx: number;
@@ -383,20 +280,29 @@ function ScatterBlock({ m, mode, offset }: { m: SensorCheckModel; mode: PeriodMo
     );
 }
 
-export function VariantC(props: VariantProps) {
+export function SensorCheckDetails({
+    historyInstance,
+    aussenDp,
+    netatmoDps,
+    luxDp,
+}: {
+    historyInstance: string;
+    aussenDp: string;
+    netatmoDps: string[];
+    luxDp: string;
+}) {
+    const netatmoKey = netatmoDps.filter(Boolean).join('|');
+    const dps = useMemo(
+        () => ({ fuehlerDp: aussenDp, netatmoDps: netatmoKey ? netatmoKey.split('|') : [], luxDp }),
+        [aussenDp, netatmoKey, luxDp],
+    );
     return (
         <SensorFrame
-            props={props}
+            props={{ historyInstance, dps }}
             height={280}
-            legend={LEGEND_A}
+            legend={legendFor(dps.netatmoDps.length)}
             chart={(m, mode, offset) => <StripsChart key={`${mode}-${offset}`} m={m} mode={mode} />}
             below={(m, mode, offset) => <ScatterBlock m={m} mode={mode} offset={offset} />}
         />
     );
 }
-
-export const VARIANTS: { key: string; name: string; C: (p: VariantProps) => JSX.Element }[] = [
-    { key: 'A', name: 'Zwei Streifen', C: VariantA },
-    { key: 'B', name: 'Eingefärbte Fläche', C: VariantB },
-    { key: 'C', name: 'Streifen + Streudiagramm', C: VariantC },
-];

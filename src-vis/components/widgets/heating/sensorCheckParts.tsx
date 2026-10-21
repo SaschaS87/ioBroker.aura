@@ -1,6 +1,5 @@
 /**
- * Gemeinsame Bausteine der Entwuerfe A–C des „Aussenfuehler-Checks"
- * (nur Dev-Vorschau): Farben, Tooltip, Achsen-Helfer und der Rahmen mit
+ * Gemeinsame Bausteine der Klappbox „Aussenfuehler-Check": Farben, Tooltip, Achsen-Helfer und der Rahmen mit
  * Perioden-Navigation, Lade- und Leerzustand.
  *
  * ECharts zeichnet in ein Canvas: Farben sind darum feste Hex-/rgba-Werte
@@ -9,11 +8,11 @@
  */
 import { useState, type ReactNode } from 'react';
 import { BarChart2, Loader } from 'lucide-react';
-import { ChartPeriodNav } from '../../ChartPeriodNav';
-import { formatNum } from '../../../../utils/formatValue';
-import type { PeriodMode } from '../../../../utils/chartPeriod';
-import { niceRange, type Grid } from '../../../../utils/sensorCheck';
-import { useSensorCheckData, type SensorCheckDps, type SensorCheckModel } from './previewModel';
+import { ChartPeriodNav } from '../ChartPeriodNav';
+import { formatNum } from '../../../utils/formatValue';
+import type { PeriodMode } from '../../../utils/chartPeriod';
+import { niceRange, type Grid } from '../../../utils/sensorCheck';
+import { useSensorCheckData, type SensorCheckDps, type SensorCheckModel } from './sensorCheckModel';
 
 export const C = {
     fuehler: '#e8873a',
@@ -34,7 +33,7 @@ export const C = {
 
 export const STATION_COLORS = [C.st1, C.st2, C.st3] as const;
 
-export interface VariantProps {
+export interface SensorCheckProps {
     historyInstance: string;
     dps: SensorCheckDps;
 }
@@ -61,7 +60,7 @@ export function luxAxis(luxGrid: Grid): { min: number; max: number; interval: nu
 
 /** Temperatur-Achse links: feste Grenzen auf 5 °C. */
 export function tempAxis(m: SensorCheckModel): { min: number; max: number; interval: number } {
-    return niceRange([...m.fuehler, ...m.stationen[0], ...m.stationen[1], ...m.stationen[2], ...m.mittel], {
+    return niceRange([...m.fuehler, ...m.stationen.flat(), ...m.mittel], {
         unit: 5,
         minSpan: 10,
         maxTicks: 6,
@@ -156,16 +155,19 @@ export function Legend({ items }: { items: LegendItem[] }) {
     );
 }
 
-export const LEGEND_BASE: LegendItem[] = [
-    { label: 'Helligkeit (klx)', color: C.luxEdge, kind: 'area' },
-    { label: 'Netatmo 1', color: C.st1 },
-    { label: 'Netatmo 2', color: C.st2 },
-    { label: 'Netatmo 3', color: C.st3 },
-    { label: 'Fühler', color: C.fuehler, kind: 'thick' },
-];
+/** Legende: nur so viele Netatmo-Stationen, wie konfiguriert sind. */
+export function legendFor(stationCount: number): LegendItem[] {
+    return [
+        { label: 'Helligkeit (klx)', color: C.luxEdge, kind: 'area' },
+        ...STATION_COLORS.slice(0, stationCount).map((color, i) => ({ label: `Netatmo ${i + 1}`, color })),
+        { label: 'Fühler', color: C.fuehler, kind: 'thick' as const },
+        { label: 'Abweichung zu warm', color: C.plus, kind: 'dot' as const },
+        { label: 'zu kalt', color: C.minus, kind: 'dot' as const },
+    ];
+}
 
 /**
- * Rahmen eines Entwurfs: Perioden-Navigation, Lade-/Leerzustand (wie in
+ * Rahmen der Klappbox: Perioden-Navigation, Lade-/Leerzustand (wie in
  * HeatingDetails) und ein Render-Callback fuer das eigentliche Diagramm.
  */
 export function SensorFrame({
@@ -175,7 +177,7 @@ export function SensorFrame({
     chart,
     below,
 }: {
-    props: VariantProps;
+    props: SensorCheckProps;
     height: number;
     legend: LegendItem[];
     chart: (m: SensorCheckModel, mode: PeriodMode, offset: number) => ReactNode;

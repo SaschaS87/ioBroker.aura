@@ -1,6 +1,5 @@
 /**
- * Gemeinsames Datenmodell der Entwuerfe A–C des „Aussenfuehler-Checks"
- * (nur Dev-Vorschau). Holt die fuenf Verlaufsreihen aus InfluxDB und legt sie
+ * Datenmodell der Klappbox „Aussenfuehler-Check" im Heizung-Tab. Holt die fuenf Verlaufsreihen aus InfluxDB und legt sie
  * auf ein gemeinsames Abschnittsraster (siehe utils/sensorCheck.ts).
  *
  * Reihen: Aussenfuehler der Waermepumpe, Netatmo-Station 1–3, Sonnensensor
@@ -8,9 +7,9 @@
  * Abschnitt einen Wert haben.
  */
 import { useEffect, useMemo } from 'react';
-import { useIoBroker } from '../../../../hooks/useIoBroker';
-import { useMultiSeriesData, type EChartSeriesConfig } from '../../../../hooks/useMultiSeriesData';
-import { periodWindow, type PeriodMode } from '../../../../utils/chartPeriod';
+import { useIoBroker } from '../../../hooks/useIoBroker';
+import { useMultiSeriesData, type EChartSeriesConfig } from '../../../hooks/useMultiSeriesData';
+import { periodWindow, type PeriodMode } from '../../../utils/chartPeriod';
 import {
     deviation,
     meanOfAvailable,
@@ -19,13 +18,12 @@ import {
     toGrid,
     type Grid,
     type Pt,
-} from '../../../../utils/sensorCheck';
+} from '../../../utils/sensorCheck';
 
 export interface SensorCheckDps {
     fuehlerDp: string;
-    netatmo1Dp: string;
-    netatmo2Dp: string;
-    netatmo3Dp: string;
+    /** Netatmo-Stationen (bis zu 3), Reihenfolge = Station 1, 2, 3. */
+    netatmoDps: string[];
     luxDp: string;
 }
 
@@ -52,7 +50,7 @@ export interface SensorCheckModel {
     stepMs: number;
     count: number;
     fuehler: Grid;
-    stationen: [Grid, Grid, Grid];
+    stationen: Grid[];
     mittel: Grid;
     /** Anzahl Stationen mit Wert je Abschnitt. */
     n: number[];
@@ -87,6 +85,8 @@ export function useSensorCheckData(
     const { subscribe, getState, connected } = useIoBroker();
     const win = useMemo(() => periodWindow(mode, offset), [mode, offset]);
     const stepMs = stepForMode(mode);
+    const stationKey = dps.netatmoDps.filter(Boolean).slice(0, 3).join('|');
+    const stationDps = useMemo(() => (stationKey ? stationKey.split('|') : []), [stationKey]);
 
     const series: EChartSeriesConfig[] = useMemo(() => {
         // Das Fenster beginnt eine Haltegrenze frueher, damit der letzte Wert VOR
@@ -113,13 +113,11 @@ export function useSensorCheckData(
         // Abschnitts (z. B. 73 statt 50 lx) die ganze Nacht weitergetragen.
         const list: EChartSeriesConfig[] = [];
         if (dps.fuehlerDp) list.push(mk('fuehler', dps.fuehlerDp, HOLD_MS.fuehler, mode !== 'month'));
-        if (dps.netatmo1Dp) list.push(mk('st1', dps.netatmo1Dp, HOLD_MS.netatmo, true));
-        if (dps.netatmo2Dp) list.push(mk('st2', dps.netatmo2Dp, HOLD_MS.netatmo, true));
-        if (dps.netatmo3Dp) list.push(mk('st3', dps.netatmo3Dp, HOLD_MS.netatmo, true));
+        stationDps.forEach((dp, i) => list.push(mk(`st${i + 1}`, dp, HOLD_MS.netatmo, true)));
         // Helligkeit roh; toGrid mittelt die Punkte je Abschnitt (nie 'last': Spitzen gingen verloren).
         if (dps.luxDp) list.push(mk('lux', dps.luxDp, HOLD_MS.lux, true));
         return list;
-    }, [mode, win, stepMs, historyInstance, dps.fuehlerDp, dps.netatmo1Dp, dps.netatmo2Dp, dps.netatmo3Dp, dps.luxDp]);
+    }, [mode, win, stepMs, historyInstance, dps.fuehlerDp, stationDps, dps.luxDp]);
 
     const dataMap = useMultiSeriesData(series, connected, subscribe, getState);
 
@@ -128,11 +126,9 @@ export function useSensorCheckData(
         const now = Date.now();
         const grid = (id: string, hold: number) => toGrid(get(id), win.start, win.end, stepMs, hold, now);
         const fuehler = grid('fuehler', HOLD_MS.fuehler);
-        const s1 = grid('st1', HOLD_MS.netatmo);
-        const s2 = grid('st2', HOLD_MS.netatmo);
-        const s3 = grid('st3', HOLD_MS.netatmo);
+        const stationen = stationDps.map((_, i) => grid(`st${i + 1}`, HOLD_MS.netatmo));
         const lux = grid('lux', HOLD_MS.lux);
-        const { mean, n } = meanOfAvailable([s1, s2, s3]);
+        const { mean, n } = meanOfAvailable(stationen);
         const abw = deviation(fuehler, mean);
         const count = sectionCount(win.start, win.end, stepMs);
         const loading = series.some((s) => dataMap.get(s.id)?.loading);
@@ -143,7 +139,7 @@ export function useSensorCheckData(
             stepMs,
             count,
             fuehler,
-            stationen: [s1, s2, s3],
+            stationen,
             mittel: mean,
             n,
             abweichung: abw,
@@ -151,7 +147,7 @@ export function useSensorCheckData(
             loading,
             hasData,
         };
-    }, [dataMap, win, stepMs, series]);
+    }, [dataMap, win, stepMs, series, stationDps]);
 
     // Nur Dev: Rasterwerte fuer die Gegenpruefung gegen InfluxDB.
     useEffect(() => {
