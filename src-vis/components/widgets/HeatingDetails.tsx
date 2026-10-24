@@ -7,6 +7,8 @@ import { formatNum } from '../../utils/formatValue';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 import { SensorCheckDetails } from './heating/SensorCheckChart';
+import { EnergyDetails } from './heating/EnergyDetails';
+import type { EnergyDps } from './heating/energyModel';
 
 /**
  * Collapsible-box charts for the heating widget (STIEBEL LWZ 304 Trend).
@@ -107,7 +109,7 @@ function onIntervals(pts: Pt[], windowEnd: number): [number, number, number][] {
 }
 
 export interface HeatingDetailsProps {
-    variant: 'circuit' | 'operation' | 'water' | 'sensor';
+    variant: 'circuit' | 'operation' | 'water' | 'sensor' | 'energy';
     historyInstance: string;
     vorlaufDp?: string;
     ruecklaufDp?: string;
@@ -126,12 +128,17 @@ export interface HeatingDetailsProps {
     aussenDp?: string;
     netatmoDps?: string[];
     luxDp?: string;
+    // Energie ('energy') variant: Tageszähler, Gesamtzähler, Laufzeiten.
+    energyDps?: EnergyDps;
     initialMode?: PeriodMode;
     chartHeight?: number;
 }
 
-/** The 'sensor' variant has its own data model (heating/); the others share the charts below. */
+/** The 'sensor' and 'energy' variants have their own data models (heating/); the others share the charts below. */
 export function HeatingDetails(props: HeatingDetailsProps) {
+    if (props.variant === 'energy' && props.energyDps) {
+        return <EnergyDetails historyInstance={props.historyInstance} dps={props.energyDps} />;
+    }
     if (props.variant === 'sensor') {
         return (
             <SensorCheckDetails

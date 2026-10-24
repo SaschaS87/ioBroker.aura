@@ -3,6 +3,7 @@ import { Flame, Droplet, Power, RefreshCw, Snowflake, Zap, ChevronDown, type Luc
 import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
 import { HeatingDetails } from './HeatingDetails';
+import type { EnergyDps } from './heating/energyModel';
 import type { WidgetProps } from '../../types';
 
 /**
@@ -54,6 +55,18 @@ const DEFAULT_DP = {
     netatmo2Dp: 'netatmo-crawler.0.stationData.2.temperature',
     netatmo3Dp: 'netatmo-crawler.0.stationData.3.temperature',
     luxVorneDp: 'tahoma.1.devices.Sonnensensor_vorne.states.core:LuminanceState',
+    // Energie (Klappbox): Tageszaehler (kWh, Influx roh), Laufzeiten (h), Zusatzheizungs-Waerme (MWh).
+    pHeizungTagDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LEISTUNGSAUFNAHME.P_HEIZUNG_TAG',
+    pWwTagDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LEISTUNGSAUFNAHME.P_WW_TAG',
+    wmHeizenTagDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_HEIZEN_TAG',
+    wmWwTagDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_WW_TAG',
+    wmNeHeizenDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_NE_HEIZEN_SUMME',
+    wmNeWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_NE_WW_SUMME',
+    lzVerdHeizenDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LAUFZEITEN.VERDICHTER_HEIZEN',
+    lzVerdWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LAUFZEITEN.VERDICHTER_WW',
+    lzNeHeizenDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LAUFZEITEN.ELEKTR_NE_HEIZEN',
+    lzNeWwDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.LAUFZEITEN.ELEKTR_NE_WW',
+    verdStartsDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.PROZESSWERTE.VERDICHTERSTARTS',
 } as const;
 type DpKey = keyof typeof DEFAULT_DP;
 
@@ -148,8 +161,8 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const dp = (k: DpKey) => (o[k] as string) || DEFAULT_DP[k];
     const historyInstance = (o.historyInstance as string) || 'influxdb.0';
-    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | null>(null);
-    const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen') => {
+    const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie' | null>(null);
+    const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie') => {
         if (editMode) return;
         setOpenBox((cur) => (cur === b ? null : b));
     };
@@ -204,6 +217,24 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     const ruecklauf = asNum(ruecklaufVal);
     const spreizung = asNum(spreizungVal);
     const volumenstrom = asNum(volumenstromVal);
+
+    const energyDps: EnergyDps = {
+        pHeizungTagDp: dp('pHeizungTagDp'),
+        pWwTagDp: dp('pWwTagDp'),
+        wmHeizenTagDp: dp('wmHeizenTagDp'),
+        wmWwTagDp: dp('wmWwTagDp'),
+        pHeizungDp: dp('pHeizungDp'),
+        pWwDp: dp('pWwDp'),
+        wmHeizenDp: dp('wmHeizenDp'),
+        wmWwDp: dp('wmWwDp'),
+        wmNeHeizenDp: dp('wmNeHeizenDp'),
+        wmNeWwDp: dp('wmNeWwDp'),
+        lzVerdHeizenDp: dp('lzVerdHeizenDp'),
+        lzVerdWwDp: dp('lzVerdWwDp'),
+        lzNeHeizenDp: dp('lzNeHeizenDp'),
+        lzNeWwDp: dp('lzNeWwDp'),
+        verdStartsDp: dp('verdStartsDp'),
+    };
 
     const chipOn = mode === 'idle' ? '#4a9e2f' : style.color;
 
@@ -306,6 +337,14 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
                         netatmoDps={[dp('netatmo1Dp'), dp('netatmo2Dp'), dp('netatmo3Dp')]}
                         luxDp={dp('luxVorneDp')}
                     />
+                </CollapsibleBox>
+                <CollapsibleBox
+                    title="Energie"
+                    subtitle="Strom · Wärme · Arbeitszahl"
+                    open={openBox === 'energie'}
+                    onToggle={() => toggleBox('energie')}
+                >
+                    <HeatingDetails variant="energy" historyInstance={historyInstance} energyDps={energyDps} />
                 </CollapsibleBox>
             </div>
         </div>
