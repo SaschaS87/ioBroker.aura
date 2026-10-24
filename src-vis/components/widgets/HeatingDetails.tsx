@@ -34,6 +34,8 @@ const C = {
     soll: '#e0922f', // orange (HK1 target flow)
     verdichter: '#eab308', // yellow (compressor)
     pumpe: '#9ca3af', // grey (circuit pump)
+    heizen: '#4a9e2f', // green (space-heating run — matches the widget's "Heizen" chip)
+    warmwasser: '#2f7fd6', // blue (hot-water run — matches the widget's "Warmwasser" chip)
     wwIst: '#e8873a', // orange (hot-water actual temp — the hero line)
     wwSoll: '#2f7fd6', // blue (hot-water target)
     wwBand: 'rgba(47,127,214,0.16)', // light-blue hysteresis fill
@@ -112,6 +114,9 @@ export interface HeatingDetailsProps {
     sollDp?: string;
     verdichterDp?: string;
     pumpeDp?: string;
+    // 'operation' variant: which mode the run was (space heating vs. hot water).
+    heizenDp?: string;
+    warmwasserDp?: string;
     // Hot-water ('water') variant:
     wwIstDp?: string;
     wwSollDp?: string;
@@ -148,6 +153,8 @@ function HeatingDetailsCharts({
     sollDp = '',
     verdichterDp = '',
     pumpeDp = '',
+    heizenDp = '',
+    warmwasserDp = '',
     wwIstDp = '',
     wwSollDp = '',
     wwHysObenDp = '',
@@ -202,10 +209,12 @@ function HeatingDetailsCharts({
         } else {
             if (verdichterDp) list.push(win('verd', verdichterDp, C.verdichter, { raw: true }));
             if (pumpeDp) list.push(win('pump', pumpeDp, C.pumpe, { raw: true }));
+            if (heizenDp) list.push(win('heiz', heizenDp, C.heizen, { raw: true }));
+            if (warmwasserDp) list.push(win('ww', warmwasserDp, C.warmwasser, { raw: true }));
         }
         return list;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [variant, vorlaufDp, ruecklaufDp, sollDp, verdichterDp, pumpeDp, wwIstDp, wwSollDp, wwHysObenDp, wwHysUntenDp, mode, historyInstance, viewWindow]);
+    }, [variant, vorlaufDp, ruecklaufDp, sollDp, verdichterDp, pumpeDp, heizenDp, warmwasserDp, wwIstDp, wwSollDp, wwHysObenDp, wwHysUntenDp, mode, historyInstance, viewWindow]);
 
     const dataMap = useMultiSeriesData(echartSeries, connected, subscribe, getState);
     const get = (id: string): Pt[] => dataMap.get(id)?.data ?? [];
@@ -342,6 +351,8 @@ function HeatingDetailsCharts({
     const operationOption = useMemo(() => {
         const verd = onIntervals(get('verd'), intervalEnd).map((iv) => [iv[0], iv[1], 1]);
         const pump = onIntervals(get('pump'), intervalEnd).map((iv) => [iv[0], iv[1], 0]);
+        const heiz = onIntervals(get('heiz'), intervalEnd).map((iv) => [iv[0], iv[1], 2]);
+        const ww = onIntervals(get('ww'), intervalEnd).map((iv) => [iv[0], iv[1], 3]);
         // Default temperature scale 0–60 °C; grow only if the data exceeds it.
         const yMax = scaleMax(60, vl, rl);
 
@@ -372,20 +383,22 @@ function HeatingDetailsCharts({
 
         const verdSeries = { ...rowRect(C.verdichter), name: 'Verdichter', data: verd };
         const pumpSeries = { ...rowRect(C.pumpe), name: 'Pumpe', data: pump };
+        const heizSeries = { ...rowRect(C.heizen), name: 'Heizen', data: heiz };
+        const wwSeries = { ...rowRect(C.warmwasser), name: 'Warmwasser', data: ww };
 
         return {
             backgroundColor: 'transparent',
             animation: false,
             legend: {
-                data: ['Vorlauf', 'Rücklauf', 'Verdichter', 'Pumpe'],
+                data: ['Vorlauf', 'Rücklauf', 'Verdichter', 'Pumpe', 'Heizen', 'Warmwasser'],
                 bottom: 0,
                 textStyle: { color: C.axis, fontSize: 10 },
                 itemWidth: 14,
                 itemHeight: 8,
             },
             grid: [
-                { left: 40, right: 12, top: 10, height: '46%' },
-                { left: 40, right: 12, top: '60%', height: '20%' },
+                { left: 40, right: 12, top: 10, height: '38%' },
+                { left: 40, right: 12, top: '52%', height: '32%' },
             ],
             xAxis: [
                 {
@@ -420,7 +433,7 @@ function HeatingDetailsCharts({
                 {
                     type: 'category' as const,
                     gridIndex: 1,
-                    data: ['Pumpe', 'Verdichter'],
+                    data: ['Pumpe', 'Verdichter', 'Heizen', 'Warmwasser'],
                     axisLabel: { color: C.axis, fontSize: 9 },
                     axisTick: { show: false },
                     axisLine: { show: true, lineStyle: { color: C.axisLine } },
@@ -452,7 +465,7 @@ function HeatingDetailsCharts({
                     return `${t}<br/>${lines}`;
                 },
             },
-            series: [...bandSeries, verdSeries, pumpSeries],
+            series: [...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries],
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax]);

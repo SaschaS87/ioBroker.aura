@@ -271,7 +271,9 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
                         ruecklaufDp={dp('chartRuecklaufDp')}
                         verdichterDp={dp('verdichterDp')}
                         pumpeDp={dp('pumpeDp')}
-                        chartHeight={250}
+                        heizenDp={dp('heizenDp')}
+                        warmwasserDp={dp('warmwasserDp')}
+                        chartHeight={300}
                     />
                 </CollapsibleBox>
                 <CollapsibleBox
