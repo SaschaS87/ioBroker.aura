@@ -9,6 +9,7 @@ const SunCalc = require('suncalc');
 const { handleAuthDiscovery, handleMcpRequest } = require('./lib/mcp/httpEndpoint');
 const { maskClientConfig, resolveBothConfigs } = require('./lib/mcp/clientConfig');
 const { mergeRenderReport, renderReportEntry } = require('./lib/mcp/auraConfig');
+const { warmUpSocketBackend } = require('./lib/socketWarmup');
 
 // ── Calendar fetch helper ────────────────────────────────────────────────────
 
@@ -637,6 +638,11 @@ class Aura extends utils.Adapter {
     // adapter checks calendar.cache first, falls back to fetching, writes
     // {id, content|error} to calendar.response.
     async onStateChange(id, state) {
+        if (id === this._warmupAliveId) {
+            this._onWarmupAlive(state);
+            return;
+        }
+
         // Client-side error report (timeout after all retries exhausted)
         if (id.endsWith('calendar.clientError') && state && !state.ack && state.val) {
             this.log.warn(`[calendar] client error: ${String(state.val)}`);
@@ -928,6 +934,50 @@ class Aura extends utils.Adapter {
         return pickSocketBackend(objs, socketPort);
     }
 
+    // ── Socket backend warm-up ───────────────────────────────────────────────
+    // A freshly started web.0 stalls 20–70 s when the first client bursts
+    // hundreds of requests (app start). One request beforehand avoids that
+    // (measured 25.10.2026). So: warm up on aura start and every time the
+    // backend's alive flag turns true again (update, reboot, manual restart).
+
+    async _initSocketWarmup() {
+        if (!this._warmupBackend) return;
+        this._warmupAliveId = `system.adapter.${this._warmupBackend.source}.alive`;
+        try {
+            const st = await this.getForeignStateAsync(this._warmupAliveId);
+            this._warmupLastAlive = !!st?.val;
+        } catch {
+            this._warmupLastAlive = false;
+        }
+        await this.subscribeForeignStatesAsync(this._warmupAliveId);
+        this._runSocketWarmup('Aura-Start');
+    }
+
+    /** Called from onStateChange for the backend's alive flag; fires only on false→true. */
+    _onWarmupAlive(state) {
+        const alive = !!state?.val;
+        const wasAlive = this._warmupLastAlive;
+        this._warmupLastAlive = alive;
+        if (alive && !wasAlive) this._runSocketWarmup(`Neustart von ${this._warmupBackend.source}`);
+    }
+
+    _runSocketWarmup(reason) {
+        if (this._warmupRun) this._warmupRun.cancelled = true;
+        const run = { cancelled: false };
+        this._warmupRun = run;
+        const { host, port, source } = this._warmupBackend;
+        warmUpSocketBackend({ host, port, stateId: this._warmupAliveId, isCancelled: () => run.cancelled })
+            .then(({ ms, attempts }) => {
+                this.log.info(`aura: ${source} aufgewärmt nach ${ms} ms (Anlass: ${reason}, ${attempts} Versuch(e))`);
+            })
+            .catch((e) => {
+                if (!run.cancelled) this.log.warn(`aura: ${source} aufwärmen fehlgeschlagen (${reason}): ${e.message}`);
+            })
+            .finally(() => {
+                if (this._warmupRun === run) this._warmupRun = null;
+            });
+    }
+
     async startHttpServer() {
         const port = this.config.port || 8095;
         const socketPort = this.config.socketPort || 8082;
@@ -956,6 +1006,11 @@ class Aura extends utils.Adapter {
                 `aura: no enabled web/socketio instance found with port ${socketPort} — proxying to ${socketHostPort}`,
             );
         }
+        // Warm-up target (see _initSocketWarmup). Classic socket.io over plain ws only.
+        this._warmupBackend =
+            backend.found && !backend.pureWs && !socketSecure
+                ? { host: socketHost, port: socketPort, source: backend.source.replace(/^system\.adapter\./, '') }
+                : null;
 
         // ── File-system helpers ──────────────────────────────────────────────────
         const fsRootsConfig = Array.isArray(this.config.fsRoots)
@@ -3061,6 +3116,11 @@ class Aura extends utils.Adapter {
         }
 
         await this.startHttpServer();
+        try {
+            await this._initSocketWarmup();
+        } catch (e) {
+            this.log.warn(`aura: socket warm-up setup failed: ${e.message}`);
+        }
         this._startUpdateCheck();
         this.setState('info.connection', true, true);
         this.log.info('aura ready');
@@ -3872,6 +3932,7 @@ class Aura extends utils.Adapter {
                 this.clearInterval(this._updateCheckInterval);
                 this._updateCheckInterval = null;
             }
+            if (this._warmupRun) this._warmupRun.cancelled = true;
             // Flush any pending load-time samples before shutting down.
             if (this._perfDirty) {
                 this._perfPersistNow().finally(finish);
