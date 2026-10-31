@@ -20,6 +20,7 @@ import { PlanKachel } from '../planner/PlanPages';
 import { PlanPopup, useSheet } from '../planner/PlanPopup';
 import { Toast } from '../planner/parts';
 import { VARIANTS } from './variants';
+import { ROUND2, Round2 } from './round2';
 import '../planner/RollPlan.css';
 import './PlanPreview.css';
 
@@ -45,7 +46,7 @@ function save(key: string, v: string) {
 function usePick() {
     const [pick, setPick] = useState<string>(() => {
         const v = load(KEY_PICK);
-        return v === 'IST' || VARIANTS.some((x) => x.key === v) ? (v as string) : VARIANTS[0].key;
+        return v === 'IST' || [...VARIANTS, ...ROUND2].some((x) => x.key === v) ? (v as string) : ROUND2[0].key;
     });
     const [samples, setSamples] = useState(() => load(KEY_SAMPLES) === '1');
     return {
@@ -100,39 +101,77 @@ export function PlanPreview({ floors }: { floors: ShutterFloorDef[] }) {
     const base = samples ? sample : live;
     // Sofort-Fahren nur nachspielen – in der Vorschau faehrt nichts.
     const m = useMemo<PlanModel>(
-        () => ({ ...base, runScene: (id: string) => base.showToast(`Vorschau: „${base.sceneOf(id)?.name ?? id}" würde jetzt fahren`) }),
+        () => ({
+            ...base,
+            runScene: (id: string) => base.showToast(`Vorschau: „${base.sceneOf(id)?.name ?? id}" würde jetzt fahren`),
+        }),
         [base],
     );
     const { list, first, scenes: sceneView } = useRollPlanViewStore();
     const sh = useSheet();
     const variant = VARIANTS.find((v) => v.key === pick);
+    const r2 = ROUND2.find((v) => v.key === pick);
+    const chosen = variant ?? r2;
+    const btn = (key: string, label: string) => (
+        <button
+            key={key}
+            type="button"
+            className={`pv-bar-btn${pick === key ? ' is-active' : ''}`}
+            onClick={() => setPick(key)}
+        >
+            {label}
+        </button>
+    );
 
     return (
         <div className="rpp">
-            {floors.flatMap((f) => f.devices).map((d) => (
-                <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
-            ))}
+            {floors
+                .flatMap((f) => f.devices)
+                .map((d) => (
+                    <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
+                ))}
             <div className="pv-bar" role="toolbar" aria-label="Entwurfs-Umschalter">
                 <div className="pv-bar-btns">
-                    {[{ key: 'IST', name: 'Heutiger Stand (mit Wischen)' }, ...VARIANTS].map((v) => (
-                        <button key={v.key} type="button" className={`pv-bar-btn${pick === v.key ? ' is-active' : ''}`} onClick={() => setPick(v.key)}>
-                            {v.key === 'IST' ? 'Ist' : v.key}
-                        </button>
-                    ))}
+                    <span className="pv-bar-group">
+                        <span className="pv-bar-group-label">Runde 2</span>
+                        {ROUND2.map((v) => btn(v.key, v.key))}
+                    </span>
+                    <span className="pv-bar-group">
+                        <span className="pv-bar-group-label">Runde 1</span>
+                        {btn('IST', 'Ist')}
+                        {VARIANTS.map((v) => btn(v.key, v.key))}
+                    </span>
                 </div>
                 <div className="pv-bar-name">
-                    {pick === 'IST' ? 'Ist · Heutiger Stand (mit Wischen)' : `${pick} · ${variant?.name}`}
+                    {pick === 'IST'
+                        ? 'Ist · Heutiger Stand (mit Wischen)'
+                        : `${pick} · ${chosen?.name}${r2 ? ' (Kachel wie 10, eigene Fenster)' : ''}`}
                 </div>
-                {variant && pick !== 'IST' && <div className="pv-bar-desc">{variant.desc}</div>}
+                {chosen && pick !== 'IST' && <div className="pv-bar-desc">{chosen.desc}</div>}
                 <div className="pv-bar-foot">
                     <label className="pv-bar-check">
-                        <input type="checkbox" checked={samples} onChange={(e) => setSamples(e.target.checked)} /> Beispieldaten
+                        <input type="checkbox" checked={samples} onChange={(e) => setSamples(e.target.checked)} />{' '}
+                        Beispieldaten
                     </label>
-                    <span className="pv-bar-hint">nur lokal · {samples ? 'erfundene Szenen' : 'echte Szenen vom Pi, nur lesend'}</span>
+                    <span className="pv-bar-hint">
+                        nur lokal · {samples ? 'erfundene Szenen' : 'echte Szenen vom Pi, nur lesend'}
+                    </span>
                 </div>
             </div>
-            {pick === 'IST' || !variant ? (
-                <PlanKachel model={m} listStyle={list} first={first} favOnly layout={sceneView === 'S' ? 'list' : 2} paged={sceneView === 'W'} />
+            {r2 ? (
+                <>
+                    <Round2 m={m} sh={sh} v={r2} />
+                    <Toast model={m} />
+                </>
+            ) : pick === 'IST' || !variant ? (
+                <PlanKachel
+                    model={m}
+                    listStyle={list}
+                    first={first}
+                    favOnly
+                    layout={sceneView === 'S' ? 'list' : 2}
+                    paged={sceneView === 'W'}
+                />
             ) : (
                 <>
                     <variant.C m={m} sh={sh} />

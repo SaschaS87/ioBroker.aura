@@ -5,7 +5,16 @@
  */
 import { useState, type ReactNode } from 'react';
 import { CalendarClock, ChevronDown, ChevronRight, Clock, Layers, Play } from 'lucide-react';
-import { addDays, dayLabel, hhmm, WD_SHORT, weekdayOf, type Occurrence, type PlanModel, type Scene } from '../planner/planModel';
+import {
+    addDays,
+    dayLabel,
+    hhmm,
+    WD_SHORT,
+    weekdayOf,
+    type Occurrence,
+    type PlanModel,
+    type Scene,
+} from '../planner/planModel';
 import { DayTrack, OccRow, PlayBtn, SceneGlyph, Seg, TrackScale } from '../planner/parts';
 import { dayHead, emptyText, isPast, namesLine, statusText, type Sheet } from '../planner/PlanPopup';
 
@@ -14,20 +23,20 @@ type P = { m: PlanModel; sh: Sheet };
 // ── gemeinsame Kleinteile ──────────────────────────────────────────────
 
 /** Favoriten zuerst; gibt es keine, alle Szenen. */
-function quickScenes(m: PlanModel, max = 6): Scene[] {
+export function quickScenes(m: PlanModel, max = 6): Scene[] {
     const fav = m.scenes.filter((s) => s.favorite);
     return (fav.length ? fav : m.scenes).slice(0, max);
 }
 
-function next(m: PlanModel): { date: Date; occ: Occurrence } | null {
+export function next(m: PlanModel): { date: Date; occ: Occurrence } | null {
     return m.upcoming(1)[0] ?? null;
 }
 
-function whenText(m: PlanModel, n: { date: Date; occ: Occurrence }) {
+export function whenText(m: PlanModel, n: { date: Date; occ: Occurrence }) {
     return `${dayLabel(n.date, m.today)} ${hhmm(n.occ.min)}`;
 }
 
-function countdown(m: PlanModel, n: { date: Date; occ: Occurrence }): string {
+export function countdown(m: PlanModel, n: { date: Date; occ: Occurrence }): string {
     const t = new Date(n.date.getFullYear(), n.date.getMonth(), n.date.getDate(), 0, n.occ.min);
     const diff = Math.max(0, Math.round((t.getTime() - m.now.getTime()) / 60000));
     if (diff < 60) return `in ${diff} min`;
@@ -37,7 +46,7 @@ function countdown(m: PlanModel, n: { date: Date; occ: Occurrence }): string {
     return `${dayLabel(n.date, m.today)}`;
 }
 
-function useFlash() {
+export function useFlash() {
     const [flash, setFlash] = useState<string | null>(null);
     return {
         flash,
@@ -70,11 +79,17 @@ function SceneTiles({ m, sh, cols = 2, max = 6 }: P & { cols?: 2 | 3; max?: numb
                         {cols === 2 && <Play size={12} className="rpp-qtile-play" />}
                     </span>
                     <span className="rpp-qtile-name">{s.name}</span>
-                    {cols === 2 && <span className="rpp-qtile-sub">{namesLine(m, { kind: 'scene', sceneId: s.id }, 2)}</span>}
+                    {cols === 2 && (
+                        <span className="rpp-qtile-sub">{namesLine(m, { kind: 'scene', sceneId: s.id }, 2)}</span>
+                    )}
                 </button>
             ))}
             {m.scenes.length > list.length && (
-                <button type="button" className="rpp-qtile rpp-qtile--more" onClick={() => sh.show({ v: 'home' }, 'scenes')}>
+                <button
+                    type="button"
+                    className="rpp-qtile rpp-qtile--more"
+                    onClick={() => sh.show({ v: 'home' }, 'scenes')}
+                >
                     <span className="rpp-qtile-more-n">{m.scenes.length}</span>
                     <span className="rpp-qtile-sub">alle Szenen</span>
                 </button>
@@ -104,7 +119,11 @@ function SceneChips({ m, sh, max = 8 }: P & { max?: number }) {
                 </button>
             ))}
             {m.scenes.length > list.length && (
-                <button type="button" className="pv-chip pv-chip--more" onClick={() => sh.show({ v: 'home' }, 'scenes')}>
+                <button
+                    type="button"
+                    className="pv-chip pv-chip--more"
+                    onClick={() => sh.show({ v: 'home' }, 'scenes')}
+                >
                     alle {m.scenes.length}
                 </button>
             )}
@@ -120,10 +139,20 @@ function TodayRows({ m, sh, max = 4 }: P & { max?: number }) {
         <>
             {occ.length === 0 && <div className="rpp-empty rpp-center">{emptyText(m, m.today)}</div>}
             {shown.map((o) => (
-                <OccRow key={o.entry.id} model={m} occ={o} past={isPast(m, m.today, o)} onClick={() => sh.show({ v: 'entry', id: o.entry.id })} />
+                <OccRow
+                    key={o.entry.id}
+                    model={m}
+                    occ={o}
+                    past={isPast(m, m.today, o)}
+                    onClick={() => sh.show({ v: 'entry', id: o.entry.id })}
+                />
             ))}
             {occ.length > shown.length && (
-                <button type="button" className="rpp-row rpp-row--tap rpp-row--add" onClick={() => sh.show({ v: 'home' }, 'plan')}>
+                <button
+                    type="button"
+                    className="rpp-row rpp-row--tap rpp-row--add"
+                    onClick={() => sh.show({ v: 'home' }, 'plan')}
+                >
                     +{occ.length - shown.length} weitere heute
                 </button>
             )}
@@ -143,7 +172,11 @@ function Cap({ children, right }: { children: ReactNode; right?: ReactNode }) {
 
 function Planen({ sh, tab }: { sh: Sheet; tab?: 'plan' | 'scenes' }) {
     return (
-        <button type="button" className="rpp-textbtn rpp-textbtn--sm" onClick={() => sh.show({ v: 'home' }, tab ?? null)}>
+        <button
+            type="button"
+            className="rpp-textbtn rpp-textbtn--sm"
+            onClick={() => sh.show({ v: 'home' }, tab ?? null)}
+        >
             Planen
         </button>
     );
@@ -237,7 +270,11 @@ function V3({ m, sh }: P) {
                         </button>
                     ))}
                     {m.scenes.length > 4 && (
-                        <button type="button" className="rpp-textbtn rpp-textbtn--sm" onClick={() => sh.show({ v: 'home' }, 'scenes')}>
+                        <button
+                            type="button"
+                            className="rpp-textbtn rpp-textbtn--sm"
+                            onClick={() => sh.show({ v: 'home' }, 'scenes')}
+                        >
                             alle {m.scenes.length}
                         </button>
                     )}
@@ -282,7 +319,11 @@ function V5({ m, sh }: P) {
             <div className="pv-hero">
                 <span className="pv-label">{n ? `Nächste Fahrt ${countdown(m, n)}` : statusText(m)}</span>
                 {n ? (
-                    <button type="button" className="pv-hero-main" onClick={() => sh.show({ v: 'entry', id: n.occ.entry.id })}>
+                    <button
+                        type="button"
+                        className="pv-hero-main"
+                        onClick={() => sh.show({ v: 'entry', id: n.occ.entry.id })}
+                    >
                         <span className="pv-big">{hhmm(n.occ.min)}</span>
                         <span className="pv-hero-text">
                             <span className="pv-strong rpp-ellipsis">{m.targetName(n.occ.entry.target)}</span>
@@ -297,11 +338,21 @@ function V5({ m, sh }: P) {
                 {n && (
                     <div className="pv-hero-actions">
                         {n.occ.entry.target.kind === 'scene' && (
-                            <button type="button" className="rpp-btn rpp-btn--soft" onClick={() => n.occ.entry.target.kind === 'scene' && m.runScene(n.occ.entry.target.sceneId)}>
+                            <button
+                                type="button"
+                                className="rpp-btn rpp-btn--soft"
+                                onClick={() =>
+                                    n.occ.entry.target.kind === 'scene' && m.runScene(n.occ.entry.target.sceneId)
+                                }
+                            >
                                 Jetzt schon fahren
                             </button>
                         )}
-                        <button type="button" className="rpp-btn rpp-btn--soft" onClick={() => m.setPausedToday(!m.pausedToday)}>
+                        <button
+                            type="button"
+                            className="rpp-btn rpp-btn--soft"
+                            onClick={() => m.setPausedToday(!m.pausedToday)}
+                        >
                             {m.pausedToday ? 'Heute wieder an' : 'Heute aussetzen'}
                         </button>
                     </div>
@@ -357,7 +408,9 @@ function V7({ m, sh }: P) {
                 <span className="pv-klapp-main">
                     <span className="pv-strong">Szenen & Zeitplan</span>
                     <span className="rpp-sub rpp-ellipsis">
-                        {n ? `${statusText(m)} · nächste ${whenText(m, n)} ${m.targetName(n.occ.entry.target)}` : statusText(m)}
+                        {n
+                            ? `${statusText(m)} · nächste ${whenText(m, n)} ${m.targetName(n.occ.entry.target)}`
+                            : statusText(m)}
                     </span>
                 </span>
                 <ChevronDown size={18} className={`pv-klapp-chev${open ? ' is-open' : ''}`} />
@@ -398,9 +451,17 @@ function V8({ m, sh }: P) {
     return (
         <div className="rpp-card">
             <Cap right={<Planen sh={sh} />}>Szenen & Zeiten</Cap>
-            {rows.length === 0 && <div className="rpp-empty rpp-center">Noch keine Szenen – über „Planen" anlegen.</div>}
+            {rows.length === 0 && (
+                <div className="rpp-empty rpp-center">Noch keine Szenen – über „Planen" anlegen.</div>
+            )}
             {rows.map(({ s, run }) => (
-                <div key={s.id} role="button" tabIndex={0} className="rpp-row rpp-row--tap" onClick={() => sh.show({ v: 'scene', id: s.id })}>
+                <div
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    className="rpp-row rpp-row--tap"
+                    onClick={() => sh.show({ v: 'scene', id: s.id })}
+                >
                     <span className="pv-when">
                         {run ? (
                             <>
@@ -421,7 +482,11 @@ function V8({ m, sh }: P) {
             <div className="pv-foot">
                 <span className={`pv-status${m.master && !m.pausedToday ? '' : ' is-off'}`}>{statusText(m)}</span>
                 {m.scenes.length > rows.length && (
-                    <button type="button" className="rpp-textbtn rpp-textbtn--sm" onClick={() => sh.show({ v: 'home' }, 'scenes')}>
+                    <button
+                        type="button"
+                        className="rpp-textbtn rpp-textbtn--sm"
+                        onClick={() => sh.show({ v: 'home' }, 'scenes')}
+                    >
                         alle {m.scenes.length}
                     </button>
                 )}
@@ -460,7 +525,7 @@ function V9({ m, sh }: P) {
 
 // ── 10 Zwei Einstiege ──────────────────────────────────────────────────
 
-function V10({ m, sh }: P) {
+export function V10({ m, sh }: P) {
     const n = next(m);
     return (
         <div className="pv-two">
@@ -481,14 +546,64 @@ function V10({ m, sh }: P) {
 }
 
 export const VARIANTS: { key: string; name: string; desc: string; C: (p: P) => ReactNode }[] = [
-    { key: '1', name: 'Untereinander', desc: 'Heutige Fahrten oben, Szenen-Knöpfe darunter. Alles auf einen Blick, nichts zum Blättern.', C: V1 },
-    { key: '2', name: 'Reiter zum Antippen', desc: 'Ein Umschalter „Heute | Szenen" oben in der Kachel. Wechseln nur per Tipp, Wischen ist abgeschaltet.', C: V2 },
-    { key: '3', name: 'Nebeneinander', desc: 'Links die nächste Fahrt groß, rechts die Szenen als gestapelte Knöpfe.', C: V3 },
-    { key: '4', name: 'Szenen zuerst', desc: 'Szenen-Knöpfe sind die Hauptsache, der Zeitplan ist nur eine Zeile darunter.', C: V4 },
-    { key: '5', name: 'Nächste Fahrt groß', desc: 'Countdown zur nächsten Fahrt, dazu „Jetzt schon fahren" und „Heute aussetzen". Szenen als kleine Pillen.', C: V5 },
-    { key: '6', name: 'Zeitstrahl', desc: 'Der Tag als Linie von 0 bis 24 Uhr mit Punkten je Fahrt, darunter die Szenen als Pillen.', C: V6 },
-    { key: '7', name: 'Klappbox', desc: 'Eingeklappt nur eine Zeile mit der nächsten Fahrt. Aufgeklappt Fahrten und Szenen untereinander.', C: V7 },
-    { key: '8', name: 'Eine Liste', desc: 'Jede Szene eine Zeile, links ihre nächste Uhrzeit, rechts der Fahren-Knopf. Zeitplan und Szenen verschmelzen.', C: V8 },
-    { key: '9', name: 'Wochenraster', desc: 'Sieben Zeitstrahlen für die nächsten sieben Tage, darunter die Szenen als Pillen.', C: V9 },
-    { key: '10', name: 'Zwei Einstiege', desc: 'Nur zwei Knöpfe „Zeitplan" und „Szenen", jeder öffnet sein eigenes Fenster. Die Kachel bleibt winzig.', C: V10 },
+    {
+        key: '1',
+        name: 'Untereinander',
+        desc: 'Heutige Fahrten oben, Szenen-Knöpfe darunter. Alles auf einen Blick, nichts zum Blättern.',
+        C: V1,
+    },
+    {
+        key: '2',
+        name: 'Reiter zum Antippen',
+        desc: 'Ein Umschalter „Heute | Szenen" oben in der Kachel. Wechseln nur per Tipp, Wischen ist abgeschaltet.',
+        C: V2,
+    },
+    {
+        key: '3',
+        name: 'Nebeneinander',
+        desc: 'Links die nächste Fahrt groß, rechts die Szenen als gestapelte Knöpfe.',
+        C: V3,
+    },
+    {
+        key: '4',
+        name: 'Szenen zuerst',
+        desc: 'Szenen-Knöpfe sind die Hauptsache, der Zeitplan ist nur eine Zeile darunter.',
+        C: V4,
+    },
+    {
+        key: '5',
+        name: 'Nächste Fahrt groß',
+        desc: 'Countdown zur nächsten Fahrt, dazu „Jetzt schon fahren" und „Heute aussetzen". Szenen als kleine Pillen.',
+        C: V5,
+    },
+    {
+        key: '6',
+        name: 'Zeitstrahl',
+        desc: 'Der Tag als Linie von 0 bis 24 Uhr mit Punkten je Fahrt, darunter die Szenen als Pillen.',
+        C: V6,
+    },
+    {
+        key: '7',
+        name: 'Klappbox',
+        desc: 'Eingeklappt nur eine Zeile mit der nächsten Fahrt. Aufgeklappt Fahrten und Szenen untereinander.',
+        C: V7,
+    },
+    {
+        key: '8',
+        name: 'Eine Liste',
+        desc: 'Jede Szene eine Zeile, links ihre nächste Uhrzeit, rechts der Fahren-Knopf. Zeitplan und Szenen verschmelzen.',
+        C: V8,
+    },
+    {
+        key: '9',
+        name: 'Wochenraster',
+        desc: 'Sieben Zeitstrahlen für die nächsten sieben Tage, darunter die Szenen als Pillen.',
+        C: V9,
+    },
+    {
+        key: '10',
+        name: 'Zwei Einstiege',
+        desc: 'Nur zwei Knöpfe „Zeitplan" und „Szenen", jeder öffnet sein eigenes Fenster. Die Kachel bleibt winzig.',
+        C: V10,
+    },
 ];

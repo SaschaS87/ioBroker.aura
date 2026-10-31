@@ -15,6 +15,7 @@
 }
 
 .pv-bar-btns {
+  flex-direction: column;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -429,4 +430,133 @@
 
 .pv-two-btn .pv-planline-icon {
   margin-bottom: 4px;
+}
+
+/* ── Runde 2: eigene Fenster je Kachel ──────────────────────────────── */
+
+.pv-bar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pv-bar-group-label {
+  min-width: 56px;
+  color: var(--text-secondary);
+}
+
+.pv-qtile-edit {
+  outline: 1px dashed var(--rpp-line);
+  outline-offset: -1px;
+}
+
+.pv-runrow {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color 0.2s;
+}
+
+.pv-runrow.is-flash {
+  background: color-mix(in srgb, var(--rpp-accent) 22%, var(--rpp-bg));
+}
+
+.pv-chip--sm {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.pv-chip.is-off {
+  color: var(--text-secondary);
+}
+
+/* 16 Woche */
+.pv-weekday {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--rpp-line);
+}
+
+.pv-weekday:first-child {
+  border-top: none;
+}
+
+.pv-weekday-head {
+  display: flex;
+  flex-direction: column;
+  width: 74px;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.pv-weekday-head b {
+  font-weight: 600;
+}
+
+.pv-weekday-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.pv-weekday-item {
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pv-weekday-item b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-weekday-item.is-past {
+  color: var(--text-secondary);
+}
+
+/* 17 Zeitstrahl */
+.pv-tracks {
+  gap: 8px;
+}
+
+.pv-trackrow {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.pv-trackrow-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 18 Nach Szene */
+.pv-scenegroup {
+  border-bottom: 1px solid var(--rpp-line);
+}
+
+.pv-scenegroup > .rpp-row {
+  border-bottom: none;
+}
+
+.pv-scenegroup-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 10px 48px;
 }
