@@ -560,3 +560,10 @@
   gap: 6px;
   padding: 0 12px 10px 48px;
 }
+
+/* 21: Zahnrad/Stift rechts im Fensterkopf */
+.pv-headbtn {
+  margin-left: 0;
+  margin-right: -8px;
+  color: var(--text-secondary);
+}

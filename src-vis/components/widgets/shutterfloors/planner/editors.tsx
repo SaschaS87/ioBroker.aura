@@ -59,6 +59,8 @@ export function PlanSheet({
     onClose,
     model,
     home,
+    headerRight,
+    onHomeBack,
 }: {
     title: string;
     subtitle?: string;
@@ -67,11 +69,15 @@ export function PlanSheet({
     onClose: () => void;
     model: PlanModel;
     home: ReactNode;
+    /** Knopf rechts im Kopf, nur auf der Startansicht (z. B. Zahnrad, Stift). */
+    headerRight?: ReactNode;
+    /** Zeigt auch auf der Startansicht „Zurück" (Unterseite wie Einstellungen). */
+    onHomeBack?: () => void;
 }) {
     const adminPortalTarget = usePortalTarget();
     const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
     const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick } = useSheetDismiss(onClose);
-    const back = () => setView(view.v === 'entry' && view.back ? view.back : { v: 'home' });
+    const back = () => (view.v === 'home' ? onHomeBack?.() : setView(view.v === 'entry' && view.back ? view.back : { v: 'home' }));
     let head = title;
     let sub = subtitle;
     let body: ReactNode = home;
@@ -94,7 +100,7 @@ export function PlanSheet({
                         <div className="rpp-grip-handle" />
                     </div>
                     <div className="rpp-sheet-header">
-                        {view.v !== 'home' && (
+                        {(view.v !== 'home' || onHomeBack) && (
                             // Pointer-Stops wie bei der Feder im Rollladen-Popup: sonst
                             // schluckt setPointerCapture der Wischgeste den Tap.
                             <button
@@ -113,6 +119,12 @@ export function PlanSheet({
                             <h2 className="rpp-sheet-title">{head}</h2>
                             {sub && <p className="rpp-sheet-subtitle">{sub}</p>}
                         </div>
+                        {view.v === 'home' && headerRight && (
+                            // Pointer-Stops wie beim Zurück-Knopf, sonst schluckt die Wischgeste den Tap.
+                            <span onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onPointerMove={(e) => e.stopPropagation()}>
+                                {headerRight}
+                            </span>
+                        )}
                     </div>
                 </div>
                 {/* key: jede Ansicht beginnt oben, statt die Scrollhöhe der vorigen zu erben */}

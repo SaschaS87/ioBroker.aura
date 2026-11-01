@@ -5,8 +5,8 @@
  * den Inhalt dieser Fenster. Die Editoren (Szene/Zeitpunkt) kommen
  * unveraendert aus editors.tsx, nur die Startansicht unterscheidet sich.
  */
-import { useState, type ReactNode } from 'react';
-import { ChevronDown, Pencil, Plus } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Check, ChevronDown, Pencil, Plus, Settings } from 'lucide-react';
 import {
     addDays,
     fmtDate,
@@ -163,11 +163,11 @@ function SceneCard({
 }
 
 /** Szenen als Knoepfe: Antippen faehrt sofort, im Bearbeiten-Modus oeffnet es den Editor. */
-function SceneButtons({ m, setView, edit }: W & { edit?: boolean }) {
+function SceneButtons({ m, setView, edit, list, add = true }: W & { edit?: boolean; list?: Scene[]; add?: boolean }) {
     const { flash, fire } = useFlash();
     return (
         <div className="rpp-qtiles">
-            {m.scenes.map((s) => (
+            {(list ?? m.scenes).map((s) => (
                 <button
                     key={s.id}
                     type="button"
@@ -186,7 +186,7 @@ function SceneButtons({ m, setView, edit }: W & { edit?: boolean }) {
                     <span className="rpp-qtile-sub">{namesLine(m, { kind: 'scene', sceneId: s.id }, 2)}</span>
                 </button>
             ))}
-            {edit && (
+            {edit && add && (
                 <button
                     type="button"
                     className="rpp-qtile rpp-qtile--add"
@@ -365,7 +365,7 @@ function S13({ m, setView }: W) {
         </>
     );
 }
-function P13({ m, setView }: W) {
+function P13({ m, setView, holidays = true }: W & { holidays?: boolean }) {
     const n = next(m);
     return (
         <>
@@ -407,7 +407,7 @@ function P13({ m, setView }: W) {
             </div>
             <Caption>Alle Zeitpunkte</Caption>
             <EntryCard m={m} setView={setView} />
-            <Holidays m={m} />
+            {holidays && <Holidays m={m} />}
         </>
     );
 }
@@ -776,9 +776,52 @@ function P20({ m, setView }: W) {
     );
 }
 
+// ── 21 Wunsch aus 13 (01.11.2026) ──────────────────────────────────────
+// Zeitplan wie 13, Feiertage hinter dem Zahnrad oben rechts. Szenen wie 13,
+// Stift oben rechts zum Bearbeiten, getrennt nach Favoriten und Weiteren.
+
+function S21({ m, setView, edit }: W & { edit: boolean }) {
+    const fav = m.scenes.filter((s) => s.favorite);
+    const rest = m.scenes.filter((s) => !s.favorite);
+    return (
+        <>
+            {edit && (
+                <div className="rpp-hint">
+                    Szene antippen zum Bearbeiten. Ob sie Favorit ist, stellst du in der Szene ein.
+                </div>
+            )}
+            {fav.length > 0 && <Caption>Favoriten</Caption>}
+            {fav.length > 0 && <SceneButtons m={m} setView={setView} edit={edit} list={fav} add={false} />}
+            {(rest.length > 0 || edit) && <Caption>{fav.length ? 'Weitere' : 'Szenen'}</Caption>}
+            <SceneButtons m={m} setView={setView} edit={edit} list={rest} />
+            {!m.scenes.length && !edit && (
+                <div className="rpp-empty rpp-center">Noch keine Szenen – über den Stift anlegen.</div>
+            )}
+        </>
+    );
+}
+function P21({ m, setView }: W) {
+    return <P13 m={m} setView={setView} holidays={false} />;
+}
+
+function HeadBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+    return (
+        <button type="button" className="rpp-back pv-headbtn" onClick={onClick} aria-label={label} title={label}>
+            {children}
+        </button>
+    );
+}
+
 // ── Liste und Fenster ──────────────────────────────────────────────────
 
 export const ROUND2: { key: string; name: string; desc: string; S: (p: W) => ReactNode; P: (p: W) => ReactNode }[] = [
+    {
+        key: '21',
+        name: '13 nach Wunsch',
+        desc: 'Zeitplan wie 13, die Feiertage liegen hinter dem Zahnrad oben rechts. Szenen wie 13 als große Knöpfe, getrennt nach Favoriten und Weiteren; der Stift oben rechts schaltet aufs Bearbeiten.',
+        S: (p) => <S21 {...p} edit={false} />,
+        P: P21,
+    },
     {
         key: '11',
         name: 'Schlicht',
@@ -854,24 +897,53 @@ export const ROUND2: { key: string; name: string; desc: string; S: (p: W) => Rea
 /** Kachel aus Entwurf 10 plus eigenes Fenster je Kachel. */
 export function Round2({ m, sh, v }: { m: PlanModel; sh: Sheet; v: (typeof ROUND2)[number] }) {
     const isScenes = sh.tab === 'scenes';
-    const Home = isScenes ? v.S : v.P;
+    const wish = v.key === '21';
+    const [opts, setOpts] = useState(false);
+    const [edit, setEdit] = useState(false);
+    useEffect(() => {
+        setOpts(false);
+        setEdit(false);
+    }, [sh.seq]);
+    let title = isScenes ? 'Szenen' : 'Zeitplan';
+    let subtitle = isScenes ? `${m.scenes.length} Szenen` : statusText(m);
+    let home: ReactNode;
+    let headerRight: ReactNode = null;
+    if (wish && !isScenes && opts) {
+        title = 'Einstellungen';
+        subtitle = 'Zeitplan';
+        home = <Holidays m={m} sun />;
+    } else if (wish && isScenes) {
+        home = <S21 m={m} setView={sh.setView} edit={edit} />;
+        headerRight = (
+            <HeadBtn label={edit ? 'Fertig' : 'Szenen bearbeiten'} onClick={() => setEdit(!edit)}>
+                {edit ? <Check size={20} /> : <Pencil size={18} />}
+            </HeadBtn>
+        );
+    } else {
+        const Home = isScenes ? v.S : v.P;
+        home = <Home m={m} setView={sh.setView} />;
+        if (wish)
+            headerRight = (
+                <HeadBtn label="Einstellungen" onClick={() => setOpts(true)}>
+                    <Settings size={19} />
+                </HeadBtn>
+            );
+    }
     return (
         <>
             <V10 m={m} sh={sh} />
             {sh.open && (
                 <PlanSheet
                     key={sh.seq}
-                    title={isScenes ? 'Szenen' : 'Zeitplan'}
-                    subtitle={isScenes ? `${m.scenes.length} Szenen` : statusText(m)}
+                    title={title}
+                    subtitle={subtitle}
                     view={sh.view}
                     setView={sh.setView}
                     onClose={sh.close}
                     model={m}
-                    home={
-                        <div className="rpp-home">
-                            <Home m={m} setView={sh.setView} />
-                        </div>
-                    }
+                    headerRight={headerRight}
+                    onHomeBack={wish && opts && !isScenes ? () => setOpts(false) : undefined}
+                    home={<div className="rpp-home">{home}</div>}
                 />
             )}
         </>
