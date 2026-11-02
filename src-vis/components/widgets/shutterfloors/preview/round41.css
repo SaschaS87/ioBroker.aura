@@ -32,6 +32,14 @@
   box-shadow: var(--widget-shadow, none);
 }
 .vn .v35-group-head { padding-top: 16px; }
+/* iPhone (02.11.2026, Saschas Foto): Nach Oeffnen und Schliessen von
+   Zeitplan/Szenen standen an den unteren Ecken der Karte eckige Reste in
+   Rahmenfarbe; in Chrome nicht nachstellbar. Versuch: eigene Ebene fuer die
+   Karte, damit Safari die Rundung beim Neuzeichnen haelt, und kein grauer
+   Tipp-Schimmer auf den Zeilen. Fenster haengen per Portal am <body>, die
+   Ebene stoert sie nicht. Bestaetigung auf dem iPhone steht aus. */
+.vn .v35-group { isolation: isolate; transform: translateZ(0); }
+.vn .v35-row { -webkit-tap-highlight-color: transparent; }
 .vn .pv-foot { margin-top: 14px; }
 .vn-row { min-height: 56px; }
 
