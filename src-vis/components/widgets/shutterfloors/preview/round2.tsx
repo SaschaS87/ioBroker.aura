@@ -942,6 +942,7 @@ export function Round2({ m, sh, v }: { m: PlanModel; sh: Sheet; v: (typeof ROUND
                     onClose={sh.close}
                     model={m}
                     headerRight={headerRight}
+                    actionsInHeader={wish}
                     onHomeBack={wish && opts && !isScenes ? () => setOpts(false) : undefined}
                     home={<div className="rpp-home">{home}</div>}
                 />

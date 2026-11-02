@@ -15,7 +15,7 @@
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Minus, Play, Plus, Sunrise, Sunset, Trash2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus, Sunrise, Sunset, Trash2 } from 'lucide-react';
 import { usePortalTarget } from '../../../../contexts/PortalTargetContext';
 import { useSheetDismiss } from '../../useSheetDismiss';
 import {
@@ -61,6 +61,7 @@ export function PlanSheet({
     home,
     headerRight,
     onHomeBack,
+    actionsInHeader,
 }: {
     title: string;
     subtitle?: string;
@@ -73,10 +74,14 @@ export function PlanSheet({
     headerRight?: ReactNode;
     /** Zeigt auch auf der Startansicht „Zurück" (Unterseite wie Einstellungen). */
     onHomeBack?: () => void;
+    /** Editoren: Löschen/Speichern als Symbole oben rechts statt unten, ohne „Jetzt fahren". */
+    actionsInHeader?: boolean;
 }) {
     const adminPortalTarget = usePortalTarget();
     const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
     const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick } = useSheetDismiss(onClose);
+    const [headSlot, setHeadSlot] = useState<HTMLElement | null>(null);
+    const slot = actionsInHeader ? headSlot : null;
     const back = () => (view.v === 'home' ? onHomeBack?.() : setView(view.v === 'entry' && view.back ? view.back : { v: 'home' }));
     let head = title;
     let sub = subtitle;
@@ -85,12 +90,12 @@ export function PlanSheet({
         const s = view.id ? model.sceneOf(view.id) : undefined;
         head = s ? s.name : 'Neue Szene';
         sub = 'Welche Rollläden fahren wohin?';
-        body = <SceneEditor key={view.id ?? 'new'} model={model} scene={s} draft={view.draft} onDone={back} setView={setView} />;
+        body = <SceneEditor key={view.id ?? 'new'} model={model} scene={s} draft={view.draft} onDone={back} setView={setView} headSlot={slot} />;
     } else if (view.v === 'entry') {
         const e = view.id ? model.entries.find((x) => x.id === view.id) : undefined;
         head = e ? 'Zeitpunkt bearbeiten' : 'Neuer Zeitpunkt';
         sub = 'Was fährt wann?';
-        body = <EntryEditor key={view.id ?? 'new'} model={model} entry={e} preset={view.preset} onDone={back} />;
+        body = <EntryEditor key={view.id ?? 'new'} model={model} entry={e} preset={view.preset} onDone={back} headSlot={slot} />;
     }
     return createPortal(
         <div className="rpp-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
@@ -119,6 +124,15 @@ export function PlanSheet({
                             <h2 className="rpp-sheet-title">{head}</h2>
                             {sub && <p className="rpp-sheet-subtitle">{sub}</p>}
                         </div>
+                        {actionsInHeader && view.v !== 'home' && (
+                            <span
+                                ref={setHeadSlot}
+                                className="rpp-head-actions"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onPointerUp={(e) => e.stopPropagation()}
+                                onPointerMove={(e) => e.stopPropagation()}
+                            />
+                        )}
                         {view.v === 'home' && headerRight && (
                             // Pointer-Stops wie beim Zurück-Knopf, sonst schluckt die Wischgeste den Tap.
                             <span onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onPointerMove={(e) => e.stopPropagation()}>
@@ -160,12 +174,14 @@ function SceneEditor({
     draft,
     onDone,
     setView,
+    headSlot,
 }: {
     model: PlanModel;
     scene?: Scene;
     draft?: SceneDraft;
     onDone: () => void;
     setView: (v: SheetView) => void;
+    headSlot?: HTMLElement | null;
 }) {
     const [name, setName] = useState(draft?.name ?? scene?.name ?? '');
     const [icon, setIcon] = useState<SceneIcon>(draft?.icon ?? scene?.icon ?? 'sun');
@@ -351,6 +367,24 @@ function SceneEditor({
                 </div>
             )}
 
+            {headSlot ? (
+                createPortal(
+                    <HeadActions
+                        what="Szene"
+                        onDelete={
+                            scene
+                                ? () => {
+                                      model.deleteScene(scene.id);
+                                      onDone();
+                                  }
+                                : undefined
+                        }
+                        onSave={save}
+                        canSave={count > 0}
+                    />,
+                    headSlot,
+                )
+            ) : (
             <div className="rpp-actions">
                 {scene && (
                     <button
@@ -374,7 +408,24 @@ function SceneEditor({
                     Speichern
                 </button>
             </div>
+            )}
         </div>
+    );
+}
+
+/** Löschen und Speichern als Symbole im Fensterkopf (Entwurf 21). */
+function HeadActions({ what, onDelete, onSave, canSave }: { what: string; onDelete?: () => void; onSave: () => void; canSave: boolean }) {
+    return (
+        <>
+            {onDelete && (
+                <button type="button" className="rpp-back rpp-head-btn is-danger" onClick={onDelete} aria-label={`${what} löschen`} title={`${what} löschen`}>
+                    <Trash2 size={18} />
+                </button>
+            )}
+            <button type="button" className="rpp-back rpp-head-btn" onClick={onSave} disabled={!canSave} aria-label="Speichern" title="Speichern">
+                <Check size={22} />
+            </button>
+        </>
     );
 }
 
@@ -422,11 +473,13 @@ function EntryEditor({
     entry,
     preset,
     onDone,
+    headSlot,
 }: {
     model: PlanModel;
     entry?: PlanEntry;
     preset?: Partial<PlanEntry>;
     onDone: () => void;
+    headSlot?: HTMLElement | null;
 }) {
     const base: PlanEntry = entry ?? {
         id: newId('e'),
@@ -458,6 +511,11 @@ function EntryEditor({
 
     const quietKeys = useMemo(() => devicesOfTarget(e.target, model.scenes), [e.target, model.scenes]);
     const slowCount = quietKeys.filter((k) => model.deviceOf(k)?.hasSlow).length;
+    const canSaveEntry = e.days.some(Boolean) && !(e.target.kind === 'scene' && !e.target.sceneId);
+    const saveEntry = () => {
+        model.saveEntry(slowCount > 0 && e.quiet ? { ...e, quiet: true } : omitQuiet(e));
+        onDone();
+    };
 
     return (
         <div className="rpp-editor">
@@ -637,6 +695,24 @@ function EntryEditor({
                 </span>
             </div>
 
+            {headSlot ? (
+                createPortal(
+                    <HeadActions
+                        what="Zeitpunkt"
+                        onDelete={
+                            entry
+                                ? () => {
+                                      model.deleteEntry(entry.id);
+                                      onDone();
+                                  }
+                                : undefined
+                        }
+                        onSave={saveEntry}
+                        canSave={canSaveEntry}
+                    />,
+                    headSlot,
+                )
+            ) : (
             <div className="rpp-actions">
                 {entry && (
                     <button
@@ -651,18 +727,11 @@ function EntryEditor({
                         <Trash2 size={16} />
                     </button>
                 )}
-                <button
-                    type="button"
-                    className="rpp-btn rpp-btn--primary"
-                    disabled={!e.days.some(Boolean) || (e.target.kind === 'scene' && !e.target.sceneId)}
-                    onClick={() => {
-                        model.saveEntry(slowCount > 0 && e.quiet ? { ...e, quiet: true } : omitQuiet(e));
-                        onDone();
-                    }}
-                >
+                <button type="button" className="rpp-btn rpp-btn--primary" disabled={!canSaveEntry} onClick={saveEntry}>
                     Speichern
                 </button>
             </div>
+            )}
         </div>
     );
 }

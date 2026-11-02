@@ -1779,3 +1779,24 @@ button.rpp-track-dot {
 .rpp-qtiles-empty {
   grid-column: 1 / -1;
 }
+
+/* Löschen/Speichern im Fensterkopf (Entwurf 21, PlanSheet actionsInHeader) */
+.rpp-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: -8px;
+}
+
+.rpp-head-btn {
+  margin-left: 0;
+}
+
+.rpp-head-btn.is-danger {
+  color: var(--rpp-red);
+}
+
+.rpp-head-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
