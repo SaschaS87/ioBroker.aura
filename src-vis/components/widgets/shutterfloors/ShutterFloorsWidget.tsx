@@ -10,6 +10,7 @@ import { FloorHeader } from './FloorHeader';
 import { ShutterRow } from './ShutterRow';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
+import { ModernPreview } from './preview/ModernPreview';
 import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
@@ -235,58 +236,78 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         );
     }
 
-    return (
-        <PendingContext.Provider value={pendingStore}>
-            <div className="shutter-floors-widget">
-                {/* Warnstreifen. Steht bewusst OBEN und nicht als Pille in der
+    const banner = (
+        <>
+            {/* Warnstreifen. Steht bewusst OBEN und nicht als Pille in der
                     Fusszeile: Wer nachts einen Rollladen fahren will, soll den
                     Grund sehen, bevor er drueckt – nicht danach. */}
-                {!connected && (
-                    <div className="conn-banner" role="status">
-                        <span className="conn-banner-title">{instanceLabel} nicht erreichbar</span>
-                        <span className="conn-banner-text">
-                            {aliveOk
-                                ? 'Der Adapter läuft, meldet aber keine Verbindung zur Box. Befehle kommen nicht an.'
-                                : 'Die Adapter-Instanz läuft nicht. Befehle kommen nicht an.'}
-                        </span>
-                    </div>
-                )}
-
-                {/* Rolllaeden-Planer-Kachel (Feature 23): ueber der
-                    Etagenliste, nur wenn showPlanner===true. */}
-                {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
-
-                <div className="floors-scroll">
-                    {floors.map((floor) => (
-                        <div key={floor.name} className="floor-section">
-                            <FloorHeader name={floor.name} connected={connected} />
-
-                            <div className="floor-devices">
-                                {floor.devices.map((device) => (
-                                    <ShutterRow
-                                        key={device.key}
-                                        device={device}
-                                        connected={connected}
-                                        onOpenSheet={handleOpenSheet}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+            {!connected && (
+                <div className="conn-banner" role="status">
+                    <span className="conn-banner-title">{instanceLabel} nicht erreichbar</span>
+                    <span className="conn-banner-text">
+                        {aliveOk
+                            ? 'Der Adapter läuft, meldet aber keine Verbindung zur Box. Befehle kommen nicht an.'
+                            : 'Die Adapter-Instanz läuft nicht. Befehle kommen nicht an.'}
+                    </span>
                 </div>
-
-                {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
+            )}
+        </>
+    );
+    const footer = (
+        <>
+            {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
                     Wetter-Tab, DataSourceHealthBox). Meldet den Zustand der
                     Instanz auch im Normalfall, mit Neustart-Knopf im
                     Stoerfall. `showFooter` stand schon in der Konfiguration. */}
-                {showFooter && <DataSourceHealthBox sources={healthSources} />}
+            {showFooter && <DataSourceHealthBox sources={healthSources} />}
 
-                {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
+            {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
                     TaHoma-Funk-States gebuendelt statt einer Zeile pro Sheet. */}
-                {signalBoxVisible && (
-                    <div style={{ marginTop: showFooter ? 8 : 0 }}>
-                        <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
+            {signalBoxVisible && (
+                <div style={{ marginTop: showFooter ? 8 : 0 }}>
+                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
+                </div>
+            )}
+        </>
+    );
+    const ist = (
+        <>
+            {banner}
+            {/* Rolllaeden-Planer-Kachel (Feature 23): ueber der
+                    Etagenliste, nur wenn showPlanner===true. */}
+            {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
+
+            <div className="floors-scroll">
+                {floors.map((floor) => (
+                    <div key={floor.name} className="floor-section">
+                        <FloorHeader name={floor.name} connected={connected} />
+
+                        <div className="floor-devices">
+                            {floor.devices.map((device) => (
+                                <ShutterRow
+                                    key={device.key}
+                                    device={device}
+                                    connected={connected}
+                                    onOpenSheet={handleOpenSheet}
+                                />
+                            ))}
+                        </div>
                     </div>
+                ))}
+            </div>
+
+            {footer}
+        </>
+    );
+
+    return (
+        <PendingContext.Provider value={pendingStore}>
+            <div className="shutter-floors-widget">
+                {/* Entwurfs-Umschalter Runde 31–40 (nur Dev-Vorschau, 02.11.2026) – nach der Wahl samt preview/ entfernen */}
+                {import.meta.env.DEV ? (
+                    <ModernPreview floors={floors} connected={connected} banner={banner} footer={footer} ist={ist} />
+                ) : (
+                    ist
                 )}
 
                 {/* Sheet-Overlay */}
