@@ -10,6 +10,7 @@ import { countdown, nextRun, statusText } from '../planner/PlanWindows';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from '../types';
 import type { RowControl } from './useRowControl';
 import type { ReglerKind } from './PvSheet';
+import type { Favorites } from './useFavorites';
 
 /** Was jeder Antrieb nach oben meldet (fuer Lagebild, Hausfront, Live-Pille). */
 export interface DevInfo {
@@ -38,12 +39,17 @@ export interface PvCtx {
     footer: ReactNode;
     /** Runde 41–65: Wahl je Reihe (A Tasten, B Symbole, C Fenster) */
     picks?: Picks;
+    /** Runde 201+: Favoriten je Antrieb (Rollladen_Dev.Favoriten) */
+    fav?: Favorites;
 }
 
 export interface Picks {
     a: string;
     b: string;
     c: string;
+    /** Runde 201+: D Feinregler, E Favoriten-Liste */
+    d: string;
+    e: string;
 }
 
 export interface Variant {

@@ -1,0 +1,125 @@
+/* Runde 201+ (02.11.2026), nur Dev-Vorschau: Feinregler „schlicht" und
+   Favoriten je Geschoss. Grund und Text aus dem Theme (wie Runde 41–65),
+   eigene Farben nur die drei Farben je Art (Fenster blau, Dachfenster
+   violett, Raffstore tuerkis) wie in den Symbol-Quadraten der Liste. */
+
+/* ── Feinregler ───────────────────────────────────────────────────────── */
+
+.pvq { --k: #0a84ff; }
+.pvq.is-dachfenster { --k: #5e5ce6; }
+.pvq.is-raffstore { --k: #30b0c7; }
+
+.pvq-head { display: flex; align-items: center; gap: 10px; padding: 4px 12px 2px 20px; }
+.pvq-star {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; flex-shrink: 0;
+  border: none; border-radius: 50%; background: transparent;
+  color: var(--pv-sub); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s, transform 0.09s;
+}
+.pvq-star.is-on { color: #ffcc00; }
+html.dark .pvq-star.is-on { color: #ffd60a; }
+.pvq-star:active { transform: scale(0.9); }
+
+.pvq-body { display: flex; flex-direction: column; align-items: center; padding: 10px 20px 6px; }
+
+/* Beide Spalten haben denselben Aufbau mit festen Hoehen – nur so stehen
+   Position und Lamelle beim Raffstore oben und unten auf einer Linie. */
+.pvq-instruments { display: flex; align-items: flex-start; justify-content: center; gap: 28px; }
+.pvq-col { display: flex; flex-direction: column; align-items: center; }
+.pvq-cap { height: 16px; line-height: 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pv-sub); }
+.pvq-val {
+  height: 36px; display: flex; align-items: center; white-space: nowrap;
+  font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+}
+.pvq-val.is-live { color: var(--pv-accent); }
+.pvq-val.is-target { color: var(--pv-amber); }
+.pvq-val.is-estimate, .pvq-val.is-stale { opacity: 0.55; }
+.pvq-unit { font-size: 16px; font-weight: 600; color: var(--pv-sub); letter-spacing: 0; white-space: pre; }
+.pvq-arrow { font-size: 20px; font-weight: 400; color: var(--pv-sub); margin: 0 5px; }
+.pvq-target { color: var(--pv-amber); }
+.pvq-word { height: 18px; line-height: 18px; margin-bottom: 10px; font-size: 13px; color: var(--pv-sub); white-space: nowrap; }
+.pvq-word.is-busy { color: var(--pv-amber); font-weight: 600; }
+
+.pvq-pill {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  border-radius: 28px; background: var(--pv-soft2);
+  touch-action: none; cursor: ns-resize; outline: none;
+  transition: transform 0.15s ease, opacity 0.15s;
+}
+.pvq-pill--pos { width: 112px; }
+.pvq-pill--slat { width: 64px; border-radius: 22px; }
+.pvq-pill:focus-visible { box-shadow: 0 0 0 2px var(--pv-accent); }
+.pvq-pill.is-drag { transform: scale(1.02); }
+.pvq-pill-fill { position: absolute; left: 0; right: 0; top: 0; background: var(--k); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
+.pvq-pill.is-drag .pvq-pill-fill { transition: none; }
+.pvq-pill.is-busy .pvq-pill-fill { background: var(--pv-amber); }
+.pvq-pill.is-stale { opacity: 0.45; }
+.pvq-pill.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.pvq-pill.is-unknown { background: repeating-linear-gradient(135deg, var(--pv-soft2) 0 8px, transparent 8px 16px); }
+.pvq-pill-mark {
+  position: absolute; left: 50%; width: 16px; height: 2px; margin: -1px 0 0 -8px; border-radius: 1px;
+  background: color-mix(in srgb, var(--pv-text) 22%, transparent);
+}
+
+/* Bestaetigung: Taste immer in der Mitte, die Feder sitzt in einer eigenen
+   Spalte links oder rechts daneben. Ohne Feder (Raffstore, Ankleide …) sind
+   beide Seitenspalten 0 breit – die Taste steht an derselben Stelle. */
+.pvq-confirm {
+  display: grid; grid-template-columns: var(--pvq-side, 50px) 200px var(--pvq-side, 50px);
+  align-items: center; justify-content: center; column-gap: 12px;
+  width: 100%; margin-top: 22px;
+}
+.pvq-go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 50px; width: 100%; padding: 0 10px; border: none; border-radius: 14px;
+  background: var(--pv-accent); color: #fff;
+  font: inherit; font-size: 16px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: transform 0.09s, opacity 0.15s;
+}
+.pvq-go:disabled { background: var(--pv-soft2); color: var(--pv-sub); cursor: default; }
+.pvq-go:active:not(:disabled) { transform: scale(0.96); }
+.pvq-go--stop { background: var(--pv-amber); color: #000; }
+.pvq-feder {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 50px; height: 50px; border: none; border-radius: 50%;
+  background: var(--pv-soft2); color: var(--pv-sub); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background 0.15s, color 0.15s, transform 0.09s;
+}
+.pvq-feder.is-on { background: var(--pv-amber); color: #000; }
+.pvq-feder:active { transform: scale(0.92); }
+.pvq-hint { height: 16px; line-height: 16px; margin-top: 6px; font-size: 12px; color: var(--pv-amber); font-weight: 600; }
+
+.pvq .pvs-notice { margin-top: 10px; }
+.pvq-radio {
+  width: 100%; margin-top: 8px; font-size: 11px; color: var(--pv-sub); opacity: 0.75; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+}
+.pvq-radio.is-offline { color: var(--pv-red); opacity: 1; }
+
+/* ── Favoriten je Geschoss ────────────────────────────────────────────── */
+
+/* 203: Pfeil rechts in der Geschoss-Ueberschrift */
+.vf-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  border: none; background: transparent; font: inherit; color: var(--pv-sub); text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.vf-head > span:first-child { flex: 1; }
+.vf-head-more { font-size: 12.5px; letter-spacing: 0; text-transform: none; color: var(--pv-accent); }
+.vf-chev { flex-shrink: 0; color: var(--pv-accent); transition: transform 0.2s ease; }
+.vf-chev.is-open { transform: rotate(180deg); }
+
+/* 204: eigene Zeile am Ende der Gruppe */
+.vf-more {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  width: 100%; min-height: 44px; padding: 6px 14px; border: none; background: transparent;
+  font: inherit; font-size: 15px; color: var(--pv-accent); text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.vf-more::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: color-mix(in srgb, var(--pv-text) 12%, transparent); transform: scaleY(0.6); }
+.vf-more > span { flex: 1; }
+.vf-more:active { background: color-mix(in srgb, var(--pv-text) 6%, transparent); }
+
+/* Ausgeklappte Nicht-Favoriten: duenne Linie trennt sie von den Favoriten */
+.vf-rest-first::before { left: 0 !important; height: 1px; background: color-mix(in srgb, var(--pv-text) 20%, transparent) !important; }
