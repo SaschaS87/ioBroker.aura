@@ -39,12 +39,6 @@
 
 .pb-svg { display: block; }
 .pb-svg.is-busy { animation: pv-pulse 1.4s ease-in-out infinite; }
-.pb-bar {
-  position: absolute; left: 6px; right: 6px; bottom: 4px; height: 3px;
-  border-radius: 2px; background: rgb(255 255 255 / 0.35); overflow: hidden;
-}
-.pb-bar i { display: block; height: 100%; border-radius: 2px; background: #fff; transition: width 0.8s ease; }
-.vn-ico--58 .pb-svg { width: 16px; height: 16px; transform: translateY(-3px); }
 
 /* ── Reihe A: Auf/Zu-Tasten ───────────────────────────────────────────── */
 
@@ -68,83 +62,42 @@
 }
 .pa--41 .pa-btn--stop { width: 88px; font-size: 14px; }
 
-/* 42 Zwei Kreise */
-.pa--42 { gap: 10px; }
-.pa--42 .pa-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--pv-soft2); }
+/* 66–71 Farbfassungen der Kapsel. --k = Farbe der Art wie im Symbol links. */
+.pa--41 { --k: #0a84ff; }
+.pa--41.is-dachfenster { --k: #5e5ce6; }
+.pa--41.is-raffstore { --k: #30b0c7; }
+.pa--41.is-busy { background: transparent; border-color: transparent; }
 
-/* 43 Woerter */
-.pa--43 { gap: 6px; }
-.pa--43 .pa-btn {
-  min-width: 46px; height: 30px; padding: 0 12px; border-radius: 999px;
-  background: color-mix(in srgb, var(--pv-accent) 13%, transparent); color: var(--pv-accent);
-  font-size: 15px; font-weight: 600;
-}
-.pa--43 .pa-btn--stop { min-width: 98px; background: var(--pv-amber); color: #000; }
+/* 66 Akzent getoent */
+.pa--66 { background: color-mix(in srgb, var(--pv-accent) 13%, transparent); }
+.pa--66 .pa-btn { color: var(--pv-accent); }
+.pa--66 .pa-btn + .pa-btn::before { background: color-mix(in srgb, var(--pv-accent) 30%, transparent); }
 
-/* 44 Fernbedienung */
-.pa--44 { gap: 6px; }
-.pa--44 .pa-btn { width: 40px; height: 34px; border-radius: 10px; background: var(--pv-soft2); }
-.pa--44 .pa-btn--stop { width: 86px; background: var(--pv-amber); }
+/* 67 Farbe der Art getoent */
+.pa--67 { background: color-mix(in srgb, var(--k) 15%, transparent); }
+.pa--67 .pa-btn { color: color-mix(in srgb, var(--k) 80%, #000); }
+html.dark .pa--67 { background: color-mix(in srgb, var(--k) 26%, transparent); }
+html.dark .pa--67 .pa-btn { color: color-mix(in srgb, var(--k) 65%, #fff); }
+.pa--67 .pa-btn + .pa-btn::before { background: color-mix(in srgb, var(--k) 35%, transparent); }
 
-/* 45 Wippe */
-.pa--45 {
-  flex-direction: column; gap: 0; width: 40px; height: 46px;
-  border-radius: 12px; background: var(--pv-soft2); overflow: hidden;
-}
-.pa--45 .pa-btn { width: 40px; height: 23px; }
-.pa--45 .pa-btn svg { width: 18px; height: 18px; }
-.pa--45 .pa-btn + .pa-btn::before {
-  content: ''; position: absolute; top: 0; left: 9px; right: 9px; height: 1px;
-  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
-}
-.pa--45 .pa-btn--stop { height: 46px; }
-.pa--45.is-busy { background: var(--pv-amber); }
+/* 68 Akzent kraeftig, 69 Farbe der Art kraeftig */
+.pa--68 { background: var(--pv-accent); }
+.pa--69 { background: var(--k); }
+.pa--68 .pa-btn, .pa--69 .pa-btn { color: #fff; }
+.pa--68 .pa-btn + .pa-btn::before, .pa--69 .pa-btn + .pa-btn::before { background: rgb(255 255 255 / 0.4); }
 
-/* 46 Ton in Ton (Farbe der Art) */
-.pa--46 { gap: 10px; --k: #0a84ff; }
-.pa--46.is-dachfenster { --k: #5e5ce6; }
-.pa--46.is-raffstore { --k: #30b0c7; }
-.pa--46 .pa-btn {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: color-mix(in srgb, var(--k) 15%, transparent); color: color-mix(in srgb, var(--k) 78%, #000);
-}
-html.dark .pa--46 .pa-btn { background: color-mix(in srgb, var(--k) 26%, transparent); color: color-mix(in srgb, var(--k) 70%, #fff); }
-.pa--46 .pa-btn--stop { background: var(--pv-amber); color: #000; }
+/* 70 Umriss */
+.pa--70 { background: transparent; border: 1px solid var(--widget-border, var(--app-border)); }
+.pa--70 .pa-btn { height: 30px; color: var(--text-secondary); }
 
-/* 47 Nur Winkel */
-.pa--47 { gap: 0; }
-.pa--47 .pa-btn { width: 42px; height: 42px; border-radius: 50%; color: var(--pv-accent); }
-.pa--47 .pa-btn:active:not(:disabled) { background: var(--pv-soft); }
-.pa--47 .pa-btn--stop { width: auto; height: 30px; padding: 0 16px; margin-right: 4px; border-radius: 999px; font-size: 15px; }
-
-/* 48 Zustands-Schalter */
-.pa--48 { gap: 0; padding: 2px; border-radius: 9px; background: var(--pv-soft2); }
-.pa--48 .pa-btn { width: 46px; height: 28px; border-radius: 7px; font-size: 14px; font-weight: 600; color: var(--pv-text); }
-.pa--48 .pa-btn.is-here {
-  background: #fff; color: var(--pv-text);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.14), 0 0 0 0.5px rgb(0 0 0 / 0.04);
-}
-html.dark .pa--48 .pa-btn.is-here { background: color-mix(in srgb, var(--pv-text) 30%, var(--pv-group)); }
-.pa--48 .pa-btn:not(.is-here) { color: var(--pv-accent); }
-.pa--48.is-busy { padding: 0; background: transparent; }
-.pa--48 .pa-btn--stop { width: 96px; height: 32px; border-radius: 9px; color: #000; }
-
-/* 49 Behang-Symbole */
-.pa--49 { gap: 6px; }
-.pa--49 .pa-btn { width: 40px; height: 36px; border-radius: 10px; background: var(--pv-soft2); }
-.pa--49 .pa-btn--stop { width: 86px; background: var(--pv-amber); }
-
-/* 50 Betont, was passt */
-.pa--50 { gap: 10px; }
-.pa--50 .pa-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--pv-soft2); }
-.pa--50 .pa-btn.is-hint { background: var(--pv-accent); color: #fff; }
-.pa--50 .pa-btn--stop { background: var(--pv-amber); color: #000; }
+/* 71 Auf hell, Zu dunkel */
+.pa--71 { background: transparent; }
+.pa--71 .pa-btn--up { background: var(--pv-soft2); color: var(--pv-text); border-radius: 9px 0 0 9px; }
+.pa--71 .pa-btn--down { background: var(--text-primary); color: var(--app-bg); border-radius: 0 9px 9px 0; }
+.pa--71 .pa-btn + .pa-btn::before { display: none; }
 
 /* Stopp immer schwarz auf Gelb, egal welche Schriftfarbe die Fassung sonst hat */
-.pa.pa .pa-btn--stop { color: #000; }
-
-/* Stopp bei 42/46/50 als Kreis */
-.pa--42 .pa-btn--stop, .pa--46 .pa-btn--stop, .pa--50 .pa-btn--stop { width: 36px; height: 36px; border-radius: 50%; }
+.pa.pa .pa-btn--stop { background: var(--pv-amber); color: #000; }
 
 /* ── Reihe C: Fenster Zeitplan und Szenen ─────────────────────────────── */
 /* Gilt fuer 61–65; „Ist" (data-pv-c='IST') bleibt unberuehrt. */

@@ -589,21 +589,33 @@ function PlanSettings({ m, look }: { m: PlanModel; look: string }) {
                 />
             </div>
             <GH>Darstellung</GH>
-            <div className="pw-group">
-                <GRow
-                    title="Szenen"
-                    right={
-                        <Seg<'liste' | 'kacheln'>
-                            size="sm"
-                            value={shown}
-                            options={[
-                                { value: 'liste', label: 'Liste' },
-                                { value: 'kacheln', label: 'Kacheln' },
-                            ]}
-                            onChange={setViewPref}
-                        />
-                    }
-                />
+            {/* Zwei Zeilen mit Haken wie „An Feiertagen": die kleine Kapsel war kaum lesbar (Sascha, 02.11.). */}
+            <div className="pw-group" role="radiogroup" aria-label="Szenen anzeigen als">
+                {(
+                    [
+                        { value: 'liste', label: 'Szenen als Liste', sub: 'eine Zeile je Szene, wie 61' },
+                        {
+                            value: 'kacheln',
+                            label: 'Szenen als Kacheln',
+                            sub: 'farbige Kacheln, zwei nebeneinander, wie 62',
+                        },
+                    ] as const
+                ).map((o) => (
+                    <GRow
+                        key={o.value}
+                        title={o.label}
+                        sub={o.sub}
+                        right={
+                            shown === o.value ? (
+                                <Check size={20} className="pw-check" />
+                            ) : (
+                                <span className="pw-check-space" />
+                            )
+                        }
+                        onClick={() => setViewPref(o.value)}
+                        cls={shown === o.value ? 'is-picked' : ''}
+                    />
+                ))}
             </div>
             <GF>Gilt nur auf diesem Gerät.</GF>
         </>
