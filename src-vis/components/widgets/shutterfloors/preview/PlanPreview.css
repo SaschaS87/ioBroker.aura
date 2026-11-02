@@ -268,7 +268,7 @@
 
 .pv-planline-icon {
   flex-shrink: 0;
-  color: var(--rpp-accent);
+  color: var(--text-secondary); /* Symbole immer im Theme-Grau */
 }
 
 /* ── 5 Nächste Fahrt groß ───────────────────────────────────────────── */
