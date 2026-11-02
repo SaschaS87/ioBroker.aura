@@ -35,6 +35,13 @@ export type FederSide = 'left' | 'right';
 
 /** Hoehe beider Schieber – eine Zahl fuer Position UND Lamelle. */
 const H = 260;
+// Feste Spaltenbreiten wie im Original (ShutterSheet.tsx): Die Spalte ist so
+// breit wie ihr Schieber, nie so breit wie ihre Beschriftung. Sonst wird die
+// Lamellen-Spalte bei „halb offen" → „waagerecht" → „geschlossen" schmaler
+// oder breiter und der Abstand zwischen den Schiebern springt (am 27.08.2026
+// im Original gemeldet, am 02.11.2026 hier erneut).
+const POS_W = 112;
+const SLAT_W = 64;
 const LEVEL_WORD = { good: 'Funk gut', normal: 'Funk normal', low: 'Funk schwach' } as const;
 const KIND_WORD = { fenster: 'Fenster', dachfenster: 'Dachfenster', raffstore: 'Raffstore' } as const;
 
@@ -190,17 +197,6 @@ export function PvSheetSlim({
     else if (slatShown >= 88) slatWord = 'geschlossen';
     else slatWord = 'halb offen';
 
-    const goLabel =
-        posDraft !== null
-            ? posDraft <= 3
-                ? 'Öffnen'
-                : posDraft >= 97
-                  ? 'Schließen'
-                  : `Auf ${Math.round(posDraft)} % fahren`
-            : slatDraft !== null
-              ? 'Lamelle stellen'
-              : 'OK';
-
     const isFav = fav.has(device.key);
     const stopPtr = {
         onPointerDown: (e: { stopPropagation: () => void }) => e.stopPropagation(),
@@ -272,7 +268,7 @@ export function PvSheetSlim({
 
                 <div className="pvq-body">
                     <div className="pvq-instruments">
-                        <div className="pvq-col">
+                        <div className="pvq-col" style={{ width: POS_W }}>
                             <div className="pvq-cap">Position</div>
                             <div
                                 className={`pvq-val${offline ? ' is-stale' : ''}${ctl.estimate && posDraft === null ? ' is-estimate' : ''}${posDraft !== null ? ' is-live' : ''}`}
@@ -307,7 +303,7 @@ export function PvSheetSlim({
                             />
                         </div>
                         {device.slatDp && (
-                            <div className="pvq-col">
+                            <div className="pvq-col" style={{ width: SLAT_W }}>
                                 <div className="pvq-cap">Lamelle</div>
                                 <div
                                     className={`pvq-val${slatDraft !== null ? ' is-live' : ''}${slatTravel ? ' is-target' : ''}`}
@@ -333,7 +329,12 @@ export function PvSheetSlim({
 
                     <div
                         className="pvq-confirm"
-                        style={{ '--pvq-side': device.slowPosDp ? '50px' : '0px' } as CSSProperties}
+                        style={
+                            {
+                                '--pvq-side': device.slowPosDp ? '50px' : '0px',
+                                '--pvq-btn': `${POS_W}px`,
+                            } as CSSProperties
+                        }
                     >
                         {feder === 'left' ? featherBtn : <span />}
                         {busy && !hasDraft ? (
@@ -347,7 +348,7 @@ export function PvSheetSlim({
                                 onClick={confirm}
                                 disabled={!connected || !hasDraft}
                             >
-                                {goLabel}
+                                OK
                             </button>
                         )}
                         {feder === 'right' ? featherBtn : <span />}

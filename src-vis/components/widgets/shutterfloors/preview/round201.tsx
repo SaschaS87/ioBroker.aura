@@ -1,7 +1,9 @@
 /**
  * Runde 201+ (02.11.2026), nur Dev-Vorschau. Zwei neue Reihen in der Leiste:
  *   D 201–202  Feinregler „schlicht" (PvSheetSlim), Feder links oder rechts
- *   E 203–204  Favoriten je Geschoss, Rest hinter einem Pfeil
+ *   E 203      Favoriten je Geschoss, Rest hinter einem Pfeil in der
+ *              Ueberschrift (Saschas Wahl vom 02.11.2026; 204 „Zeile
+ *              weitere am Ende" ist entfallen)
  * „35" zeigt jeweils den Stand vor dieser Runde (voller Feinregler PvSheet,
  * alle Antriebe sichtbar).
  *
@@ -31,11 +33,6 @@ export const LIST_LOOKS = [
         key: '203',
         name: 'Pfeil in der Überschrift',
         desc: 'Je Geschoss nur die Favoriten. Der Pfeil rechts neben „ERDGESCHOSS" blendet die übrigen ein und aus. Ohne Favorit im Geschoss: alle sichtbar.',
-    },
-    {
-        key: '204',
-        name: 'Zeile „weitere" am Ende',
-        desc: 'Je Geschoss nur die Favoriten, darunter die Zeile „5 weitere" mit Pfeil zum Ein- und Ausklappen. Ohne Favorit im Geschoss: alle sichtbar.',
     },
 ];
 
@@ -73,24 +70,14 @@ export function FloorGroup({
     const label = open ? 'weniger' : `${rest.length} weitere`;
     return (
         <section>
-            {look === '203' ? (
-                <button type="button" className="v35-group-head vf-head" onClick={toggle} aria-expanded={open}>
-                    <span>{title}</span>
-                    <span className="vf-head-more">{label}</span>
-                    <ChevronDown size={18} className={`vf-chev${open ? ' is-open' : ''}`} />
-                </button>
-            ) : (
-                <div className="v35-group-head">{title}</div>
-            )}
+            <button type="button" className="v35-group-head vf-head" onClick={toggle} aria-expanded={open}>
+                <span>{title}</span>
+                <span className="vf-head-more">{label}</span>
+                <ChevronDown size={18} className={`vf-chev${open ? ' is-open' : ''}`} />
+            </button>
             <div className="v35-group">
                 {favs.map((d) => row(d, false))}
                 {open && rest.map((d, i) => row(d, i === 0))}
-                {look === '204' && (
-                    <button type="button" className="vf-more" onClick={toggle} aria-expanded={open}>
-                        <span>{label}</span>
-                        <ChevronDown size={18} className={`vf-chev${open ? ' is-open' : ''}`} />
-                    </button>
-                )}
             </div>
         </section>
     );

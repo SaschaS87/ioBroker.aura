@@ -25,8 +25,12 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
 
 /* Beide Spalten haben denselben Aufbau mit festen Hoehen – nur so stehen
    Position und Lamelle beim Raffstore oben und unten auf einer Linie. */
-.pvq-instruments { display: flex; align-items: flex-start; justify-content: center; gap: 28px; }
-.pvq-col { display: flex; flex-direction: column; align-items: center; }
+.pvq-instruments { display: flex; align-items: flex-start; justify-content: center; gap: 32px; }
+/* Breite kommt fest aus PvSheetSlim (POS_W/SLAT_W). Zahl und Wort duerfen
+   ueber die Spalte hinausragen und bleiben per Flex mittig – sie bestimmen
+   die Breite nie (wie .instrument im Original). */
+.pvq-col { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
+.pvq-col > .pvq-cap, .pvq-col > .pvq-val, .pvq-col > .pvq-word { width: 100%; display: flex; justify-content: center; overflow: visible; }
 .pvq-cap { height: 16px; line-height: 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pv-sub); }
 .pvq-val {
   height: 36px; display: flex; align-items: center; white-space: nowrap;
@@ -47,8 +51,8 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
   touch-action: none; cursor: ns-resize; outline: none;
   transition: transform 0.15s ease, opacity 0.15s;
 }
-.pvq-pill--pos { width: 112px; }
-.pvq-pill--slat { width: 64px; border-radius: 22px; }
+.pvq-pill--pos { width: 100%; }
+.pvq-pill--slat { width: 100%; border-radius: 22px; }
 .pvq-pill:focus-visible { box-shadow: 0 0 0 2px var(--pv-accent); }
 .pvq-pill.is-drag { transform: scale(1.02); }
 .pvq-pill-fill { position: absolute; left: 0; right: 0; top: 0; background: var(--k); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -62,11 +66,12 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
   background: color-mix(in srgb, var(--pv-text) 22%, transparent);
 }
 
-/* Bestaetigung: Taste immer in der Mitte, die Feder sitzt in einer eigenen
+/* Bestaetigung: schlichtes „OK", so breit wie der Positions-Schieber
+   (--pvq-btn), immer in der Mitte. Die Feder sitzt in einer eigenen
    Spalte links oder rechts daneben. Ohne Feder (Raffstore, Ankleide …) sind
    beide Seitenspalten 0 breit – die Taste steht an derselben Stelle. */
 .pvq-confirm {
-  display: grid; grid-template-columns: var(--pvq-side, 50px) 200px var(--pvq-side, 50px);
+  display: grid; grid-template-columns: var(--pvq-side, 50px) var(--pvq-btn, 112px) var(--pvq-side, 50px);
   align-items: center; justify-content: center; column-gap: 12px;
   width: 100%; margin-top: 22px;
 }
@@ -109,17 +114,6 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
 .vf-head-more { font-size: 12.5px; letter-spacing: 0; text-transform: none; color: var(--pv-accent); }
 .vf-chev { flex-shrink: 0; color: var(--pv-accent); transition: transform 0.2s ease; }
 .vf-chev.is-open { transform: rotate(180deg); }
-
-/* 204: eigene Zeile am Ende der Gruppe */
-.vf-more {
-  position: relative; display: flex; align-items: center; gap: 12px;
-  width: 100%; min-height: 44px; padding: 6px 14px; border: none; background: transparent;
-  font: inherit; font-size: 15px; color: var(--pv-accent); text-align: left; cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.vf-more::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: color-mix(in srgb, var(--pv-text) 12%, transparent); transform: scaleY(0.6); }
-.vf-more > span { flex: 1; }
-.vf-more:active { background: color-mix(in srgb, var(--pv-text) 6%, transparent); }
 
 /* Ausgeklappte Nicht-Favoriten: duenne Linie trennt sie von den Favoriten */
 .vf-rest-first::before { left: 0 !important; height: 1px; background: color-mix(in srgb, var(--pv-text) 20%, transparent) !important; }
