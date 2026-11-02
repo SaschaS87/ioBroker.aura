@@ -20,13 +20,55 @@ import { useLivePlanModel } from '../planner/useLivePlanModel';
 import { Toast } from '../planner/parts';
 import { PvSheet } from './PvSheet';
 import { useRowControl } from './useRowControl';
-import type { Acts, DevInfo, PvCtx } from './pvParts';
+import type { Acts, DevInfo, Picks, PvCtx, Variant } from './pvParts';
 import { VARIANTS } from './variants';
+import { RoundN } from './round41';
+import { ACT_LOOKS } from './pvButtons';
+import { ICON_SETS } from './pvIcons';
+import { WIN_LOOKS } from './pvWindows';
 import '../planner/RollPlan.css';
 import './ModernPreview.css';
 
 const LIVE_ROOT = '0_userdata.0.Rollladen';
-const KEY_PICK = 'aura.shutterfloors.modern.preview';
+// Neuer Schluessel ab Runde 41–65, damit die Vorschau mit der neuen Runde startet.
+const KEY_PICK = 'aura.shutterfloors.modern.preview2';
+const KEY_N = 'aura.shutterfloors.modern.n';
+const KEY_FOLD = 'aura.shutterfloors.modern.fold';
+
+/** Runde 41–65: ueberarbeiteter Entwurf 35, kombinierbar aus drei Reihen. */
+const ROUND_N: Variant = {
+    key: 'N',
+    name: 'Runde 41–65',
+    desc: 'Entwurf 35 überarbeitet: ohne große Überschrift, auf dem Hintergrund des Themes. Tasten, Symbole und Fenster getrennt wählbar.',
+    regler: 'pill',
+    C: RoundN,
+};
+type Row = {
+    k: keyof Picks;
+    label: string;
+    base: string;
+    baseName: string;
+    list: { key: string; name: string; desc: string }[];
+};
+const ROWS: Row[] = [
+    { k: 'a', label: 'A Tasten', base: '35', baseName: 'wie 35 (Pfeile mit Strich, Doppelknopf)', list: ACT_LOOKS },
+    { k: 'b', label: 'B Symbole', base: '35', baseName: 'wie 35 (heutige Symbole mit Stand)', list: ICON_SETS },
+    { k: 'c', label: 'C Fenster', base: 'IST', baseName: 'heutige Fenster (Entwurf 21)', list: WIN_LOOKS },
+];
+
+function loadPicks(): Picks {
+    const def: Picks = { a: '35', b: '35', c: 'IST' };
+    try {
+        const raw = JSON.parse(localStorage.getItem(KEY_N) ?? '{}') as Partial<Picks>;
+        ROWS.forEach((r) => {
+            const v = raw[r.k];
+            if (typeof v === 'string' && (v === r.base || r.list.some((x) => x.key === v))) def[r.k] = v;
+        });
+    } catch {
+        /* kaputter oder fehlender Wert – Grundstand */
+    }
+    return def;
+}
 
 function load(key: string): string | null {
     try {
@@ -130,11 +172,13 @@ function Host({
     connected,
     footer,
     pick,
+    picks,
 }: {
     floors: ShutterFloorDef[];
     connected: boolean;
     footer: ReactNode;
     pick: string;
+    picks: Picks;
 }) {
     const { m, onPos } = usePlanPreviewModel(floors);
     const [reg, setReg] = useState<Record<string, DevInfo>>({});
@@ -147,7 +191,7 @@ function Host({
     }, []);
     const acts: Acts = useRef({});
     const [sheet, setSheet] = useState<{ d: ShutterFloorDeviceDef; seq: number } | null>(null);
-    const variant = VARIANTS.find((v) => v.key === pick) ?? VARIANTS[0];
+    const variant = pick === 'N' ? ROUND_N : (VARIANTS.find((v) => v.key === pick) ?? VARIANTS[0]);
 
     // Farbwelt der Variante auch fuer die Fenster, die per Portal ausserhalb
     // des Widgets haengen (Zeitplan, Szenen, Editoren, Feinregler).
@@ -166,6 +210,7 @@ function Host({
         acts,
         openSheet: (d) => setSheet((s) => ({ d, seq: (s?.seq ?? 0) + 1 })),
         footer,
+        picks,
     };
     const V = variant.C;
     return (
@@ -210,43 +255,100 @@ export function ModernPreview({
 }) {
     const [pick, setPickState] = useState<string>(() => {
         const v = load(KEY_PICK);
-        return v === 'IST' || VARIANTS.some((x) => x.key === v) ? (v as string) : VARIANTS[0].key;
+        return v === 'IST' || v === 'N' || VARIANTS.some((x) => x.key === v) ? (v as string) : 'N';
     });
     const setPick = (v: string) => {
         save(KEY_PICK, v);
         setPickState(v);
     };
-    const variant = VARIANTS.find((v) => v.key === pick);
+    const [picks, setPicksState] = useState<Picks>(loadPicks);
+    const setRow = (k: keyof Picks, v: string) =>
+        setPicksState((prev) => {
+            const next = { ...prev, [k]: v };
+            save(KEY_N, JSON.stringify(next));
+            return next;
+        });
+    const [fold, setFoldState] = useState(() => load(KEY_FOLD) === '1');
+    const setFold = (v: boolean) => {
+        save(KEY_FOLD, v ? '1' : '0');
+        setFoldState(v);
+    };
+    const variant = pick === 'N' ? ROUND_N : VARIANTS.find((v) => v.key === pick);
+    const rowName = (r: Row) => {
+        const hit = r.list.find((x) => x.key === picks[r.k]);
+        return hit ? `${hit.key} · ${hit.name}` : r.baseName;
+    };
     return (
         <>
             <div className="pv-bar" role="toolbar" aria-label="Entwurfs-Umschalter">
                 <div className="pv-bar-btns">
-                    {[{ key: 'IST' }, ...VARIANTS].map((v) => (
+                    {[{ key: 'IST' }, ...VARIANTS, { key: 'N' }].map((v) => (
                         <button
                             key={v.key}
                             type="button"
-                            className={`pv-bar-btn${pick === v.key ? ' is-active' : ''}`}
+                            className={`pv-bar-btn${pick === v.key ? ' is-active' : ''}${v.key === 'N' ? ' pv-bar-btn--new' : ''}`}
                             onClick={() => setPick(v.key)}
                         >
-                            {v.key === 'IST' ? 'Ist' : v.key}
+                            {v.key === 'IST' ? 'Ist' : v.key === 'N' ? 'Neu 41–65' : v.key}
                         </button>
                     ))}
+                    <button type="button" className="pv-bar-fold" onClick={() => setFold(!fold)} aria-expanded={!fold}>
+                        {fold ? 'mehr ▾' : 'weniger ▴'}
+                    </button>
                 </div>
-                <div className="pv-bar-name">
-                    {pick === 'IST' || !variant ? 'Ist · heutiger Stand' : `${variant.key} · ${variant.name}`}
-                </div>
-                {variant && pick !== 'IST' && <div className="pv-bar-desc">{variant.desc}</div>}
-                <div className="pv-bar-hint">
-                    nur lokal · echte Stellungen, Szenen und Zeitpunkte vom Pi, nur lesend · Fahren wird nur angezeigt,
-                    es fährt nichts
-                </div>
+                {pick === 'N' && (
+                    <div className="pv-bar-rows">
+                        {ROWS.map((r) => (
+                            <div key={r.k} className="pv-bar-row">
+                                <span className="pv-bar-row-head">
+                                    <span className="pv-bar-row-label">{r.label}</span>
+                                    <span className="pv-bar-row-name">{rowName(r)}</span>
+                                </span>
+                                {!fold && (
+                                    <div className="pv-bar-btns">
+                                        {[{ key: r.base }, ...r.list].map((x) => (
+                                            <button
+                                                key={x.key}
+                                                type="button"
+                                                className={`pv-bar-btn${picks[r.k] === x.key ? ' is-active' : ''}`}
+                                                onClick={() => setRow(r.k, x.key)}
+                                            >
+                                                {x.key === 'IST' ? 'Ist' : x.key}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {!fold && (
+                                    <span className="pv-bar-desc">
+                                        {r.list.find((x) => x.key === picks[r.k])?.desc ??
+                                            'Vergleich: so wie vor dieser Runde.'}
+                                    </span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {pick !== 'N' && (
+                    <div className="pv-bar-name">
+                        {pick === 'IST' || !variant ? 'Ist · heutiger Stand' : `${variant.key} · ${variant.name}`}
+                    </div>
+                )}
+                {!fold && variant && pick !== 'IST' && pick !== 'N' && (
+                    <div className="pv-bar-desc">{variant.desc}</div>
+                )}
+                {!fold && (
+                    <div className="pv-bar-hint">
+                        nur lokal · echte Stellungen, Szenen und Zeitpunkte vom Pi, nur lesend · Fahren wird nur
+                        angezeigt, es fährt nichts
+                    </div>
+                )}
             </div>
             {pick === 'IST' || !variant ? (
                 ist
             ) : (
                 <>
                     {banner}
-                    <Host floors={floors} connected={connected} footer={footer} pick={pick} />
+                    <Host floors={floors} connected={connected} footer={footer} pick={pick} picks={picks} />
                 </>
             )}
         </>

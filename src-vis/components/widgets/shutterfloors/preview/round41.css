@@ -1,0 +1,360 @@
+/* Runde 41–65 (02.11.2026), nur Dev-Vorschau. Entwurf 35 ueberarbeitet:
+   Grund und Karten kommen aus dem Hausstil (--app-bg, --widget-bg,
+   --widget-border*, --widget-radius, --text-*, --accent*). Eigene Farben nur
+   in den farbigen Symbol-Quadraten (Art, Zeitplan, Szenen) – wie in 35. */
+
+/* ── Leiste: drei Reihen A/B/C ────────────────────────────────────────── */
+
+.pv-bar-btn--new { font-weight: 700; border-style: solid; }
+.pv-bar-fold {
+  margin-left: auto; padding: 0 4px; border: none; background: transparent;
+  color: var(--text-secondary); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.pv-bar-rows {
+  display: flex; flex-direction: column; gap: 9px; padding-top: 7px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent-yellow, #f59e0b) 45%, transparent);
+}
+.pv-bar-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pv-bar-row-head { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.pv-bar-row-label { font-weight: 700; font-size: 12px; white-space: nowrap; }
+.pv-bar-row-name { font-weight: 600; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-bar-row .pv-bar-btn { min-width: 30px; height: 26px; padding: 0 6px; }
+
+/* ── Grundstand „35 neu" ──────────────────────────────────────────────── */
+
+.vn {
+  --pv-group: var(--widget-bg, var(--app-surface));
+  display: flex; flex-direction: column; gap: 6px;
+}
+.vn .v35-group {
+  border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border));
+  border-radius: var(--widget-radius, 12px);
+  box-shadow: var(--widget-shadow, none);
+}
+.vn .v35-group-head { padding-top: 16px; }
+.vn .pv-foot { margin-top: 14px; }
+.vn-row { min-height: 56px; }
+
+/* ── Reihe B: Symbole ─────────────────────────────────────────────────── */
+
+.pb-svg { display: block; }
+.pb-svg.is-busy { animation: pv-pulse 1.4s ease-in-out infinite; }
+.pb-bar {
+  position: absolute; left: 6px; right: 6px; bottom: 4px; height: 3px;
+  border-radius: 2px; background: rgb(255 255 255 / 0.35); overflow: hidden;
+}
+.pb-bar i { display: block; height: 100%; border-radius: 2px; background: #fff; transition: width 0.8s ease; }
+.vn-ico--58 .pb-svg { width: 16px; height: 16px; transform: translateY(-3px); }
+
+/* ── Reihe A: Auf/Zu-Tasten ───────────────────────────────────────────── */
+
+.pa { display: inline-flex; align-items: center; flex-shrink: 0; gap: 8px; }
+.pa-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 0; border: none; background: transparent; color: var(--pv-text);
+  font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, background-color 0.2s, color 0.2s;
+}
+.pa-btn:active:not(:disabled) { transform: scale(0.92); }
+.pa-btn:disabled { opacity: 0.4; cursor: default; }
+.pa-btn--stop { background: var(--pv-amber); color: #000; font-weight: 600; }
+
+/* 41 Chevron-Kapsel */
+.pa--41 { gap: 0; height: 32px; border-radius: 9px; background: var(--pv-soft2); }
+.pa--41 .pa-btn { width: 44px; height: 32px; border-radius: 9px; }
+.pa--41 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--41 .pa-btn--stop { width: 88px; font-size: 14px; }
+
+/* 42 Zwei Kreise */
+.pa--42 { gap: 10px; }
+.pa--42 .pa-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--pv-soft2); }
+
+/* 43 Woerter */
+.pa--43 { gap: 6px; }
+.pa--43 .pa-btn {
+  min-width: 46px; height: 30px; padding: 0 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--pv-accent) 13%, transparent); color: var(--pv-accent);
+  font-size: 15px; font-weight: 600;
+}
+.pa--43 .pa-btn--stop { min-width: 98px; background: var(--pv-amber); color: #000; }
+
+/* 44 Fernbedienung */
+.pa--44 { gap: 6px; }
+.pa--44 .pa-btn { width: 40px; height: 34px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--44 .pa-btn--stop { width: 86px; background: var(--pv-amber); }
+
+/* 45 Wippe */
+.pa--45 {
+  flex-direction: column; gap: 0; width: 40px; height: 46px;
+  border-radius: 12px; background: var(--pv-soft2); overflow: hidden;
+}
+.pa--45 .pa-btn { width: 40px; height: 23px; }
+.pa--45 .pa-btn svg { width: 18px; height: 18px; }
+.pa--45 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; top: 0; left: 9px; right: 9px; height: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--45 .pa-btn--stop { height: 46px; }
+.pa--45.is-busy { background: var(--pv-amber); }
+
+/* 46 Ton in Ton (Farbe der Art) */
+.pa--46 { gap: 10px; --k: #0a84ff; }
+.pa--46.is-dachfenster { --k: #5e5ce6; }
+.pa--46.is-raffstore { --k: #30b0c7; }
+.pa--46 .pa-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: color-mix(in srgb, var(--k) 15%, transparent); color: color-mix(in srgb, var(--k) 78%, #000);
+}
+html.dark .pa--46 .pa-btn { background: color-mix(in srgb, var(--k) 26%, transparent); color: color-mix(in srgb, var(--k) 70%, #fff); }
+.pa--46 .pa-btn--stop { background: var(--pv-amber); color: #000; }
+
+/* 47 Nur Winkel */
+.pa--47 { gap: 0; }
+.pa--47 .pa-btn { width: 42px; height: 42px; border-radius: 50%; color: var(--pv-accent); }
+.pa--47 .pa-btn:active:not(:disabled) { background: var(--pv-soft); }
+.pa--47 .pa-btn--stop { width: auto; height: 30px; padding: 0 16px; margin-right: 4px; border-radius: 999px; font-size: 15px; }
+
+/* 48 Zustands-Schalter */
+.pa--48 { gap: 0; padding: 2px; border-radius: 9px; background: var(--pv-soft2); }
+.pa--48 .pa-btn { width: 46px; height: 28px; border-radius: 7px; font-size: 14px; font-weight: 600; color: var(--pv-text); }
+.pa--48 .pa-btn.is-here {
+  background: #fff; color: var(--pv-text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.14), 0 0 0 0.5px rgb(0 0 0 / 0.04);
+}
+html.dark .pa--48 .pa-btn.is-here { background: color-mix(in srgb, var(--pv-text) 30%, var(--pv-group)); }
+.pa--48 .pa-btn:not(.is-here) { color: var(--pv-accent); }
+.pa--48.is-busy { padding: 0; background: transparent; }
+.pa--48 .pa-btn--stop { width: 96px; height: 32px; border-radius: 9px; color: #000; }
+
+/* 49 Behang-Symbole */
+.pa--49 { gap: 6px; }
+.pa--49 .pa-btn { width: 40px; height: 36px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--49 .pa-btn--stop { width: 86px; background: var(--pv-amber); }
+
+/* 50 Betont, was passt */
+.pa--50 { gap: 10px; }
+.pa--50 .pa-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--pv-soft2); }
+.pa--50 .pa-btn.is-hint { background: var(--pv-accent); color: #fff; }
+.pa--50 .pa-btn--stop { background: var(--pv-amber); color: #000; }
+
+/* Stopp immer schwarz auf Gelb, egal welche Schriftfarbe die Fassung sonst hat */
+.pa.pa .pa-btn--stop { color: #000; }
+
+/* Stopp bei 42/46/50 als Kreis */
+.pa--42 .pa-btn--stop, .pa--46 .pa-btn--stop, .pa--50 .pa-btn--stop { width: 36px; height: 36px; border-radius: 50%; }
+
+/* ── Reihe C: Fenster Zeitplan und Szenen ─────────────────────────────── */
+/* Gilt fuer 61–65; „Ist" (data-pv-c='IST') bleibt unberuehrt. */
+
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-sheet { background: var(--app-bg); }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-sheet-backdrop { --rpp-radius: 12px; --pw-sep: color-mix(in srgb, var(--text-primary) 12%, transparent); }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-sheet-header { border-bottom: none; padding: 4px 16px 10px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-sheet-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-sheet-body { padding-top: 4px; }
+
+/* Startseiten */
+.pw-home { display: flex; flex-direction: column; }
+.pw-gh { font-size: 12.5px; color: var(--text-secondary); padding: 18px 16px 6px; letter-spacing: 0.02em; text-transform: uppercase; }
+.pw-home > .pw-gh:first-child { padding-top: 6px; }
+.pw-gf { font-size: 12.5px; line-height: 1.4; color: var(--text-secondary); padding: 7px 16px 0; }
+.pw-group {
+  background: var(--rpp-bg); border: var(--rpp-bw) solid var(--rpp-border);
+  border-radius: var(--rpp-radius); overflow: hidden;
+}
+.pw-group + .pw-group { margin-top: 18px; }
+.pw-pad { padding: 10px 12px; }
+.pw-row {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  min-height: 52px; padding: 8px 14px; color: var(--text-primary);
+  transition: background-color 0.25s;
+}
+.pw-row + .pw-row::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px;
+  background: var(--pw-sep); transform: scaleY(0.6);
+}
+.pw-row + .pw-row:has(> .pw-sq, > .pw-add-ico)::before { left: 56px; }
+.pw-row--tap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pw-row--tap:active { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.pw-row.is-off .pw-main, .pw-row.is-off .pw-sq { opacity: 0.45; }
+.pw-row.is-flash { background: color-mix(in srgb, var(--rpp-accent) 18%, transparent); }
+.pw-sq {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 8px; background: var(--sq); color: #fff;
+}
+.pw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pw-title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-sub { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-inline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pw-ell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-dot { margin: 0 5px; color: var(--text-secondary); }
+.pw-chev { flex-shrink: 0; color: color-mix(in srgb, var(--text-primary) 30%, transparent); }
+.pw-muted { color: var(--text-secondary); font-size: 15px; }
+.pw-row--next .pw-title { display: flex; align-items: baseline; gap: 8px; }
+.pw-next-time { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pw-next-what { font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pw-row--add .pw-title { color: var(--rpp-accent); }
+.pw-add-ico { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0; color: var(--rpp-accent); }
+.pw-check { flex-shrink: 0; color: var(--rpp-accent); }
+.pw-check-space { width: 20px; flex-shrink: 0; }
+.pw-value { flex-shrink: 0; font-size: 15px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pw-play {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: color-mix(in srgb, var(--rpp-accent) 14%, transparent); color: var(--rpp-accent);
+}
+.pw-go {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 30px; padding: 0 12px;
+  border-radius: 999px; background: color-mix(in srgb, var(--rpp-accent) 14%, transparent);
+  color: var(--rpp-accent); font-size: 14px; font-weight: 600;
+}
+
+/* 62 grosse Karte + farbige Kacheln */
+.pw-hero {
+  display: flex; flex-direction: column; gap: 12px; margin-top: 4px; padding: 16px;
+  border-radius: 18px; background: var(--rpp-bg); border: var(--rpp-bw) solid var(--rpp-border);
+}
+.pw-hero-label { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
+.pw-hero-main {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;
+  padding: 0; border: none; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.pw-hero-time { font-size: 48px; font-weight: 700; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.pw-hero-what { font-size: 18px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-hero-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--text-secondary); }
+.pw-pill {
+  padding: 2px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  background: color-mix(in srgb, var(--rpp-accent) 14%, transparent); color: var(--rpp-accent);
+}
+.pw-hero-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pw-cap {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0;
+  height: 44px; padding: 0 8px; border: none; border-radius: 12px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent); color: var(--text-primary);
+  font: inherit; font-size: 14.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.pw-cap.is-on { background: var(--rpp-yellow); color: #1c1917; }
+.pw-cap:active { transform: scale(0.97); }
+.pw-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pw-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; min-height: 106px;
+  padding: 12px; border: none; border-radius: 16px; background: var(--sq); color: #fff;
+  font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); transition: transform 0.12s, filter 0.2s, box-shadow 0.2s;
+}
+.pw-tile:active { transform: scale(0.97); }
+.pw-tile.is-flash { filter: brightness(1.15); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sq) 35%, transparent); }
+.pw-tile.is-edit { outline: 2px dashed rgb(255 255 255 / 0.65); outline-offset: -6px; }
+.pw-tile-top { display: flex; align-items: flex-start; justify-content: space-between; width: 100%; margin-bottom: auto; }
+.pw-tile-act { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgb(255 255 255 / 0.22); }
+.pw-tile-name { max-width: 100%; margin-top: 14px; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-tile-sub { max-width: 100%; font-size: 12px; opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-tile--add {
+  align-items: center; justify-content: center; gap: 6px;
+  background: transparent; color: var(--rpp-accent); border: 1.5px dashed var(--app-border); box-shadow: none;
+}
+
+/* 63 Ruhig: keine bunten Quadrate */
+.pw-63 .pw-sq { width: 24px; background: transparent; color: var(--text-secondary); }
+.pw-63 .pw-row + .pw-row:has(> .pw-sq, > .pw-add-ico)::before { left: 50px; }
+.pw-63 .pw-add-ico { width: 24px; }
+.pw-63 .pw-play { background: transparent; color: var(--rpp-accent); width: 24px; }
+
+/* 64 Tages-Zeitleiste */
+.pw-tl { padding: 4px 0; }
+.pw-tl-item {
+  position: relative; display: grid; grid-template-columns: 50px 26px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 10px 14px 10px 8px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pw-tl-item::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 80px; width: 2px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+.pw-tl-item:active { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.pw-tl-time { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pw-tl-time small { font-size: 10.5px; font-weight: 500; color: var(--text-secondary); }
+.pw-tl-dot {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--sq); color: #fff;
+  box-shadow: 0 0 0 3px var(--rpp-bg);
+}
+.pw-tl-item.is-past .pw-tl-time, .pw-tl-item.is-past .pw-main { opacity: 0.5; }
+.pw-tl-item.is-off .pw-main, .pw-tl-item.is-off .pw-tl-dot { opacity: 0.4; }
+.pw-tl-now { position: relative; display: flex; align-items: center; height: 22px; padding-left: 58px; }
+.pw-tl-now::before { content: ''; position: absolute; left: 58px; right: 14px; top: 50%; height: 2px; background: var(--rpp-red); }
+.pw-tl-now span {
+  position: relative; padding: 1px 8px; border-radius: 999px;
+  background: var(--rpp-red); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.pw-tl .pw-row--add { border-top: 1px solid var(--pw-sep); }
+
+/* 65 Grosse Ueberschrift + runde Szenen */
+html[data-pv-c][data-pv-c='65'] .rpp-sheet-title { font-size: 30px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; }
+html[data-pv-c][data-pv-c='65'] .rpp-sheet-subtitle { font-size: 14px; }
+.pw-rounds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 8px; padding: 8px 0 2px; }
+.pw-round {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0;
+  padding: 0; border: none; background: transparent; color: var(--text-primary); font: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pw-round-ico {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 64px; height: 64px; border-radius: 50%; background: var(--sq); color: #fff;
+  transition: transform 0.15s, box-shadow 0.25s;
+}
+.pw-round:active .pw-round-ico { transform: scale(0.93); }
+.pw-round.is-flash .pw-round-ico { transform: scale(1.06); box-shadow: 0 0 0 6px color-mix(in srgb, var(--sq) 30%, transparent); }
+.pw-round-badge {
+  position: absolute; top: -2px; right: -2px; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; background: var(--rpp-bg); color: var(--text-primary);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+}
+.pw-round-name {
+  max-width: 100%; font-size: 13px; font-weight: 600; text-align: center; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pw-round-sub { max-width: 100%; font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-round--add .pw-round-ico { background: transparent; border: 1.5px dashed var(--app-border); color: var(--rpp-accent); }
+
+/* ── Editoren (Szene, Zeitpunkt) im Look von 35, 61–65 ────────────────── */
+
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-editor { gap: 14px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-section { gap: 10px; padding: 12px 14px; border-radius: 12px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-section--flush { padding: 0 4px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-label { font-size: 12.5px; letter-spacing: 0.02em; text-transform: uppercase; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-title { font-size: 16px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-sub { font-size: 13px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-hint { font-size: 12.5px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-caption { padding: 4px 16px 6px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-caption-text { font-size: 12.5px; font-weight: 400; letter-spacing: 0.02em; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-caption-line { display: none; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-card { border-radius: 12px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-dev { padding: 10px 14px; border-bottom-color: var(--pw-sep); }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-input { min-height: 44px; border: none; border-radius: 10px; background: var(--rpp-fill); font-size: 16px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-icon-opt { height: 44px; border-radius: 12px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-chip { min-height: 34px; border-radius: 999px; font-size: 13.5px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-chip--sm { min-height: 30px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-daypick-btn { height: 40px; border-radius: 999px; font-weight: 600; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-seg-btn { font-weight: 600; }
+html.dark[data-pv-c]:not([data-pv-c='IST']) .rpp-seg-btn.is-active { background: color-mix(in srgb, var(--text-primary) 24%, var(--rpp-bg)); }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-time-input { border-radius: 8px; min-height: 36px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-stepper { border-radius: 9px; }
+/* Schalter in iPhone-Groesse, gruen wie in der Einstellungen-App */
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-toggle { width: 51px; height: 31px; }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-toggle.is-on { background: var(--accent-green, #34c759); }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-toggle-knob { top: 2px; left: 2px; width: 27px; height: 27px; box-shadow: 0 2px 4px rgb(0 0 0 / 0.2); }
+html[data-pv-c]:not([data-pv-c='IST']) .rpp-toggle.is-on .rpp-toggle-knob { transform: translateX(20px); }
+
+/* 62: groessere Flaechen */
+html[data-pv-c][data-pv-c='62'] .rpp-section { border-radius: 18px; padding: 14px 16px; }
+html[data-pv-c][data-pv-c='62'] .rpp-card { border-radius: 18px; }
+html[data-pv-c][data-pv-c='62'] .rpp-chip { min-height: 38px; }
+html[data-pv-c][data-pv-c='62'] .rpp-daypick-btn { height: 42px; border-radius: 12px; }
+
+/* 63: einfarbig, Schalter im Akzent */
+html[data-pv-c][data-pv-c='63'] .rpp-toggle.is-on { background: var(--rpp-accent); }
+html[data-pv-c][data-pv-c='63'] .rpp-chip.is-active,
+html[data-pv-c][data-pv-c='63'] .rpp-daypick-btn.is-on { background: var(--text-primary); color: var(--app-bg); }
+html[data-pv-c][data-pv-c='63'] .rpp-icon-opt.is-active { color: var(--text-primary); border-color: var(--text-primary); background: transparent; }

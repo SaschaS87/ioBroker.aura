@@ -36,6 +36,14 @@ export interface PvCtx {
     acts: Acts;
     openSheet: (d: ShutterFloorDeviceDef) => void;
     footer: ReactNode;
+    /** Runde 41–65: Wahl je Reihe (A Tasten, B Symbole, C Fenster) */
+    picks?: Picks;
+}
+
+export interface Picks {
+    a: string;
+    b: string;
+    c: string;
 }
 
 export interface Variant {
