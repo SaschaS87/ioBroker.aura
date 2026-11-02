@@ -8,8 +8,8 @@
  * Rollladen_Wochenplan_Dev, siehe ShutterFloorsWidget.tsx fuer die
  * ROOT-Weiche).
  *
- * Herkunft: Runde 5 des inzwischen entfernten Entwurfs (KachelX) — die Ansichtseinstellungen liegen
- * jetzt in useRollPlanView.ts statt lokal in dieser Komponente.
+ * Seit 02.11.2026 zwei Kacheln „Zeitplan" und „Szenen" mit je eigenem
+ * Fenster (PlanWindows.tsx) statt Wischen und Popup mit drei Reitern.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
@@ -17,8 +17,8 @@ import type { ShutterFloorDef } from '../types';
 import { useRollPlanData } from './useRollPlanData';
 import { useLivePlanModel } from './useLivePlanModel';
 import { useSceneCommand } from './useSceneCommand';
-import { useRollPlanViewStore } from './useRollPlanView';
-import { PlanKachel } from './PlanPages';
+import { PlanWindows } from './PlanWindows';
+import { Toast } from './parts';
 import './RollPlan.css';
 
 /** Liest die aktuelle Stellung eines Antriebs und meldet sie nach oben —
@@ -63,7 +63,6 @@ export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root
         data,
         runScene,
     );
-    const { list, first, scenes: sceneView } = useRollPlanViewStore();
 
     // 5 Sekunden ohne Quittierung durch das Skript -> Hinweis ueber den
     // vorhandenen Toast-Mechanismus des Modells (Portal, gleiche Optik wie
@@ -77,7 +76,8 @@ export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root
             {floors.flatMap((f) => f.devices).map((d) => (
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
-            <PlanKachel model={model} listStyle={list} first={first} favOnly layout={sceneView === 'S' ? 'list' : 2} paged={sceneView === 'W'} />
+            <PlanWindows model={model} />
+            <Toast model={model} />
         </div>
     );
 }
