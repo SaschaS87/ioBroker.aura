@@ -321,21 +321,38 @@ function EntryList({ m, setView }: W) {
     );
 }
 
-/** 64: Zeitpunkte als heutige Zeitleiste, „jetzt" an der richtigen Stelle. */
+/**
+ * 64: Zeitpunkte als heutige Zeitleiste, „jetzt" an der richtigen Stelle.
+ * Ersetzt „Als Nächstes": die nächste Fahrt ist hervorgehoben und trägt den
+ * Countdown. Bei „Heute aussetzen" sind die noch ausstehenden heutigen
+ * Fahrten ausgegraut, die Einzel-Schalter bleiben, wie sie sind.
+ */
 function Timeline({ m, setView }: W) {
     const sun = m.sunFor(m.today);
     const nowMin = m.now.getHours() * 60 + m.now.getMinutes();
     const wd = (m.today.getDay() + 6) % 7;
     const items = sortedEntries(m).map((e) => ({ e, min: triggerMinutes(e.trigger, sun).min }));
     const nowAt = items.findIndex((x) => x.min > nowMin);
+    const n = nextRun(m);
+    const isTodayNext = n !== null && n.date.toDateString() === m.today.toDateString();
+    const nextWhen = (() => {
+        if (!n) return '';
+        const c = countdown(m, n);
+        const d = dayLabel(n.date, m.today);
+        return isTodayNext || c === d ? c : `${d}, ${c}`;
+    })();
     const out: ReactNode[] = [];
     items.forEach((x, i) => {
         if (i === nowAt) out.push(<NowMark key="now" t={hhmm(nowMin)} />);
         const today = x.e.days[wd] && x.e.enabled && m.master;
+        const paused = today && m.pausedToday && x.min > nowMin;
+        const isNext = n !== null && n.occ.entry.id === x.e.id;
         out.push(
             <div
                 key={x.e.id}
-                className={`pw-tl-item${x.min <= nowMin ? ' is-past' : ''}${x.e.enabled ? '' : ' is-off'}`}
+                className={`pw-tl-item${x.min <= nowMin ? ' is-past' : ''}${x.e.enabled ? '' : ' is-off'}${
+                    paused ? ' is-paused' : ''
+                }${isNext ? ' is-next' : ''}`}
                 role="button"
                 tabIndex={0}
                 onClick={() => setView({ v: 'entry', id: x.e.id })}
@@ -351,9 +368,12 @@ function Timeline({ m, setView }: W) {
                 </span>
                 <span className="pw-main">
                     <span className="pw-title">{m.targetName(x.e.target)}</span>
+                    {isNext && <span className="pw-tl-when">{nextWhen}</span>}
                     <span className="pw-sub pw-inline">
-                        <DayLetters days={x.e.days} dim={!x.e.enabled} />
-                        <span className="pw-ell">{today ? namesLine(m, x.e.target, 2) : 'heute nicht'}</span>
+                        {!paused && <DayLetters days={x.e.days} dim={!x.e.enabled} />}
+                        <span className="pw-ell">
+                            {paused ? 'heute ausgesetzt' : today ? namesLine(m, x.e.target, 2) : 'heute nicht'}
+                        </span>
                     </span>
                 </span>
                 <Toggle on={x.e.enabled} onChange={() => m.toggleEntry(x.e.id)} label="Zeitpunkt aktiv" />
@@ -392,7 +412,7 @@ function PlanHome(p: W) {
     const { m, look } = p;
     return (
         <>
-            <NextHero {...p} />
+            {look !== '64' && <NextHero {...p} />}
             {look !== '62' && <Switches m={m} />}
             {look === '64' ? <Timeline {...p} /> : <EntryList {...p} />}
         </>
