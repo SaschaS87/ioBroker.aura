@@ -10,8 +10,6 @@ import { FloorHeader } from './FloorHeader';
 import { ShutterRow } from './ShutterRow';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
-// Entwurfs-Umschalter (nur Dev-Vorschau, 31.10.2026) – nach der Wahl samt preview/ entfernen
-import { PlanPreview } from './preview/PlanPreview';
 import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
@@ -256,7 +254,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
 
                 {/* Rolllaeden-Planer-Kachel (Feature 23): ueber der
                     Etagenliste, nur wenn showPlanner===true. */}
-                {showPlanner && (import.meta.env.DEV ? <PlanPreview floors={floors} /> : <RollPlanTile floors={floors} root={effectivePlannerRoot} />)}
+                {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
 
                 <div className="floors-scroll">
                     {floors.map((floor) => (

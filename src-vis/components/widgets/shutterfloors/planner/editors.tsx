@@ -1,21 +1,18 @@
 /**
- * Editoren + Popup-Geruest der Rolllaeden-Planer-Kachel (Produktion,
- * Feature 23). Herkunft: parts.tsx im inzwischen entfernten Entwurf (SceneEditor, EntryEditor,
- * PlanSheet, SettingsCard).
+ * Editoren + Fenster-Geruest der Rolllaeden-Planer-Kachel (Produktion,
+ * Feature 23): PlanSheet, SceneEditor, EntryEditor.
  *
  * Liegt in einer eigenen Datei statt in parts.tsx, weil PlanSheet direkt auf
  * SceneEditor/EntryEditor verdrahtet ist. parts.tsx importiert von hier NUR
  * den Typ `SheetView` (type-only, zur Kompilierzeit entfernt) — das haelt die
  * beiden Dateien frei von einem echten Laufzeit-Zirkel.
  *
- * SettingsCard trägt hier zusätzlich die drei Ansicht-Schalter aus Runde 5
- * (Sascha, s. Auftrag): Listen kompakt/mit Namen, Startseite Heute/Nächste 3,
- * Szenen Liste/Kacheln — Einstellung pro Gerät via useRollPlanView.ts
- * (localStorage), nicht auf dem Pi.
+ * Seit 02.11.2026 stehen Loeschen und Speichern der Editoren als Symbole oben
+ * rechts im Fensterkopf (per Portal), „Jetzt fahren" gibt es dort nicht mehr.
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus, Sunrise, Sunset, Trash2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Minus, Plus, Trash2 } from 'lucide-react';
 import { usePortalTarget } from '../../../../contexts/PortalTargetContext';
 import { useSheetDismiss } from '../../useSheetDismiss';
 import {
@@ -31,7 +28,6 @@ import {
     triggerText,
     WD_SHORT,
     WEEKDAYS,
-    type HolidayMode,
     type PlanEntry,
     type PlanModel,
     type Scene,
@@ -39,7 +35,6 @@ import {
     type TriggerKind,
 } from './planModel';
 import { Caption, closedWord, DayLetters, DeviceGlyph, SceneGlyph, SCENE_ICONS, Seg, Toggle } from './parts';
-import { useRollPlanViewStore, type FirstPage, type ListStyle, type SceneView } from './useRollPlanView';
 
 // ── Sheet-Navigation (Popup-Geruest) ────────────────────────────────────
 
@@ -61,7 +56,6 @@ export function PlanSheet({
     home,
     headerRight,
     onHomeBack,
-    actionsInHeader,
 }: {
     title: string;
     subtitle?: string;
@@ -74,14 +68,12 @@ export function PlanSheet({
     headerRight?: ReactNode;
     /** Zeigt auch auf der Startansicht „Zurück" (Unterseite wie Einstellungen). */
     onHomeBack?: () => void;
-    /** Editoren: Löschen/Speichern als Symbole oben rechts statt unten, ohne „Jetzt fahren". */
-    actionsInHeader?: boolean;
 }) {
     const adminPortalTarget = usePortalTarget();
     const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
     const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick } = useSheetDismiss(onClose);
-    const [headSlot, setHeadSlot] = useState<HTMLElement | null>(null);
-    const slot = actionsInHeader ? headSlot : null;
+    // Löschen/Speichern der Editoren landen per Portal oben rechts im Kopf.
+    const [slot, setHeadSlot] = useState<HTMLElement | null>(null);
     const back = () => (view.v === 'home' ? onHomeBack?.() : setView(view.v === 'entry' && view.back ? view.back : { v: 'home' }));
     let head = title;
     let sub = subtitle;
@@ -124,7 +116,7 @@ export function PlanSheet({
                             <h2 className="rpp-sheet-title">{head}</h2>
                             {sub && <p className="rpp-sheet-subtitle">{sub}</p>}
                         </div>
-                        {actionsInHeader && view.v !== 'home' && (
+                        {view.v !== 'home' && (
                             <span
                                 ref={setHeadSlot}
                                 className="rpp-head-actions"
@@ -135,7 +127,12 @@ export function PlanSheet({
                         )}
                         {view.v === 'home' && headerRight && (
                             // Pointer-Stops wie beim Zurück-Knopf, sonst schluckt die Wischgeste den Tap.
-                            <span onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onPointerMove={(e) => e.stopPropagation()}>
+                            <span
+                                className="rpp-head-actions"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onPointerUp={(e) => e.stopPropagation()}
+                                onPointerMove={(e) => e.stopPropagation()}
+                            >
                                 {headerRight}
                             </span>
                         )}
@@ -367,7 +364,7 @@ function SceneEditor({
                 </div>
             )}
 
-            {headSlot ? (
+            {headSlot &&
                 createPortal(
                     <HeadActions
                         what="Szene"
@@ -383,37 +380,12 @@ function SceneEditor({
                         canSave={count > 0}
                     />,
                     headSlot,
-                )
-            ) : (
-            <div className="rpp-actions">
-                {scene && (
-                    <button
-                        type="button"
-                        className="rpp-btn rpp-btn--danger rpp-btn--icon"
-                        aria-label="Szene löschen"
-                        onClick={() => {
-                            model.deleteScene(scene.id);
-                            onDone();
-                        }}
-                    >
-                        <Trash2 size={16} />
-                    </button>
                 )}
-                {scene && (
-                    <button type="button" className="rpp-btn rpp-btn--soft" onClick={() => model.runScene(scene.id)}>
-                        <Play size={14} /> Jetzt fahren
-                    </button>
-                )}
-                <button type="button" className="rpp-btn rpp-btn--primary" onClick={save} disabled={count === 0}>
-                    Speichern
-                </button>
-            </div>
-            )}
         </div>
     );
 }
 
-/** Löschen und Speichern als Symbole im Fensterkopf (Entwurf 21). */
+/** Löschen und Speichern als Symbole oben rechts im Fensterkopf. */
 function HeadActions({ what, onDelete, onSave, canSave }: { what: string; onDelete?: () => void; onSave: () => void; canSave: boolean }) {
     return (
         <>
@@ -695,7 +667,7 @@ function EntryEditor({
                 </span>
             </div>
 
-            {headSlot ? (
+            {headSlot &&
                 createPortal(
                     <HeadActions
                         what="Zeitpunkt"
@@ -711,116 +683,7 @@ function EntryEditor({
                         canSave={canSaveEntry}
                     />,
                     headSlot,
-                )
-            ) : (
-            <div className="rpp-actions">
-                {entry && (
-                    <button
-                        type="button"
-                        className="rpp-btn rpp-btn--danger rpp-btn--icon"
-                        aria-label="Zeitpunkt löschen"
-                        onClick={() => {
-                            model.deleteEntry(entry.id);
-                            onDone();
-                        }}
-                    >
-                        <Trash2 size={16} />
-                    </button>
                 )}
-                <button type="button" className="rpp-btn rpp-btn--primary" disabled={!canSaveEntry} onClick={saveEntry}>
-                    Speichern
-                </button>
-            </div>
-            )}
         </div>
-    );
-}
-
-// ── Einstellungen (Hauptschalter, Feiertage, Ansicht) ──────────────────
-
-export function SettingsCard({ model }: { model: PlanModel }) {
-    const sun = model.sunFor(model.today);
-    const nh = nextHoliday(model.today);
-    const view = useRollPlanViewStore();
-    return (
-        <>
-            <div className="rpp-card">
-                <div className="rpp-row">
-                    <span className="rpp-row-main">
-                        <span className="rpp-title">Wochenplan aktiv</span>
-                        <span className="rpp-sub">Hauptschalter für alle Zeitpunkte</span>
-                    </span>
-                    <Toggle on={model.master} onChange={model.setMaster} label="Wochenplan aktiv" />
-                </div>
-                <div className="rpp-row">
-                    <span className="rpp-row-main">
-                        <span className="rpp-title">Heute aussetzen</span>
-                        <span className="rpp-sub">Ab morgen läuft der Plan wieder</span>
-                    </span>
-                    <Toggle on={model.pausedToday} onChange={model.setPausedToday} label="Heute aussetzen" />
-                </div>
-            </div>
-            <div className="rpp-card rpp-pad">
-                <span className="rpp-label">Feiertage</span>
-                <Seg<HolidayMode>
-                    size="sm"
-                    value={model.holidayMode}
-                    options={[
-                        { value: 'sunday', label: 'wie Sonntag' },
-                        { value: 'normal', label: 'normal' },
-                        { value: 'skip', label: 'nichts fahren' },
-                    ]}
-                    onChange={model.setHolidayMode}
-                />
-                <span className="rpp-hint">
-                    Nächster Feiertag: {WD_SHORT[(nh.date.getDay() + 6) % 7]} {fmtDate(nh.date)} · {nh.name}
-                </span>
-            </div>
-            <div className="rpp-card rpp-pad">
-                <span className="rpp-label">Sonne heute{sun.fromPi ? '' : ' (gerechnet)'}</span>
-                <div className="rpp-sun-row">
-                    <span>
-                        <Sunrise size={15} /> {hhmm(sun.sunrise)}
-                    </span>
-                    <span>
-                        <Sunset size={15} /> {hhmm(sun.sunset)}
-                    </span>
-                    <span className="rpp-sub">Dämmerung bis {hhmm(sun.dusk)}</span>
-                </div>
-            </div>
-            <div className="rpp-card rpp-pad">
-                <span className="rpp-label">Ansicht</span>
-                <span className="rpp-hint">Listen hier im Fenster</span>
-                <Seg<ListStyle>
-                    size="sm"
-                    value={view.list}
-                    options={[
-                        { value: 'A', label: 'kompakt' },
-                        { value: 'L', label: 'mit Rollladen-Namen' },
-                    ]}
-                    onChange={(list) => view.setView({ list })}
-                />
-                <span className="rpp-hint">Erste Seite der Kachel</span>
-                <Seg<FirstPage>
-                    size="sm"
-                    value={view.first}
-                    options={[
-                        { value: 'today', label: 'Heute' },
-                        { value: 'next', label: 'Nächste 3' },
-                    ]}
-                    onChange={(first) => view.setView({ first })}
-                />
-                <span className="rpp-hint">Szenen auf der Kachel</span>
-                <Seg<SceneView>
-                    size="sm"
-                    value={view.scenes}
-                    options={[
-                        { value: 'S', label: 'Liste' },
-                        { value: 'W', label: 'Kacheln, 6 pro Seite' },
-                    ]}
-                    onChange={(scenes) => view.setView({ scenes })}
-                />
-            </div>
-        </>
     );
 }
