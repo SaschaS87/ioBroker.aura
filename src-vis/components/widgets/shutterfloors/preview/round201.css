@@ -95,6 +95,95 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
 .pvq-feder:active { transform: scale(0.92); }
 .pvq-hint { height: 16px; line-height: 16px; margin-top: 6px; font-size: 12px; color: var(--pv-amber); font-weight: 600; }
 
+/* ── 205–219: ein Block fuer alle, Taste und Feder vereint ───────────── */
+
+.pvq-stage { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.pvq--card .pvq-stage {
+  padding: 18px 16px 14px; border-radius: 20px;
+  background: var(--widget-bg, var(--app-surface));
+  border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border));
+}
+.pvq--equal .pvq-val { height: 30px; font-size: 24px; }
+.pvq--equal .pvq-unit { font-size: 14px; }
+.pvq--equal .pvq-arrow { font-size: 16px; margin: 0 3px; }
+.pvq-pill.is-narrow { border-radius: 18px; }
+.pvq-pill.is-narrow .pvq-pill-mark { width: 12px; margin-left: -6px; }
+
+/* Grosse Zahl oben (208, 209, 212, 214, 215, 218) */
+.pvq-hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 14px; }
+.pvq-hero-val { display: flex; align-items: center; height: 48px; }
+.pvq-hero .pvq-val { height: 48px; font-size: 40px; }
+.pvq-hero .pvq-unit { font-size: 18px; }
+.pvq-hero .pvq-arrow { font-size: 24px; }
+.pvq-hero-sep { width: 5px; height: 5px; margin: 0 12px; border-radius: 50%; background: var(--pv-sub); font-size: 0; }
+.pvq-hero .pvq-word { margin-bottom: 0; }
+.pvq-cap--below { margin-top: 8px; }
+.pvq--labels-inside .pvq-word, .pvq--labels-below .pvq-word { margin-bottom: 0; }
+.pvq--labels-below .pvq-col > .pvq-val { margin-top: 8px; }
+
+/* Zahl im Schieber (211, 219): kleines Schild unten, auf jedem Grund lesbar */
+.pvq-pill-chip {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  padding: 3px 8px; border-radius: 10px; white-space: nowrap;
+  background: color-mix(in srgb, var(--pv-bg) 88%, transparent); color: var(--pv-text);
+  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.pvq-pill.is-narrow .pvq-pill-chip { padding: 2px 5px; font-size: 12px; }
+
+/* Fuellung: ruhig (Textfarbe) und getoent */
+.pvq--fill-neutral .pvq-pill-fill { background: color-mix(in srgb, var(--pv-text) 78%, transparent); }
+.pvq--fill-neutral .pvq-pill-mark { background: color-mix(in srgb, var(--pv-bg) 45%, transparent); }
+.pvq--fill-tint .pvq-pill { background: color-mix(in srgb, var(--k) 16%, transparent); }
+
+/* Tasten-Kapsel: OK und Feder bzw. OK und Leise als EINE Flaeche */
+.pvq-act { display: flex; margin-top: 22px; max-width: 100%; }
+.pvq-act > .pvq-go { flex: 1; }
+.pvq-act .pvq-go { height: 52px; border-radius: 16px; }
+.pvq-caps { height: 52px; border-radius: 16px; overflow: hidden; background: var(--pv-accent); }
+.pvq-caps > .pvq-go { flex: 1; min-width: 0; border-radius: 0; background: transparent; color: #fff; }
+.pvq-caps > .pvq-go:disabled { background: transparent; color: var(--pv-sub); }
+.pvq-caps > .pvq-go:active:not(:disabled) { transform: none; background: rgb(0 0 0 / 0.12); }
+.pvq-caps.is-idle { background: var(--pv-soft2); }
+.pvq-seg-feder {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 54px;
+  border: none; background: transparent; color: #fff; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background 0.15s, color 0.15s;
+}
+.pvq-caps.is-idle .pvq-seg-feder { color: var(--pv-sub); }
+.pvq-seg-feder.is-on, .pvq-caps.is-idle .pvq-seg-feder.is-on { background: var(--pv-amber); color: #000; }
+.pvq-caps--split .pvq-seg-feder { border-left: 1px solid rgb(255 255 255 / 0.32); }
+.pvq-caps--split.is-idle .pvq-seg-feder { border-left-color: color-mix(in srgb, var(--pv-text) 14%, transparent); }
+.pvq-caps--inline .pvq-seg-feder { flex-basis: 48px; margin: 6px 0 6px 6px; border-radius: 11px; }
+/* OK-Schrift mittig ueber die ganze Kapsel, nicht nur ueber den Rest neben der Feder */
+.pvq-caps--inline .pvq-seg-feder + .pvq-go { padding-right: 54px; }
+.pvq-caps--split .pvq-go:has(+ .pvq-seg-feder) { padding-left: 54px; }
+.pvq-caps--two > .pvq-go + .pvq-go { border-left: 1px solid rgb(255 255 255 / 0.32); gap: 6px; }
+.pvq-caps--two.is-idle > .pvq-go + .pvq-go { border-left-color: color-mix(in srgb, var(--pv-text) 14%, transparent); }
+
+/* Gestapelt: Leise-Zeile bzw. Chip ueber der Taste (215, 216) */
+.pvq-act--stack { flex-direction: column; align-items: stretch; gap: 10px; }
+.pvq-act--stack > .pvq-go { flex: none; }
+.pvq-row {
+  display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 14px;
+  border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border)); border-radius: 14px;
+  background: var(--widget-bg, var(--app-surface)); color: var(--pv-text);
+  font: inherit; font-size: 16px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pvq-row:disabled { opacity: 0.5; cursor: default; }
+.pvq-row-ico { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; background: var(--pv-amber); color: #000; }
+.pvq-row-label { flex: 1; }
+.pvq-switch { position: relative; width: 51px; height: 31px; border-radius: 16px; background: color-mix(in srgb, var(--pv-text) 16%, transparent); transition: background 0.2s; flex-shrink: 0; }
+.pvq-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 0.2); transition: transform 0.2s; }
+.pvq-switch.is-on { background: #34c759; }
+.pvq-switch.is-on::after { transform: translateX(20px); }
+.pvq-chip {
+  align-self: center; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px;
+  border: none; border-radius: 999px; background: var(--pv-soft2); color: var(--pv-sub);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pvq-chip.is-on { background: var(--pv-amber); color: #000; }
+.pvq-chip:disabled { opacity: 0.5; cursor: default; }
+
 .pvq .pvs-notice { margin-top: 10px; }
 .pvq-radio {
   width: 100%; margin-top: 8px; font-size: 11px; color: var(--pv-sub); opacity: 0.75; text-align: center;

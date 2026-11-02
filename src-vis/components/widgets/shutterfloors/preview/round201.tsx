@@ -1,6 +1,6 @@
 /**
  * Runde 201+ (02.11.2026), nur Dev-Vorschau. Zwei neue Reihen in der Leiste:
- *   D 201–202  Feinregler „schlicht" (PvSheetSlim), Feder links oder rechts
+ *   D 201–219  Feinregler „schlicht" (PvSheetSlim), Fassungen in sheetLooks.ts
  *   E 203      Favoriten je Geschoss, Rest hinter einem Pfeil in der
  *              Ueberschrift (Saschas Wahl vom 02.11.2026; 204 „Zeile
  *              weitere am Ende" ist entfallen)
@@ -15,18 +15,7 @@ import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from '../types';
 
-export const SHEET_LOOKS = [
-    {
-        key: '201',
-        name: 'Schlicht, Feder links',
-        desc: 'Nur die Schieber, Stern oben rechts, kein „Verwerfen". Die Leise-Feder steht links neben der Bestätigung.',
-    },
-    {
-        key: '202',
-        name: 'Schlicht, Feder rechts',
-        desc: 'Wie 201, die Leise-Feder steht rechts neben der Bestätigung.',
-    },
-];
+export { SHEET_LOOKS } from './sheetLooks';
 
 export const LIST_LOOKS = [
     {

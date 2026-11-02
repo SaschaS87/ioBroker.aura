@@ -69,7 +69,7 @@ const ROWS: Row[] = [
 
 function loadPicks(): Picks {
     // Runde 201+: D und E starten mit der neuen Fassung, nicht mit „35".
-    const def: Picks = { a: '35', b: '35', c: 'IST', d: '201', e: '203' };
+    const def: Picks = { a: '35', b: '35', c: 'IST', d: '205', e: '203' };
     try {
         const raw = JSON.parse(localStorage.getItem(KEY_N) ?? '{}') as Partial<Picks>;
         ROWS.forEach((r) => {
@@ -246,7 +246,7 @@ function Host({
                     key={sheet.seq}
                     device={sheet.d}
                     connected={connected}
-                    feder={picks.d === '201' ? 'left' : 'right'}
+                    look={SHEET_LOOKS.find((l) => l.key === picks.d) ?? SHEET_LOOKS[0]}
                     fav={fav}
                     onClose={() => setSheet(null)}
                 />
