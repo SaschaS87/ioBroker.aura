@@ -297,6 +297,19 @@ html[data-pv-c]:not([data-pv-c='IST']) .rpp-sheet-body { padding-top: 4px; }
 .pw-tl-when { font-size: 12.5px; font-weight: 600; color: var(--rpp-accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pw-tl-item.is-paused .pw-tl-time, .pw-tl-item.is-paused .pw-main, .pw-tl-item.is-paused .pw-tl-dot { opacity: 0.4; }
 .pw-tl-item.is-paused .pw-tl-time { text-decoration: line-through; }
+.pw-tl-item.is-skip .pw-tl-time, .pw-tl-item.is-skip .pw-main, .pw-tl-item.is-skip .pw-tl-dot { opacity: 0.45; }
+
+/* Zuklappbare Gruppen-Ueberschrift („Weitere", „Ausgeschaltet") */
+.pw-gh--fold {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: 0; font-family: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pw-gh-chev { flex-shrink: 0; transition: transform 0.2s; transform: rotate(-90deg); }
+.pw-gh--fold.is-open .pw-gh-chev { transform: none; }
+
+/* Zahnrad und Stift im Fensterkopf in Theme-Grau statt Akzentblau */
+.rpp-back.pw-head-btn { color: var(--text-secondary); }
 
 /* 65 Grosse Ueberschrift + runde Szenen */
 html[data-pv-c][data-pv-c='65'] .rpp-sheet-title { font-size: 30px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; }

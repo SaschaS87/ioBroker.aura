@@ -17,6 +17,7 @@ import {
     AlarmClock,
     CalendarDays,
     Check,
+    ChevronDown,
     ChevronRight,
     Pause,
     Pencil,
@@ -119,6 +120,62 @@ function GH({ children }: { children: ReactNode }) {
 }
 function GF({ children }: { children: ReactNode }) {
     return <div className="pw-gf">{children}</div>;
+}
+/** Gruppen-Ueberschrift zum Auf- und Zuklappen, zugeklappt mit Anzahl. */
+function FoldGH({
+    label,
+    count,
+    open,
+    onToggle,
+}: {
+    label: string;
+    count: number;
+    open: boolean;
+    onToggle: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            className={`pw-gh pw-gh--fold${open ? ' is-open' : ''}`}
+            onClick={onToggle}
+            aria-expanded={open}
+        >
+            <span>
+                {label}
+                {!open && ` (${count})`}
+            </span>
+            <ChevronDown size={16} className="pw-gh-chev" />
+        </button>
+    );
+}
+
+/** Merk-Einstellung je Geraet (localStorage), wie frueher die Ansicht-Schalter. */
+function usePref<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
+    const [v, setV] = useState<T>(() => {
+        try {
+            return (localStorage.getItem(key) as T | null) ?? fallback;
+        } catch {
+            return fallback;
+        }
+    });
+    const set = (n: T) => {
+        setV(n);
+        try {
+            localStorage.setItem(key, n);
+        } catch {
+            /* ohne Speicher gilt die Wahl nur bis zum Neuladen */
+        }
+    };
+    return [v, set];
+}
+const KEY_SCENE_VIEW = 'aura.shutterfloors.scenes.view';
+const KEY_SCENE_MORE = 'aura.shutterfloors.scenes.moreOpen';
+type SceneView = '' | 'liste' | 'kacheln';
+/** Szenen-Darstellung: Wahl aus den Einstellungen, sonst wie der Entwurf. */
+function sceneLookFor(view: SceneView, look: string): string {
+    if (view === 'kacheln') return '62';
+    if (view === 'liste') return look === '62' || look === '65' ? '61' : look;
+    return look;
 }
 
 function GRow({
@@ -325,13 +382,18 @@ function EntryList({ m, setView }: W) {
  * 64: Zeitpunkte als heutige Zeitleiste, „jetzt" an der richtigen Stelle.
  * Ersetzt „Als Nächstes": die nächste Fahrt ist hervorgehoben und trägt den
  * Countdown. Bei „Heute aussetzen" sind die noch ausstehenden heutigen
- * Fahrten ausgegraut, die Einzel-Schalter bleiben, wie sie sind.
+ * Fahrten ausgegraut. Nur eingeschaltete Zeitpunkte stehen im Ablauf, ohne
+ * Schalter; ausgeschaltete liegen zugeklappt darunter (Saschas Wunsch
+ * 02.11.2026), ein- und ausgeschaltet wird im Zeitpunkt unter „Aktiv".
  */
 function Timeline({ m, setView }: W) {
+    const [offOpen, setOffOpen] = useState(false);
     const sun = m.sunFor(m.today);
     const nowMin = m.now.getHours() * 60 + m.now.getMinutes();
     const wd = (m.today.getDay() + 6) % 7;
-    const items = sortedEntries(m).map((e) => ({ e, min: triggerMinutes(e.trigger, sun).min }));
+    const all = sortedEntries(m);
+    const off = all.filter((e) => !e.enabled);
+    const items = all.filter((e) => e.enabled).map((e) => ({ e, min: triggerMinutes(e.trigger, sun).min }));
     const nowAt = items.findIndex((x) => x.min > nowMin);
     const n = nextRun(m);
     const isTodayNext = n !== null && n.date.toDateString() === m.today.toDateString();
@@ -344,13 +406,13 @@ function Timeline({ m, setView }: W) {
     const out: ReactNode[] = [];
     items.forEach((x, i) => {
         if (i === nowAt) out.push(<NowMark key="now" t={hhmm(nowMin)} />);
-        const today = x.e.days[wd] && x.e.enabled && m.master;
+        const today = x.e.days[wd] && m.master;
         const paused = today && m.pausedToday && x.min > nowMin;
         const isNext = n !== null && n.occ.entry.id === x.e.id;
         out.push(
             <div
                 key={x.e.id}
-                className={`pw-tl-item${x.min <= nowMin ? ' is-past' : ''}${x.e.enabled ? '' : ' is-off'}${
+                className={`pw-tl-item${x.min <= nowMin ? ' is-past' : ''}${today ? '' : ' is-skip'}${
                     paused ? ' is-paused' : ''
                 }${isNext ? ' is-next' : ''}`}
                 role="button"
@@ -370,13 +432,13 @@ function Timeline({ m, setView }: W) {
                     <span className="pw-title">{m.targetName(x.e.target)}</span>
                     {isNext && <span className="pw-tl-when">{nextWhen}</span>}
                     <span className="pw-sub pw-inline">
-                        {!paused && <DayLetters days={x.e.days} dim={!x.e.enabled} />}
+                        {!paused && <DayLetters days={x.e.days} />}
                         <span className="pw-ell">
                             {paused ? 'heute ausgesetzt' : today ? namesLine(m, x.e.target, 2) : 'heute nicht'}
                         </span>
                     </span>
                 </span>
-                <Toggle on={x.e.enabled} onChange={() => m.toggleEntry(x.e.id)} label="Zeitpunkt aktiv" />
+                <Chev />
             </div>,
         );
     });
@@ -397,6 +459,38 @@ function Timeline({ m, setView }: W) {
                     onClick={() => setView({ v: 'entry', id: null })}
                 />
             </div>
+            {off.length > 0 && (
+                <FoldGH label="Ausgeschaltet" count={off.length} open={offOpen} onToggle={() => setOffOpen(!offOpen)} />
+            )}
+            {off.length > 0 && offOpen && (
+                <>
+                    <div className="pw-group">
+                        {off.map((e) => (
+                            <GRow
+                                key={e.id}
+                                cls="is-off"
+                                lead={<Sq color={TRIG_COLOR[e.trigger.kind]}>{trigIcon(e)}</Sq>}
+                                title={
+                                    <>
+                                        {trig(e)}
+                                        <span className="pw-dot">·</span>
+                                        {m.targetName(e.target)}
+                                    </>
+                                }
+                                sub={
+                                    <span className="pw-inline">
+                                        <DayLetters days={e.days} dim />
+                                        <span className="pw-ell">fährt nicht</span>
+                                    </span>
+                                }
+                                right={<Chev />}
+                                onClick={() => setView({ v: 'entry', id: e.id })}
+                            />
+                        ))}
+                    </div>
+                    <GF>Fahren nie, bis du sie im Zeitpunkt unter „Aktiv“ wieder einschaltest.</GF>
+                </>
+            )}
         </>
     );
 }
@@ -420,6 +514,8 @@ function PlanHome(p: W) {
 }
 
 function PlanSettings({ m, look }: { m: PlanModel; look: string }) {
+    const [view, setViewPref] = usePref<SceneView>(KEY_SCENE_VIEW, '');
+    const shown = sceneLookFor(view, look) === '62' ? 'kacheln' : 'liste';
     const nh = nextHoliday(m.today);
     const sun = m.sunFor(m.today);
     const opts: { value: HolidayMode; label: string; sub: string }[] = [
@@ -492,6 +588,24 @@ function PlanSettings({ m, look }: { m: PlanModel; look: string }) {
                     right={<span className="pw-value">{hhmm(sun.sunset)}</span>}
                 />
             </div>
+            <GH>Darstellung</GH>
+            <div className="pw-group">
+                <GRow
+                    title="Szenen"
+                    right={
+                        <Seg<'liste' | 'kacheln'>
+                            size="sm"
+                            value={shown}
+                            options={[
+                                { value: 'liste', label: 'Liste' },
+                                { value: 'kacheln', label: 'Kacheln' },
+                            ]}
+                            onChange={setViewPref}
+                        />
+                    }
+                />
+            </div>
+            <GF>Gilt nur auf diesem Gerät.</GF>
         </>
     );
 }
@@ -635,14 +749,31 @@ function SceneList({ m, setView, edit, list, add, look }: W & { edit: boolean; l
 
 function ScenesHome(p: W & { edit: boolean }) {
     const { m, edit } = p;
+    const [view] = usePref<SceneView>(KEY_SCENE_VIEW, '');
+    const [more, setMore] = usePref<'0' | '1'>(KEY_SCENE_MORE, '0');
+    const q = { ...p, look: sceneLookFor(view, p.look) };
     const fav = m.scenes.filter((s) => s.favorite);
     const rest = m.scenes.filter((s) => !s.favorite);
+    const showRest = rest.length > 0 || edit;
+    // „Weitere" klappt nur neben Favoriten; beim Bearbeiten ist alles offen.
+    const foldable = fav.length > 0 && !edit;
+    const restOpen = !foldable || more === '1';
     return (
         <>
             {fav.length > 0 && <GH>Favoriten</GH>}
-            {fav.length > 0 && <SceneList {...p} list={fav} add={false} />}
-            {(rest.length > 0 || edit) && <GH>{fav.length ? 'Weitere' : 'Szenen'}</GH>}
-            {(rest.length > 0 || edit) && <SceneList {...p} list={rest} add />}
+            {fav.length > 0 && <SceneList {...q} list={fav} add={false} />}
+            {showRest &&
+                (foldable ? (
+                    <FoldGH
+                        label="Weitere"
+                        count={rest.length}
+                        open={restOpen}
+                        onToggle={() => setMore(restOpen ? '0' : '1')}
+                    />
+                ) : (
+                    <GH>{fav.length ? 'Weitere' : 'Szenen'}</GH>
+                ))}
+            {showRest && restOpen && <SceneList {...q} list={rest} add />}
             {edit ? (
                 <GF>Szene antippen zum Bearbeiten. Ob sie Favorit ist, stellst du in der Szene ein.</GF>
             ) : m.scenes.length ? (
@@ -658,7 +789,13 @@ function ScenesHome(p: W & { edit: boolean }) {
 
 function HeadBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
     return (
-        <button type="button" className="rpp-back rpp-head-btn" onClick={onClick} aria-label={label} title={label}>
+        <button
+            type="button"
+            className="rpp-back rpp-head-btn pw-head-btn"
+            onClick={onClick}
+            aria-label={label}
+            title={label}
+        >
             {children}
         </button>
     );
