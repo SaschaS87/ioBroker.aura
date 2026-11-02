@@ -104,8 +104,281 @@ html.dark .pa--67 .pa-btn { color: color-mix(in srgb, var(--k) 65%, #fff); }
 .pa--71 .pa-btn--down { background: var(--text-primary); color: var(--app-bg); border-radius: 0 9px 9px 0; }
 .pa--71 .pa-btn + .pa-btn::before { display: none; }
 
+/* ── 42–50 erste Runde (mit 4b2be753 kurz entfernt, wieder da) ── */
+
+/* 42 Zwei Kreise */
+.pa--42 { gap: 10px; }
+.pa--42 .pa-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--pv-soft2); }
+
+/* 43 Woerter */
+.pa--43 { gap: 6px; }
+.pa--43 .pa-btn {
+  min-width: 46px; height: 30px; padding: 0 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--pv-accent) 13%, transparent); color: var(--pv-accent);
+  font-size: 15px; font-weight: 600;
+}
+.pa--43 .pa-btn--stop { min-width: 98px; }
+
+/* 44 Fernbedienung */
+.pa--44 { gap: 6px; }
+.pa--44 .pa-btn { width: 40px; height: 34px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--44 .pa-btn--stop { width: 86px; }
+
+/* 45 Wippe */
+.pa--45 {
+  flex-direction: column; gap: 0; width: 40px; height: 46px;
+  border-radius: 12px; background: var(--pv-soft2); overflow: hidden;
+}
+.pa--45 .pa-btn { width: 40px; height: 23px; }
+.pa--45 .pa-btn svg { width: 18px; height: 18px; }
+.pa--45 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; top: 0; left: 9px; right: 9px; height: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--45 .pa-btn--stop { height: 46px; }
+.pa--45.is-busy { background: var(--pv-amber); }
+
+/* 46 Ton in Ton (Farbe der Art) */
+.pa--46, .pa--94 { --k: #0a84ff; }
+.pa--46.is-dachfenster, .pa--94.is-dachfenster { --k: #5e5ce6; }
+.pa--46.is-raffstore, .pa--94.is-raffstore { --k: #30b0c7; }
+.pa--46 { gap: 10px; }
+.pa--46 .pa-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: color-mix(in srgb, var(--k) 15%, transparent); color: color-mix(in srgb, var(--k) 78%, #000);
+}
+html.dark .pa--46 .pa-btn:not(.pa-btn--stop) { background: color-mix(in srgb, var(--k) 26%, transparent); color: color-mix(in srgb, var(--k) 70%, #fff); }
+
+/* 47 Nur Winkel */
+.pa--47 { gap: 0; }
+.pa--47 .pa-btn { width: 42px; height: 42px; border-radius: 50%; color: var(--pv-accent); }
+.pa--47 .pa-btn:active:not(:disabled) { background: var(--pv-soft); }
+.pa--47 .pa-btn--stop { width: auto; height: 30px; padding: 0 16px; margin-right: 4px; border-radius: 999px; font-size: 15px; }
+
+/* 48 Zustands-Schalter */
+.pa--48 { gap: 0; padding: 2px; border-radius: 9px; background: var(--pv-soft2); }
+.pa--48 .pa-btn { width: 46px; height: 28px; border-radius: 7px; font-size: 14px; font-weight: 600; color: var(--pv-text); }
+.pa--48 .pa-btn.is-here {
+  background: #fff; color: var(--pv-text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.14), 0 0 0 0.5px rgb(0 0 0 / 0.04);
+}
+html.dark .pa--48 .pa-btn.is-here { background: color-mix(in srgb, var(--pv-text) 30%, var(--pv-group)); }
+.pa--48 .pa-btn:not(.is-here) { color: var(--pv-accent); }
+.pa--48.is-busy { padding: 0; background: transparent; }
+.pa--48 .pa-btn--stop { width: 96px; height: 32px; border-radius: 9px; }
+
+/* 49 Behang-Symbole */
+.pa--49 { gap: 6px; }
+.pa--49 .pa-btn { width: 40px; height: 36px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--49 .pa-btn--stop { width: 86px; }
+
+/* 50 Betont, was passt */
+.pa--50 { gap: 10px; }
+.pa--50 .pa-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--pv-soft2); }
+.pa--50 .pa-btn.is-hint { background: var(--pv-accent); color: #fff; }
+
+/* ── 81–100 Runde „mehr Auswahl" (02.11.2026) ── */
+
+/* 81 Bis zum Anschlag */
+.pa--81 { gap: 6px; }
+.pa--81 .pa-btn { width: 38px; height: 34px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--81 .pa-btn--stop { width: 88px; font-size: 14px; }
+
+/* 82 Doppel-Winkel */
+.pa--82 { gap: 0; }
+.pa--82 .pa-btn { width: 40px; height: 40px; border-radius: 10px; color: var(--pv-accent); }
+.pa--82 .pa-btn:active:not(:disabled) { background: var(--pv-soft); }
+.pa--82 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 11px; bottom: 11px; width: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--82 .pa-btn--stop { width: auto; height: 30px; padding: 0 16px; border-radius: 999px; font-size: 15px; }
+
+/* 83 AUF | ZU */
+.pa--83 { gap: 0; height: 30px; border: 1.5px solid var(--pv-text); border-radius: 999px; overflow: hidden; }
+.pa--83 .pa-btn { height: 100%; padding: 0 12px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.08em; }
+.pa--83 .pa-btn--up { padding-left: 14px; }
+.pa--83 .pa-btn--down { padding-right: 14px; }
+.pa--83 .pa-btn + .pa-btn { border-left: 1.5px solid var(--pv-text); }
+.pa--83.is-busy { border-color: transparent; }
+.pa--83 .pa-btn--stop { padding: 0 16px; border-radius: 999px; }
+
+/* 84 Pfeil und Wort */
+.pa--84 { gap: 6px; }
+.pa--84 .pa-btn {
+  height: 30px; padding: 0 11px 0 8px; gap: 3px; border-radius: 999px;
+  background: color-mix(in srgb, var(--pv-accent) 13%, transparent); color: var(--pv-accent);
+  font-size: 15px; font-weight: 600;
+}
+.pa--84 .pa-btn--stop { padding: 0 14px; font-size: 14px; }
+
+/* 85 Erhabene Tasten */
+.pa--85 { gap: 2px; padding: 2px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--85 .pa-btn {
+  width: 42px; height: 30px; border-radius: 8px; background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.16), 0 0 0 0.5px rgb(0 0 0 / 0.05);
+}
+html.dark .pa--85 .pa-btn:not(.pa-btn--stop) {
+  background: color-mix(in srgb, var(--pv-text) 24%, var(--pv-group));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+}
+.pa--85.is-busy { padding: 0; background: transparent; }
+.pa--85 .pa-btn--stop { width: 92px; height: 34px; font-size: 14px; }
+
+/* 86 Ringe */
+.pa--86 { gap: 8px; }
+.pa--86 .pa-btn {
+  width: 34px; height: 34px; border-radius: 50%; color: var(--pv-accent);
+  border: 1.5px solid color-mix(in srgb, var(--pv-accent) 70%, transparent);
+}
+.pa--86 .pa-btn--stop { border: none; }
+
+/* 87 Uebereinander */
+.pa--87 { flex-direction: column; gap: 3px; }
+.pa--87 .pa-btn { width: 42px; height: 20px; border-radius: 7px; background: var(--pv-soft2); }
+.pa--87 .pa-btn--stop { width: 80px; height: 30px; border-radius: 9px; font-size: 14px; }
+
+/* 88 Ganzflaechig rechts: bis an den Zeilenrand (Zeile hat 6px/10px Innenabstand) */
+.pa--88 { align-self: stretch; align-items: stretch; gap: 0; margin: -6px -10px -6px 0; }
+.pa--88 .pa-btn { width: 50px; background: var(--pv-soft); }
+.pa--88 .pa-btn--down { background: var(--pv-soft2); }
+.pa--88 .pa-btn:active:not(:disabled) { transform: none; background: color-mix(in srgb, var(--pv-text) 18%, transparent); }
+.pa--88 .pa-btn--stop { width: 100px; }
+
+/* 89 Rollladen-Glyphe */
+.pa--89 { gap: 0; height: 34px; border-radius: 10px; background: var(--pv-soft2); }
+.pa--89 .pa-btn { width: 44px; height: 34px; border-radius: 10px; }
+.pa--89 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--89.is-busy { background: transparent; }
+.pa--89 .pa-btn--stop { width: 88px; font-size: 14px; }
+
+/* 90 Sonne und Mond (Orange und Indigo wie die Symbol-Quadrate) */
+.pa--90 { gap: 8px; }
+.pa--90 .pa-btn { width: 36px; height: 36px; border-radius: 50%; }
+.pa--90 .pa-btn--up { background: color-mix(in srgb, #ff9f0a 17%, transparent); color: #c76a00; }
+.pa--90 .pa-btn--down { background: color-mix(in srgb, #5e5ce6 15%, transparent); color: #4644c8; }
+html.dark .pa--90 .pa-btn--up { background: color-mix(in srgb, #ff9f0a 24%, transparent); color: #ffb340; }
+html.dark .pa--90 .pa-btn--down { background: color-mix(in srgb, #5e5ce6 30%, transparent); color: #a5a4ff; }
+
+/* 91 Dunkle Pille */
+.pa--91 { gap: 0; height: 30px; border-radius: 999px; background: var(--text-primary); }
+.pa--91 .pa-btn { width: 42px; height: 30px; color: var(--app-bg); }
+.pa--91 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px;
+  background: color-mix(in srgb, var(--app-bg) 35%, transparent);
+}
+.pa--91.is-busy { background: transparent; }
+.pa--91 .pa-btn--stop { width: 88px; border-radius: 999px; font-size: 14px; }
+
+/* 92 Nur Text */
+.pa--92 { gap: 0; }
+.pa--92 .pa-btn { height: 36px; padding: 0 8px; border-radius: 8px; color: var(--pv-accent); font-size: 16px; }
+.pa--92 .pa-btn:active:not(:disabled) { background: var(--pv-soft); }
+.pa--92 .pa-dot { color: var(--pv-sub); font-size: 16px; }
+.pa--92 .pa-btn--stop { height: 30px; padding: 0 14px; border-radius: 999px; font-size: 15px; font-weight: 600; }
+
+/* 93 Kreis-Pfeile */
+.pa--93 { gap: 2px; }
+.pa--93 .pa-btn { width: 38px; height: 38px; border-radius: 50%; color: var(--text-secondary, var(--pv-sub)); }
+.pa--93 .pa-btn:active:not(:disabled) { background: var(--pv-soft); }
+.pa--93 .pa-btn--stop { width: 88px; height: 30px; border-radius: 999px; font-size: 14px; }
+
+/* 94 Quadrate in Farbe der Art (--k oben bei 46) */
+.pa--94 { gap: 6px; }
+.pa--94 .pa-btn { width: 32px; height: 32px; border-radius: 8px; background: var(--k); color: #fff; }
+.pa--94 .pa-btn--stop { width: 70px; }
+
+/* 95 Kapsel mit Stand: Strich unten = wie weit zu */
+.pa--95 { position: relative; gap: 0; height: 34px; border-radius: 9px; background: var(--pv-soft2); overflow: hidden; }
+.pa--95 .pa-btn { width: 44px; height: 34px; }
+.pa--95 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 10px; width: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--95 .pa-stand {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: color-mix(in srgb, var(--pv-text) 9%, transparent);
+}
+.pa--95 .pa-stand b { display: block; height: 100%; background: var(--pv-accent); transition: width 0.8s ease; }
+.pa--95.is-busy { background: transparent; }
+.pa--95 .pa-btn--stop { width: 88px; border-radius: 9px; font-size: 14px; }
+
+/* 96 Tastenkappe */
+.pa--96 { gap: 6px; padding-bottom: 3px; }
+.pa--96 .pa-btn {
+  width: 40px; height: 32px; border-radius: 9px;
+  background: var(--widget-bg, var(--app-surface));
+  border: 1px solid color-mix(in srgb, var(--pv-text) 16%, transparent);
+  box-shadow: 0 2.5px 0 color-mix(in srgb, var(--pv-text) 22%, transparent);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.pa--96 .pa-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0.5px 0 color-mix(in srgb, var(--pv-text) 22%, transparent);
+}
+.pa--96 .pa-btn--stop {
+  width: 88px; font-size: 14px; border-color: rgb(0 0 0 / 0.12);
+  box-shadow: 0 2.5px 0 color-mix(in srgb, #000 28%, var(--pv-amber));
+}
+
+/* 97 Geteilter Kreis */
+.pa--97 {
+  flex-direction: column; gap: 0; width: 44px; height: 44px;
+  border-radius: 50%; background: var(--pv-soft2); overflow: hidden;
+}
+.pa--97 .pa-btn { width: 44px; height: 22px; }
+.pa--97 .pa-btn--up { align-items: flex-end; padding-bottom: 1px; }
+.pa--97 .pa-btn--down { align-items: flex-start; padding-top: 1px; }
+.pa--97 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; top: 0; left: 9px; right: 9px; height: 1px;
+  background: color-mix(in srgb, var(--pv-text) 20%, transparent);
+}
+.pa--97 .pa-btn:active:not(:disabled) { transform: none; background: var(--pv-soft2); }
+.pa--97.is-busy { background: transparent; }
+.pa--97 .pa-btn--stop { height: 44px; align-items: center; padding: 0; border-radius: 50%; }
+
+/* 98 Klein mit Rand */
+.pa--98 { gap: 0; height: 26px; border-radius: 7px; border: 1px solid var(--widget-border, var(--app-border)); }
+.pa--98 .pa-btn { width: 32px; height: 24px; }
+.pa--98 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 1px;
+  background: var(--widget-border, var(--app-border));
+}
+.pa--98.is-busy { border-color: transparent; }
+.pa--98 .pa-btn--stop { width: 72px; height: 26px; border-radius: 7px; font-size: 12.5px; }
+
+/* 99 Gross */
+.pa--99 { gap: 0; height: 42px; border-radius: 12px; background: var(--pv-soft2); }
+.pa--99 .pa-btn { width: 54px; height: 42px; border-radius: 12px; }
+.pa--99 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px;
+  background: color-mix(in srgb, var(--pv-text) 18%, transparent);
+}
+.pa--99.is-busy { background: transparent; }
+.pa--99 .pa-btn--stop { width: 108px; font-size: 16px; }
+
+/* 100 Ganzflaechig uebereinander */
+.pa--100 {
+  align-self: stretch; flex-direction: column; align-items: stretch; gap: 0;
+  width: 58px; margin: -6px -10px -6px 0; background: var(--pv-soft);
+}
+.pa--100 .pa-btn { flex: 1; }
+.pa--100 .pa-btn + .pa-btn::before {
+  content: ''; position: absolute; top: 0; left: 10px; right: 10px; height: 1px;
+  background: color-mix(in srgb, var(--pv-text) 16%, transparent);
+}
+.pa--100 .pa-btn:active:not(:disabled) { transform: none; background: var(--pv-soft2); }
+.pa--100.is-busy { background: transparent; }
+
 /* Stopp immer schwarz auf Gelb, egal welche Schriftfarbe die Fassung sonst hat */
 .pa.pa .pa-btn--stop { background: var(--pv-amber); color: #000; }
+
+/* Stopp bei 42/46/50/86/90 als Kreis */
+.pa--42 .pa-btn--stop, .pa--46 .pa-btn--stop, .pa--50 .pa-btn--stop,
+.pa--86 .pa-btn--stop, .pa--90 .pa-btn--stop { width: 36px; height: 36px; border-radius: 50%; }
 
 /* ── Reihe C: Fenster Zeitplan und Szenen ─────────────────────────────── */
 /* Gilt fuer 61–65; „Ist" (data-pv-c='IST') bleibt unberuehrt. */

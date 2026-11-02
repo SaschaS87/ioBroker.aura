@@ -2,7 +2,7 @@
  * Runde 41–65 (02.11.2026), nur Dev-Vorschau: Entwurf 35 „Einstellungen-Look"
  * nach Saschas Anmerkungen ueberarbeitet („35 neu") plus drei unabhaengige
  * Reihen zum Kombinieren:
- *   A 41–50  Auf/Zu-Tasten rechts in der Zeile   (pvButtons.tsx)
+ *   A 41–50, 66–71, 81–100  Auf/Zu-Tasten rechts in der Zeile (pvButtons.tsx)
  *   B 51–60  Symbole links je Art                 (pvIcons.tsx)
  *   C 61–65  Fenster Zeitplan/Szenen + Editoren   (pvWindows.tsx)
  * „35" bei A/B bzw. „Ist" bei C zeigt jeweils den Stand vor dieser Runde.
