@@ -60,3 +60,4 @@
 - Weather - rain nowcast now shows a sum + max/15min header for the 6h window, and tapping a bar reveals its exact time and mm value
 - Shutter widgets (floor list / room cards) - no longer a fixed full-tab overlay; both now behave like a normal, growing widget that can sit alongside other widgets and be moved/resized in the editor
 - Shutter widgets - the footer pill was replaced by the same collapsible data-source health box used on the Weather tab, now with a one-click restart button for the shutter adapter instance
+- iOS 27 - the frosted blur iOS draws over the top of the installed Home Screen app is gone; the status bar now takes the header colour. Remove Aura from the Home Screen and add it again once for this to take effect (#662)
