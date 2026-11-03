@@ -30,13 +30,16 @@ import {
 import { Caption, closedWord, DayLetters, SceneGlyph, Seg, Toggle } from './parts';
 import { PlanSheet, type SheetView } from './editors';
 
-type Tab = 'plan' | 'scenes';
+export type Tab = 'plan' | 'scenes';
+/** Eigene Kacheln statt der zwei Standard-Kacheln (nur Entwurfs-Umschalter
+ *  der Dev-Vorschau, Runde 31–40). Ohne Angabe bleibt alles wie gehabt. */
+export type TilesRender = (m: PlanModel, open: (t: Tab) => void) => ReactNode;
 type W = { m: PlanModel; setView: (v: SheetView) => void };
 type Next = { date: Date; occ: Occurrence };
 
 // ── Texte ──────────────────────────────────────────────────────────────
 
-function statusText(m: PlanModel): string {
+export function statusText(m: PlanModel): string {
     if (!m.master) return 'Plan aus';
     if (m.pausedToday) return 'heute ausgesetzt';
     return 'Plan aktiv';
@@ -62,7 +65,7 @@ function membersOf(m: PlanModel, tg: PlanTarget): { dev: PlanDevice; closed: num
 }
 
 /** „ganzes Erdgeschoss, Büro Maxi, Mika +2" – volle Etagen zusammengefasst. */
-function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
+export function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
     if (tg.kind === 'device') return `auf ${closedWord(tg.closed)}`;
     const mem = membersOf(m, tg);
     if (mem.length && mem.length === m.devices.length) return `alle ${mem.length} Rollläden`;
@@ -84,11 +87,11 @@ function trig(e: PlanEntry): string {
     return o === 0 ? base : `${base} ${o > 0 ? '+' : '−'}${Math.abs(o)} min`;
 }
 
-function nextRun(m: PlanModel): Next | null {
+export function nextRun(m: PlanModel): Next | null {
     return m.upcoming(1)[0] ?? null;
 }
 
-function countdown(m: PlanModel, n: Next): string {
+export function countdown(m: PlanModel, n: Next): string {
     const t = new Date(n.date.getFullYear(), n.date.getMonth(), n.date.getDate(), 0, n.occ.min);
     const diff = Math.max(0, Math.round((t.getTime() - m.now.getTime()) / 60000));
     if (diff < 60) return `in ${diff} min`;
@@ -313,7 +316,7 @@ function HeadBtn({ label, onClick, children }: { label: string; onClick: () => v
     );
 }
 
-export function PlanWindows({ model: m }: { model: PlanModel }) {
+export function PlanWindows({ model: m, renderTiles }: { model: PlanModel; renderTiles?: TilesRender }) {
     const [tab, setTab] = useState<Tab | null>(null);
     const [seq, setSeq] = useState(0);
     const [view, setView] = useState<SheetView>({ v: 'home' });
@@ -357,7 +360,7 @@ export function PlanWindows({ model: m }: { model: PlanModel }) {
 
     return (
         <>
-            <Tiles m={m} open={open} />
+            {renderTiles ? renderTiles(m, open) : <Tiles m={m} open={open} />}
             {tab && (
                 <PlanSheet
                     key={seq}
