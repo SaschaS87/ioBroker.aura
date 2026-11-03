@@ -6,11 +6,11 @@ import { useDatapoint } from '../../../hooks/useDatapoint';
 import { ShutterSheet } from '../shuttershared/ShutterSheet';
 import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
 import { SignalStrengthBox } from '../shared/SignalStrengthBox';
-import { FloorHeader } from './FloorHeader';
+import { FloorGroup } from './FloorGroup';
 import { ShutterRow } from './ShutterRow';
+import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
-import { ModernPreview } from './preview/ModernPreview';
 import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
@@ -56,6 +56,11 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // komplett) - keine Konfigurationsoption, die sich versehentlich
     // umschalten liesse.
     const effectivePlannerRoot = import.meta.env.DEV ? '0_userdata.0.Rollladen_Dev' : plannerRoot;
+
+    // Favoriten der Liste (Regel 203): ein Datenpunkt fuers ganze Haus, gleiche
+    // Dev-/Live-Weiche wie der Planer. Vor dem fruehen Return unten, damit die
+    // Reihenfolge der Hooks gleich bleibt.
+    const fav = useFavorites(`${effectivePlannerRoot}.Favoriten`);
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -270,45 +275,35 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
             )}
         </>
     );
-    const ist = (
-        <>
-            {banner}
-            {/* Rolllaeden-Planer-Kachel (Feature 23): ueber der
-                    Etagenliste, nur wenn showPlanner===true. */}
-            {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
-
-            <div className="floors-scroll">
-                {floors.map((floor) => (
-                    <div key={floor.name} className="floor-section">
-                        <FloorHeader name={floor.name} connected={connected} />
-
-                        <div className="floor-devices">
-                            {floor.devices.map((device) => (
-                                <ShutterRow
-                                    key={device.key}
-                                    device={device}
-                                    connected={connected}
-                                    onOpenSheet={handleOpenSheet}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {footer}
-        </>
-    );
 
     return (
         <PendingContext.Provider value={pendingStore}>
             <div className="shutter-floors-widget">
-                {/* Entwurfs-Umschalter Runde 31–40 (nur Dev-Vorschau, 02.11.2026) – nach der Wahl samt preview/ entfernen */}
-                {import.meta.env.DEV ? (
-                    <ModernPreview floors={floors} connected={connected} banner={banner} footer={footer} ist={ist} />
-                ) : (
-                    ist
-                )}
+                {banner}
+                <div className={`sf${connected ? '' : ' is-offline'}`}>
+                    {/* Rolllaeden-Planer (Feature 23): Kopfgruppe Zeitplan/Szenen
+                        ueber der Etagenliste, nur wenn showPlanner===true. */}
+                    {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
+
+                    {floors.map((floor) => (
+                        <FloorGroup
+                            key={floor.name}
+                            floor={floor}
+                            isFav={fav.has}
+                            row={(d, firstRest) => (
+                                <ShutterRow
+                                    key={d.key}
+                                    device={d}
+                                    connected={connected}
+                                    firstRest={firstRest}
+                                    onOpenSheet={handleOpenSheet}
+                                />
+                            )}
+                        />
+                    ))}
+
+                    <div className="sf-foot">{footer}</div>
+                </div>
 
                 {/* Sheet-Overlay */}
                 {sheetDevice && (
