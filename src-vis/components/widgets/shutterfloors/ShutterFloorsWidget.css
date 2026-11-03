@@ -214,7 +214,7 @@
 /* Etagen-Ueberschrift mit Pfeil (Regel 203): rechts „n weitere" und der
    Pfeil, der die Nicht-Favoriten ein- und ausblendet. Die Ueberschrift ist
    ein <button>; ".sf button { color: inherit }" schlaegt hier die graue
-   Schrift, der Titel steht deshalb in Textfarbe (so in der Vorschau). */
+   Schrift, der Titel steht deshalb in Textfarbe (so abgenommen am 03.11.2026). */
 .sf-group-head--fold {
   display: flex;
   align-items: center;

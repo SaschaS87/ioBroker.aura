@@ -51,7 +51,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Sicherheits-Weiche (Feature 23, S1-Entscheidung Sascha): die lokale
     // Dev-Vorschau darf NIE gegen die echten Familien-Datenpunkte schreiben,
     // egal was in der Widget-Konfiguration steht. Deshalb hart auf
-    // Rollladen_Dev verdrahtet im Dev-Build (import.meta.env.DEV faellt im
+    // Rollladen_Dev verdrahtet im Dev-Build (die Dev-Abfrage faellt im
     // Pi-Build zur Kompilierzeit auf false, dieser Zweig verschwindet dort
     // komplett) - keine Konfigurationsoption, die sich versehentlich
     // umschalten liesse.
