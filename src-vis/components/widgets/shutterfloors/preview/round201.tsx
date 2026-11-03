@@ -1,6 +1,7 @@
 /**
  * Runde 201+ (02.11.2026), nur Dev-Vorschau. Zwei neue Reihen in der Leiste:
- *   D 201–219  Feinregler „schlicht" (PvSheetSlim), Fassungen in sheetLooks.ts
+ *   D 220–229  Feinregler „schlicht" (PvSheetSlim), Fassungen in sheetLooks.ts
+ *              (201–219 auf Saschas Wunsch am 03.11.2026 entfallen)
  *   E 203      Favoriten je Geschoss, Rest hinter einem Pfeil in der
  *              Ueberschrift (Saschas Wahl vom 02.11.2026; 204 „Zeile
  *              weitere am Ende" ist entfallen)

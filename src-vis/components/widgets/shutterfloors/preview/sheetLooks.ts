@@ -1,233 +1,119 @@
 /**
- * Fassungen des Feinreglers „schlicht" (Reihe D), nur Dev-Vorschau.
+ * Fassungen des Feinreglers (Reihe D), nur Dev-Vorschau.
  *
- * 201/202 (02.11.2026): Spalten 112/64 px, Feder neben einem 112-px-OK.
- * 205–219 (02.11.2026, abends): Saschas Wunsch nach mehr Ruhe und Stimmigkeit
- * zwischen Fenster und Raffstore. Grundidee aller neuen Fassungen: EIN Block
- * fester Breite fuer jeden Antrieb. Beim Fenster fuellt ihn ein Schieber, beim
- * Raffstore teilen sich Position und Lamelle denselben Block. Die Taste ist so
- * breit wie dieser Block oder geht ueber die volle Breite. Die Feder steckt
- * – je nach Fassung – in der Taste, als zweiter Weg „Leise", als Schalterzeile
- * oder als kleiner Chip.
+ * Runde 220–229 (03.11.2026). Die Fassungen 201–219 sind auf Saschas Wunsch
+ * entfallen. Seine Vorgaben fuer diese Runde:
+ * - Feder ohne Hintergrund, durchsichtig, zwischen Zahl und Schieber
+ * - Raffstore haben keine Leise-Fahrt: dort keine Feder, auch nicht
+ *   ausgegraut
+ * - Lamellen-Regler beim Raffstore schmaler
+ *
+ * Gemeinsamer Aufbau: Der Positions-Schieber steht bei jedem Antrieb an
+ * derselben Stelle (mittig). Beim Raffstore haengt die schmale Lamelle rechts
+ * daneben, Taste und Fensterhoehe bleiben gleich. In der Zeile zwischen Zahl
+ * und Schieber steht beim Fenster die Feder, beim Raffstore „Position" bzw.
+ * „Lamelle". Ausnahme 227: Position und Lamelle gemeinsam mittig.
  */
 
 export interface SheetLook {
     key: string;
     name: string;
     desc: string;
-    /** classic = 112/64 px wie 201/202; equal = ein Block BLOCK_W fuer alle */
-    block: 'classic' | 'equal';
-    /** Raffstore im Block: 2:1 (Position breiter) oder 1:1 (gleich breit) */
-    split?: '21' | '11';
-    /** Wo Zahl und Wort stehen */
-    labels: 'cols' | 'hero' | 'inside' | 'below';
-    /**
-     * side   Feder als eigener Kreis neben der Taste (201/202)
-     * split  eine Kapsel: OK | Feder (Feder-Teil schaltet um)
-     * inline eine Kapsel: Feder-Symbol links in der Taste, ohne Trennstrich
-     * two    zwei Wege in einer Kapsel: „OK" und „Leise" (beide fahren sofort)
-     * row    Schalterzeile „Leise fahren" wie in den Einstellungen, darunter OK
-     * chip   kleiner Umschalter „Leise" ueber der Taste
-     */
-    action: 'side' | 'split' | 'inline' | 'two' | 'row' | 'chip';
-    feder?: 'left' | 'right';
-    /** Tastenbreite: Schieber (classic), Block, oder volle Breite */
-    btn: 'pill' | 'block' | 'full';
-    /** Fuellung: Farbe der Art, ruhig (Textfarbe) oder getoent */
-    fill: 'kind' | 'neutral' | 'tint';
-    /** Schieber und Taste auf einer Karte wie die Listen-Gruppen */
-    card?: boolean;
+    /** Breite des Positions-Schiebers */
+    posW: number;
+    /** Lamelle: schmaler Schieber oder Strich mit Knopf */
+    slat: 'pill' | 'track';
+    /** Raffstore: Position bleibt mittig (Lamelle rechts daneben) oder beide gemeinsam mittig */
+    align: 'pos' | 'group';
+    /** Feder in der Zeile ueber dem Schieber: mittig, an der linken/rechten Kante, mit Wort „leise" */
+    feder: 'center' | 'left' | 'right' | 'word';
+    /** Breite der OK-Taste: wie der Positions-Schieber, feste Breite oder volle Breite */
+    btn: 'pos' | 'full' | number;
+    /** Fuellung in der Farbe der Art oder ruhig in Textfarbe */
+    fill: 'kind' | 'neutral';
+    /** Zahl ueber dem Schieber oder klein im Schieber */
+    value: 'above' | 'inside';
 }
 
-export const BLOCK_W = 168;
+const BASE: Omit<SheetLook, 'key' | 'name' | 'desc'> = {
+    posW: 140,
+    slat: 'pill',
+    align: 'pos',
+    feder: 'center',
+    btn: 'pos',
+    fill: 'kind',
+    value: 'above',
+};
 
 export const SHEET_LOOKS: SheetLook[] = [
     {
-        key: '201',
-        name: 'Schlicht, Feder links',
-        desc: 'Stand der ersten Runde: Spalten 112/64 px, Feder als Kreis links neben einem schmalen OK.',
-        block: 'classic',
-        labels: 'cols',
-        action: 'side',
-        feder: 'left',
-        btn: 'pill',
-        fill: 'kind',
+        ...BASE,
+        key: '220',
+        name: 'Feder mittig',
+        desc: 'Grundform: Zahl, darunter mittig die Feder ohne Hintergrund, dann der Schieber. Taste so breit wie der Schieber. Raffstore: schmale Lamelle rechts daneben.',
     },
     {
-        key: '202',
-        name: 'Schlicht, Feder rechts',
-        desc: 'Wie 201, Feder rechts.',
-        block: 'classic',
-        labels: 'cols',
-        action: 'side',
+        ...BASE,
+        key: '221',
+        name: 'Feder rechts über dem Schieber',
+        desc: 'Wie 220, die Feder sitzt bündig an der rechten Kante des Schiebers.',
         feder: 'right',
-        btn: 'pill',
-        fill: 'kind',
     },
     {
-        key: '205',
-        name: 'Ein Block, Kapsel OK | Feder',
-        desc: 'Fenster und Raffstore haben denselben 168-px-Block. Taste so breit wie der Block, die Feder ist ihr rechtes Ende.',
-        block: 'equal',
-        split: '21',
-        labels: 'cols',
-        action: 'split',
-        btn: 'block',
-        fill: 'kind',
+        ...BASE,
+        key: '222',
+        name: 'Feder links über dem Schieber',
+        desc: 'Wie 220, die Feder sitzt bündig an der linken Kante des Schiebers.',
+        feder: 'left',
     },
     {
-        key: '206',
-        name: 'Ein Block, zwei Wege',
-        desc: 'Wie 205, aber ohne Umschalten: Die Kapsel hat „OK" und „Leise". Wer leise fahren will, tippt gleich „Leise".',
-        block: 'equal',
-        split: '21',
-        labels: 'cols',
-        action: 'two',
-        btn: 'block',
-        fill: 'kind',
+        ...BASE,
+        key: '223',
+        name: 'Feder mit Wort',
+        desc: 'Wie 220, neben der Feder steht klein „leise". Eingeschaltet werden Feder und Wort gelb.',
+        feder: 'word',
     },
     {
-        key: '207',
-        name: 'Ein Block, Feder in der Taste',
-        desc: 'Wie 205, die Feder sitzt als Symbol links in der Taste, ohne Trennstrich.',
-        block: 'equal',
-        split: '21',
-        labels: 'cols',
-        action: 'inline',
-        btn: 'block',
-        fill: 'kind',
+        ...BASE,
+        key: '224',
+        name: 'Breitere Taste',
+        desc: 'Wie 220, die Taste ist 220 px breit und steht mittig unter dem Schieber.',
+        btn: 220,
     },
     {
-        key: '208',
-        name: 'Große Zahl oben',
-        desc: 'Eine große Zahl über dem Block, beim Raffstore mit Winkel daneben. Die Schieber tragen keine eigene Beschriftung. Kapsel OK | Feder.',
-        block: 'equal',
-        split: '21',
-        labels: 'hero',
-        action: 'split',
-        btn: 'block',
-        fill: 'kind',
-    },
-    {
-        key: '209',
-        name: 'Große Zahl, breite Taste',
-        desc: 'Wie 208, die Taste geht über die volle Breite und hat zwei Wege „OK" und „Leise".',
-        block: 'equal',
-        split: '21',
-        labels: 'hero',
-        action: 'two',
+        ...BASE,
+        key: '225',
+        name: 'Taste über die volle Breite',
+        desc: 'Wie 220, die Taste geht über die ganze Fensterbreite.',
         btn: 'full',
-        fill: 'kind',
     },
     {
-        key: '210',
-        name: 'Zwei gleiche Schieber',
-        desc: 'Beim Raffstore sind Position und Lamelle gleich breit und füllen zusammen den Block. Kapsel OK | Feder.',
-        block: 'equal',
-        split: '11',
-        labels: 'cols',
-        action: 'split',
-        btn: 'block',
-        fill: 'kind',
+        ...BASE,
+        key: '226',
+        name: 'Lamelle als Strich',
+        desc: 'Wie 220, die Lamelle ist nur ein dünner Strich mit rundem Knopf – noch schmaler.',
+        slat: 'track',
     },
     {
-        key: '211',
-        name: 'Zahl im Schieber',
-        desc: 'Der Wert steht klein unten im Schieber, darunter nur „Position" bzw. „Lamelle". Sehr ruhiger Kopf. Kapsel OK | Feder.',
-        block: 'equal',
-        split: '21',
-        labels: 'inside',
-        action: 'split',
-        btn: 'block',
-        fill: 'kind',
+        ...BASE,
+        key: '227',
+        name: 'Raffstore gemeinsam mittig',
+        desc: 'Beim Raffstore stehen Position und Lamelle zusammen in der Mitte. Taste 200 px breit, bei jedem Antrieb gleich.',
+        align: 'group',
+        btn: 200,
     },
     {
-        key: '212',
+        ...BASE,
+        key: '228',
         name: 'Ruhig, ohne Farbe',
-        desc: 'Wie 208, die Füllung in Textfarbe statt in der Farbe der Art – wie die Helligkeit im Kontrollzentrum.',
-        block: 'equal',
-        split: '21',
-        labels: 'hero',
-        action: 'split',
-        btn: 'block',
+        desc: 'Wie 220, die Füllung in Textfarbe statt in der Farbe der Art.',
         fill: 'neutral',
     },
     {
-        key: '213',
-        name: 'Getönt',
-        desc: 'Wie 205, die leere Fläche des Schiebers ist zart in der Farbe der Art getönt.',
-        block: 'equal',
-        split: '21',
-        labels: 'cols',
-        action: 'split',
-        btn: 'block',
-        fill: 'tint',
-    },
-    {
-        key: '214',
-        name: 'Auf einer Karte',
-        desc: 'Große Zahl, Schieber und Taste liegen auf einer Karte wie die Gruppen in der Liste. Taste über die Kartenbreite.',
-        block: 'equal',
-        split: '21',
-        labels: 'hero',
-        action: 'split',
-        btn: 'full',
-        fill: 'kind',
-        card: true,
-    },
-    {
-        key: '215',
-        name: 'Leise als Schalter',
-        desc: 'Unter den Schiebern eine Zeile „Leise fahren" mit Schalter wie in den Einstellungen, darunter ein breites OK.',
-        block: 'equal',
-        split: '21',
-        labels: 'hero',
-        action: 'row',
-        btn: 'full',
-        fill: 'kind',
-    },
-    {
-        key: '216',
-        name: 'Leise als Chip',
-        desc: 'Ein kleiner Umschalter „Leise" über der Taste, die Taste so breit wie der Block.',
-        block: 'equal',
-        split: '21',
-        labels: 'cols',
-        action: 'chip',
-        btn: 'block',
-        fill: 'kind',
-    },
-    {
-        key: '217',
-        name: 'Zahl unter dem Schieber',
-        desc: 'Schieber oben bündig, Zahl und Wort darunter. Kapsel OK | Feder.',
-        block: 'equal',
-        split: '21',
-        labels: 'below',
-        action: 'split',
-        btn: 'block',
-        fill: 'kind',
-    },
-    {
-        key: '218',
-        name: 'Gleich und getönt, zwei Wege',
-        desc: 'Zwei gleich breite, getönte Schieber, große Zahl oben, breite Taste „OK" | „Leise".',
-        block: 'equal',
-        split: '11',
-        labels: 'hero',
-        action: 'two',
-        btn: 'full',
-        fill: 'tint',
-    },
-    {
-        key: '219',
-        name: 'Ganz ruhig',
-        desc: 'Zahl im Schieber, Füllung in Textfarbe, breite Taste „OK" | „Leise". Am wenigsten Farbe und Text.',
-        block: 'equal',
-        split: '21',
-        labels: 'inside',
-        action: 'two',
-        btn: 'full',
-        fill: 'neutral',
+        ...BASE,
+        key: '229',
+        name: 'Zahl im Schieber',
+        desc: 'Die Zahl steht klein unten im Schieber. Über dem Schieber nur die Feder bzw. beim Raffstore „Position" und „Lamelle".',
+        value: 'inside',
     },
 ];

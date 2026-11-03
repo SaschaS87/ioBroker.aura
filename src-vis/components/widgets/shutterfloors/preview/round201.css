@@ -1,7 +1,7 @@
-/* Runde 201+ (02.11.2026), nur Dev-Vorschau: Feinregler „schlicht" und
-   Favoriten je Geschoss. Grund und Text aus dem Theme (wie Runde 41–65),
-   eigene Farben nur die drei Farben je Art (Fenster blau, Dachfenster
-   violett, Raffstore tuerkis) wie in den Symbol-Quadraten der Liste. */
+/* Runde 201+ (Dev-Vorschau): Feinregler und Favoriten je Geschoss. Grund und
+   Text aus dem Theme (wie Runde 41–65), eigene Farben nur die drei Farben je
+   Art (Fenster blau, Dachfenster violett, Raffstore tuerkis) wie in den
+   Symbol-Quadraten der Liste. Feinregler-Stand: Runde 220–229 (03.11.2026). */
 
 /* ── Feinregler ───────────────────────────────────────────────────────── */
 
@@ -21,38 +21,64 @@
 html.dark .pvq-star.is-on { color: #ffd60a; }
 .pvq-star:active { transform: scale(0.9); }
 
-.pvq-body { display: flex; flex-direction: column; align-items: center; padding: 10px 20px 6px; }
+.pvq-body { display: flex; flex-direction: column; align-items: center; padding: 12px 20px 6px; }
 
-/* Beide Spalten haben denselben Aufbau mit festen Hoehen – nur so stehen
-   Position und Lamelle beim Raffstore oben und unten auf einer Linie. */
-.pvq-instruments { display: flex; align-items: flex-start; justify-content: center; gap: 32px; }
-/* Breite kommt fest aus PvSheetSlim (POS_W/SLAT_W). Zahl und Wort duerfen
-   ueber die Spalte hinausragen und bleiben per Flex mittig – sie bestimmen
-   die Breite nie (wie .instrument im Original). */
+/* Schieber-Gruppe. Breite = Positions-Schieber; beim Raffstore haengt die
+   Lamelle absolut rechts daneben (align 'pos'), so steht die Position bei
+   jedem Antrieb an derselben Stelle und das Fenster ist gleich hoch.
+   Bei 227 (align 'group') stehen beide gemeinsam in der Mitte. */
+.pvq-inst { position: relative; display: flex; align-items: flex-start; justify-content: center; }
+
+/* Jede Spalte hat dieselben Zeilen mit fester Hoehe: Zahl, Wort, Feder-Zeile,
+   Schieber. Zahl und Wort duerfen ueber die Spalte hinausragen und bleiben
+   mittig – sie bestimmen die Breite nie (sonst springt der Abstand). */
 .pvq-col { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
-.pvq-col > .pvq-cap, .pvq-col > .pvq-val, .pvq-col > .pvq-word { width: 100%; display: flex; justify-content: center; overflow: visible; }
-.pvq-cap { height: 16px; line-height: 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pv-sub); }
+.pvq-col > * { width: 100%; }
 .pvq-val {
-  height: 36px; display: flex; align-items: center; white-space: nowrap;
-  font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; justify-content: center; height: 34px; white-space: nowrap; overflow: visible;
+  font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
 }
+.pvq-val--slat { font-size: 17px; font-weight: 600; letter-spacing: 0; color: var(--pv-sub); }
 .pvq-val.is-live { color: var(--pv-accent); }
 .pvq-val.is-target { color: var(--pv-amber); }
 .pvq-val.is-estimate, .pvq-val.is-stale { opacity: 0.55; }
-.pvq-unit { font-size: 16px; font-weight: 600; color: var(--pv-sub); letter-spacing: 0; white-space: pre; }
-.pvq-arrow { font-size: 20px; font-weight: 400; color: var(--pv-sub); margin: 0 5px; }
+.pvq-unit { font-size: 15px; font-weight: 600; color: var(--pv-sub); letter-spacing: 0; white-space: pre; }
+.pvq-arrow { font-size: 18px; font-weight: 400; color: var(--pv-sub); margin: 0 4px; }
 .pvq-target { color: var(--pv-amber); }
-.pvq-word { height: 18px; line-height: 18px; margin-bottom: 10px; font-size: 13px; color: var(--pv-sub); white-space: nowrap; }
+.pvq-word {
+  display: flex; justify-content: center; height: 18px; line-height: 18px; white-space: nowrap; overflow: visible;
+  font-size: 13px; color: var(--pv-sub);
+}
 .pvq-word.is-busy { color: var(--pv-amber); font-weight: 600; }
 
+/* Zeile zwischen Zahl und Schieber: Feder ohne Hintergrund bzw. Beschriftung */
+.pvq-slot { display: flex; align-items: center; justify-content: center; height: 40px; overflow: visible; }
+.pvq-slot--left { justify-content: flex-start; }
+.pvq-slot--right { justify-content: flex-end; }
+.pvq-cap { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--pv-sub); white-space: nowrap; }
+.pvq-feder {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 36px; min-width: 36px; padding: 0 8px; border: none; border-radius: 18px;
+  background: transparent; color: var(--pv-sub); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: color 0.15s, transform 0.09s, opacity 0.15s;
+}
+/* Kante buendig: das Symbol steht genau ueber der Schieberkante */
+.pvq-slot--left .pvq-feder { margin-left: -8px; }
+.pvq-slot--right .pvq-feder { margin-right: -8px; }
+.pvq-feder.is-on { color: var(--pv-amber); }
+.pvq-feder:active { transform: scale(0.9); }
+.pvq-feder.is-hidden { opacity: 0; pointer-events: none; }
+
+/* Positions-Schieber und schmale Lamelle */
 .pvq-pill {
   position: relative; overflow: hidden; flex-shrink: 0;
-  border-radius: 28px; background: var(--pv-soft2);
+  border-radius: 26px; background: var(--pv-soft2);
   touch-action: none; cursor: ns-resize; outline: none;
   transition: transform 0.15s ease, opacity 0.15s;
 }
-.pvq-pill--pos { width: 100%; }
-.pvq-pill--slat { width: 100%; border-radius: 22px; }
+.pvq-pill.is-narrow { border-radius: 15px; }
 .pvq-pill:focus-visible { box-shadow: 0 0 0 2px var(--pv-accent); }
 .pvq-pill.is-drag { transform: scale(1.02); }
 .pvq-pill-fill { position: absolute; left: 0; right: 0; top: 0; background: var(--k); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -65,19 +91,40 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
   position: absolute; left: 50%; width: 16px; height: 2px; margin: -1px 0 0 -8px; border-radius: 1px;
   background: color-mix(in srgb, var(--pv-text) 22%, transparent);
 }
+.pvq-pill.is-narrow .pvq-pill-mark { width: 10px; margin-left: -5px; }
+.pvq--fill-neutral .pvq-pill-fill { background: color-mix(in srgb, var(--pv-text) 78%, transparent); }
+.pvq--fill-neutral .pvq-pill-mark { background: color-mix(in srgb, var(--pv-bg) 45%, transparent); }
 
-/* Bestaetigung: schlichtes „OK", so breit wie der Positions-Schieber
-   (--pvq-btn), immer in der Mitte. Die Feder sitzt in einer eigenen
-   Spalte links oder rechts daneben. Ohne Feder (Raffstore, Ankleide …) sind
-   beide Seitenspalten 0 breit – die Taste steht an derselben Stelle. */
-.pvq-confirm {
-  display: grid; grid-template-columns: var(--pvq-side, 50px) var(--pvq-btn, 112px) var(--pvq-side, 50px);
-  align-items: center; justify-content: center; column-gap: 12px;
-  width: 100%; margin-top: 22px;
+/* Zahl im Schieber (229): kleines Schild unten, auf jedem Grund lesbar */
+.pvq-pill-chip {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  padding: 3px 8px; border-radius: 10px; white-space: nowrap;
+  background: color-mix(in srgb, var(--pv-bg) 88%, transparent); color: var(--pv-text);
+  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
 }
+.pvq-pill.is-narrow .pvq-pill-chip { bottom: 6px; padding: 2px 3px; border-radius: 7px; font-size: 11px; }
+
+/* Lamelle als Strich mit Knopf (226) */
+.pvq-track { position: relative; flex-shrink: 0; touch-action: none; cursor: ns-resize; outline: none; }
+.pvq-track.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.pvq-track-rail, .pvq-track-fill { position: absolute; left: 50%; width: 6px; margin-left: -3px; border-radius: 3px; top: 12px; }
+.pvq-track-rail { bottom: 12px; background: var(--pv-soft2); }
+.pvq-track-fill { background: var(--k); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
+.pvq-track-knob {
+  position: absolute; top: 0; left: 50%; width: 24px; height: 24px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25), 0 0 0 0.5px rgb(0 0 0 / 0.08);
+  transition: transform 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pvq-track.is-drag .pvq-track-fill, .pvq-track.is-drag .pvq-track-knob { transition: none; }
+.pvq-track.is-busy .pvq-track-fill { background: var(--pv-amber); }
+.pvq--fill-neutral .pvq-track-fill { background: color-mix(in srgb, var(--pv-text) 78%, transparent); }
+.pvq-track-val { display: block; margin-top: 6px; text-align: center; font-size: 12px; font-weight: 700; }
+
+/* OK-Taste, waehrend der Fahrt Stopp in derselben Breite */
+.pvq-act { display: flex; max-width: 100%; margin-top: 22px; }
 .pvq-go {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  height: 50px; width: 100%; padding: 0 10px; border: none; border-radius: 14px;
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 50px; padding: 0 10px; border: none; border-radius: 14px;
   background: var(--pv-accent); color: #fff;
   font: inherit; font-size: 16px; font-weight: 600; white-space: nowrap; cursor: pointer;
   -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: transform 0.09s, opacity 0.15s;
@@ -85,108 +132,10 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
 .pvq-go:disabled { background: var(--pv-soft2); color: var(--pv-sub); cursor: default; }
 .pvq-go:active:not(:disabled) { transform: scale(0.96); }
 .pvq-go--stop { background: var(--pv-amber); color: #000; }
-.pvq-feder {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 50px; height: 50px; border: none; border-radius: 50%;
-  background: var(--pv-soft2); color: var(--pv-sub); cursor: pointer;
-  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background 0.15s, color 0.15s, transform 0.09s;
-}
-.pvq-feder.is-on { background: var(--pv-amber); color: #000; }
-.pvq-feder:active { transform: scale(0.92); }
-.pvq-hint { height: 16px; line-height: 16px; margin-top: 6px; font-size: 12px; color: var(--pv-amber); font-weight: 600; }
-
-/* ── 205–219: ein Block fuer alle, Taste und Feder vereint ───────────── */
-
-.pvq-stage { display: flex; flex-direction: column; align-items: center; width: 100%; }
-.pvq--card .pvq-stage {
-  padding: 18px 16px 14px; border-radius: 20px;
-  background: var(--widget-bg, var(--app-surface));
-  border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border));
-}
-.pvq--equal .pvq-val { height: 30px; font-size: 24px; }
-.pvq--equal .pvq-unit { font-size: 14px; }
-.pvq--equal .pvq-arrow { font-size: 16px; margin: 0 3px; }
-.pvq-pill.is-narrow { border-radius: 18px; }
-.pvq-pill.is-narrow .pvq-pill-mark { width: 12px; margin-left: -6px; }
-
-/* Grosse Zahl oben (208, 209, 212, 214, 215, 218) */
-.pvq-hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 14px; }
-.pvq-hero-val { display: flex; align-items: center; height: 48px; }
-.pvq-hero .pvq-val { height: 48px; font-size: 40px; }
-.pvq-hero .pvq-unit { font-size: 18px; }
-.pvq-hero .pvq-arrow { font-size: 24px; }
-.pvq-hero-sep { width: 5px; height: 5px; margin: 0 12px; border-radius: 50%; background: var(--pv-sub); font-size: 0; }
-.pvq-hero .pvq-word { margin-bottom: 0; }
-.pvq-cap--below { margin-top: 8px; }
-.pvq--labels-inside .pvq-word, .pvq--labels-below .pvq-word { margin-bottom: 0; }
-.pvq--labels-below .pvq-col > .pvq-val { margin-top: 8px; }
-
-/* Zahl im Schieber (211, 219): kleines Schild unten, auf jedem Grund lesbar */
-.pvq-pill-chip {
-  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
-  padding: 3px 8px; border-radius: 10px; white-space: nowrap;
-  background: color-mix(in srgb, var(--pv-bg) 88%, transparent); color: var(--pv-text);
-  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
-}
-.pvq-pill.is-narrow .pvq-pill-chip { padding: 2px 5px; font-size: 12px; }
-
-/* Fuellung: ruhig (Textfarbe) und getoent */
-.pvq--fill-neutral .pvq-pill-fill { background: color-mix(in srgb, var(--pv-text) 78%, transparent); }
-.pvq--fill-neutral .pvq-pill-mark { background: color-mix(in srgb, var(--pv-bg) 45%, transparent); }
-.pvq--fill-tint .pvq-pill { background: color-mix(in srgb, var(--k) 16%, transparent); }
-
-/* Tasten-Kapsel: OK und Feder bzw. OK und Leise als EINE Flaeche */
-.pvq-act { display: flex; margin-top: 22px; max-width: 100%; }
-.pvq-act > .pvq-go { flex: 1; }
-.pvq-act .pvq-go { height: 52px; border-radius: 16px; }
-.pvq-caps { height: 52px; border-radius: 16px; overflow: hidden; background: var(--pv-accent); }
-.pvq-caps > .pvq-go { flex: 1; min-width: 0; border-radius: 0; background: transparent; color: #fff; }
-.pvq-caps > .pvq-go:disabled { background: transparent; color: var(--pv-sub); }
-.pvq-caps > .pvq-go:active:not(:disabled) { transform: none; background: rgb(0 0 0 / 0.12); }
-.pvq-caps.is-idle { background: var(--pv-soft2); }
-.pvq-seg-feder {
-  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 54px;
-  border: none; background: transparent; color: #fff; cursor: pointer;
-  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background 0.15s, color 0.15s;
-}
-.pvq-caps.is-idle .pvq-seg-feder { color: var(--pv-sub); }
-.pvq-seg-feder.is-on, .pvq-caps.is-idle .pvq-seg-feder.is-on { background: var(--pv-amber); color: #000; }
-.pvq-caps--split .pvq-seg-feder { border-left: 1px solid rgb(255 255 255 / 0.32); }
-.pvq-caps--split.is-idle .pvq-seg-feder { border-left-color: color-mix(in srgb, var(--pv-text) 14%, transparent); }
-.pvq-caps--inline .pvq-seg-feder { flex-basis: 48px; margin: 6px 0 6px 6px; border-radius: 11px; }
-/* OK-Schrift mittig ueber die ganze Kapsel, nicht nur ueber den Rest neben der Feder */
-.pvq-caps--inline .pvq-seg-feder + .pvq-go { padding-right: 54px; }
-.pvq-caps--split .pvq-go:has(+ .pvq-seg-feder) { padding-left: 54px; }
-.pvq-caps--two > .pvq-go + .pvq-go { border-left: 1px solid rgb(255 255 255 / 0.32); gap: 6px; }
-.pvq-caps--two.is-idle > .pvq-go + .pvq-go { border-left-color: color-mix(in srgb, var(--pv-text) 14%, transparent); }
-
-/* Gestapelt: Leise-Zeile bzw. Chip ueber der Taste (215, 216) */
-.pvq-act--stack { flex-direction: column; align-items: stretch; gap: 10px; }
-.pvq-act--stack > .pvq-go { flex: none; }
-.pvq-row {
-  display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 14px;
-  border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border)); border-radius: 14px;
-  background: var(--widget-bg, var(--app-surface)); color: var(--pv-text);
-  font: inherit; font-size: 16px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
-}
-.pvq-row:disabled { opacity: 0.5; cursor: default; }
-.pvq-row-ico { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; background: var(--pv-amber); color: #000; }
-.pvq-row-label { flex: 1; }
-.pvq-switch { position: relative; width: 51px; height: 31px; border-radius: 16px; background: color-mix(in srgb, var(--pv-text) 16%, transparent); transition: background 0.2s; flex-shrink: 0; }
-.pvq-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 0.2); transition: transform 0.2s; }
-.pvq-switch.is-on { background: #34c759; }
-.pvq-switch.is-on::after { transform: translateX(20px); }
-.pvq-chip {
-  align-self: center; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px;
-  border: none; border-radius: 999px; background: var(--pv-soft2); color: var(--pv-sub);
-  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent;
-}
-.pvq-chip.is-on { background: var(--pv-amber); color: #000; }
-.pvq-chip:disabled { opacity: 0.5; cursor: default; }
 
 .pvq .pvs-notice { margin-top: 10px; }
 .pvq-radio {
-  width: 100%; margin-top: 8px; font-size: 11px; color: var(--pv-sub); opacity: 0.75; text-align: center;
+  width: 100%; margin-top: 10px; font-size: 11px; color: var(--pv-sub); opacity: 0.75; text-align: center;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
 }
 .pvq-radio.is-offline { color: var(--pv-red); opacity: 1; }
