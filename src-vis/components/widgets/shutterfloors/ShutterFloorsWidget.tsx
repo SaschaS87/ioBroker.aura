@@ -3,11 +3,11 @@ import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
 import { useDatapoint } from '../../../hooks/useDatapoint';
-import { ShutterSheet } from '../shuttershared/ShutterSheet';
 import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
 import { SignalStrengthBox } from '../shared/SignalStrengthBox';
 import { FloorGroup } from './FloorGroup';
 import { ShutterRow } from './ShutterRow';
+import { ShutterDetailSheet } from './ShutterDetailSheet';
 import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
@@ -307,13 +307,11 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
 
                 {/* Sheet-Overlay */}
                 {sheetDevice && (
-                    <ShutterSheet
+                    <ShutterDetailSheet
                         key={sheetSeq}
                         device={sheetDevice}
-                        room={sheetDevice.room || ''}
-                        room_facade=""
                         connected={connected}
-                        showFacade={false}
+                        fav={fav}
                         onClose={handleCloseSheet}
                     />
                 )}
