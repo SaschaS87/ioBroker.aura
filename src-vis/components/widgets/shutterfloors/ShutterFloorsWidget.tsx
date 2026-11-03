@@ -3,11 +3,12 @@ import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
 import { useDatapoint } from '../../../hooks/useDatapoint';
-import { ShutterSheet } from '../shuttershared/ShutterSheet';
 import { DataSourceHealthBox, type HealthSourceDef } from '../shared/DataSourceHealthBox';
 import { SignalStrengthBox } from '../shared/SignalStrengthBox';
-import { FloorHeader } from './FloorHeader';
+import { FloorGroup } from './FloorGroup';
 import { ShutterRow } from './ShutterRow';
+import { ShutterDetailSheet } from './ShutterDetailSheet';
+import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
 import './ShutterFloorsWidget.css';
@@ -50,11 +51,16 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Sicherheits-Weiche (Feature 23, S1-Entscheidung Sascha): die lokale
     // Dev-Vorschau darf NIE gegen die echten Familien-Datenpunkte schreiben,
     // egal was in der Widget-Konfiguration steht. Deshalb hart auf
-    // Rollladen_Dev verdrahtet im Dev-Build (import.meta.env.DEV faellt im
+    // Rollladen_Dev verdrahtet im Dev-Build (die Dev-Abfrage faellt im
     // Pi-Build zur Kompilierzeit auf false, dieser Zweig verschwindet dort
     // komplett) - keine Konfigurationsoption, die sich versehentlich
     // umschalten liesse.
     const effectivePlannerRoot = import.meta.env.DEV ? '0_userdata.0.Rollladen_Dev' : plannerRoot;
+
+    // Favoriten der Liste (Regel 203): ein Datenpunkt fuers ganze Haus, gleiche
+    // Dev-/Live-Weiche wie der Planer. Vor dem fruehen Return unten, damit die
+    // Reihenfolge der Hooks gleich bleibt.
+    const fav = useFavorites(`${effectivePlannerRoot}.Favoriten`);
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -235,69 +241,77 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         );
     }
 
-    return (
-        <PendingContext.Provider value={pendingStore}>
-            <div className="shutter-floors-widget">
-                {/* Warnstreifen. Steht bewusst OBEN und nicht als Pille in der
+    const banner = (
+        <>
+            {/* Warnstreifen. Steht bewusst OBEN und nicht als Pille in der
                     Fusszeile: Wer nachts einen Rollladen fahren will, soll den
                     Grund sehen, bevor er drueckt – nicht danach. */}
-                {!connected && (
-                    <div className="conn-banner" role="status">
-                        <span className="conn-banner-title">{instanceLabel} nicht erreichbar</span>
-                        <span className="conn-banner-text">
-                            {aliveOk
-                                ? 'Der Adapter läuft, meldet aber keine Verbindung zur Box. Befehle kommen nicht an.'
-                                : 'Die Adapter-Instanz läuft nicht. Befehle kommen nicht an.'}
-                        </span>
-                    </div>
-                )}
-
-                {/* Rolllaeden-Planer-Kachel (Feature 23): ueber der
-                    Etagenliste, nur wenn showPlanner===true. */}
-                {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
-
-                <div className="floors-scroll">
-                    {floors.map((floor) => (
-                        <div key={floor.name} className="floor-section">
-                            <FloorHeader name={floor.name} connected={connected} />
-
-                            <div className="floor-devices">
-                                {floor.devices.map((device) => (
-                                    <ShutterRow
-                                        key={device.key}
-                                        device={device}
-                                        connected={connected}
-                                        onOpenSheet={handleOpenSheet}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+            {!connected && (
+                <div className="conn-banner" role="status">
+                    <span className="conn-banner-title">{instanceLabel} nicht erreichbar</span>
+                    <span className="conn-banner-text">
+                        {aliveOk
+                            ? 'Der Adapter läuft, meldet aber keine Verbindung zur Box. Befehle kommen nicht an.'
+                            : 'Die Adapter-Instanz läuft nicht. Befehle kommen nicht an.'}
+                    </span>
                 </div>
-
-                {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
+            )}
+        </>
+    );
+    const footer = (
+        <>
+            {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
                     Wetter-Tab, DataSourceHealthBox). Meldet den Zustand der
                     Instanz auch im Normalfall, mit Neustart-Knopf im
                     Stoerfall. `showFooter` stand schon in der Konfiguration. */}
-                {showFooter && <DataSourceHealthBox sources={healthSources} />}
+            {showFooter && <DataSourceHealthBox sources={healthSources} />}
 
-                {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
+            {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
                     TaHoma-Funk-States gebuendelt statt einer Zeile pro Sheet. */}
-                {signalBoxVisible && (
-                    <div style={{ marginTop: showFooter ? 8 : 0 }}>
-                        <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
-                    </div>
-                )}
+            {signalBoxVisible && (
+                <div style={{ marginTop: showFooter ? 8 : 0 }}>
+                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
+                </div>
+            )}
+        </>
+    );
+
+    return (
+        <PendingContext.Provider value={pendingStore}>
+            <div className="shutter-floors-widget">
+                {banner}
+                <div className={`sf${connected ? '' : ' is-offline'}`}>
+                    {/* Rolllaeden-Planer (Feature 23): Kopfgruppe Zeitplan/Szenen
+                        ueber der Etagenliste, nur wenn showPlanner===true. */}
+                    {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
+
+                    {floors.map((floor) => (
+                        <FloorGroup
+                            key={floor.name}
+                            floor={floor}
+                            isFav={fav.has}
+                            row={(d, firstRest) => (
+                                <ShutterRow
+                                    key={d.key}
+                                    device={d}
+                                    connected={connected}
+                                    firstRest={firstRest}
+                                    onOpenSheet={handleOpenSheet}
+                                />
+                            )}
+                        />
+                    ))}
+
+                    <div className="sf-foot">{footer}</div>
+                </div>
 
                 {/* Sheet-Overlay */}
                 {sheetDevice && (
-                    <ShutterSheet
+                    <ShutterDetailSheet
                         key={sheetSeq}
                         device={sheetDevice}
-                        room={sheetDevice.room || ''}
-                        room_facade=""
                         connected={connected}
-                        showFacade={false}
+                        fav={fav}
                         onClose={handleCloseSheet}
                     />
                 )}

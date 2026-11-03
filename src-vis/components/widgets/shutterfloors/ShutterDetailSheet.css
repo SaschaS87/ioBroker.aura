@@ -1,0 +1,143 @@
+/* Feinregler (Feature 27, Fassung 230, Saschas Wahl vom 03.11.2026): Fenster
+   von unten. Grund und Text aus dem Theme (--sf-*-Variablen, definiert in
+   ShutterFloorsWidget.css fuer .sds-backdrop), eigene Farben nur die drei
+   Farben je Art (Fenster blau, Dachfenster violett, Raffstore tuerkis) wie in
+   den Symbol-Quadraten der Liste. */
+
+.sds-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgb(0 0 0 / 0.4);
+  animation: sds-fade 0.25s ease-out;
+}
+@keyframes sds-fade { from { opacity: 0; } to { opacity: 1; } }
+.sds {
+  --sf-kind: #0a84ff;
+  width: 100%; max-width: 520px; max-height: 94dvh; overflow-y: auto;
+  border-radius: 28px 28px 0 0;
+  background: var(--sf-bg); color: var(--sf-text);
+  box-shadow: 0 -10px 40px rgb(0 0 0 / 0.25);
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  animation: sds-in 0.32s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+@keyframes sds-in { from { transform: translateY(100%); } to { transform: none; } }
+.sds.is-dachfenster { --sf-kind: #5e5ce6; }
+.sds.is-raffstore { --sf-kind: #30b0c7; }
+
+.sds-drag { touch-action: none; cursor: grab; }
+.sds-grip { width: 38px; height: 5px; border-radius: 3px; background: var(--sf-soft2); margin: 8px auto 4px; }
+.sds-head-text { flex: 1; min-width: 0; }
+.sds-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sds-sub { font-size: 13px; color: var(--sf-sub); }
+
+.sds-head { display: flex; align-items: center; gap: 10px; padding: 4px 12px 2px 20px; }
+.sds-star {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; flex-shrink: 0;
+  border: none; border-radius: 50%; background: transparent;
+  color: var(--sf-sub); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s, transform 0.09s;
+}
+.sds-star.is-on { color: #ffcc00; }
+html.dark .sds-star.is-on { color: #ffd60a; }
+.sds-star:active { transform: scale(0.9); }
+
+.sds-body { display: flex; flex-direction: column; align-items: center; padding: 12px 20px 6px; }
+
+/* Schieber-Gruppe. Fenster: nur die Position. Raffstore: Position und Lamelle
+   stehen gemeinsam in der Mitte (Gruppenbreite = Position + Abstand + Lamelle). */
+.sds-inst { position: relative; display: flex; align-items: flex-start; justify-content: center; }
+
+/* Jede Spalte hat dieselben Zeilen mit fester Hoehe: Zahl, Wort, Feder-Zeile,
+   Schieber. Zahl und Wort duerfen ueber die Spalte hinausragen und bleiben
+   mittig – sie bestimmen die Breite nie (sonst springt der Abstand). */
+.sds-col { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
+.sds-col > * { width: 100%; }
+.sds-val {
+  display: flex; align-items: center; justify-content: center; height: 34px; white-space: nowrap; overflow: visible;
+  font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+}
+.sds-val--slat { font-size: 17px; font-weight: 600; letter-spacing: 0; color: var(--sf-sub); }
+.sds-val.is-live { color: var(--sf-accent); }
+.sds-val.is-target { color: var(--sf-amber); }
+.sds-val.is-estimate, .sds-val.is-stale { opacity: 0.55; }
+.sds-unit { font-size: 15px; font-weight: 600; color: var(--sf-sub); letter-spacing: 0; white-space: pre; }
+.sds-arrow { font-size: 18px; font-weight: 400; color: var(--sf-sub); margin: 0 4px; }
+.sds-target { color: var(--sf-amber); }
+.sds-word {
+  display: flex; justify-content: center; height: 18px; line-height: 18px; white-space: nowrap; overflow: visible;
+  font-size: 13px; color: var(--sf-sub);
+}
+.sds-word.is-busy { color: var(--sf-amber); font-weight: 600; }
+
+/* Zeile zwischen Zahl und Schieber: Feder ohne Hintergrund bzw. Beschriftung */
+.sds-slot { display: flex; align-items: center; justify-content: center; height: 40px; overflow: visible; }
+.sds-cap { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--sf-sub); white-space: nowrap; }
+/* Die Feder ist eine HapticButton-Huelle (span) mit dem Symbol und dem Wort
+   „leise" in einem inneren span. */
+.sds-feder {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 36px; min-width: 36px; padding: 0 8px; border: none; border-radius: 18px;
+  background: transparent; color: var(--sf-sub); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: color 0.15s, transform 0.09s, opacity 0.15s;
+}
+.sds-feder.is-on { color: var(--sf-amber); }
+.sds-feder:active { transform: scale(0.9); }
+.sds-feder.is-hidden { opacity: 0; pointer-events: none; }
+
+/* Positions-Schieber und schmale Lamelle */
+.sds-pill {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  border-radius: 26px; background: var(--sf-soft2);
+  touch-action: none; cursor: ns-resize; outline: none;
+  transition: transform 0.15s ease, opacity 0.15s;
+}
+.sds-pill.is-narrow { border-radius: 15px; }
+.sds-pill:focus-visible { box-shadow: 0 0 0 2px var(--sf-accent); }
+.sds-pill.is-drag { transform: scale(1.02); }
+.sds-pill-fill { position: absolute; left: 0; right: 0; top: 0; background: var(--sf-kind); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
+.sds-pill.is-drag .sds-pill-fill { transition: none; }
+.sds-pill.is-busy .sds-pill-fill { background: var(--sf-amber); }
+.sds-pill.is-stale { opacity: 0.45; }
+.sds-pill.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.sds-pill.is-unknown { background: repeating-linear-gradient(135deg, var(--sf-soft2) 0 8px, transparent 8px 16px); }
+.sds-pill-mark {
+  position: absolute; left: 50%; width: 16px; height: 2px; margin: -1px 0 0 -8px; border-radius: 1px;
+  background: color-mix(in srgb, var(--sf-text) 22%, transparent);
+}
+.sds-pill.is-narrow .sds-pill-mark { width: 10px; margin-left: -5px; }
+
+/* OK-Taste, waehrend der Fahrt Stopp in derselben Breite. Beide sind
+   HapticButton-Huellen (span); der Inhalt steht in einem inneren span. */
+.sds-act { display: flex; max-width: 100%; margin-top: 22px; }
+.sds-go {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 50px; padding: 0 10px; border: none; border-radius: 14px;
+  background: var(--sf-accent); color: #fff;
+  font: inherit; font-size: 16px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: transform 0.09s, opacity 0.15s;
+}
+.sds-go:disabled,
+.sds-go.is-disabled { background: var(--sf-soft2); color: var(--sf-sub); cursor: default; }
+.sds-go:active:not(:disabled):not(.is-disabled) { transform: scale(0.96); }
+.sds-go--stop { background: var(--sf-amber); color: #000; }
+.sds-go > span,
+.sds-feder > span { display: inline-flex; align-items: center; gap: inherit; }
+
+.sds .sds-notice {
+  width: 100%; margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--sf-red) 14%, transparent); color: var(--sf-red);
+  font-size: 13px; text-align: center;
+}
+/* Funkzeile wie im frueheren Feinregler (.sheet-radio): klein und
+   unauffaellig rechts unten, 16 px vom Fensterrand, feste Hoehe. Saschas
+   Wunsch vom 03.11.2026. */
+.sds-radio {
+  align-self: stretch; margin: 14px -4px 0;
+  font-size: 8px; line-height: 1.15; height: 1.15em; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--sf-sub); opacity: 0.5; font-variant-numeric: tabular-nums;
+}
+.sds-radio.is-offline { color: var(--sf-red); opacity: 0.9; }

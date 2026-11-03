@@ -1,0 +1,163 @@
+/* Fenster Zeitplan und Szenen (Feature 27, Fassung 64 „Tages-Zeitleiste",
+   Saschas Wahl vom 03.11.2026). Grund und Karten kommen aus dem Hausstil
+   (--app-bg, --widget-bg, --text-*, --accent*) ueber die --rpp-*-Variablen von
+   .rpp-sheet-backdrop (RollPlan.css). Eigene Farben nur in den farbigen
+   Symbol-Quadraten (Zeitpunkte, Szenen).
+
+   Die Fenster haengen per Portal ausserhalb des Widgets. Damit die Regeln fuer
+   die Editoren (Szene, Zeitpunkt) hoeher wiegen als RollPlan.css, stehen sie
+   unter ":root .rpp-sheet-backdrop". */
+
+/* ── Fenster-Geruest ──────────────────────────────────────────────────── */
+
+:root .rpp-sheet-backdrop {
+  --rpp-radius: 12px;
+  --pw-sep: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+:root .rpp-sheet-backdrop .rpp-sheet { background: var(--app-bg); border-radius: 28px 28px 0 0; }
+:root .rpp-sheet-backdrop .rpp-sheet-header { border-bottom: none; padding: 4px 16px 10px; }
+:root .rpp-sheet-backdrop .rpp-sheet-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+:root .rpp-sheet-backdrop .rpp-sheet-body { padding-top: 4px; }
+
+/* Startseiten */
+.pw-home { display: flex; flex-direction: column; }
+.pw-gh { font-size: 12.5px; color: var(--text-secondary); padding: 18px 16px 6px; letter-spacing: 0.02em; text-transform: uppercase; }
+.pw-home > .pw-gh:first-child { padding-top: 6px; }
+.pw-gf { font-size: 12.5px; line-height: 1.4; color: var(--text-secondary); padding: 7px 16px 0; }
+.pw-group {
+  background: var(--rpp-bg); border: var(--rpp-bw) solid var(--rpp-border);
+  border-radius: var(--rpp-radius); overflow: hidden;
+}
+.pw-group + .pw-group { margin-top: 18px; }
+.pw-row {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  min-height: 52px; padding: 8px 14px; color: var(--text-primary);
+  transition: background-color 0.25s;
+}
+.pw-row + .pw-row::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px;
+  background: var(--pw-sep); transform: scaleY(0.6);
+}
+.pw-row + .pw-row:has(> .pw-sq, > .pw-add-ico)::before { left: 56px; }
+.pw-row--tap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pw-row--tap:active { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.pw-row.is-off .pw-main, .pw-row.is-off .pw-sq { opacity: 0.45; }
+.pw-row.is-flash { background: color-mix(in srgb, var(--rpp-accent) 18%, transparent); }
+.pw-sq {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 8px; background: var(--sq); color: #fff;
+}
+.pw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pw-title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-sub { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-inline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pw-ell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-dot { margin: 0 5px; color: var(--text-secondary); }
+.pw-chev { flex-shrink: 0; color: color-mix(in srgb, var(--text-primary) 30%, transparent); }
+.pw-row--add .pw-title { color: var(--rpp-accent); }
+.pw-add-ico { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0; color: var(--rpp-accent); }
+.pw-check { flex-shrink: 0; color: var(--rpp-accent); }
+.pw-check-space { width: 20px; flex-shrink: 0; }
+.pw-value { flex-shrink: 0; font-size: 15px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pw-go {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 30px; padding: 0 12px;
+  border-radius: 999px; background: color-mix(in srgb, var(--rpp-accent) 14%, transparent);
+  color: var(--rpp-accent); font-size: 14px; font-weight: 600;
+}
+
+/* Szenen als farbige Kacheln (Wahl in den Einstellungen) */
+.pw-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pw-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; min-height: 106px;
+  padding: 12px; border: none; border-radius: 16px; background: var(--sq); color: #fff;
+  font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); transition: transform 0.12s, filter 0.2s, box-shadow 0.2s;
+}
+.pw-tile:active { transform: scale(0.97); }
+.pw-tile.is-flash { filter: brightness(1.15); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sq) 35%, transparent); }
+.pw-tile.is-edit { outline: 2px dashed rgb(255 255 255 / 0.65); outline-offset: -6px; }
+.pw-tile-top { display: flex; align-items: flex-start; justify-content: space-between; width: 100%; margin-bottom: auto; }
+.pw-tile-act { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgb(255 255 255 / 0.22); }
+.pw-tile-name { max-width: 100%; margin-top: 14px; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-tile-sub { max-width: 100%; font-size: 12px; opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-tile--add {
+  align-items: center; justify-content: center; gap: 6px;
+  background: transparent; color: var(--rpp-accent); border: 1.5px dashed var(--app-border); box-shadow: none;
+}
+
+/* Tages-Zeitleiste */
+.pw-tl { padding: 4px 0; }
+.pw-tl-item {
+  position: relative; display: grid; grid-template-columns: 50px 26px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 10px 14px 10px 8px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pw-tl-item::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 80px; width: 2px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+.pw-tl-item:active { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.pw-tl-time { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pw-tl-time small { font-size: 10.5px; font-weight: 500; color: var(--text-secondary); }
+.pw-tl-dot {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--sq); color: #fff;
+  box-shadow: 0 0 0 3px var(--rpp-bg);
+}
+.pw-tl-item.is-past .pw-tl-time, .pw-tl-item.is-past .pw-main { opacity: 0.5; }
+.pw-tl-now { position: relative; display: flex; align-items: center; height: 22px; padding-left: 58px; }
+.pw-tl-now::before { content: ''; position: absolute; left: 58px; right: 14px; top: 50%; height: 2px; background: var(--rpp-red); }
+.pw-tl-now span {
+  position: relative; padding: 1px 8px; border-radius: 999px;
+  background: var(--rpp-red); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.pw-tl .pw-row--add { border-top: 1px solid var(--pw-sep); }
+/* naechste Fahrt (mit Countdown) und Pause fuer heute */
+.pw-tl-item.is-next { background: color-mix(in srgb, var(--rpp-accent) 10%, transparent); }
+.pw-tl-item.is-next .pw-tl-time { color: var(--rpp-accent); opacity: 1; }
+.pw-tl-item.is-next .pw-main { opacity: 1; }
+.pw-tl-item.is-next .pw-title { font-weight: 600; }
+.pw-tl-when { font-size: 12.5px; font-weight: 600; color: var(--rpp-accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-tl-item.is-paused .pw-tl-time, .pw-tl-item.is-paused .pw-main, .pw-tl-item.is-paused .pw-tl-dot { opacity: 0.4; }
+.pw-tl-item.is-paused .pw-tl-time { text-decoration: line-through; }
+.pw-tl-item.is-skip .pw-tl-time, .pw-tl-item.is-skip .pw-main, .pw-tl-item.is-skip .pw-tl-dot { opacity: 0.45; }
+
+/* Zuklappbare Gruppen-Ueberschrift („Weitere", „Ausgeschaltet") */
+.pw-gh--fold {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: 0; font-family: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pw-gh-chev { flex-shrink: 0; transition: transform 0.2s; transform: rotate(-90deg); }
+.pw-gh--fold.is-open .pw-gh-chev { transform: none; }
+
+/* Zahnrad und Stift im Fensterkopf in Theme-Grau statt Akzentblau */
+.rpp-back.pw-head-btn { color: var(--text-secondary); }
+
+/* ── Editoren (Szene, Zeitpunkt) im Look der Einstellungen-App ────────── */
+
+:root .rpp-sheet-backdrop .rpp-editor { gap: 14px; }
+:root .rpp-sheet-backdrop .rpp-section { gap: 10px; padding: 12px 14px; border-radius: 12px; }
+:root .rpp-sheet-backdrop .rpp-section--flush { padding: 0 4px; }
+:root .rpp-sheet-backdrop .rpp-label { font-size: 12.5px; letter-spacing: 0.02em; text-transform: uppercase; }
+:root .rpp-sheet-backdrop .rpp-title { font-size: 16px; }
+:root .rpp-sheet-backdrop .rpp-sub { font-size: 13px; }
+:root .rpp-sheet-backdrop .rpp-hint { font-size: 12.5px; }
+:root .rpp-sheet-backdrop .rpp-caption { padding: 4px 16px 6px; }
+:root .rpp-sheet-backdrop .rpp-caption-text { font-size: 12.5px; font-weight: 400; letter-spacing: 0.02em; }
+:root .rpp-sheet-backdrop .rpp-caption-line { display: none; }
+:root .rpp-sheet-backdrop .rpp-card { border-radius: 12px; }
+:root .rpp-sheet-backdrop .rpp-dev { padding: 10px 14px; border-bottom-color: var(--pw-sep); }
+:root .rpp-sheet-backdrop .rpp-input { min-height: 44px; border: none; border-radius: 10px; background: var(--rpp-fill); font-size: 16px; }
+:root .rpp-sheet-backdrop .rpp-icon-opt { height: 44px; border-radius: 12px; }
+:root .rpp-sheet-backdrop .rpp-chip { min-height: 34px; border-radius: 999px; font-size: 13.5px; }
+:root .rpp-sheet-backdrop .rpp-chip--sm { min-height: 30px; }
+:root .rpp-sheet-backdrop .rpp-daypick-btn { height: 40px; border-radius: 999px; font-weight: 600; }
+:root .rpp-sheet-backdrop .rpp-seg-btn { font-weight: 600; }
+html.dark .rpp-sheet-backdrop .rpp-seg-btn.is-active { background: color-mix(in srgb, var(--text-primary) 24%, var(--rpp-bg)); }
+:root .rpp-sheet-backdrop .rpp-time-input { border-radius: 8px; min-height: 36px; }
+:root .rpp-sheet-backdrop .rpp-stepper { border-radius: 9px; }
+/* Schalter in iPhone-Groesse, gruen wie in der Einstellungen-App */
+:root .rpp-sheet-backdrop .rpp-toggle { width: 51px; height: 31px; }
+:root .rpp-sheet-backdrop .rpp-toggle.is-on { background: var(--accent-green, #34c759); }
+:root .rpp-sheet-backdrop .rpp-toggle-knob { top: 2px; left: 2px; width: 27px; height: 27px; box-shadow: 0 2px 4px rgb(0 0 0 / 0.2); }
+:root .rpp-sheet-backdrop .rpp-toggle.is-on .rpp-toggle-knob { transform: translateX(20px); }

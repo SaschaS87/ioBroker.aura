@@ -9,7 +9,6 @@
    FloorHeader (12 px, 600, Versalien, Linie bis zum Rand). Das Popup hat
    Grund, Griff und Kopf des Rollladen-Popups (ShutterSheet.css). */
 
-.rpp,
 .rpp-sheet-backdrop,
 .rpp-toast {
   --rpp-bg: var(--widget-bg, var(--app-surface));
@@ -21,15 +20,6 @@
   --rpp-accent: var(--accent, #3b82f6);
   --rpp-yellow: var(--accent-yellow, #f59e0b);
   --rpp-red: var(--accent-red, #ef4444);
-}
-
-.rpp {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 7px;
-  margin-bottom: 18px;
-  color: var(--text-primary);
 }
 
 /* ── Grundbausteine ─────────────────────────────────────────────────── */
@@ -119,18 +109,6 @@ button.rpp-card:active {
   min-width: 0;
 }
 
-.rpp-inline {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-}
-
-.rpp-dot-sep {
-  margin: 0 6px;
-  color: var(--text-secondary);
-}
-
 .rpp-empty {
   padding: 14px 12px;
   font-size: 13px;
@@ -138,6 +116,7 @@ button.rpp-card:active {
 }
 
 /* Zeilen: exakt die Masse der ShutterRow (52 px, 0 12px, Linie app-border) */
+
 .rpp-row {
   display: flex;
   align-items: center;
@@ -220,6 +199,7 @@ button.rpp-card:active {
 }
 
 /* Segment-Schalter (wie Garten2) */
+
 .rpp-seg {
   display: flex;
   padding: 2px;
@@ -254,6 +234,7 @@ button.rpp-card:active {
 }
 
 /* Schalter */
+
 .rpp-toggle {
   flex-shrink: 0;
   position: relative;
@@ -288,6 +269,7 @@ button.rpp-card:active {
 }
 
 /* Tagesbuchstaben */
+
 .rpp-days {
   display: inline-flex;
   gap: 6px;
@@ -327,16 +309,6 @@ button.rpp-card:active {
 
 .rpp-btn:active:not(:disabled) {
   transform: scale(0.97);
-}
-
-.rpp-btn--soft {
-  color: var(--rpp-accent);
-  background: color-mix(in srgb, var(--rpp-accent) 12%, transparent);
-}
-
-.rpp-btn--soft.is-on {
-  color: var(--stop-fg, #1c1917);
-  background: var(--rpp-yellow);
 }
 
 .rpp-btn:disabled {
@@ -486,16 +458,6 @@ button.rpp-card:active {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   padding: 14px 12px calc(env(safe-area-inset-bottom) + 20px);
-}
-
-.rpp-home {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.rpp-home > .rpp-caption {
-  margin-top: 8px;
 }
 
 /* ── Editoren ───────────────────────────────────────────────────────── */
@@ -765,33 +727,12 @@ button.rpp-card:active {
 
 /* Karte, die selbst eine Zeile ist (D: Wochenplan-Einstieg) */
 
-/* ═════ Runde 2 ═════════════════════════════════════════════════════════
-   Blaettern wie RainStationWidget (Wetter-Tab): Pfeile 18 px in
-   --text-secondary, Punkte 6 px (aktiv --accent, sonst --app-border),
-   Titel 15 px/500, Unterzeile 11 px. */
-
-.rpp-center {
-  text-align: center;
-}
-
-.rpp-ellipsis {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rpp-row--tall {
-  align-items: center;
-  padding-top: 9px;
-  padding-bottom: 9px;
-}
-
 /* G: eine Fahrt pro Seite */
 
 /* H: Zeitstrahl + Uhrzeit-Chips */
 
 /* I: schlanke Zeile, 52 px wie eine Rollladen-Zeile */
+
 .rpp-card.rpp-i {
   flex-direction: row;
   align-items: center;
@@ -817,77 +758,6 @@ button.rpp-card:active {
 /* Nur die aktive Seite wird angezeigt; die Kachel nimmt ihre Hoehe an.
    (Beide uebereinander im Rasterfeld liess unter „Heute“ eine Luecke.) */
 
-/* Szenen als Schnellkacheln, zwei Spalten */
-.rpp-qtiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 10px 12px 12px;
-}
-
-.rpp-qtile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-width: 0;
-  min-height: 72px;
-  padding: 10px 11px;
-  border: none;
-  border-radius: 12px;
-  background: var(--rpp-fill);
-  color: var(--text-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.2s;
-}
-
-.rpp-qtile:active,
-.rpp-qtile.is-flash {
-  background: color-mix(in srgb, var(--rpp-accent) 22%, var(--rpp-bg));
-}
-
-.rpp-qtile-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  color: var(--rpp-accent);
-  margin-bottom: 2px;
-}
-
-.rpp-qtile-play {
-  color: var(--text-secondary);
-}
-
-.rpp-qtile-name {
-  max-width: 100%;
-  font-size: 14px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rpp-qtile-sub {
-  max-width: 100%;
-  font-size: 11px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rpp-qtile--add {
-  align-items: center;
-  justify-content: center;
-  color: var(--rpp-accent);
-  background: transparent;
-  border: 1px dashed var(--rpp-line);
-}
-
 /* ═════ Runde 4: Favoriten, mehr Szenen ══════════════════════════════════ */
 
 /* 3 Spalten: Symbol oben, Name bis zwei Zeilen */
@@ -895,6 +765,7 @@ button.rpp-card:active {
 /* 4 Spalten: zentriert wie App-Symbole */
 
 /* Löschen/Speichern im Fensterkopf (Entwurf 21, PlanSheet actionsInHeader) */
+
 .rpp-head-actions {
   display: flex;
   align-items: center;
@@ -913,97 +784,4 @@ button.rpp-card:active {
 .rpp-head-btn:disabled {
   opacity: 0.35;
   cursor: default;
-}
-
-/* ── Zwei Kacheln + Fenster (PlanWindows.tsx, seit 02.11.2026) ───────── */
-
-.rpp-two {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.rpp-two-btn {
-  align-items: flex-start;
-  gap: 2px;
-  padding: 12px;
-  cursor: pointer;
-  min-width: 0;
-}
-
-/* Symbole immer im Theme-Grau, nicht im Akzent */
-.rpp-two-icon {
-  flex-shrink: 0;
-  margin-bottom: 4px;
-  color: var(--text-secondary);
-}
-
-.rpp-strong {
-  font-size: 14px;
-  font-weight: 500;
-  max-width: 100%;
-}
-
-.rpp-hero {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-}
-
-.rpp-hero-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.rpp-hero-main {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.rpp-hero-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.rpp-big {
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.rpp-mini {
-  font-size: 12px;
-  color: var(--text-secondary);
-  max-width: 100%;
-}
-
-.rpp-hero-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.rpp-hero-actions .rpp-btn {
-  flex: 1;
-}
-
-/* Szenen-Knopf im Bearbeiten-Modus */
-.rpp-qtile-edit {
-  outline: 1px dashed var(--rpp-line);
-  outline-offset: -1px;
 }

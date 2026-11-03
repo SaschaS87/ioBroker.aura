@@ -1,50 +1,13 @@
+/* Kein eigener Sicherheitsabstand unten (Rollläden-Umbau, 01.09.2026): als
+   normales Widget liegt der Inhalt im .aura-scroll-Container, der schon 4rem
+   Puffer traegt (index.html) und sich bei sichtbarer Fussleiste zusaetzlich um
+   calc(var(--tab-footer-h) + env(safe-area-inset-bottom)) verkuerzt
+   (index.css) – ein zweiter Zuschlag hier waere doppelt. */
 .shutter-floors-widget {
   position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
-}
-
-/* Kein eigener Sicherheitsabstand unten mehr (Rollläden-Umbau, 01.09.2026):
-   als normales Widget liegt der Inhalt im .aura-scroll-Container, der schon
-   4rem Puffer traegt (index.html) und sich bei sichtbarer Fussleiste zusaetzlich
-   um calc(var(--tab-footer-h) + env(safe-area-inset-bottom)) verkuerzt
-   (index.css) – ein zweiter Zuschlag hier waere doppelt. */
-.floors-scroll {
-  /* 7px statt 10px: gleicht die erste Etagenzeile auf die Starthoehe des
-     ersten Abschnittstitels auf Wohnklima ab (HeaderWidget "minimal") –
-     dort betraegt der Abstand vom Tab-Inhalt bis zum Titeltext 15px
-     (8px Aussenrand + 7px Zentrierung in der Titelzeile), hier war es
-     wegen der zusaetzlichen 10px Innenabstand vorher 18px. Nachgemessen
-     01.09.2026 (Runde 7) in der lokalen Dev-Vorschau. */
-  padding-top: 7px;
-  padding-bottom: 10px;
-}
-
-/* 18px vor jedem Etagentitel: gleicher Wert wie der Abstand vor einem
-   Bereichstitel auf Wohnklima (dort per Custom-CSS als margin-top auf dem
-   Zeilen-Wrapper gesetzt). Nachgemessen 01.09.2026 (Runde 7). */
-.floor-section {
-  margin-bottom: 18px;
-}
-
-.floor-section:last-child {
-  margin-bottom: 0;
-}
-
-/* Kein eigener Abstand mehr zwischen Etagentitel und Geraeteliste (0 statt
-   6px) – Wohnklima-Stil: der Titel sitzt direkt auf der darunterliegenden
-   Karte, der sichtbare Luftraum kommt allein aus der Titelzeile selbst, nicht
-   aus einem zusaetzlichen Rand. Der verbleibende kleine Abstand kommt aus dem
-   padding-bottom von .floor-header (siehe FloorHeader.css bzw. die
-   Custom-CSS-Regel fuer dieses Widget im Admin). Angeglichen 01.09.2026
-   (Runde 7) auf Saschas Wunsch: vorher wirkten Abstand vor und nach dem Titel
-   gleich gross, anders als bei Wohnklima. */
-.floor-devices {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 0;
 }
 
 .empty-state {
@@ -83,3 +46,205 @@
   color: var(--text-secondary);
 }
 
+/* ── Rolllaeden modern (Feature 27, Saschas Wahl vom 03.11.2026) ────────
+   Grundlook „35 neu": Gruppen im Stil der iPhone-Einstellungen, Grund und
+   Karten aus dem Hausstil (--app-bg, --widget-bg, --widget-border*,
+   --widget-radius, --text-*, --accent*). Eigene Farben nur in den farbigen
+   Symbol-Quadraten (Art, Zeitplan, Szenen). Die Variablen gelten auch fuer
+   den Feinregler (.sds-backdrop, haengt per Portal ausserhalb). */
+
+.sf,
+.sds-backdrop {
+  --sf-bg: var(--app-bg);
+  --sf-card: var(--widget-bg, var(--app-surface));
+  --sf-text: var(--text-primary);
+  --sf-sub: var(--text-secondary);
+  --sf-accent: var(--accent, #0a84ff);
+  --sf-amber: var(--accent-yellow, #ff9f0a);
+  --sf-red: var(--accent-red, #ff453a);
+  --sf-soft: color-mix(in srgb, var(--sf-text) 6%, transparent);
+  --sf-soft2: color-mix(in srgb, var(--sf-text) 11%, transparent);
+}
+
+.sf {
+  --sf-group: var(--widget-bg, var(--app-surface));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px;
+  color: var(--sf-text);
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.sf *,
+.sds * {
+  box-sizing: border-box;
+}
+.sf.is-offline [role='button'] {
+  opacity: 0.5;
+}
+.sf button {
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.sf [role='button'] {
+  cursor: pointer;
+  user-select: none;
+}
+.sf [role='button']:focus-visible,
+.sf button:focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 2px;
+}
+
+.sf-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* Gruppen und Zeilen */
+.sf-group-head {
+  font-size: 12.5px;
+  color: var(--sf-sub);
+  padding: 16px 16px 6px;
+  letter-spacing: 0.02em;
+}
+.sf-group {
+  border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border));
+  border-radius: var(--widget-radius, 12px);
+  background: var(--sf-group);
+  box-shadow: var(--widget-shadow, none);
+  overflow: hidden;
+}
+/* iPhone (02.11.2026, Saschas Foto): Nach Oeffnen und Schliessen von
+   Zeitplan/Szenen standen an den unteren Ecken der Karte eckige Reste in
+   Rahmenfarbe; in Chrome nicht nachstellbar. Loesung: eigene Ebene fuer die
+   Karte, damit Safari die Rundung beim Neuzeichnen haelt, und kein grauer
+   Tipp-Schimmer auf den Zeilen. Fenster haengen per Portal am <body>, die
+   Ebene stoert sie nicht. Auf dem iPhone bestaetigt (Sascha, 02.11.2026). */
+.sf-group {
+  isolation: isolate;
+  transform: translateZ(0);
+}
+.sf-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 6px 10px 6px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+.sf-row + .sf-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 56px;
+  right: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--sf-text) 12%, transparent);
+  transform: scaleY(0.6);
+}
+.sf-row:active {
+  background: color-mix(in srgb, var(--sf-text) 6%, transparent);
+}
+.sf-row--nav {
+  cursor: pointer;
+}
+.sf-row {
+  -webkit-tap-highlight-color: transparent;
+}
+.sf-ico {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.sf-ico.is-fenster { background: #0a84ff; }
+.sf-ico.is-dachfenster { background: #5e5ce6; }
+.sf-ico.is-raffstore { background: #30b0c7; }
+.sf-ico.is-orange { background: #ff9f0a; }
+.sf-ico.is-purple { background: #bf5af2; }
+.sf-ico .sf-radio-badge {
+  background: var(--sf-group);
+}
+.sf-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.sf-name {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-val {
+  font-size: 13px;
+  color: var(--sf-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-val.is-busy {
+  color: var(--sf-amber);
+  font-weight: 600;
+}
+.sf-chev {
+  color: color-mix(in srgb, var(--sf-text) 30%, transparent);
+  flex-shrink: 0;
+}
+
+/* Etagen-Ueberschrift mit Pfeil (Regel 203): rechts „n weitere" und der
+   Pfeil, der die Nicht-Favoriten ein- und ausblendet. Die Ueberschrift ist
+   ein <button>; ".sf button { color: inherit }" schlaegt hier die graue
+   Schrift, der Titel steht deshalb in Textfarbe (so abgenommen am 03.11.2026). */
+.sf-group-head--fold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--sf-sub);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sf-group-head--fold > span:first-child {
+  flex: 1;
+}
+.sf-group-more {
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--sf-accent);
+}
+.sf-group-chev {
+  flex-shrink: 0;
+  color: var(--sf-accent);
+  transition: transform 0.2s ease;
+}
+.sf-group-chev.is-open {
+  transform: rotate(180deg);
+}
+/* Ausgeklappte Nicht-Favoriten: duenne Linie trennt sie von den Favoriten */
+.sf-row--rest-first::before {
+  left: 0 !important;
+  height: 1px;
+  background: color-mix(in srgb, var(--sf-text) 20%, transparent) !important;
+}
