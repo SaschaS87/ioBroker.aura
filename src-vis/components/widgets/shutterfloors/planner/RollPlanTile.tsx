@@ -1,15 +1,15 @@
 /**
- * Rolllaeden-Planer-Kachel (Produktion, Feature 23) — sitzt in
- * ShutterFloorsWidget.tsx ueber der unveraenderten Etagenliste, nur wenn
+ * Rolllaeden-Planer (Feature 23, Einbau Feature 27) – sitzt in
+ * ShutterFloorsWidget.tsx als erste Gruppe der Liste, nur wenn
  * `showPlanner === true`. Baut das PlanModel aus echten Daten (Geraete-
  * stellungen vom Pi, Sonnenzeiten aus javascript.0.variables.astro.*,
  * Szenen/Wochenplan/Einstellungen aus useRollPlanData) und fuehrt Szenen
  * ueber useSceneCommand wirklich aus (im Dev-Trockenlauf gegen
- * Rollladen_Wochenplan_Dev, siehe ShutterFloorsWidget.tsx fuer die
- * ROOT-Weiche).
+ * Rollladen_Dev, siehe ShutterFloorsWidget.tsx fuer die ROOT-Weiche).
  *
- * Seit 02.11.2026 zwei Kacheln „Zeitplan" und „Szenen" mit je eigenem
- * Fenster (PlanWindows.tsx) statt Wischen und Popup mit drei Reitern.
+ * Gibt kein eigenes Wurzelelement zurueck: Die Kopfgruppe „Zeitplan" /
+ * „Szenen" (PlanWindows.tsx) ist ein Kind der Liste, die Fenster und der
+ * Hinweis haengen per Portal am Frontend.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
@@ -72,12 +72,12 @@ export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root
     }, [cmd.status, model.showToast]);
 
     return (
-        <div className="rpp">
+        <>
             {floors.flatMap((f) => f.devices).map((d) => (
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
             <PlanWindows model={model} />
             <Toast model={model} />
-        </div>
+        </>
     );
 }
