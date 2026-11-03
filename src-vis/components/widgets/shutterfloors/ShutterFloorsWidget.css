@@ -161,9 +161,6 @@
 .sf-row {
   -webkit-tap-highlight-color: transparent;
 }
-.sf-row--dev {
-  min-height: 56px;
-}
 .sf-ico {
   position: relative;
   display: inline-flex;
