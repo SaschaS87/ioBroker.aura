@@ -14,33 +14,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Bewusst KEIN apple-mobile-web-app-status-bar-style (03.11.2026, iOS 27):
+         'black-translucent' schaltet den Mechanismus ab, mit dem WebKit den
+         Milchglas-Streifen oben weglaesst (siehe #aura-topedge unten). Ohne den
+         Eintrag ist die Statusleiste 'default': iOS faerbt sie in der Farbe des
+         Randstreifens. Welche Farbe Uhr/Akku bekommen, entscheidet iOS selbst
+         (nicht dokumentiert, von uns nicht gezielt gesteuert).
+         iOS liest den Wert nur beim Hinzufuegen zum Homebildschirm - ein schon
+         installiertes Symbol behaelt den alten Stil bis zum Neu-Hinzufuegen. -->
     <meta name="apple-mobile-web-app-title" content="Aura" />
     <title>Aura – ioBroker Dashboard</title>
-    <script>
-      /* Statusleisten-Symbole (Uhr/WLAN/Akku) an Auras Hell/Dunkel-Modus koppeln:
-         dunkler Modus -> weisse Symbole (black-translucent), heller Modus ->
-         dunkle Symbole (default). Aura setzt dazu die Klasse 'dark' auf <html>.
-         iOS liest den Wert beim App-Start; nach einem Live-Wechsel ggf. die App
-         einmal schliessen und neu oeffnen, damit die Symbolfarbe umspringt. */
-      (function () {
-        var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-        var KEY = 'aura-status-dark';
-        try {
-          var cached = localStorage.getItem(KEY);
-          if (meta && cached !== null) {
-            meta.setAttribute('content', cached === '1' ? 'black-translucent' : 'default');
-          }
-        } catch (e) {}
-        function sync() {
-          var dark = document.documentElement.classList.contains('dark');
-          if (meta) meta.setAttribute('content', dark ? 'black-translucent' : 'default');
-          try { localStorage.setItem(KEY, dark ? '1' : '0'); } catch (e) {}
-        }
-        new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        document.addEventListener('DOMContentLoaded', sync);
-      })();
-    </script>
     <script>
       /* Seitenweites Pinch-Zoom verhindern: iOS Safari verschiebt nach einer
          Pinch-Geste (auch nur auseinanderziehen und loslassen) manchmal den
@@ -157,6 +140,34 @@
         padding-bottom: 4rem;
         overscroll-behavior: contain;
       }
+      /* iOS 27 legt in Homescreen-Web-Apps einen Milchglas-Streifen ueber den
+         oberen Rand (WebKit-Bug 325807, auf iOS 27.2 offen). WebKit laesst ihn
+         nur weg, wenn oben mittig (4px tief) ein position:fixed-Element liegt,
+         das mind. 90% breit und hoeher als 10px ist und nicht durchsichtig.
+         Dessen background-color (berechneter Stil, nicht gemalte Pixel) faerbt
+         dann die Statusleiste. background-clip:text auf einem LEEREN Element
+         liefert die Farbe, ohne etwas zu malen - der Streifen ist unsichtbar
+         und verdeckt nichts von der Kopfzeile. pointer-events:none laesst Taps
+         durch. Nur iOS (-webkit-touch-callout) und nur als Homescreen-App.
+         Belegt auf iPhone/iOS 27.2 in kuraneko1/dsh-mobile-maxxing#91. */
+      #aura-topedge { display: none; }
+      @supports (-webkit-touch-callout: none) {
+        @media (display-mode: standalone) {
+          #aura-topedge {
+            display: block;
+            position: fixed; top: 0; left: 0; right: 0;
+            height: 11px;
+            z-index: 2147483647;
+            pointer-events: none;
+            background-color: var(--app-bg, #0f172a);
+            -webkit-background-clip: text;
+            background-clip: text;
+          }
+          /* Mit Kopfzeile oben: deren Flaeche, damit Statusleiste und Kopfzeile
+             nahtlos ineinander uebergehen. */
+          body:has(.aura-header) #aura-topedge { background-color: var(--app-surface, #1e293b); }
+        }
+      }
       #aura-boot {
         position: fixed; inset: 0;
         display: flex; flex-direction: column;
@@ -222,6 +233,7 @@
     </script>
   </head>
   <body>
+    <div id="aura-topedge" aria-hidden="true"></div>
     <div id="aura-boot">
       <div id="aura-boot-bar-wrap"><div id="aura-boot-bar"></div></div>
       <div id="aura-boot-spinner"></div>
