@@ -26,6 +26,9 @@ import { RoundN } from './round41';
 import { ACT_LOOKS } from './pvButtons';
 import { ICON_SETS } from './pvIcons';
 import { WIN_LOOKS } from './pvWindows';
+import { PvSheetSlim } from './PvSheetSlim';
+import { LIST_LOOKS, SHEET_LOOKS } from './round201';
+import { useFavorites } from './useFavorites';
 import '../planner/RollPlan.css';
 import './ModernPreview.css';
 
@@ -54,10 +57,19 @@ const ROWS: Row[] = [
     { k: 'a', label: 'A Tasten', base: '35', baseName: 'wie 35 (Pfeile mit Strich, Doppelknopf)', list: ACT_LOOKS },
     { k: 'b', label: 'B Symbole', base: '35', baseName: 'wie 35 (heutige Symbole mit Stand)', list: ICON_SETS },
     { k: 'c', label: 'C Fenster', base: 'IST', baseName: 'heutige Fenster (Entwurf 21)', list: WIN_LOOKS },
+    {
+        k: 'd',
+        label: 'D Feinregler',
+        base: '35',
+        baseName: 'wie 35 (mit Schnellwerten und Verwerfen)',
+        list: SHEET_LOOKS,
+    },
+    { k: 'e', label: 'E Favoriten', base: '35', baseName: 'wie 35 (alle Antriebe sichtbar)', list: LIST_LOOKS },
 ];
 
 function loadPicks(): Picks {
-    const def: Picks = { a: '35', b: '35', c: 'IST' };
+    // Runde 201+: D und E starten mit der neuen Fassung, nicht mit „35".
+    const def: Picks = { a: '35', b: '35', c: 'IST', d: '230', e: '203' };
     try {
         const raw = JSON.parse(localStorage.getItem(KEY_N) ?? '{}') as Partial<Picks>;
         ROWS.forEach((r) => {
@@ -190,6 +202,7 @@ function Host({
         });
     }, []);
     const acts: Acts = useRef({});
+    const fav = useFavorites();
     const [sheet, setSheet] = useState<{ d: ShutterFloorDeviceDef; seq: number } | null>(null);
     const variant = pick === 'N' ? ROUND_N : (VARIANTS.find((v) => v.key === pick) ?? VARIANTS[0]);
 
@@ -211,8 +224,10 @@ function Host({
         openSheet: (d) => setSheet((s) => ({ d, seq: (s?.seq ?? 0) + 1 })),
         footer,
         picks,
+        fav,
     };
     const V = variant.C;
+    const slim = pick === 'N' && picks.d !== '35';
     return (
         <>
             {floors.flatMap((f) =>
@@ -226,7 +241,17 @@ function Host({
             <div className={`pv-root pv-${variant.key}${connected ? '' : ' is-offline'}`}>
                 <V c={ctx} />
             </div>
-            {sheet && (
+            {sheet && slim && (
+                <PvSheetSlim
+                    key={sheet.seq}
+                    device={sheet.d}
+                    connected={connected}
+                    look={SHEET_LOOKS.find((l) => l.key === picks.d) ?? SHEET_LOOKS[0]}
+                    fav={fav}
+                    onClose={() => setSheet(null)}
+                />
+            )}
+            {sheet && !slim && (
                 <PvSheet
                     key={sheet.seq}
                     device={sheet.d}

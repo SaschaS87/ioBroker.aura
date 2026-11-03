@@ -1,0 +1,162 @@
+/* Runde 201+ (Dev-Vorschau): Feinregler und Favoriten je Geschoss. Grund und
+   Text aus dem Theme (wie Runde 41–65), eigene Farben nur die drei Farben je
+   Art (Fenster blau, Dachfenster violett, Raffstore tuerkis) wie in den
+   Symbol-Quadraten der Liste. Feinregler-Stand: Runde 220–229 (03.11.2026). */
+
+/* ── Feinregler ───────────────────────────────────────────────────────── */
+
+.pvq { --k: #0a84ff; }
+.pvq.is-dachfenster { --k: #5e5ce6; }
+.pvq.is-raffstore { --k: #30b0c7; }
+
+.pvq-head { display: flex; align-items: center; gap: 10px; padding: 4px 12px 2px 20px; }
+.pvq-star {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; flex-shrink: 0;
+  border: none; border-radius: 50%; background: transparent;
+  color: var(--pv-sub); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s, transform 0.09s;
+}
+.pvq-star.is-on { color: #ffcc00; }
+html.dark .pvq-star.is-on { color: #ffd60a; }
+.pvq-star:active { transform: scale(0.9); }
+
+.pvq-body { display: flex; flex-direction: column; align-items: center; padding: 12px 20px 6px; }
+
+/* Schieber-Gruppe. Breite = Positions-Schieber; beim Raffstore haengt die
+   Lamelle absolut rechts daneben (align 'pos'), so steht die Position bei
+   jedem Antrieb an derselben Stelle und das Fenster ist gleich hoch.
+   Bei 227 (align 'group') stehen beide gemeinsam in der Mitte. */
+.pvq-inst { position: relative; display: flex; align-items: flex-start; justify-content: center; }
+
+/* Jede Spalte hat dieselben Zeilen mit fester Hoehe: Zahl, Wort, Feder-Zeile,
+   Schieber. Zahl und Wort duerfen ueber die Spalte hinausragen und bleiben
+   mittig – sie bestimmen die Breite nie (sonst springt der Abstand). */
+.pvq-col { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
+.pvq-col > * { width: 100%; }
+.pvq-val {
+  display: flex; align-items: center; justify-content: center; height: 34px; white-space: nowrap; overflow: visible;
+  font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+}
+.pvq-val--slat { font-size: 17px; font-weight: 600; letter-spacing: 0; color: var(--pv-sub); }
+.pvq-val.is-live { color: var(--pv-accent); }
+.pvq-val.is-target { color: var(--pv-amber); }
+.pvq-val.is-estimate, .pvq-val.is-stale { opacity: 0.55; }
+.pvq-unit { font-size: 15px; font-weight: 600; color: var(--pv-sub); letter-spacing: 0; white-space: pre; }
+.pvq-arrow { font-size: 18px; font-weight: 400; color: var(--pv-sub); margin: 0 4px; }
+.pvq-target { color: var(--pv-amber); }
+.pvq-word {
+  display: flex; justify-content: center; height: 18px; line-height: 18px; white-space: nowrap; overflow: visible;
+  font-size: 13px; color: var(--pv-sub);
+}
+.pvq-word.is-busy { color: var(--pv-amber); font-weight: 600; }
+
+/* Zeile zwischen Zahl und Schieber: Feder ohne Hintergrund bzw. Beschriftung */
+.pvq-slot { display: flex; align-items: center; justify-content: center; height: 40px; overflow: visible; }
+.pvq-slot--left { justify-content: flex-start; }
+.pvq-slot--right { justify-content: flex-end; }
+.pvq-cap { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--pv-sub); white-space: nowrap; }
+.pvq-feder {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 36px; min-width: 36px; padding: 0 8px; border: none; border-radius: 18px;
+  background: transparent; color: var(--pv-sub); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: color 0.15s, transform 0.09s, opacity 0.15s;
+}
+/* Kante buendig: das Symbol steht genau ueber der Schieberkante */
+.pvq-slot--left .pvq-feder { margin-left: -8px; }
+.pvq-slot--right .pvq-feder { margin-right: -8px; }
+.pvq-feder.is-on { color: var(--pv-amber); }
+.pvq-feder:active { transform: scale(0.9); }
+.pvq-feder.is-hidden { opacity: 0; pointer-events: none; }
+
+/* Positions-Schieber und schmale Lamelle */
+.pvq-pill {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  border-radius: 26px; background: var(--pv-soft2);
+  touch-action: none; cursor: ns-resize; outline: none;
+  transition: transform 0.15s ease, opacity 0.15s;
+}
+.pvq-pill.is-narrow { border-radius: 15px; }
+.pvq-pill:focus-visible { box-shadow: 0 0 0 2px var(--pv-accent); }
+.pvq-pill.is-drag { transform: scale(1.02); }
+.pvq-pill-fill { position: absolute; left: 0; right: 0; top: 0; background: var(--k); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
+.pvq-pill.is-drag .pvq-pill-fill { transition: none; }
+.pvq-pill.is-busy .pvq-pill-fill { background: var(--pv-amber); }
+.pvq-pill.is-stale { opacity: 0.45; }
+.pvq-pill.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.pvq-pill.is-unknown { background: repeating-linear-gradient(135deg, var(--pv-soft2) 0 8px, transparent 8px 16px); }
+.pvq-pill-mark {
+  position: absolute; left: 50%; width: 16px; height: 2px; margin: -1px 0 0 -8px; border-radius: 1px;
+  background: color-mix(in srgb, var(--pv-text) 22%, transparent);
+}
+.pvq-pill.is-narrow .pvq-pill-mark { width: 10px; margin-left: -5px; }
+.pvq--fill-neutral .pvq-pill-fill { background: color-mix(in srgb, var(--pv-text) 78%, transparent); }
+.pvq--fill-neutral .pvq-pill-mark { background: color-mix(in srgb, var(--pv-bg) 45%, transparent); }
+
+/* Zahl im Schieber (229): kleines Schild unten, auf jedem Grund lesbar */
+.pvq-pill-chip {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  padding: 3px 8px; border-radius: 10px; white-space: nowrap;
+  background: color-mix(in srgb, var(--pv-bg) 88%, transparent); color: var(--pv-text);
+  font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.pvq-pill.is-narrow .pvq-pill-chip { bottom: 6px; padding: 2px 3px; border-radius: 7px; font-size: 11px; }
+
+/* Lamelle als Strich mit Knopf (226) */
+.pvq-track { position: relative; flex-shrink: 0; touch-action: none; cursor: ns-resize; outline: none; }
+.pvq-track.is-disabled { opacity: 0.4; cursor: not-allowed; }
+.pvq-track-rail, .pvq-track-fill { position: absolute; left: 50%; width: 6px; margin-left: -3px; border-radius: 3px; top: 12px; }
+.pvq-track-rail { bottom: 12px; background: var(--pv-soft2); }
+.pvq-track-fill { background: var(--k); transition: height 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
+.pvq-track-knob {
+  position: absolute; top: 0; left: 50%; width: 24px; height: 24px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25), 0 0 0 0.5px rgb(0 0 0 / 0.08);
+  transition: transform 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pvq-track.is-drag .pvq-track-fill, .pvq-track.is-drag .pvq-track-knob { transition: none; }
+.pvq-track.is-busy .pvq-track-fill { background: var(--pv-amber); }
+.pvq--fill-neutral .pvq-track-fill { background: color-mix(in srgb, var(--pv-text) 78%, transparent); }
+.pvq-track-val { display: block; margin-top: 6px; text-align: center; font-size: 12px; font-weight: 700; }
+
+/* OK-Taste, waehrend der Fahrt Stopp in derselben Breite */
+.pvq-act { display: flex; max-width: 100%; margin-top: 22px; }
+.pvq-go {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 50px; padding: 0 10px; border: none; border-radius: 14px;
+  background: var(--pv-accent); color: #fff;
+  font: inherit; font-size: 16px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: transform 0.09s, opacity 0.15s;
+}
+.pvq-go:disabled { background: var(--pv-soft2); color: var(--pv-sub); cursor: default; }
+.pvq-go:active:not(:disabled) { transform: scale(0.96); }
+.pvq-go--stop { background: var(--pv-amber); color: #000; }
+
+.pvq .pvs-notice { margin-top: 10px; }
+/* Funkzeile wie im Original (ShutterSheet.css, .sheet-radio): klein und
+   unauffaellig rechts unten, 16 px vom Fensterrand, feste Hoehe. Saschas
+   Wunsch vom 03.11.2026 fuer alle Fassungen. */
+.pvq-radio {
+  align-self: stretch; margin: 14px -4px 0;
+  font-size: 8px; line-height: 1.15; height: 1.15em; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--pv-sub); opacity: 0.5; font-variant-numeric: tabular-nums;
+}
+.pvq-radio.is-offline { color: var(--pv-red); opacity: 0.9; }
+
+/* ── Favoriten je Geschoss ────────────────────────────────────────────── */
+
+/* 203: Pfeil rechts in der Geschoss-Ueberschrift */
+.vf-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  border: none; background: transparent; font: inherit; color: var(--pv-sub); text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.vf-head > span:first-child { flex: 1; }
+.vf-head-more { font-size: 12.5px; letter-spacing: 0; text-transform: none; color: var(--pv-accent); }
+.vf-chev { flex-shrink: 0; color: var(--pv-accent); transition: transform 0.2s ease; }
+.vf-chev.is-open { transform: rotate(180deg); }
+
+/* Ausgeklappte Nicht-Favoriten: duenne Linie trennt sie von den Favoriten */
+.vf-rest-first::before { left: 0 !important; height: 1px; background: color-mix(in srgb, var(--pv-text) 20%, transparent) !important; }

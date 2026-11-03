@@ -21,6 +21,7 @@ import { ActBtns, planInfo, RadioBadge, TypeIcon, type Picks, type PvCtx } from 
 import { ActA } from './pvButtons';
 import { KindIcon } from './pvIcons';
 import { PvPlanWindows } from './pvWindows';
+import { FloorGroup } from './round201';
 import './round41.css';
 
 function tap(fn: () => void) {
@@ -37,11 +38,11 @@ function tap(fn: () => void) {
     };
 }
 
-function RowN({ d, c, p }: { d: ShutterFloorDeviceDef; c: PvCtx; p: Picks }) {
+function RowN({ d, c, p, firstRest }: { d: ShutterFloorDeviceDef; c: PvCtx; p: Picks; firstRest?: boolean }) {
     const r = useRowControl(d);
     return (
         <div
-            className={`v35-row vn-row${r.busy ? ' is-busy' : ''}`}
+            className={`v35-row vn-row${r.busy ? ' is-busy' : ''}${firstRest ? ' vf-rest-first' : ''}`}
             {...tap(() => c.openSheet(d))}
             aria-label={`${d.label}, ${r.status}`}
         >
@@ -96,7 +97,8 @@ const tiles: TilesRender = (m, open) => {
 };
 
 export function RoundN({ c }: { c: PvCtx }) {
-    const p = c.picks ?? { a: '35', b: '35', c: 'IST' };
+    const p = c.picks ?? { a: '35', b: '35', c: 'IST', d: '35', e: '35' };
+    const isFav = c.fav?.has ?? (() => false);
     // Fenster per Portal: Look-Kennung an <html>, wie data-pv.
     useEffect(() => {
         document.documentElement.dataset.pvC = p.c;
@@ -112,14 +114,13 @@ export function RoundN({ c }: { c: PvCtx }) {
                 <PvPlanWindows model={c.m} look={p.c} renderTiles={tiles} />
             )}
             {c.floors.map((f) => (
-                <section key={f.name}>
-                    <div className="v35-group-head">{f.name.toUpperCase()}</div>
-                    <div className="v35-group">
-                        {f.devices.map((d) => (
-                            <RowN key={d.key} d={d} c={c} p={p} />
-                        ))}
-                    </div>
-                </section>
+                <FloorGroup
+                    key={f.name}
+                    floor={f}
+                    look={p.e}
+                    isFav={isFav}
+                    row={(d, firstRest) => <RowN key={d.key} d={d} c={c} p={p} firstRest={firstRest} />}
+                />
             ))}
             <div className="pv-foot">{c.footer}</div>
         </div>
