@@ -69,7 +69,7 @@ const ROWS: Row[] = [
 
 function loadPicks(): Picks {
     // Runde 201+: D und E starten mit der neuen Fassung, nicht mit „35".
-    const def: Picks = { a: '35', b: '35', c: 'IST', d: '220', e: '203' };
+    const def: Picks = { a: '35', b: '35', c: 'IST', d: '230', e: '203' };
     try {
         const raw = JSON.parse(localStorage.getItem(KEY_N) ?? '{}') as Partial<Picks>;
         ROWS.forEach((r) => {

@@ -33,6 +33,8 @@ export interface SheetLook {
     fill: 'kind' | 'neutral';
     /** Zahl ueber dem Schieber oder klein im Schieber */
     value: 'above' | 'inside';
+    /** Abweichende Angaben nur fuer Raffstore (230: Fenster wie 223, Raffstore wie 227) */
+    raff?: Partial<Omit<SheetLook, 'key' | 'name' | 'desc' | 'raff'>>;
 }
 
 const BASE: Omit<SheetLook, 'key' | 'name' | 'desc'> = {
@@ -46,6 +48,14 @@ const BASE: Omit<SheetLook, 'key' | 'name' | 'desc'> = {
 };
 
 export const SHEET_LOOKS: SheetLook[] = [
+    {
+        ...BASE,
+        key: '230',
+        name: 'Wahl: Fenster 223, Raffstore 227',
+        desc: 'Saschas Mischung (03.11.2026): Fenster wie 223 (Feder mit „leise" mittig, Taste so breit wie der Schieber), Raffstore wie 227 (Position und Lamelle gemeinsam mittig, Taste 200 px). Funkzeile klein rechts unten wie im Original.',
+        feder: 'word',
+        raff: { align: 'group', btn: 200 },
+    },
     {
         ...BASE,
         key: '220',

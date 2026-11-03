@@ -134,11 +134,16 @@ html.dark .pvq-star.is-on { color: #ffd60a; }
 .pvq-go--stop { background: var(--pv-amber); color: #000; }
 
 .pvq .pvs-notice { margin-top: 10px; }
+/* Funkzeile wie im Original (ShutterSheet.css, .sheet-radio): klein und
+   unauffaellig rechts unten, 16 px vom Fensterrand, feste Hoehe. Saschas
+   Wunsch vom 03.11.2026 fuer alle Fassungen. */
 .pvq-radio {
-  width: 100%; margin-top: 10px; font-size: 11px; color: var(--pv-sub); opacity: 0.75; text-align: center;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+  align-self: stretch; margin: 14px -4px 0;
+  font-size: 8px; line-height: 1.15; height: 1.15em; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--pv-sub); opacity: 0.5; font-variant-numeric: tabular-nums;
 }
-.pvq-radio.is-offline { color: var(--pv-red); opacity: 1; }
+.pvq-radio.is-offline { color: var(--pv-red); opacity: 0.9; }
 
 /* ── Favoriten je Geschoss ────────────────────────────────────────────── */
 

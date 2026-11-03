@@ -117,7 +117,7 @@ function Track({ value, set, snaps, label, busy, unknown, disabled, width }: Sli
 export function PvSheetSlim({
     device,
     connected,
-    look,
+    look: lookIn,
     fav,
     onClose,
 }: {
@@ -162,6 +162,8 @@ export function PvSheetSlim({
     const hasDraft = posDraft !== null || slatDraft !== null;
     const busy = ctl.busy || state.isSlatActing;
     const hasSlat = !!device.slatDp;
+    // 230: Raffstore bekommen eigene Angaben (wie 227), Fenster die Grundangaben (wie 223).
+    const look: SheetLook = hasSlat && lookIn.raff ? { ...lookIn, ...lookIn.raff } : lookIn;
     // Raffstore haben keine Leise-Fahrt; die Feder gibt es nur, wo der
     // Antrieb einen Slow-Datenpunkt hat.
     const canSlow = !!device.slowPosDp && !hasSlat;
