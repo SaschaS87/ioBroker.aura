@@ -7307,7 +7307,9 @@ export function WidgetFrame({
     const isHeader = config.type === 'header';
     const isGroup = config.type === 'group';
     const isButton = config.type === 'button';
-    const isTransparent = !!config.options?.transparent;
+    // devicesettings: no outer card, the widget draws its own group cards (see isNoPad).
+    // Solved in code so no saved dashboard needs the 'transparent' option.
+    const isTransparent = !!config.options?.transparent || config.type === 'devicesettings';
     // A group with title + icon off and no master switch renders no header bar.
     // In the editor its config controls float in on hover (top-left toolbar) so
     // children can sit flush to the top without a reserved strip. (collapsible is
@@ -7468,6 +7470,8 @@ export function WidgetFrame({
         // shutterfloors: no outer frame (transparent) + no frame padding, so the
         // floor list spans the full column width, just like heating.
         framingType === 'shutterfloors' ||
+        // devicesettings: brings its own group cards (iPhone-style list), same idea.
+        framingType === 'devicesettings' ||
         // garten: same idea — every circle brings its own card, so the list
         // spans the full column width without a second frame around it.
         framingType === 'garten' ||

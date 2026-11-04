@@ -595,6 +595,8 @@ export const en: Record<TranslationKey, string> = {
     'deviceTheme.dark': 'Dark',
     'deviceTheme.autoHint': 'Follows the device – currently: {mode}',
     'deviceTheme.dpActive': 'An automation currently sets {mode}.',
+    'deviceSettings.title': 'Settings',
+    'deviceSettings.back': 'Settings',
 
     'theme.vars.title': 'Customize CSS Variables',
     'theme.vars.app': 'App',

@@ -1,4 +1,4 @@
-// Feature 28 - Hell/Dunkel pro Gerät.
+// Feature 28 - Hell/Dunkel pro Gerät (Aufbau Übersicht/Unterseite: Feature 29).
 //
 //   npm run dev            (or set AURA_BASE)
 //   node tools/tests/device-theme-mode.mjs
@@ -11,6 +11,9 @@
 //   d) switching never writes config.themeMode.frontend or config.theme
 //   e) the area "einstellungen" shows up in the section menu and is reachable
 //   f) the old header sun/moon button is gone
+//   g) narrow: overview row "Darstellung" -> sub page with back arrow; the overview
+//      shows the chosen value (Hell/Dunkel); wide (>= 640 px widget width): list and
+//      choice side by side, the choice is visible without a tap, no back arrow
 // plus a table test for the pure rule resolveActiveMode.
 //
 // a), b), d), e), f) run in the screenshot harness (?shot=1, nothing is written to
@@ -96,6 +99,20 @@ async function boot(page, hash) {
     await page.waitForTimeout(1200);
 }
 
+// Narrow widget: the choice lives on a sub page, tap the row "Darstellung" first.
+// Wide widget: the choice is already visible, nothing to open.
+async function openAppearance(page) {
+    const pick = page.locator('[data-testid="device-settings"] button[data-pref="light"]');
+    if (await pick.isVisible().catch(() => false)) {
+        const hidden = await pick.evaluate((el) => !!el.closest('[inert]'));
+        if (!hidden) return;
+    }
+    await page.locator('[data-testid="device-settings"] .ds-row--nav').click();
+    await page.waitForTimeout(400);
+}
+const navValue = (page) =>
+    page.evaluate(() => document.querySelector('[data-testid="device-settings"] .ds-row--nav .ds-val')?.textContent ?? '');
+
 const isDark = (page) => page.evaluate(() => document.documentElement.classList.contains('dark'));
 const stored = (page) => page.evaluate((k) => localStorage.getItem(k), DEVICE_KEY);
 
@@ -138,6 +155,25 @@ try {
         await page.waitForTimeout(300);
         check('a) and back to dark', (await isDark(page)) === true);
 
+        // g) narrow: only the overview is drawn, the choice sits behind the row
+        const narrowRoot = await page.locator('[data-testid="device-settings"]').boundingBox();
+        check('g) narrow root is below 640 px', !!narrowRoot && narrowRoot.width < 640, JSON.stringify(narrowRoot));
+        check(
+            'g) overview shows the row "Darstellung" with the value Automatisch',
+            /^(Automatisch|Automatic)$/.test(await navValue(page)),
+            await navValue(page),
+        );
+        check(
+            'g) sub page is closed at first (slider not open, choice buttons inert)',
+            (await page.locator('.ds-slider.is-open').count()) === 0 &&
+                (await page.locator('[data-testid="device-settings"] button[data-pref="light"]').evaluate((el) => !!el.closest('[inert]'))),
+        );
+        await openAppearance(page);
+        check('g) tap on the row opens the sub page', (await page.locator('.ds-slider.is-open').count()) === 1);
+        check('g) back arrow is shown on the sub page', (await page.locator('button[data-ds-back]').isVisible()));
+        const backBox = await page.locator('button[data-ds-back]').boundingBox();
+        check('g) back arrow is at least 44 px high', !!backBox && backBox.height >= 44, JSON.stringify(backBox));
+
         // b) click "Hell" under a dark system
         await page.locator('[data-testid="device-settings"] button[data-pref="light"]').click();
         await page.waitForTimeout(300);
@@ -147,6 +183,13 @@ try {
             (await page.locator('button[data-pref="light"]').getAttribute('aria-pressed')) === 'true',
         );
         check("b) localStorage['aura-device-theme'] === 'light'", (await stored(page)) === 'light');
+
+        // g) back arrow returns to the overview, which shows the chosen value
+        await page.locator('button[data-ds-back]').click();
+        await page.waitForTimeout(400);
+        check('g) back arrow closes the sub page', (await page.locator('.ds-slider.is-open').count()) === 0);
+        check('g) overview shows the value Hell', /^(Hell|Light)$/.test(await navValue(page)), await navValue(page));
+        await openAppearance(page);
         const box = await page.locator('button[data-pref="light"]').boundingBox();
         check('b) tap target is at least 44 px high', !!box && box.height >= 44, JSON.stringify(box));
 
@@ -166,9 +209,14 @@ try {
         // back to Dunkel and Automatisch through the UI
         await page.evaluate(() => (window.location.hash = '#/view/default/s/einstellungen'));
         await page.waitForTimeout(400);
+        await openAppearance(page);
         await page.locator('button[data-pref="dark"]').click();
         await page.waitForTimeout(200);
         check('b) Dunkel -> html.dark', (await isDark(page)) === true && (await stored(page)) === 'dark');
+        await page.locator('button[data-ds-back]').click();
+        await page.waitForTimeout(400);
+        check('g) overview shows the value Dunkel', /^(Dunkel|Dark)$/.test(await navValue(page)), await navValue(page));
+        await openAppearance(page);
         await page.locator('button[data-pref="auto"]').click();
         await page.waitForTimeout(200);
         check('b) Automatisch removes the stored choice', (await stored(page)) === null);
@@ -210,6 +258,46 @@ try {
             'e) the widget renders in that area',
             (await page.locator('[data-testid="device-settings"]').count()) === 1,
         );
+        await ctx.close();
+    }
+
+    // g) wide widget: list left, choice right, visible without a tap
+    {
+        const wideLayout = JSON.parse(JSON.stringify(LAYOUT));
+        wideLayout.sections[1].tabs[0].widgets[0].gridPos.w = 42; // full width
+        const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 }, ignoreHTTPSErrors: true });
+        const page = await ctx.newPage();
+        page.on('pageerror', (e) => pageErrors.push(e.message));
+        await page.goto(`${BASE}/?shot=1`, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => !!window.__auraShot?.ready, { timeout: 30000 });
+        await page.evaluate(
+            ({ layout }) => {
+                window.__auraShot.writes(true);
+                window.__auraShot.seed({ layouts: [layout] });
+                window.__auraShot.setDeviceThemeMode();
+                window.location.hash = '#/view/default/s/einstellungen';
+            },
+            { layout: wideLayout },
+        );
+        await page.waitForTimeout(1200);
+        const root = await page.locator('[data-testid="device-settings"]').boundingBox();
+        check('g) wide root is at least 640 px', !!root && root.width >= 640, JSON.stringify(root));
+        check(
+            'g) wide: the choice is visible without a tap',
+            await page.locator('[data-testid="device-settings"] button[data-pref="dark"]').isVisible(),
+        );
+        check(
+            'g) wide: Darstellung is preselected, no back arrow',
+            (await page.locator('.ds-row--nav.is-selected').count()) === 1 &&
+                (await page.locator('button[data-ds-back]').count()) === 0,
+        );
+        check(
+            'g) wide: only one set of choice buttons in the DOM',
+            (await page.locator('[data-testid="device-settings"] button[data-pref]').count()) === 3,
+        );
+        await page.locator('button[data-pref="dark"]').click();
+        await page.waitForTimeout(200);
+        check('g) wide: a tap on Dunkel switches to dark and shows the value', (await isDark(page)) === true && /^(Dunkel|Dark)$/.test(await navValue(page)));
         await ctx.close();
     }
 

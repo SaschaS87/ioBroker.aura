@@ -552,6 +552,8 @@ export function Dashboard({
                                                                 // shutterfloors grows with its floor/device list so the
                                                                 // tab scrolls as a whole instead of the widget itself.
                                                                 ew.type === 'shutterfloors' ||
+                                                                // devicesettings grows with its list / sub page.
+                                                                ew.type === 'devicesettings' ||
                                                                 // garten wächst mit der Kreisliste und den Terminen.
                                                                 ew.type === 'garten' ||
                                                                 // garten2 wächst mit Hero/Wetter-Boden/Wochenplan.

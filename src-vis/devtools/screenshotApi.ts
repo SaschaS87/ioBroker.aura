@@ -669,7 +669,7 @@ if (new URLSearchParams(window.location.search).get('einstellungen') === '1') {
                             title: 'Geräte-Einstellungen',
                             datapoint: '',
                             layout: 'default',
-                            gridPos: { x: 0, y: 0, w: 21, h: 6 },
+                            gridPos: { x: 0, y: 0, w: 42, h: 6 },
                             options: {},
                         },
                     ]),

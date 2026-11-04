@@ -1,105 +1,127 @@
-import React, { Suspense } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Monitor, Moon, Sun, SunMoon } from 'lucide-react';
-import { useDeviceThemeStore, type DeviceThemePref } from '../../store/deviceThemeStore';
-import { useThemeModeStore, resolveActiveMode } from '../../utils/themeModeCache';
 import { useT } from '../../i18n';
 import type { WidgetProps } from '../../types';
-
-// Entwurfs-Umschalter: nur im Dev-Build. Im Pi-Build faellt der Ausdruck zur
-// Kompilierzeit auf null, der Import verschwindet samt Ordner preview/.
-const DeviceSettingsPreview = import.meta.env.DEV
-    ? React.lazy(() => import('./devicesettings/preview/DeviceSettingsPreview'))
-    : null;
+import { Group, NavRow, SubHeader } from './devicesettings/parts';
+import { SETTINGS_ROWS, type SettingsRow } from './devicesettings/settingsRows';
+import './devicesettings/DeviceSettings.css';
 
 /**
- * Geräte-Einstellungen: Hell/Dunkel für genau dieses Gerät (Feature 28).
+ * Geräte-Einstellungen (Feature 28 Hell/Dunkel, Feature 29 Aufbau Übersicht und Unterseite).
  * Die Wahl steht nur im Browser-Speicher (deviceThemeStore) und wandert nie nach
- * ioBroker. Im Editor und im Admin ist das Widget eine reine Vorschau (wie das
- * Menü-Widget), damit dort nichts versehentlich umgestellt wird.
+ * ioBroker. Im Editor und im Admin sind die Auswahlknöpfe gesperrt (reine Vorschau,
+ * wie beim Menü-Widget); die Navigation zwischen Übersicht und Unterseite bleibt bedienbar.
+ *
+ * Aufbau: Übersicht (Liste der Einstellungen) und Unterseite je Einstellung. Ab 640 px
+ * Breite des Widgets stehen beide nebeneinander (Master-Detail), darunter schiebt ein
+ * Tipp die Unterseite von rechts herein (Push). Gezeichnet wird immer nur eine der
+ * beiden Ansichten. Zustand nur lokal: Beim Öffnen ist die Übersicht zu sehen
+ * (breit: erste Einstellung vorgewählt).
  */
-export function DeviceSettingsWidget({ editMode }: WidgetProps) {
-    const inAdmin = useLocation().pathname.startsWith('/admin');
-    const inert = editMode || inAdmin;
-    if (DeviceSettingsPreview) {
-        return (
-            <Suspense fallback={<IstAufbau inert={inert} />}>
-                <DeviceSettingsPreview inert={inert} ist={<IstAufbau inert={inert} />} />
-            </Suspense>
-        );
-    }
-    return <IstAufbau inert={inert} />;
+
+const WIDE_MIN_PX = 640;
+
+// React 18 kennt das HTML-Attribut inert noch nicht in den Typen
+const inertAttr = (on: boolean): Record<string, string> => (on ? { inert: '' } : {});
+
+function OverviewRow({ row, selected, onOpen }: { row: SettingsRow; selected?: boolean; onOpen: () => void }) {
+    const t = useT();
+    const value = row.useValue();
+    return (
+        <NavRow
+            icon={row.icon}
+            iconColor={row.iconColor}
+            label={t(row.label)}
+            value={value}
+            selected={selected}
+            onClick={onOpen}
+        />
+    );
 }
 
-/** Heutiger Aufbau, unveraendert (Dreier-Schalter in einer Karte). */
-function IstAufbau({ inert }: { inert: boolean }) {
+function Overview({
+    activeKey,
+    onOpen,
+}: {
+    /** Breit: vorgewählte Zeile. Schmal: undefined. */
+    activeKey?: string;
+    onOpen: (key: string) => void;
+}) {
+    return (
+        <div className="ds-page">
+            <Group>
+                {SETTINGS_ROWS.map((row) => (
+                    <OverviewRow
+                        key={row.key}
+                        row={row}
+                        selected={activeKey === row.key}
+                        onOpen={() => onOpen(row.key)}
+                    />
+                ))}
+            </Group>
+        </div>
+    );
+}
+
+function Detail({ row, inert, onBack }: { row: SettingsRow; inert: boolean; onBack?: () => void }) {
     const t = useT();
+    return (
+        <div className="ds-page">
+            <SubHeader title={t(row.label)} onBack={onBack} backLabel={t('deviceSettings.back')} />
+            <row.Page inert={inert} />
+        </div>
+    );
+}
 
-    const pref = useDeviceThemeStore((s) => s.pref);
-    const systemDark = useDeviceThemeStore((s) => s.systemDark);
-    const setPref = useDeviceThemeStore((s) => s.setPref);
-    const dpMode = useThemeModeStore((s) => s.mode);
+export function DeviceSettingsWidget({ editMode }: WidgetProps) {
+    const t = useT();
+    const inAdmin = useLocation().pathname.startsWith('/admin');
+    const inert = editMode || inAdmin;
 
-    const modeName = (dark: boolean) => t(dark ? 'deviceTheme.dark' : 'deviceTheme.light');
-    // Unabhängig vom Screenshot-Modus: hier zählt, was das Gerät melden würde.
-    const dpName = dpMode ? modeName(dpMode === 'dark') : null;
-    const deviceMode = resolveActiveMode('auto', null, systemDark, false);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const [wide, setWide] = useState(false);
+    // key: zuletzt gewählte Einstellung (breit vorgewählt, schmal Inhalt der Unterseite);
+    // open: schmal, ob die Unterseite gerade vorne liegt.
+    const [state, setState] = useState<{ key: string; open: boolean }>({
+        key: SETTINGS_ROWS[0].key,
+        open: false,
+    });
 
-    const options: { key: DeviceThemePref; label: string; icon: React.ReactNode }[] = [
-        { key: 'auto', label: t('deviceTheme.auto'), icon: <SunMoon size={16} /> },
-        { key: 'light', label: t('deviceTheme.light'), icon: <Sun size={16} /> },
-        { key: 'dark', label: t('deviceTheme.dark'), icon: <Moon size={16} /> },
-    ];
+    // Breite des Widgets selbst messen (nicht des Fensters): das Widget kann in einer
+    // halben Spalte stehen.
+    useLayoutEffect(() => {
+        const el = rootRef.current;
+        if (!el) return;
+        const measure = () => setWide(el.getBoundingClientRect().width >= WIDE_MIN_PX);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(measure);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    const row = SETTINGS_ROWS.find((r) => r.key === state.key) ?? SETTINGS_ROWS[0];
+    const open = (key: string) => setState({ key, open: true });
+    const back = () => setState((s) => ({ ...s, open: false }));
 
     return (
-        <div className="flex flex-col gap-3 h-full min-w-0" data-testid="device-settings">
-            <div>
-                <div className="flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                    <Monitor size={16} style={{ color: 'var(--text-secondary)' }} />
-                    <span className="text-sm font-semibold">{t('deviceTheme.title')}</span>
+        <div ref={rootRef} className="ds-root" data-testid="device-settings" aria-label={t('deviceSettings.title')}>
+            {wide ? (
+                <div className="ds-wide">
+                    <Overview activeKey={row.key} onOpen={(key) => setState({ key, open: false })} />
+                    <Detail row={row} inert={inert} />
                 </div>
-                <p className="text-xs mt-1 leading-snug" style={{ color: 'var(--text-secondary)' }}>
-                    {t('deviceTheme.desc')}
-                </p>
-            </div>
-            <div
-                role="group"
-                aria-label={t('deviceTheme.title')}
-                className="grid grid-cols-3 gap-1 p-1 rounded-xl"
-                style={{ background: 'var(--app-bg)', border: '1px solid var(--app-border)' }}
-            >
-                {options.map((o) => {
-                    const active = pref === o.key;
-                    return (
-                        <button
-                            key={o.key}
-                            type="button"
-                            aria-pressed={active}
-                            data-pref={o.key}
-                            disabled={inert}
-                            onClick={() => setPref(o.key)}
-                            className="flex flex-col items-center justify-center gap-1 rounded-lg text-xs font-medium transition-colors"
-                            style={{
-                                minHeight: 44,
-                                padding: '6px 4px',
-                                cursor: inert ? 'default' : 'pointer',
-                                background: active ? 'var(--accent)' : 'transparent',
-                                color: active ? '#fff' : 'var(--text-secondary)',
-                                border: 'none',
-                            }}
-                        >
-                            {o.icon}
-                            <span>{o.label}</span>
-                        </button>
-                    );
-                })}
-            </div>
-            {pref === 'auto' && (
-                <p className="text-xs leading-snug" style={{ color: 'var(--text-secondary)' }}>
-                    {dpName
-                        ? t('deviceTheme.dpActive', { mode: dpName })
-                        : t('deviceTheme.autoHint', { mode: modeName(deviceMode === 'dark') })}
-                </p>
+            ) : (
+                <div className="ds-stage">
+                    <div className={`ds-slider${state.open ? ' is-open' : ''}`}>
+                        <div className="ds-pane" aria-hidden={state.open} {...inertAttr(state.open)}>
+                            <Overview onOpen={open} />
+                        </div>
+                        <div className="ds-pane" aria-hidden={!state.open} {...inertAttr(!state.open)}>
+                            <Detail row={row} inert={inert} onBack={back} />
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
