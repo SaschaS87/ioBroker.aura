@@ -1044,7 +1044,7 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         Icon: Settings2,
         iconName: 'Settings2',
         color: '#64748b',
-        defaultW: 21,
+        defaultW: 42,
         defaultH: 6,
         addMode: 'free',
         widgetGroup: 'special',

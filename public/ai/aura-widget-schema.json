@@ -7426,7 +7426,7 @@
       "addMode": "free",
       "hint": "Hell/Dunkel für genau dieses Gerät (Automatisch, Hell, Dunkel) – wird nur im Browser gespeichert. Am besten in einen eigenen Bereich „Einstellungen“ legen",
       "defaultSize": {
-        "w": 21,
+        "w": 42,
         "h": 6
       },
       "layouts": [

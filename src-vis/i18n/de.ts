@@ -596,6 +596,8 @@ export const de = {
     'deviceTheme.dark': 'Dunkel',
     'deviceTheme.autoHint': 'Folgt dem Gerät – gerade: {mode}',
     'deviceTheme.dpActive': 'Eine Automation gibt gerade {mode} vor.',
+    'deviceSettings.title': 'Einstellungen',
+    'deviceSettings.back': 'Einstellungen',
 
     'theme.vars.title': 'CSS-Variablen anpassen',
     'theme.vars.app': 'App',
