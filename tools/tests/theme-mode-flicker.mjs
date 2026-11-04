@@ -11,6 +11,11 @@
 // a moment later. main.tsx now seeds the mode from a per-device cache before
 // React mounts.
 //
+// Since Feature 28 the order is: device choice → datapoint mode (this cache) →
+// system setting. The run therefore emulates the OPPOSITE system setting, so the
+// control run (no cache) falls back to the system and flashes, while the run with
+// the cache must still paint the datapoint's mode from the first frame.
+//
 // The run needs an instance whose themeMode.frontend DP is actually set — the
 // warm-up load reads it back out of the cache the app itself writes. Without it
 // there is nothing to seed and the test skips.
@@ -77,6 +82,7 @@ if (dpMode !== 'dark' && dpMode !== 'light') {
     process.exit(0);
 }
 const stale = dpMode === 'dark' ? 'light' : 'dark';
+await page.emulateMedia({ colorScheme: stale });
 console.log(`DP mode: ${dpMode} — stale store theme used for the reload: ${stale}`);
 
 /** Reload with a stale theme in the store; `seed` decides whether the cache is present. */
@@ -86,6 +92,7 @@ async function measure(seed) {
             const obj = JSON.parse(localStorage.getItem('aura-theme'));
             obj.state.themeId = stale; // what localStorage / the remote config carry
             localStorage.setItem('aura-theme', JSON.stringify(obj));
+            localStorage.removeItem('aura-device-theme'); // Automatisch
             if (seed) localStorage.setItem('aura-theme-mode', dpMode);
             else localStorage.removeItem('aura-theme-mode');
         },

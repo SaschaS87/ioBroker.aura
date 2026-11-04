@@ -7,6 +7,7 @@ interface ThemeState {
     themeId: string;
     customVars: Partial<AllVars>;
     adminThemeId: string;
+    /** @deprecated Ignored since Feature 28 (Hell/Dunkel pro Gerät). Kept only so saved configs load unchanged. */
     followBrowser: boolean;
     browserDarkThemeId: string;
     browserLightThemeId: string;
@@ -15,6 +16,7 @@ interface ThemeState {
     setCustomVar: (key: keyof AllVars, value: string) => void;
     resetCustom: () => void;
     setAdminTheme: (id: string) => void;
+    /** @deprecated Ignored since Feature 28. */
     setFollowBrowser: (v: boolean) => void;
     setBrowserDarkThemeId: (id: string) => void;
     setBrowserLightThemeId: (id: string) => void;

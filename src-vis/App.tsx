@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveHtmlAssets } from './utils/assetUrl';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Sun, Moon, Settings } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import {
     useIoBroker,
     setStateDirect,
@@ -54,7 +54,7 @@ import { ToastLayer } from './components/messages/ToastLayer';
 import { MessageBell } from './components/layout/MessageBell';
 import type { MessageScope } from './store/messagesStore';
 import { NS } from './utils/namespace';
-import { themeModeOverride, useThemeModeStore, writeCachedThemeMode, type ThemeMode } from './utils/themeModeCache';
+import { themeModeOverride, writeCachedThemeMode, type ThemeMode } from './utils/themeModeCache';
 import { baseDpId } from './utils/dpRef';
 import { initPerfMetrics, setPerfTracking, reportBackendPing } from './utils/perfMetrics';
 import { setBreakdownTracking, recordBackendCall } from './utils/perfBreakdown';
@@ -351,7 +351,6 @@ export default function App() {
     }>();
     const navigate = useNavigate();
     const { frontend } = useConfigStore();
-    const { setTheme } = useThemeStore();
     const { connected, subscribe } = useIoBroker();
     const { clientId, clientIdPinned, clientName, pinClientId } = useConnectionStore();
 
@@ -715,44 +714,13 @@ export default function App() {
     // bundled one (e.g. after a npm install of a new aura release), reload.
     useVersionGuard();
 
-    // ── Browser-theme sync ────────────────────────────────────────────────────
-    // Subscribes to the theme store so it re-applies the correct theme whenever
-    // a config sync rehydrates the store and overwrites themeId.
-    useEffect(() => {
-        const mq = window.matchMedia('(prefers-color-scheme: dark)');
-        const applyIfFollowing = () => {
-            if (themeModeOverride.value) return; // explicit DP override beats browser
-            const {
-                followBrowser: fb,
-                browserDarkThemeId: dark,
-                browserLightThemeId: light,
-                themeId,
-            } = useThemeStore.getState();
-            if (!fb) return;
-            const desired = mq.matches ? dark : light;
-            if (themeId !== desired) setTheme(desired);
-        };
-        applyIfFollowing();
-        mq.addEventListener('change', applyIfFollowing);
-        const unsub = useThemeStore.subscribe(applyIfFollowing);
-        // Also react to the mode datapoint being cleared — browser sync takes
-        // over again the moment the explicit override goes away.
-        const unsubMode = useThemeModeStore.subscribe(applyIfFollowing);
-        return () => {
-            mq.removeEventListener('change', applyIfFollowing);
-            unsub();
-            unsubMode();
-        };
-    }, [setTheme]);
-
     // ── Datapoint-driven dark/light mode ──────────────────────────────────────
     // Subscribes to aura.0.config.themeMode.frontend ('dark'|'light'|''). The
     // value is a *mode*, not a design: it lives in its own store and is applied
     // on top of the effective theme (resolveThemeModeId), so a design whose
     // polarity already matches stays untouched and the saved themeId is never
-    // overwritten. Before that, one press of the header sun/moon button pinned
-    // the device to the plain dark/light preset for good and made every design
-    // picked in the admin look like it had no effect (#573).
+    // overwritten (#573). Only read here: the header sun/moon button is gone,
+    // each device picks Automatic/Light/Dark itself (deviceThemeStore).
     useEffect(() => {
         // Documentation screenshots pick their own theme; the instance behind the dev proxy
         // must not pull them back to whatever it is set to (that is why the frontend shots
@@ -1282,25 +1250,6 @@ export default function App() {
                                         <Settings size={15} />
                                     </a>
                                 )}
-                                <button
-                                    onClick={() => {
-                                        // Flip the mode only — the design stays whatever the
-                                        // admin configured, so toggling back restores it (#573).
-                                        const nextMode: ThemeMode = currentTheme.dark ? 'light' : 'dark';
-                                        themeModeOverride.value = nextMode;
-                                        writeCachedThemeMode(nextMode);
-                                        setStateDirect(`${NS}.config.themeMode.frontend`, nextMode);
-                                    }}
-                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
-                                    style={{
-                                        background: 'var(--app-bg)',
-                                        color: 'var(--text-secondary)',
-                                        border: '1px solid var(--app-border)',
-                                    }}
-                                    title={currentTheme.dark ? 'Hell-Modus' : 'Dunkel-Modus'}
-                                >
-                                    {currentTheme.dark ? <Sun size={15} /> : <Moon size={15} />}
-                                </button>
                             </div>
                         </header>
                     )}

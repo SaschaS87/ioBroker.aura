@@ -51,6 +51,8 @@ import {
     type MessageScope,
 } from '../store/messagesStore';
 import { useThemeStore } from '../store/themeStore';
+import { useDeviceThemeStore, type DeviceThemePref, DEVICE_THEME_KEY } from '../store/deviceThemeStore';
+import { setScreenshotDeviceTheme } from '../utils/themeModeCache';
 import {
     alignStackedSeries,
     areaOpacityFor,
@@ -168,6 +170,27 @@ function installScreenshotApi(): void {
         /** Switch the frontend theme preset (e.g. 'light', 'dark'). */
         setTheme(id: string): void {
             withSuppressedDirty(() => useThemeStore.getState().setTheme(id));
+        },
+
+        /**
+         * Switch on the per-device dark/light mode for this run (without it screenshot
+         * mode yields no mode at all, so shots do not depend on the machine's setting).
+         * `pref` is set in memory only — localStorage is not written. Without an
+         * argument the choice already stored on this device is used.
+         */
+        setDeviceThemeMode(pref?: DeviceThemePref): void {
+            setScreenshotDeviceTheme(true);
+            let next: DeviceThemePref | undefined = pref;
+            if (!next) {
+                let v: string | null = null;
+                try {
+                    v = localStorage.getItem(DEVICE_THEME_KEY);
+                } catch {
+                    /* ignore */
+                }
+                next = v === 'light' || v === 'dark' ? v : 'auto';
+            }
+            useDeviceThemeStore.setState({ pref: next });
         },
 
         /** Inject fabricated datapoint values: { 'demo.switch': true, 'demo.temp': { val: 21.5, unit: '°C' } } */

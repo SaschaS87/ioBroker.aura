@@ -49,6 +49,7 @@ import { StatusOverviewWidget } from './StatusOverviewWidget';
 import { MirrorWidget } from './MirrorWidget';
 import { MessagesWidget } from './MessagesWidget';
 import { MenuWidget } from './MenuWidget';
+import { DeviceSettingsWidget } from './DeviceSettingsWidget';
 import { RainStationWidget } from './RainStationWidget';
 import { RainDailyWidget } from './RainDailyWidget';
 import { RoomClimateWidget } from './RoomClimateWidget';
@@ -144,6 +145,7 @@ export function getWidgetMap() {
         mirror: MirrorWidget,
         messages: MessagesWidget,
         menu: MenuWidget,
+        devicesettings: DeviceSettingsWidget,
         shutterfloors: ShutterFloorsWidget,
         garten: GartenWidget,
         garten2: Garten2Widget,

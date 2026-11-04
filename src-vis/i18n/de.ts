@@ -579,16 +579,23 @@ export const de = {
     'theme.preset.desc':
         'Ein Preset setzt alle Design-Variablen auf einmal: Seiten- und Karten-Hintergründe, Rahmen, Schatten, Eckenradius, Textfarben sowie die Akzentfarben (Blau/Grün/Gelb/Rot) der Widgets. Die farbigen Punkte zeigen die Karten- und Akzentfarben des jeweiligen Themes. Nach der Auswahl eines Presets kannst du einzelne Variablen unten weiter anpassen.',
 
-    'theme.preset.browserActive':
-        'Das Theme folgt der Browser-Einstellung (Hell/Dunkel). Solange das aktiv ist, wird die Preset-Auswahl bei jedem Laden überschrieben — auch Überschreibungen pro Layout oder Bereich.',
-    'theme.preset.browserAction': 'Einstellung öffnen',
     'theme.preset.modeDark':
         'Dunkel-Modus ist über {ns}.config.themeMode.frontend aktiv. Helle Designs werden im Frontend deshalb durch „{theme}“ ersetzt.',
     'theme.preset.modeLight':
         'Hell-Modus ist über {ns}.config.themeMode.frontend aktiv. Dunkle Designs werden im Frontend deshalb durch „{theme}“ ersetzt.',
     'theme.preset.modeAction': 'Modus zurücksetzen',
-    'theme.browserSync.overrides':
-        'Solange das aktiv ist, werden alle Theme-Presets ignoriert — global wie pro Layout und Bereich.',
+
+    'theme.pair.title': 'Hell- und Dunkel-Design',
+    'theme.pair.desc':
+        'Welches Design ein Gerät im Hell- bzw. Dunkelmodus zeigt. Jedes Gerät wählt den Modus selbst (App → Einstellungen), Standard: Automatisch.',
+
+    'deviceTheme.title': 'Darstellung',
+    'deviceTheme.desc': 'Gilt nur für dieses Gerät und wird im Browser gespeichert.',
+    'deviceTheme.auto': 'Automatisch',
+    'deviceTheme.light': 'Hell',
+    'deviceTheme.dark': 'Dunkel',
+    'deviceTheme.autoHint': 'Folgt dem Gerät – gerade: {mode}',
+    'deviceTheme.dpActive': 'Eine Automation gibt gerade {mode} vor.',
 
     'theme.vars.title': 'CSS-Variablen anpassen',
     'theme.vars.app': 'App',

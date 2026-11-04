@@ -3,11 +3,19 @@ import { useThemeStore } from './store/themeStore';
 import { useConfigStore } from './store/configStore';
 import { useGlobalThemeId } from './hooks/useEffectiveSettings';
 import { getTheme } from './themes';
-import { BOOT_COLORS_KEY } from './utils/themeModeCache';
+import {
+    BOOT_COLORS_KEY,
+    BOOT_COLORS_KEY_DARK,
+    BOOT_COLORS_KEY_LIGHT,
+    resolveThemeModeId,
+} from './utils/themeModeCache';
 import { bumpThemeEpoch } from './store/themeEpoch';
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const customVars = useThemeStore((s) => s.customVars);
+    const baseThemeId = useThemeStore((s) => s.themeId);
+    const darkPairId = useThemeStore((s) => s.browserDarkThemeId);
+    const lightPairId = useThemeStore((s) => s.browserLightThemeId);
     const fontScale = useConfigStore((s) => s.frontend.fontScale ?? 1);
     // Global theme with the dark/light-mode datapoint applied — the saved
     // themeId itself is never rewritten by the mode (#573).
@@ -35,13 +43,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             const bg = vars['--app-bg'];
             const fg = vars['--text-secondary'];
             if (bg && fg) localStorage.setItem(BOOT_COLORS_KEY, `${bg}|${fg}`);
+            // Both modes, so the boot script can pick the one this device is about
+            // to show (local choice / datapoint / system) before React runs.
+            for (const [key, mode] of [
+                [BOOT_COLORS_KEY_DARK, 'dark'],
+                [BOOT_COLORS_KEY_LIGHT, 'light'],
+            ] as const) {
+                const mv = {
+                    ...getTheme(resolveThemeModeId(baseThemeId, mode, darkPairId, lightPairId)).vars,
+                    ...customVars,
+                };
+                const mbg = mv['--app-bg'];
+                const mfg = mv['--text-secondary'];
+                if (mbg && mfg) localStorage.setItem(key, `${mbg}|${mfg}`);
+            }
         } catch {
             /* quota / private mode */
         }
         // The variables are in the DOM now — whoever has to read one in
         // JavaScript (a canvas colour) can do it from here on (store/themeEpoch).
         bumpThemeEpoch();
-    }, [theme, customVars, fontScale]);
+    }, [theme, customVars, fontScale, baseThemeId, darkPairId, lightPairId]);
 
     return <>{children}</>;
 }
