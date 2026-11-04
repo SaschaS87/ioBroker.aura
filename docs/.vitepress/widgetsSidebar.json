@@ -220,6 +220,10 @@
         "link": "/widgets/button"
       },
       {
+        "text": "Geräte-Einstellungen",
+        "link": "/widgets/geraete-einstellungen"
+      },
+      {
         "text": "Gruppe",
         "link": "/widgets/gruppe"
       },

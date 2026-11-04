@@ -64,6 +64,7 @@ import {
     BellRing,
     HeartPulse,
     type LucideIcon,
+    Settings2,
 } from 'lucide-react';
 import type { WidgetType, ConditionSlot } from './types';
 
@@ -1034,6 +1035,21 @@ export const WIDGET_REGISTRY: WidgetMeta[] = [
         widgetGroup: 'layout',
         mock: { t: 'Menü', v: '☰' },
         hint: 'Frei positionierbares Navigations-Menü – zeigt die Bereiche oder die Tabs zum direkten Umschalten',
+    },
+    {
+        type: 'devicesettings',
+        conditionSlots: [],
+        label: 'Geräte-Einstellungen',
+        shortLabel: 'Einstellungen',
+        Icon: Settings2,
+        iconName: 'Settings2',
+        color: '#64748b',
+        defaultW: 21,
+        defaultH: 6,
+        addMode: 'free',
+        widgetGroup: 'special',
+        mock: { t: 'Darstellung', v: 'Auto' },
+        hint: 'Hell/Dunkel für genau dieses Gerät (Automatisch, Hell, Dunkel) – wird nur im Browser gespeichert. Am besten in einen eigenen Bereich „Einstellungen“ legen',
     },
     {
         type: 'messages',

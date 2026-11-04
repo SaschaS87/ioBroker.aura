@@ -7420,6 +7420,33 @@
         }
       }
     },
+    "devicesettings": {
+      "label": "Geräte-Einstellungen",
+      "group": "special",
+      "addMode": "free",
+      "hint": "Hell/Dunkel für genau dieses Gerät (Automatisch, Hell, Dunkel) – wird nur im Browser gespeichert. Am besten in einen eigenen Bereich „Einstellungen“ legen",
+      "defaultSize": {
+        "w": 21,
+        "h": 6
+      },
+      "layouts": [
+        "default",
+        "card",
+        "compact",
+        "minimal",
+        "custom"
+      ],
+      "conditionSlots": [],
+      "commonOptions": [
+        "badges",
+        "clickAction",
+        "conditions",
+        "styleOverride",
+        "transparency",
+        "transparent"
+      ],
+      "options": {}
+    },
     "dimmer": {
       "label": "Dimmer",
       "group": "control",

@@ -9,6 +9,11 @@
 // to the plain dark preset for good, because the themeMode datapoint was written
 // into the saved themeId and snapped back on every store change.
 //
+// Mode order since Feature 28: device choice (aura-device-theme) → datapoint mode
+// (aura-theme-mode) → system setting (emulated here per run) → saved design. A
+// design with the wrong brightness for that mode is replaced by the dark/light pair,
+// so each run states the system setting it expects instead of relying on the machine.
+//
 // Runs fully offline: every request to the ioBroker backend is aborted, so the
 // seeded localStorage state survives (no remote config load overwrites it) and
 // no instance is touched.
@@ -62,8 +67,22 @@ const dashboard = (layoutSettings, sectionSettings) =>
 const browser = await chromium.launch();
 
 /** Render the frontend with a seeded store and report what it actually paints. */
-async function render({ themeId = 'dark', mode = null, layout, section, browserDark, browserLight, follow }) {
-    const ctx = await browser.newContext({ viewport: { width: 900, height: 600 }, ignoreHTTPSErrors: true });
+async function render({
+    themeId = 'dark',
+    mode = null,
+    layout,
+    section,
+    browserDark,
+    browserLight,
+    follow,
+    system = 'dark',
+    device = null,
+}) {
+    const ctx = await browser.newContext({
+        viewport: { width: 900, height: 600 },
+        ignoreHTTPSErrors: true,
+        colorScheme: system,
+    });
     // No backend: only same-origin dev-server assets are allowed through.
     await ctx.route('**/*', (route) => {
         const url = route.request().url();
@@ -72,7 +91,9 @@ async function render({ themeId = 'dark', mode = null, layout, section, browserD
     });
     const page = await ctx.newPage();
     await page.addInitScript(
-        ([dash, theme, cachedMode]) => {
+        ([dash, theme, cachedMode, devicePref]) => {
+            if (devicePref) localStorage.setItem('aura-device-theme', devicePref);
+            else localStorage.removeItem('aura-device-theme');
             localStorage.setItem('aura-dashboard', dash);
             localStorage.setItem('aura-theme', theme);
             if (cachedMode) localStorage.setItem('aura-theme-mode', cachedMode);
@@ -91,6 +112,7 @@ async function render({ themeId = 'dark', mode = null, layout, section, browserD
                 version: 0,
             }),
             mode,
+            device,
         ],
     );
     await page.goto(`${BASE}/view/default`, { waitUntil: 'load' });
@@ -108,45 +130,69 @@ async function render({ themeId = 'dark', mode = null, layout, section, browserD
 const global = await render({ themeId: 'dark' });
 check('global design paints', global.bg === BG.dark, global.bg);
 
-const layoutScope = await render({ themeId: 'dark', layout: { themeId: 'light' } });
+const layoutScope = await render({ themeId: 'dark', layout: { themeId: 'light' }, system: 'light' });
 check('layout-scope design paints', layoutScope.bg === BG.light, layoutScope.bg);
 
 const sectionWins = await render({
     themeId: 'dark',
     layout: { themeId: 'light' },
     section: { themeId: 'catppuccin-mocha' },
+    system: 'dark',
 });
 check('section beats layout', sectionWins.bg === BG['catppuccin-mocha'], sectionWins.bg);
 
-const sectionScope = await render({ themeId: 'dark', section: { themeId: 'light' } });
+const sectionScope = await render({ themeId: 'dark', section: { themeId: 'light' }, system: 'light' });
 check('section-scope design paints', sectionScope.bg === BG.light, sectionScope.bg);
 
 // ── Dark/light mode datapoint ────────────────────────────────────────────────
-const darkModeKeepsDark = await render({ themeId: 'catppuccin-mocha', mode: 'dark' });
+const darkModeKeepsDark = await render({ themeId: 'catppuccin-mocha', mode: 'dark', system: 'light' });
 check('dark mode keeps a dark design', darkModeKeepsDark.bg === BG['catppuccin-mocha'], darkModeKeepsDark.bg);
 
-const darkModeReplacesLight = await render({ themeId: 'catppuccin-latte', mode: 'dark' });
+const darkModeReplacesLight = await render({ themeId: 'catppuccin-latte', mode: 'dark', system: 'light' });
 check('dark mode replaces a light design', darkModeReplacesLight.bg === BG.dark, darkModeReplacesLight.bg);
 
-const configuredPair = await render({ themeId: 'catppuccin-latte', mode: 'dark', browserDark: 'amoled' });
+const configuredPair = await render({
+    themeId: 'catppuccin-latte',
+    mode: 'dark',
+    browserDark: 'amoled',
+    system: 'light',
+});
 check('dark mode uses the configured dark theme', configuredPair.bg === BG.amoled, configuredPair.bg);
 
-const modeKeepsSaved = await render({ themeId: 'catppuccin-latte', mode: 'dark' });
+const modeKeepsSaved = await render({ themeId: 'catppuccin-latte', mode: 'dark', system: 'light' });
 check(
     'mode leaves the saved design alone',
     modeKeepsSaved.savedThemeId === 'catppuccin-latte',
     String(modeKeepsSaved.savedThemeId),
 );
 
-const modeOverLayout = await render({ themeId: 'dark', layout: { themeId: 'light' }, mode: 'dark' });
+const modeOverLayout = await render({ themeId: 'dark', layout: { themeId: 'light' }, mode: 'dark', system: 'light' });
 check('mode wins over a layout override', modeOverLayout.bg === BG.dark, modeOverLayout.bg);
 
 const modeMatchesLayout = await render({
     themeId: 'dark',
     layout: { themeId: 'catppuccin-mocha' },
     mode: 'dark',
+    system: 'light',
 });
 check('mode keeps a matching layout override', modeMatchesLayout.bg === BG['catppuccin-mocha'], modeMatchesLayout.bg);
+
+// ── Device choice and system setting (Feature 28) ───────────────────────────
+const deviceBeatsDp = await render({ themeId: 'dark', mode: 'dark', device: 'light', system: 'dark' });
+check('device choice beats the datapoint mode', deviceBeatsDp.bg === BG.light, deviceBeatsDp.bg);
+
+const systemLight = await render({ themeId: 'dark', system: 'light' });
+check('automatic + empty datapoint follows the system (light)', systemLight.bg === BG.light, systemLight.bg);
+
+const dpBeatsSystem = await render({ themeId: 'dark', mode: 'dark', system: 'light' });
+check('datapoint mode beats the system setting', dpBeatsSystem.bg === BG.dark, dpBeatsSystem.bg);
+
+const followIgnored = await render({ themeId: 'dark', follow: true, system: 'dark' });
+check(
+    'legacy followBrowser flag is ignored',
+    followIgnored.bg === BG.dark && followIgnored.savedThemeId === 'dark',
+    followIgnored.bg,
+);
 
 await browser.close();
 

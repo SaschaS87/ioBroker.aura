@@ -1,10 +1,8 @@
-import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '../../../../store/themeStore';
 import { useLayoutSetting } from '../shared/useLayoutSetting';
 import { ResetDefaultsButton } from '../shared/ResetDefaultsButton';
 import { InactiveNotice } from '../shared/InactiveNotice';
 import { useThemeModeDp } from '../../../../hooks/useThemeModeDp';
-import { BROWSER_SYNC_ANCHOR } from './BrowserThemeSyncSection';
 import { THEMES, DEFAULT_THEME_ID, getTheme } from '../../../../themes';
 import { useT } from '../../../../i18n';
 
@@ -14,9 +12,7 @@ interface ThemePresetSectionProps {
 
 export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
     const t = useT();
-    const navigate = useNavigate();
     const { themeId, applyThemePreset } = useThemeStore();
-    const followBrowser = useThemeStore((s) => s.followBrowser);
     const browserDarkThemeId = useThemeStore((s) => s.browserDarkThemeId);
     const browserLightThemeId = useThemeStore((s) => s.browserLightThemeId);
     const { ls, setPatch, clear } = useLayoutSetting(contextId);
@@ -24,17 +20,6 @@ export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
 
     const effectiveThemeId = ls?.themeId ?? themeId;
     const canReset = contextId ? ls?.themeId !== undefined : themeId !== DEFAULT_THEME_ID;
-
-    // While the theme follows the browser, the picked preset is overwritten on
-    // every page load — say so and point at the switch instead of letting the
-    // user click a choice that never shows up in the frontend (#573).
-    const jumpToBrowserSync = () => {
-        if (contextId) navigate('/admin/design?ctx=global&tab=theme');
-        window.setTimeout(
-            () => document.getElementById(BROWSER_SYNC_ANCHOR)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
-            contextId ? 120 : 0,
-        );
-    };
 
     // A dark/light-mode datapoint replaces designs of the opposite brightness
     // (a dark design stays put in dark mode) — only worth mentioning while the
@@ -60,14 +45,7 @@ export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
             <p className="text-xs mb-4 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 {t('theme.preset.desc')}
             </p>
-            {followBrowser && (
-                <InactiveNotice
-                    text={t('theme.preset.browserActive')}
-                    actionLabel={t('theme.preset.browserAction')}
-                    onAction={jumpToBrowserSync}
-                />
-            )}
-            {!followBrowser && modeClashes && (
+            {modeClashes && (
                 <InactiveNotice
                     text={t(mode === 'dark' ? 'theme.preset.modeDark' : 'theme.preset.modeLight', {
                         theme: modeTheme.name,
@@ -76,14 +54,10 @@ export function ThemePresetSection({ contextId }: ThemePresetSectionProps) {
                     onAction={clearMode}
                 />
             )}
-            <div
-                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
-                style={followBrowser ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
-            >
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {THEMES.map((theme) => (
                     <button
                         key={theme.id}
-                        disabled={followBrowser}
                         onClick={() => {
                             if (!contextId) {
                                 applyThemePreset(theme.id);

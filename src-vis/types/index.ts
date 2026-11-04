@@ -96,6 +96,7 @@ export type WidgetType =
     | 'energiebilanz'
     | 'mirror'
     | 'menu'
+    | 'devicesettings'
     | 'messages';
 
 /**

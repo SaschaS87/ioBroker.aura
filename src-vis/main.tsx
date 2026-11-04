@@ -35,8 +35,10 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('shot
     import('./devtools/screenshotApi');
 }
 
-// Paint the DP-driven dark/light mode (aura.0.config.themeMode.frontend) from
-// its per-device cache before React mounts. The DP itself only arrives once the
+// Stage 2 of the mode order (device choice → datapoint → system): paint the
+// DP-driven dark/light mode (aura.0.config.themeMode.frontend) from its
+// per-device cache before React mounts. Stage 1 (deviceThemeStore) and stage 3
+// (matchMedia) are read synchronously when their modules load. The DP itself only arrives once the
 // socket has connected, so without this a tablet reloading after the nightly
 // switch rendered the stored daytime theme first and visibly flipped to dark a
 // moment later. The live DP value still overrides this on arrival.

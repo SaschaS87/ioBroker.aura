@@ -21,9 +21,12 @@ Welches Design das Frontend zeigt, entscheidet diese Reihenfolge:
 
 | Vorrang | Quelle                             |                                                                                                                                                                                                  |
 | ------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1       | `aura.0.config.themeMode.frontend` | Hell/Dunkel-Modus (auch der Button im Header). Ersetzt nur Designs der anderen Helligkeit — durch das unter „Theme folgt Browser" eingestellte Hell- bzw. Dunkel-Theme. Leerer Wert = kein Modus |
-| 2       | Theme folgt Browser                | Überschreibt alle Presets, global wie pro Layout und Bereich                                                                                                                                     |
-| 3       | Bereich → Layout → Global          | Geltungsbereich links; der engste gesetzte Wert gewinnt                                                                                                                                          |
+| 1       | Lokale Wahl des Geräts             | Automatisch, Hell oder Dunkel, eingestellt im Widget [Geräte-Einstellungen](../widgets/geraete-einstellungen) und nur im Browser dieses Geräts gespeichert. Es gibt keinen Button im Header mehr |
+| 2       | `aura.0.config.themeMode.frontend` | Hell/Dunkel-Modus per Datenpunkt, z. B. aus einer Automation. Gilt nur für Geräte auf „Automatisch". Leerer Wert = kein Modus |
+| 3       | Gerät                              | Einstellung des Geräts (hell/dunkel), wenn das Gerät auf „Automatisch" steht und der Datenpunkt leer ist |
+| 4       | Bereich → Layout → Global          | Geltungsbereich links; der engste gesetzte Wert gewinnt. Der Modus (1–3) ersetzt dieses Design nur, wenn es die falsche Helligkeit hat — durch das Design aus „Hell- und Dunkel-Design" |
+
+Unter **Hell- und Dunkel-Design** (Design → Theme) legst du fest, welches Design ein Gerät im Hell- bzw. Dunkelmodus zeigt. Den Modus selbst wählt jedes Gerät für sich, Standard ist „Automatisch".
 
 ## Typografie & Spacing
 

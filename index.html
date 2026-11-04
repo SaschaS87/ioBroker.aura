@@ -218,13 +218,24 @@
       #aura-boot-reload:hover { border-color: #6366f1; color: #6366f1; }
     </style>
     <script>
-      // Repaint the boot splash in the theme this device rendered last (written by
-      // ThemeProvider as "<--app-bg>|<--text-secondary>"). Without it the splash is
+      // Repaint the boot splash in the mode this device is about to show. The mode
+      // follows the same order as resolveActiveMode in the app: local choice
+      // ('aura-device-theme' = light | dark), then the datapoint mode cached in
+      // 'aura-theme-mode', then the system setting. Colours come from the pair
+      // ThemeProvider wrote as "<--app-bg>|<--text-secondary>" per mode; the old
+      // single 'aura-boot-colors' is the fallback. Without it the splash is
       // hard-coded dark, so a light device flashes dark on every reload.
       try {
-        var c = (localStorage.getItem('aura-boot-colors') || '').split('|');
+        var ls = window.localStorage;
+        var m = ls.getItem('aura-device-theme');
+        if (m !== 'light' && m !== 'dark') m = ls.getItem('aura-theme-mode');
+        if (m !== 'light' && m !== 'dark') {
+          m = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        var c = (ls.getItem('aura-boot-colors-' + m) || ls.getItem('aura-boot-colors') || '').split('|');
+        var r = document.documentElement.style;
+        r.colorScheme = m;
         if (c.length === 2 && c[0] && c[1]) {
-          var r = document.documentElement.style;
           r.setProperty('--aura-boot-bg', c[0]);
           r.setProperty('--aura-boot-fg', c[1]);
           r.setProperty('--app-bg', c[0]);
