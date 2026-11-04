@@ -1,9 +1,16 @@
+import React, { Suspense } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Monitor, Moon, Sun, SunMoon } from 'lucide-react';
 import { useDeviceThemeStore, type DeviceThemePref } from '../../store/deviceThemeStore';
 import { useThemeModeStore, resolveActiveMode } from '../../utils/themeModeCache';
 import { useT } from '../../i18n';
 import type { WidgetProps } from '../../types';
+
+// Entwurfs-Umschalter: nur im Dev-Build. Im Pi-Build faellt der Ausdruck zur
+// Kompilierzeit auf null, der Import verschwindet samt Ordner preview/.
+const DeviceSettingsPreview = import.meta.env.DEV
+    ? React.lazy(() => import('./devicesettings/preview/DeviceSettingsPreview'))
+    : null;
 
 /**
  * Geräte-Einstellungen: Hell/Dunkel für genau dieses Gerät (Feature 28).
@@ -12,9 +19,21 @@ import type { WidgetProps } from '../../types';
  * Menü-Widget), damit dort nichts versehentlich umgestellt wird.
  */
 export function DeviceSettingsWidget({ editMode }: WidgetProps) {
-    const t = useT();
     const inAdmin = useLocation().pathname.startsWith('/admin');
     const inert = editMode || inAdmin;
+    if (DeviceSettingsPreview) {
+        return (
+            <Suspense fallback={<IstAufbau inert={inert} />}>
+                <DeviceSettingsPreview inert={inert} ist={<IstAufbau inert={inert} />} />
+            </Suspense>
+        );
+    }
+    return <IstAufbau inert={inert} />;
+}
+
+/** Heutiger Aufbau, unveraendert (Dreier-Schalter in einer Karte). */
+function IstAufbau({ inert }: { inert: boolean }) {
+    const t = useT();
 
     const pref = useDeviceThemeStore((s) => s.pref);
     const systemDark = useDeviceThemeStore((s) => s.systemDark);
