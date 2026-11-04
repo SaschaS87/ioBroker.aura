@@ -64,6 +64,7 @@
 | --- | --- |
 | [Abschnittstitel](./abschnittstitel) | Trennlinie mit Überschrift zur Gliederung des Dashboards. |
 | [Button](./button) | Klick-Aktion auslösen (Datenpunkt schreiben, HTTP-Call, Szene …). |
+| [Geräte-Einstellungen](./geraete-einstellungen) | Hell/Dunkel für genau dieses Gerät (Automatisch, Hell, Dunkel) – nur im Browser gespeichert. |
 | [Gruppe](./gruppe) | Mehrere Widgets in einem gemeinsamen Rahmen gruppieren. |
 | [Menü](./menue) | Frei positionierbares Navigations-Menü – zeigt die Bereiche oder die Tabs zum direkten Umschalten. |
 | [Panels](./panels) | Mehrere Widgets als swipebare Slides – Wischen, Pagination-Dots und Pfeil-Buttons. |

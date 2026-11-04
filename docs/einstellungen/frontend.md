@@ -6,7 +6,7 @@ Anzeige-Verhalten des Frontends (gilt für alle Layouts).
 
 | Option | |
 | --- | --- |
-| Theme folgt Browser | Hell/Dunkel automatisch nach System-Einstellung |
+| Hell- und Dunkel-Design | Welches Design ein Gerät im Hell- bzw. Dunkelmodus zeigt. Den Modus wählt jedes Gerät selbst im Widget [Geräte-Einstellungen](../widgets/geraete-einstellungen), Standard: Automatisch |
 | Layout-Menü (Hamburger) | Layout-Wechsel über Menü statt Leiste (nur sichtbar ab 2 definierten Layouts) |
 | Automatisch zum Standard-Tab zurückkehren | Nach Inaktivität zum Standard-Tab springen |
 | Sofortige Rückmeldung beim Schalten | Geschalteten Wert sofort anzeigen, ohne ioBroker-Echo abzuwarten |
