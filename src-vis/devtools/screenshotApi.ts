@@ -641,3 +641,43 @@ function installScreenshotApi(): void {
 }
 
 installScreenshotApi();
+
+// DEV convenience: `/?shot=1&einstellungen=1` seeds a throw-away layout with an
+// "Einstellungen" area holding the devicesettings widget and jumps there, so the
+// design drafts can be opened without any Pi data. In memory only, nothing is written.
+if (new URLSearchParams(window.location.search).get('einstellungen') === '1') {
+    const w = window as unknown as { __auraShot: { seed: (p: { layouts: DashboardLayout[] }) => void; setDeviceThemeMode: () => void } };
+    const tab = (id: string, widgets: unknown[]) => ({ id, name: 'Dashboard', slug: 'dashboard', widgets });
+    const layout = {
+        id: 'l-dev',
+        name: 'Home',
+        slug: 'default',
+        settings: { layoutDrawerEnabled: true, layoutDrawerPlacement: 'top' },
+        activeSectionId: 'sec-set',
+        sections: [
+            { id: 'sec-home', name: 'Home', slug: 'home', activeTabId: 'tab-home', tabs: [tab('tab-home', [])] },
+            {
+                id: 'sec-set',
+                name: 'Einstellungen',
+                slug: 'einstellungen',
+                activeTabId: 'tab-set',
+                tabs: [
+                    tab('tab-set', [
+                        {
+                            id: 'w-device',
+                            type: 'devicesettings',
+                            title: 'Geräte-Einstellungen',
+                            datapoint: '',
+                            layout: 'default',
+                            gridPos: { x: 0, y: 0, w: 21, h: 6 },
+                            options: {},
+                        },
+                    ]),
+                ],
+            },
+        ],
+    } as unknown as DashboardLayout;
+    w.__auraShot.seed({ layouts: [layout] });
+    w.__auraShot.setDeviceThemeMode();
+    window.location.hash = '#/view/default/s/einstellungen';
+}
