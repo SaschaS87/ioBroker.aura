@@ -165,13 +165,14 @@ const SLAT_CHIPS: { v: number; label: string }[] = [
     { v: 90, label: 'geschlossen' },
 ];
 
-function SceneEditor({
+export function SceneEditor({
     model,
     scene,
     draft,
     onDone,
     setView,
     headSlot,
+    renderActions,
 }: {
     model: PlanModel;
     scene?: Scene;
@@ -179,6 +180,7 @@ function SceneEditor({
     onDone: () => void;
     setView: (v: SheetView) => void;
     headSlot?: HTMLElement | null;
+    renderActions?: (a: HeadActionsProps) => ReactNode;
 }) {
     const [name, setName] = useState(draft?.name ?? scene?.name ?? '');
     const [icon, setIcon] = useState<SceneIcon>(draft?.icon ?? scene?.icon ?? 'sun');
@@ -366,19 +368,17 @@ function SceneEditor({
 
             {headSlot &&
                 createPortal(
-                    <HeadActions
-                        what="Szene"
-                        onDelete={
-                            scene
-                                ? () => {
-                                      model.deleteScene(scene.id);
-                                      onDone();
-                                  }
-                                : undefined
-                        }
-                        onSave={save}
-                        canSave={count > 0}
-                    />,
+                    (renderActions ?? defaultActions)({
+                        what: 'Szene',
+                        onDelete: scene
+                            ? () => {
+                                  model.deleteScene(scene.id);
+                                  onDone();
+                              }
+                            : undefined,
+                        onSave: save,
+                        canSave: count > 0,
+                    }),
                     headSlot,
                 )}
         </div>
@@ -386,7 +386,8 @@ function SceneEditor({
 }
 
 /** Löschen und Speichern als Symbole oben rechts im Fensterkopf. */
-function HeadActions({ what, onDelete, onSave, canSave }: { what: string; onDelete?: () => void; onSave: () => void; canSave: boolean }) {
+export interface HeadActionsProps { what: string; onDelete?: () => void; onSave: () => void; canSave: boolean }
+export function HeadActions({ what, onDelete, onSave, canSave }: HeadActionsProps) {
     return (
         <>
             {onDelete && (
@@ -399,6 +400,10 @@ function HeadActions({ what, onDelete, onSave, canSave }: { what: string; onDele
             </button>
         </>
     );
+}
+
+function defaultActions(a: HeadActionsProps) {
+    return <HeadActions {...a} />;
 }
 
 // ── Zeitpunkt-Editor ───────────────────────────────────────────────────
@@ -440,18 +445,20 @@ function omitQuiet(e: PlanEntry): PlanEntry {
     return rest;
 }
 
-function EntryEditor({
+export function EntryEditor({
     model,
     entry,
     preset,
     onDone,
     headSlot,
+    renderActions,
 }: {
     model: PlanModel;
     entry?: PlanEntry;
     preset?: Partial<PlanEntry>;
     onDone: () => void;
     headSlot?: HTMLElement | null;
+    renderActions?: (a: HeadActionsProps) => ReactNode;
 }) {
     const base: PlanEntry = entry ?? {
         id: newId('e'),
@@ -669,19 +676,17 @@ function EntryEditor({
 
             {headSlot &&
                 createPortal(
-                    <HeadActions
-                        what="Zeitpunkt"
-                        onDelete={
-                            entry
-                                ? () => {
-                                      model.deleteEntry(entry.id);
-                                      onDone();
-                                  }
-                                : undefined
-                        }
-                        onSave={saveEntry}
-                        canSave={canSaveEntry}
-                    />,
+                    (renderActions ?? defaultActions)({
+                        what: 'Zeitpunkt',
+                        onDelete: entry
+                            ? () => {
+                                  model.deleteEntry(entry.id);
+                                  onDone();
+                              }
+                            : undefined,
+                        onSave: saveEntry,
+                        canSave: canSaveEntry,
+                    }),
                     headSlot,
                 )}
         </div>

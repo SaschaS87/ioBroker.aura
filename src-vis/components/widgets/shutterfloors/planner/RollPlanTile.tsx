@@ -11,7 +11,7 @@
  * „Szenen" (PlanWindows.tsx) ist ein Kind der Liste, die Fenster und der
  * Hinweis haengen per Portal am Frontend.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
 import type { ShutterFloorDef } from '../types';
 import { useRollPlanData } from './useRollPlanData';
@@ -19,6 +19,7 @@ import { useLivePlanModel } from './useLivePlanModel';
 import { useSceneCommand } from './useSceneCommand';
 import { PlanWindows } from './PlanWindows';
 import { Toast } from './parts';
+import type { PlanModel } from './planModel';
 import './RollPlan.css';
 
 /** Liest die aktuelle Stellung eines Antriebs und meldet sie nach oben —
@@ -38,7 +39,16 @@ function parseSunDp(v: unknown): string | null {
     return typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v) ? v : null;
 }
 
-export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root: string }) {
+export function RollPlanTile({
+    floors,
+    root,
+    render,
+}: {
+    floors: ShutterFloorDef[];
+    root: string;
+    /** Dev-Entwuerfe Feature 30: statt Kopfgruppe mit Fenstern etwas Eigenes zeichnen; ohne Angabe wie bisher. */
+    render?: (model: PlanModel) => ReactNode;
+}) {
     const [positions, setPositions] = useState<Record<string, number | null>>({});
     const onPos = useCallback((k: string, v: number | null) => {
         setPositions((prev) => (prev[k] === v ? prev : { ...prev, [k]: v }));
@@ -76,7 +86,7 @@ export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root
             {floors.flatMap((f) => f.devices).map((d) => (
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
-            <PlanWindows model={model} />
+            {render ? render(model) : <PlanWindows model={model} />}
             <Toast model={model} />
         </>
     );

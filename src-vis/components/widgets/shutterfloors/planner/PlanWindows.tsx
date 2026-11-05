@@ -53,13 +53,13 @@ import { closedWord, DayLetters, SceneGlyph, Toggle } from './parts';
 import { PlanSheet, type SheetView } from './editors';
 import './PlanWindows.css';
 
-type Tab = 'plan' | 'scenes';
+export type Tab = 'plan' | 'scenes';
 type W = { m: PlanModel; setView: (v: SheetView) => void };
 type Next = { date: Date; occ: Occurrence };
 
 // ── Texte ──────────────────────────────────────────────────────────────
 
-function statusText(m: PlanModel): string {
+export function statusText(m: PlanModel): string {
     if (!m.master) return 'Plan aus';
     if (m.pausedToday) return 'heute ausgesetzt';
     return 'Plan aktiv';
@@ -102,7 +102,7 @@ function trig(e: PlanEntry): string {
     return o === 0 ? base : `${base} ${o > 0 ? '+' : '−'}${Math.abs(o)} min`;
 }
 
-function nextRun(m: PlanModel): Next | null {
+export function nextRun(m: PlanModel): Next | null {
     return m.upcoming(1)[0] ?? null;
 }
 
@@ -412,7 +412,7 @@ function NowMark({ t }: { t: string }) {
     );
 }
 
-function PlanHome({ m, setView }: W) {
+export function PlanHome({ m, setView }: W) {
     return (
         <>
             <Switches m={m} />
@@ -422,7 +422,7 @@ function PlanHome({ m, setView }: W) {
 }
 
 /** Unterseite hinter dem Zahnrad. */
-function PlanSettings({ m }: { m: PlanModel }) {
+export function PlanSettings({ m }: { m: PlanModel }) {
     const [view, setViewPref] = usePref<SceneView>(KEY_SCENE_VIEW, '');
     const shown = view === 'kacheln' ? 'kacheln' : 'liste';
     const nh = nextHoliday(m.today);
@@ -628,7 +628,7 @@ function SceneList({
     );
 }
 
-function ScenesHome({ m, setView, edit }: W & { edit: boolean }) {
+export function ScenesHome({ m, setView, edit }: W & { edit: boolean }) {
     const [view] = usePref<SceneView>(KEY_SCENE_VIEW, '');
     const [more, setMore] = usePref<'0' | '1'>(KEY_SCENE_MORE, '0');
     const kacheln = view === 'kacheln';
@@ -669,7 +669,7 @@ function ScenesHome({ m, setView, edit }: W & { edit: boolean }) {
 // ── Kopfgruppe und Fenster ─────────────────────────────────────────────
 
 /** Kopfgruppe der Liste: zwei Zeilen „Zeitplan" und „Szenen". */
-function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void }) {
+export function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void }) {
     const n = nextRun(m);
     return (
         <div className="sf-group">

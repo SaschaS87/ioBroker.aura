@@ -107,11 +107,11 @@ async function openAppearance(page) {
         const hidden = await pick.evaluate((el) => !!el.closest('[inert]'));
         if (!hidden) return;
     }
-    await page.locator('[data-testid="device-settings"] .ds-row--nav').click();
+    await page.locator('[data-testid="device-settings"] .ios-row--nav').click();
     await page.waitForTimeout(400);
 }
 const navValue = (page) =>
-    page.evaluate(() => document.querySelector('[data-testid="device-settings"] .ds-row--nav .ds-val')?.textContent ?? '');
+    page.evaluate(() => document.querySelector('[data-testid="device-settings"] .ios-row--nav .ios-val')?.textContent ?? '');
 
 const isDark = (page) => page.evaluate(() => document.documentElement.classList.contains('dark'));
 const stored = (page) => page.evaluate((k) => localStorage.getItem(k), DEVICE_KEY);
@@ -165,11 +165,11 @@ try {
         );
         check(
             'g) sub page is closed at first (slider not open, choice buttons inert)',
-            (await page.locator('.ds-slider.is-open').count()) === 0 &&
+            (await page.locator('.ios-stack.is-pushed').count()) === 0 &&
                 (await page.locator('[data-testid="device-settings"] button[data-pref="light"]').evaluate((el) => !!el.closest('[inert]'))),
         );
         await openAppearance(page);
-        check('g) tap on the row opens the sub page', (await page.locator('.ds-slider.is-open').count()) === 1);
+        check('g) tap on the row opens the sub page', (await page.locator('.ios-stack.is-pushed').count()) === 1);
         check('g) back arrow is shown on the sub page', (await page.locator('button[data-ds-back]').isVisible()));
         const backBox = await page.locator('button[data-ds-back]').boundingBox();
         check('g) back arrow is at least 44 px high', !!backBox && backBox.height >= 44, JSON.stringify(backBox));
@@ -187,7 +187,7 @@ try {
         // g) back arrow returns to the overview, which shows the chosen value
         await page.locator('button[data-ds-back]').click();
         await page.waitForTimeout(400);
-        check('g) back arrow closes the sub page', (await page.locator('.ds-slider.is-open').count()) === 0);
+        check('g) back arrow closes the sub page', (await page.locator('.ios-stack.is-pushed').count()) === 0);
         check('g) overview shows the value Hell', /^(Hell|Light)$/.test(await navValue(page)), await navValue(page));
         await openAppearance(page);
         const box = await page.locator('button[data-pref="light"]').boundingBox();
@@ -288,7 +288,7 @@ try {
         );
         check(
             'g) wide: Darstellung is preselected, no back arrow',
-            (await page.locator('.ds-row--nav.is-selected').count()) === 1 &&
+            (await page.locator('.ios-row--nav.is-selected').count()) === 1 &&
                 (await page.locator('button[data-ds-back]').count()) === 0,
         );
         check(

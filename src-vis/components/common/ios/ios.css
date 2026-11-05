@@ -1,0 +1,324 @@
+/* iOS-Baustein (Feature 30): Navigation (Stapel, Kopf), Gruppen und Zeilen im Stil der
+   iPhone-Einstellungen, an EINER Stelle fuer alle Nutzer (Geraete-Einstellungen, Rolllaeden).
+   Nur Theme-Tokens. Werte 1:1 aus DeviceSettings.css (Feature 29): Zeile min. 54 px,
+   Trennlinie ab 56 px (Auswahlzeilen 14 px), Symbolquadrat 30x30, Uebergang 280 ms. */
+
+.ios-root {
+    color: var(--text-primary);
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+.ios-root * {
+    box-sizing: border-box;
+}
+.ios-page {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 0;
+    min-width: 0;
+}
+
+/* Gruppen und Zeilen */
+.ios-group {
+    border: var(--widget-border-width, 1px) solid var(--widget-border, var(--app-border));
+    border-radius: var(--widget-radius, 12px);
+    background: var(--widget-bg, var(--app-surface));
+    box-shadow: var(--widget-shadow, none);
+    overflow: hidden;
+    /* Safari-Eckenfix wie im Rollladen-Tab */
+    isolation: isolate;
+    transform: translateZ(0);
+}
+.ios-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 54px;
+    padding: 6px 10px 6px 14px;
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.ios-row:disabled {
+    cursor: default;
+}
+.ios-row + .ios-row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 56px;
+    right: 0;
+    height: 1px;
+    background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+    transform: scaleY(0.6);
+}
+.ios-row--pick + .ios-row--pick::before {
+    left: 14px;
+}
+.ios-row--nav:active,
+.ios-row--pick:active {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+.ios-row.is-selected {
+    background: color-mix(in srgb, var(--text-primary) 11%, transparent);
+}
+.ios-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    color: #fff;
+    flex-shrink: 0;
+}
+.ios-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+.ios-name {
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ios-val {
+    font-size: 16px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.ios-chev {
+    flex-shrink: 0;
+    color: color-mix(in srgb, var(--text-primary) 30%, transparent);
+}
+.ios-check {
+    flex-shrink: 0;
+    color: var(--accent, #0a84ff);
+}
+.ios-foot {
+    margin: 0;
+    padding: 2px 16px 0;
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--text-secondary);
+}
+
+/* Kopf (Grundform = Geraete-Einstellungen Feature 29) */
+.ios-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 4px 6px;
+}
+.ios-back {
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 8px 0 0;
+    border: none;
+    background: transparent;
+    /* Schrift erbt wie in Feature 29: die dort notierten 16 px griffen nie (.ds-root button war staerker) */
+    font: inherit;
+    color: var(--accent, #0a84ff);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.ios-bar-title {
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--text-primary);
+}
+.ios-bar-right {
+    justify-self: end;
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+}
+/* Kollisionsschutz: Spaltenbreiten setzt IosNavBar per Messung */
+.ios-bar.is-fit {
+    position: relative;
+    grid-template-columns: var(--ios-bar-l, 44px) minmax(0, 1fr) var(--ios-bar-r, 44px);
+}
+.ios-bar.is-fit > .ios-back {
+    max-width: 100%;
+}
+.ios-bar.is-fit > .ios-back .ios-back-label,
+.ios-bar.is-fit > .ios-bar-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ios-bar-measure {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    width: max-content;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+    white-space: nowrap;
+}
+.ios-bar-measure > * {
+    flex: none;
+}
+/* Grosser Titel */
+.ios-bar--large {
+    display: block;
+}
+.ios-bar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+}
+.ios-bar--large .ios-back {
+    flex: 0 1 auto;
+    overflow: hidden;
+}
+.ios-bar--large .ios-back-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ios-bar--large .ios-bar-right {
+    flex: none;
+}
+.ios-large-title {
+    margin: 2px 12px 0;
+    font-size: 30px;
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+.ios-large-status {
+    margin: 4px 12px 0;
+    font-size: 14px;
+    line-height: 1.35;
+    color: var(--text-secondary);
+}
+/* Mitlaufender Kopf (nach .is-fit, gleiche Spezifitaet) */
+.ios-bar.is-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: color-mix(in srgb, var(--app-bg) 88%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    backdrop-filter: saturate(180%) blur(16px);
+}
+/* Knoepfe im Kopf */
+.ios-bar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.ios-bar-btn.is-accent {
+    color: var(--accent, #0a84ff);
+}
+.ios-bar-btn.is-danger {
+    color: var(--accent-red, #ef4444);
+}
+.ios-bar-text {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 8px;
+    border: none;
+    background: transparent;
+    font: inherit;
+    font-size: 16px;
+    color: var(--accent, #0a84ff);
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.ios-bar-text.is-strong {
+    font-weight: 600;
+}
+.ios-bar-btn:disabled,
+.ios-bar-text:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* Navigations-Stapel */
+.ios-stack {
+    padding: var(--ios-bleed, 0px);
+    margin: calc(-1 * var(--ios-bleed, 0px));
+}
+.ios-stack--tallest {
+    overflow: hidden;
+}
+/* nur waagerecht zuschneiden: overflow-x: clip macht keinen Scroll-Container, sticky bleibt moeglich */
+.ios-stack--current {
+    overflow-x: hidden;
+    overflow-x: clip;
+}
+.ios-stack-track {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+}
+.ios-stack-page {
+    grid-area: 1 / 1;
+    min-width: 0;
+    padding: 0 var(--ios-inset, 0px);
+}
+.ios-stack-page.is-left {
+    transform: translateX(-100%);
+}
+.ios-stack-page.is-right {
+    transform: translateX(100%);
+}
+.ios-stack.is-moving .ios-stack-page {
+    transition: transform 280ms ease;
+}
+.ios-stack-page.is-hidden {
+    visibility: hidden;
+}
+.ios-stack--current .ios-stack-page.is-hidden {
+    display: none;
+}
+
+/* Master-Detail (nur Geraete-Einstellungen, ab 640 px Widgetbreite) */
+.ios-split {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-stack.is-moving .ios-stack-page {
+        transition: none;
+    }
+}

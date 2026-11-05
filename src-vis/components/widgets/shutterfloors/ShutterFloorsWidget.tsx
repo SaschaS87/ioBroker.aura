@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
@@ -12,6 +12,10 @@ import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
 import './ShutterFloorsWidget.css';
+
+// Feature 30, Runde 1: Entwürfe A bis C (Zeitplan und Szenen als Unterseiten) nur in der Dev-Vorschau.
+// Im Pi-Build ist import.meta.env.DEV false: dynamischer Import und Ordner preview/ fallen ganz weg.
+const NavPreview = import.meta.env.DEV ? lazy(() => import('./preview/NavPreview')) : null;
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
@@ -276,46 +280,70 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         </>
     );
 
+    const floorList = floors.map((floor) => (
+        <FloorGroup
+            key={floor.name}
+            floor={floor}
+            isFav={fav.has}
+            row={(d, firstRest) => (
+                <ShutterRow
+                    key={d.key}
+                    device={d}
+                    connected={connected}
+                    firstRest={firstRest}
+                    onOpenSheet={handleOpenSheet}
+                />
+            )}
+        />
+    ));
+
+    // Sheet-Overlay
+    const sheet = sheetDevice && (
+        <ShutterDetailSheet
+            key={sheetSeq}
+            device={sheetDevice}
+            connected={connected}
+            fav={fav}
+            onClose={handleCloseSheet}
+        />
+    );
+
+    const ist = (
+        <div className="shutter-floors-widget">
+            {banner}
+            <div className={`sf${connected ? '' : ' is-offline'}`}>
+                {/* Rolllaeden-Planer (Feature 23): Kopfgruppe Zeitplan/Szenen
+                    ueber der Etagenliste, nur wenn showPlanner===true. */}
+                {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
+
+                {floorList}
+
+                <div className="sf-foot">{footer}</div>
+            </div>
+
+            {sheet}
+        </div>
+    );
+
     return (
         <PendingContext.Provider value={pendingStore}>
-            <div className="shutter-floors-widget">
-                {banner}
-                <div className={`sf${connected ? '' : ' is-offline'}`}>
-                    {/* Rolllaeden-Planer (Feature 23): Kopfgruppe Zeitplan/Szenen
-                        ueber der Etagenliste, nur wenn showPlanner===true. */}
-                    {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
-
-                    {floors.map((floor) => (
-                        <FloorGroup
-                            key={floor.name}
-                            floor={floor}
-                            isFav={fav.has}
-                            row={(d, firstRest) => (
-                                <ShutterRow
-                                    key={d.key}
-                                    device={d}
-                                    connected={connected}
-                                    firstRest={firstRest}
-                                    onOpenSheet={handleOpenSheet}
-                                />
-                            )}
-                        />
-                    ))}
-
-                    <div className="sf-foot">{footer}</div>
-                </div>
-
-                {/* Sheet-Overlay */}
-                {sheetDevice && (
-                    <ShutterDetailSheet
-                        key={sheetSeq}
-                        device={sheetDevice}
+            {NavPreview ? (
+                <Suspense fallback={ist}>
+                    <NavPreview
+                        ist={ist}
+                        floors={floors}
+                        root={effectivePlannerRoot}
+                        showPlanner={showPlanner}
                         connected={connected}
-                        fav={fav}
-                        onClose={handleCloseSheet}
+                        banner={banner}
+                        floorList={floorList}
+                        footer={footer}
+                        sheet={sheet}
                     />
-                )}
-            </div>
+                </Suspense>
+            ) : (
+                ist
+            )}
         </PendingContext.Provider>
     );
 };
