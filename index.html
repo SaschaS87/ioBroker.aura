@@ -63,6 +63,86 @@
         });
       })();
     </script>
+    <script>
+      /* Kopfzeile nach dem Drehen weg (gemeldet 05.11.2026, seit aura-2.5.1):
+         In der Homescreen-App quer und wieder hoch gedreht, danach lag die
+         Kopfzeile samt Menue-Knopf dauerhaft ueber dem Bildschirmrand, nur ein
+         App-Neustart half. Die Kopfzeile ist kein festes Element, sie liegt
+         oben im Fluss - verschwindet sie, ist die GANZE Seite verschoben.
+         Zurueckscrollen geht nicht, weil html/body im Frontend bewusst
+         overflow:hidden haben (siehe unten).
+         Am iPhone gemessen (05.11.2026, iOS 27, Fenster 402x812, Screen
+         402x874): nach dem Zurueckdrehen scrollY=34, visualViewport.offsetTop=0.
+         Die 34 px sind genau die Zusatzhoehe env(safe-area-inset-bottom) aus
+         html/body (100dvh + sab, siehe unten): Das Dokument ist um sie hoeher
+         als das Fenster, und iOS scrollt beim Drehen bis ans Ende. Vor 2.5.1
+         (black-translucent) aenderte sich das Fenster beim Drehen nicht auf
+         diese Weise, seitdem haelt iOS hochkant oben Platz fuer die
+         Statusleiste frei und blendet sie quer aus.
+         Die eigentliche Behebung ist die Hoehenregel weiter unten (Homescreen-
+         App nur 100dvh, kein Ueberhang mehr): Am iPhone bestaetigt, bleibt die
+         Kopfzeile damit auch OHNE dieses Skript stehen. Das Skript bleibt als
+         Sicherheitsnetz: Die Seite selbst scrollt im Frontend nie (nur
+         .aura-scroll innen), also jede Verschiebung des Dokuments sofort auf 0
+         zuruecksetzen.
+         Nicht, solange ein Eingabefeld den Fokus hat - dort darf iOS die Seite
+         fuer die Tastatur schieben. Nur iOS als Homescreen-App, wie
+         #aura-topedge. Jeder Eingriff wird mit Vorher/Nachher-Werten in
+         window.__auraTopFix notiert (Beleg fuer die Ursache, das Messfenster
+         im Dev-Server zeigt ihn an, siehe src-vis/devtools/viewportProbe.ts). */
+      (function () {
+        var ios = window.CSS && CSS.supports && CSS.supports('-webkit-touch-callout', 'none');
+        var standalone = window.navigator.standalone === true ||
+          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        if (!ios || !standalone) return;
+        var rec = window.__auraTopFix = { enabled: true, checks: 0, resets: 0, log: [] };
+        function editing() {
+          var a = document.activeElement;
+          if (!a) return false;
+          var t = a.tagName;
+          return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || a.isContentEditable;
+        }
+        function measure() {
+          var se = document.scrollingElement || document.documentElement;
+          var vv = window.visualViewport;
+          return {
+            scrollY: Math.round(window.scrollY || se.scrollTop || 0),
+            scrollX: Math.round(window.scrollX || se.scrollLeft || 0),
+            bodyTop: Math.round(document.body ? document.body.scrollTop : 0),
+            vvTop: vv ? Math.round(vv.offsetTop) : 0,
+            win: window.innerWidth + 'x' + window.innerHeight
+          };
+        }
+        function check(reason) {
+          rec.checks++;
+          if (!rec.enabled || !document.querySelector('.aura-page') || editing()) return;
+          var before = measure();
+          if (!before.scrollY && !before.scrollX && !before.bodyTop && !before.vvTop) return;
+          window.scrollTo(0, 0);
+          var se = document.scrollingElement || document.documentElement;
+          if (se.scrollTop) se.scrollTop = 0;
+          if (document.body && document.body.scrollTop) document.body.scrollTop = 0;
+          var entry = { reason: reason, at: new Date().toLocaleTimeString(), before: before, after: null };
+          rec.resets++;
+          rec.log.unshift(entry);
+          if (rec.log.length > 8) rec.log.length = 8;
+          requestAnimationFrame(function () { entry.after = measure(); });
+        }
+        function burst(reason) {
+          [0, 150, 500, 1200].forEach(function (ms) { setTimeout(function () { check(reason); }, ms); });
+        }
+        rec.check = check;
+        window.addEventListener('scroll', function () { check('scroll'); }, { passive: true });
+        window.addEventListener('resize', function () { burst('resize'); });
+        window.addEventListener('orientationchange', function () { burst('orientationchange'); });
+        window.addEventListener('pageshow', function () { burst('pageshow'); });
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) burst('visible'); });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', function () { burst('vv-resize'); });
+          window.visualViewport.addEventListener('scroll', function () { check('vv-scroll'); });
+        }
+      })();
+    </script>
     <style>
       :root { --aura-boot-bg: #0f172a; --aura-boot-fg: #94a3b8; }
       /* iOS-Homescreen-App: randlos. Auras Theme-Hintergrund fuellt die ganze
@@ -95,6 +175,28 @@
       /* Body als Flex-Spalte, #root fuellt sie per flex:1 -> die volle Hoehe
          propagiert bis .aura-page/Scroll durch (die height:100%-Prozentkette
          propagiert auf iOS NICHT sauber bis #root). */
+      /* iOS-Homescreen-App OHNE die Zusatzhoehe (05.11.2026): Seit aura-2.5.1
+         (kein black-translucent mehr) reicht das Fenster unter iOS 27 bis an
+         die physische Unterkante. Saschas Messung: Screen 874, Fenster
+         812 unter 62 px Statusleiste, Trennlinie der Fussleiste bei ~836 statt
+         802 - die Seite ragte also 34 px UNTER den Bildschirm. Genau diesen
+         Spielraum nutzte iOS beim Drehen und scrollte die Kopfzeile weg (siehe
+         __auraTopFix oben). Hier deshalb nur 100dvh. Nur iOS als
+         Homescreen-App, wie #aura-topedge; Browser-Tabs bleiben beim Alten.
+         Am iPhone bestaetigt (05.11.2026, iOS 27, Messfenster im Dev-Server):
+         ohne Zusatzhoehe Ueberhang 0 (mit: 34), hochkant und quer kein Pink mit
+         "Rand faerben", Kopfzeile bleibt beim Drehen auch mit abgeschalteter
+         Korrektur stehen. Die damit hoeher sichtbare Fussleiste hat Sascha
+         abgenommen. Nicht gemessen: alte Homescreen-Symbole, die noch mit
+         black-translucent angelegt wurden. */
+      @supports (-webkit-touch-callout: none) {
+        @media (display-mode: standalone) {
+          html:has(.aura-page), body:has(.aura-page) {
+            height: 100dvh;
+            min-height: 100dvh;
+          }
+        }
+      }
       body:has(.aura-page) { display: flex; flex-direction: column; }
       #root { flex: 1 1 auto; min-height: 0; }
       /* Seitliche Notch-Raender: .aura-page haelt den Inhalt aus der Safe-Area

@@ -35,6 +35,17 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('shot
     import('./devtools/screenshotApi');
 }
 
+// DEV-only Messfenster für die iPhone-Homescreen-App (Kopfzeile nach dem Drehen
+// weg, 05.11.2026): erscheint nur als Homescreen-App ("Aura Test" über den
+// Dev-Server) oder mit ?probe=1. Never bundled in prod.
+if (
+    import.meta.env.DEV &&
+    (window.matchMedia('(display-mode: standalone)').matches ||
+        new URLSearchParams(window.location.search).has('probe'))
+) {
+    import('./devtools/viewportProbe');
+}
+
 // Stage 2 of the mode order (device choice → datapoint → system): paint the
 // DP-driven dark/light mode (aura.0.config.themeMode.frontend) from its
 // per-device cache before React mounts. Stage 1 (deviceThemeStore) and stage 3
