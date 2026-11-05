@@ -171,6 +171,24 @@
       /* Body als Flex-Spalte, #root fuellt sie per flex:1 -> die volle Hoehe
          propagiert bis .aura-page/Scroll durch (die height:100%-Prozentkette
          propagiert auf iOS NICHT sauber bis #root). */
+      /* iOS-Homescreen-App OHNE die Zusatzhoehe (05.11.2026): Seit aura-2.5.1
+         (kein black-translucent mehr) reicht das Fenster unter iOS 27 offenbar
+         bis an die physische Unterkante. Saschas Messung: Screen 874, Fenster
+         812 unter 62 px Statusleiste, Trennlinie der Fussleiste bei ~836 statt
+         802 - die Seite ragte also 34 px UNTER den Bildschirm. Genau diesen
+         Spielraum nutzte iOS beim Drehen und scrollte die Kopfzeile weg (siehe
+         __auraTopFix oben). Hier deshalb nur 100dvh. Nur iOS als
+         Homescreen-App, wie #aura-topedge; Browser-Tabs bleiben beim Alten.
+         Am iPhone noch zu bestaetigen: Messfenster im Dev-Server, Knoepfe
+         "Rand faerben" und "Verlaengerung an/aus". */
+      @supports (-webkit-touch-callout: none) {
+        @media (display-mode: standalone) {
+          html:has(.aura-page), body:has(.aura-page) {
+            height: 100dvh;
+            min-height: 100dvh;
+          }
+        }
+      }
       body:has(.aura-page) { display: flex; flex-direction: column; }
       #root { flex: 1 1 auto; min-height: 0; }
       /* Seitliche Notch-Raender: .aura-page haelt den Inhalt aus der Safe-Area

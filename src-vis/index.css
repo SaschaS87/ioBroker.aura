@@ -685,11 +685,13 @@ input[type='range']::-moz-range-thumb {
    the same way as the shutter tab, whose own footer sits in exactly that spot.
    The height lives in a variable because the shutter widget's footer reuses it.
 
-   iOS home-screen note: the app is deliberately taller than its window
-   (html/body run on calc(100dvh + env(safe-area-inset-bottom)), see index.html),
-   so anything pinned to bottom:0 has its last ~34px below the visible edge.
-   The bar therefore carries that inset as padding: its background still runs to
-   the physical edge, its content does not. On desktop env(...) is 0.
+   iOS note: the bar carries env(safe-area-inset-bottom) as padding, so its
+   background runs to the physical edge while its content stays above the home
+   indicator. In iOS browser tabs html/body still run on
+   calc(100dvh + env(safe-area-inset-bottom)) (see index.html). In the iOS
+   home-screen app they run on plain 100dvh since 05.11.2026, because under
+   iOS 27 the window already reaches the physical edge there. On desktop
+   env(...) is 0.
    ─────────────────────────────────────────────────────────────────────────── */
 :root {
     --tab-footer-h: 38px;

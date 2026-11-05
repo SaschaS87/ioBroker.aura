@@ -56,8 +56,25 @@ function fmt(m: Record<string, number | string> | null): string {
     return `y=${m.scrollY} x=${m.scrollX} body=${m.bodyTop} vv=${m.vvTop} win=${m.win}`;
 }
 
+// Zwei Test-Schalter für die Frage „Braucht die Homescreen-App die Zusatzhöhe
+// unten noch?" (05.11.2026). Beide wirken nur über Klassen an <html>:
+//   aura-probe-ext     erzwingt die alte Höhe 100dvh + safe-area-inset-bottom
+//   aura-probe-magenta färbt html/body knallig – alles, was die App nicht
+//                      bedeckt, leuchtet dann pink (Diagnose-Weg vom Juli)
+function installTestStyles(): void {
+    const st = document.createElement('style');
+    st.textContent =
+        'html.aura-probe-ext:has(.aura-page), html.aura-probe-ext:has(.aura-page) body {' +
+        'height: calc(100dvh + env(safe-area-inset-bottom)) !important;' +
+        'min-height: calc(100dvh + env(safe-area-inset-bottom)) !important; }' +
+        'html.aura-probe-magenta, html.aura-probe-magenta body { background: #ff00ff !important; }';
+    document.head.appendChild(st);
+}
+
 function mount(): void {
+    installTestStyles();
     const sa = safeAreaProbe();
+    const root = document.documentElement;
 
     const panel = document.createElement('div');
     panel.setAttribute('data-aura-probe', '');
@@ -95,11 +112,19 @@ function mount(): void {
         document.body.scrollTop = 0;
         render();
     });
+    const btnExt = mkBtn('', () => {
+        root.classList.toggle('aura-probe-ext');
+        render();
+    });
+    const btnMagenta = mkBtn('', () => {
+        root.classList.toggle('aura-probe-magenta');
+        render();
+    });
     const btnFold = mkBtn('Einklappen', () => {
         collapsed = !collapsed;
         render();
     });
-    bar.append(btnFix, btnReset, btnFold);
+    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnFold);
     panel.append(text, bar);
     document.body.appendChild(panel);
 
@@ -107,7 +132,9 @@ function mount(): void {
         const f = topFix();
         btnFix.textContent = f ? `Korrektur: ${f.enabled ? 'an' : 'aus'}` : 'Korrektur: fehlt';
         btnFix.disabled = !f;
-        btnReset.style.display = collapsed ? 'none' : '';
+        btnExt.textContent = `Verlängerung: ${root.classList.contains('aura-probe-ext') ? 'an (alt)' : 'aus (neu)'}`;
+        btnMagenta.textContent = `Rand färben: ${root.classList.contains('aura-probe-magenta') ? 'an' : 'aus'}`;
+        for (const b of [btnReset, btnExt, btnMagenta]) b.style.display = collapsed ? 'none' : '';
         btnFold.textContent = collapsed ? 'Messwerte' : 'Einklappen';
         if (collapsed) {
             text.textContent = `Aura-Messfenster · Eingriffe ${f?.resets ?? 0}`;
@@ -136,6 +163,8 @@ function mount(): void {
             `Safe-Area T=${px(parseFloat(cs.paddingTop))} B=${px(parseFloat(cs.paddingBottom))} ` +
                 `L=${px(parseFloat(cs.paddingLeft))} R=${px(parseFloat(cs.paddingRight))}`,
             `html ${rectTop('html')}  body ${rectTop('body')}`,
+            `Seitenhoehe ${px(root.getBoundingClientRect().height)}  Fenster ${window.innerHeight}  ` +
+                `Ueberhang ${px(root.getBoundingClientRect().height - window.innerHeight)}`,
             `Kopfzeile ${rectTop('.aura-header')}  Streifen ${rectTop('#aura-topedge')}`,
             f
                 ? `Korrektur ${f.enabled ? 'an' : 'aus'}: Pruefungen ${f.checks}, Eingriffe ${f.resets}`
