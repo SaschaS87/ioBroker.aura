@@ -273,9 +273,8 @@ async function draftRun(browser, draft, errorsAll) {
         const barTop = await page.evaluate(() => {
             const bar = window.__f30.active().querySelector('.ios-bar');
             const sc = window.__f30.scroller();
-            // sticky top:0 sits at the content edge of the scroller, i.e. below its padding (.aura-scroll: 8 px)
             const pad = parseFloat(getComputedStyle(sc).paddingTop) || 0;
-            return { top: bar.getBoundingClientRect().top, view: window.__f30.viewTop(sc) + pad, pad };
+            return { top: bar.getBoundingClientRect().top, view: window.__f30.viewTop(sc), pad };
         });
         if (draft === 'B') {
             check(`${D} header runs along (sticky)`, Math.abs(barTop.top - barTop.view) <= 1, JSON.stringify(barTop));
@@ -298,10 +297,15 @@ async function draftRun(browser, draft, errorsAll) {
             const cap = [...window.__f30.active().querySelectorAll('.rpp-caption-text')].find(
                 (e) => e.textContent.trim() === 'Im Wochenplan',
             );
+            const bar = window.__f30.active().querySelector('.ios-bar');
             window.__f30.samples = [];
+            window.__f30.barSamples = [];
             const loop = () => {
                 if (cap.getClientRects().length) {
                     window.__f30.samples.push(cap.getBoundingClientRect().top);
+                }
+                if (bar.getClientRects().length) {
+                    window.__f30.barSamples.push(bar.getBoundingClientRect().top);
                 }
                 window.__f30.raf = requestAnimationFrame(loop);
             };
@@ -311,12 +315,23 @@ async function draftRun(browser, draft, errorsAll) {
         const jump = await page.evaluate(() => {
             window.cancelAnimationFrame(window.__f30.raf);
             const a = window.__f30.samples;
-            return { n: a.length, spread: a.length ? Math.max(...a) - Math.min(...a) : -1 };
+            const b = window.__f30.barSamples;
+            return {
+                n: a.length,
+                spread: a.length ? Math.max(...a) - Math.min(...a) : -1,
+                barN: b.length,
+                barSpread: b.length ? Math.max(...b) - Math.min(...b) : -1,
+            };
         });
         s = await st(page);
         check(
             `${D} walk 2: the leaving page does not jump (<= 1 px)`,
             jump.n > 3 && jump.spread <= 1,
+            JSON.stringify(jump),
+        );
+        check(
+            `${D} walk 2: the leaving header stays in place (<= 1 px)`,
+            jump.barN > 3 && jump.barSpread <= 1,
             JSON.stringify(jump),
         );
         check(
@@ -326,7 +341,29 @@ async function draftRun(browser, draft, errorsAll) {
         );
         check(`${D} walk 2: Zeitpunkt opens from the scene`, s.title === 'Zeitpunkt bearbeiten', s.title);
         await checkCollision(page, draft, 'Szene-Zeitpunkt');
+        // back: follow the header of the leaving page (Zeitpunkt) while the scene slides in
+        await page.evaluate(() => {
+            const bar = window.__f30.active().querySelector('.ios-bar');
+            window.__f30.backSamples = [];
+            const loop = () => {
+                if (bar.getClientRects().length) {
+                    window.__f30.backSamples.push(bar.getBoundingClientRect().top);
+                }
+                window.__f30.raf2 = requestAnimationFrame(loop);
+            };
+            loop();
+        });
         await back(page);
+        const backJump = await page.evaluate(() => {
+            window.cancelAnimationFrame(window.__f30.raf2);
+            const a = window.__f30.backSamples;
+            return { n: a.length, spread: a.length ? Math.max(...a) - Math.min(...a) : -1 };
+        });
+        check(
+            `${D} walk 2: back: the leaving header stays in place (<= 1 px)`,
+            backJump.n > 3 && backJump.spread <= 1,
+            JSON.stringify(backJump),
+        );
         s = await st(page);
         const kept = await page.evaluate(() => {
             const a = window.__f30.active();
@@ -377,6 +414,34 @@ let writesOutside = [];
 try {
     for (const d of ['A', 'B', 'C']) {
         await draftRun(browser, d, allErrors);
+    }
+
+    // sticky header at desktop width: .aura-scroll has a larger padding there (sm:p-4 = 16 px)
+    {
+        const { ctx, page, errors } = await openFresh(browser, { viewport: { width: 1280, height: 800 } });
+        await page.click('[data-f30-choice="B"]');
+        await page.waitForTimeout(300);
+        await page.locator(`${ACTIVE} .sf-row--nav`, { hasText: 'Szenen' }).first().click();
+        await settle(page);
+        await go(page, '.ios-bar .ios-bar-text', 'Bearbeiten');
+        await go(page, '.pw-row--tap:not(.pw-row--add)');
+        await setScroll(page, 300);
+        const r = await page.evaluate(() => {
+            const sc = window.__f30.scroller();
+            const bar = window.__f30.active().querySelector('.ios-bar');
+            return {
+                top: bar.getBoundingClientRect().top,
+                view: window.__f30.viewTop(sc),
+                pad: parseFloat(getComputedStyle(sc).paddingTop),
+            };
+        });
+        check(
+            'B) 1280 px: sticky header flush with the scroller top',
+            r.pad > 8 && Math.abs(r.top - r.view) <= 1,
+            JSON.stringify(r),
+        );
+        allErrors.push(...errors);
+        await ctx.close();
     }
 
     // today's path: bottom sheet

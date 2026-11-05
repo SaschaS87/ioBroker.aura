@@ -5,7 +5,8 @@
  * sizing 'current': nur die sichtbare Seite (beim Schieben zusätzlich die abgehende), verdeckte display:none.
  * manageScroll: Scrollstelle je Ebene im echten Scroll-Container (.aura-scroll aus Dashboard.tsx, sonst
  * Dokument); Unterseite beginnt oben, Zurück stellt die vorige Stelle her; die abgehende Seite wird
- * senkrecht ausgeglichen, damit beim Schieben nichts springt.
+ * senkrecht ausgeglichen, damit beim Schieben nichts springt; ein mitlaufender Kopf der abgehenden Seite
+ * bleibt dabei stehen.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
@@ -25,6 +26,11 @@ export interface IosStackProps {
 /** Muss zu ios.css (.ios-stack.is-moving) passen. */
 export const IOS_PUSH_MS = 280;
 type Anim = { from: number; to: number; phase: 'prepare' | 'run'; shift: number; leaving?: IosStackPage };
+/** Mitlaufender Kopf der abgehenden Seite, festgehalten für die Dauer des Übergangs. */
+type Pin = { el: HTMLElement; top: number };
+function releasePins(pins: Pin[]): void {
+    pins.forEach((p) => p.el.style.removeProperty('translate'));
+}
 
 // React 18 kennt das HTML-Attribut inert noch nicht in den Typen
 export const inertAttr = (on: boolean): Record<string, string> => (on ? { inert: '' } : {});
@@ -54,6 +60,7 @@ export function IosStack({
     const pageEls = useRef<(HTMLDivElement | null)[]>([]);
     const prevPages = useRef(pages);
     const scrollMemo = useRef<number[]>([]);
+    const pins = useRef<Pin[]>([]);
     const [shown, setShown] = useState(depth);
     const [anim, setAnim] = useState<Anim | null>(null);
 
@@ -73,6 +80,16 @@ export function IosStack({
     useLayoutEffect(() => {
         if (!anim || anim.phase !== 'prepare') return;
         const track = trackRef.current;
+        // Lage mitlaufender Köpfe der abgehenden Seite vor dem Scroll-Sprung merken (siehe Effekt unten)
+        releasePins(pins.current);
+        const fromEl = pageEls.current[anim.from];
+        pins.current =
+            manageScroll && fromEl
+                ? Array.from(fromEl.querySelectorAll<HTMLElement>('.ios-bar.is-sticky'), (el) => ({
+                      el,
+                      top: el.getBoundingClientRect().top,
+                  }))
+                : [];
         let shift = 0;
         if (manageScroll && track) {
             const sc = getScrollParent(track);
@@ -92,12 +109,29 @@ export function IosStack({
         const reduce =
             typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (reduce) {
+            pins.current = [];
             setAnim(null);
             return;
         }
         track?.getBoundingClientRect(); // Startlage festschreiben, sonst startet kein Übergang
         setAnim({ ...anim, phase: 'run', shift });
     }, [anim, manageScroll]);
+
+    // Mitlaufender Kopf der abgehenden Seite: Nach dem Scroll-Sprung haftet er an anderer Stelle, und der
+    // senkrechte Ausgleich der Seite verschiebt ihn zusätzlich (vorwärts aus dem Bild, zurück in die untere
+    // Bildhälfte). Er bleibt per translate stehen, bis der Übergang endet.
+    useLayoutEffect(() => {
+        if (!anim) {
+            releasePins(pins.current);
+            pins.current = [];
+            return;
+        }
+        if (anim.phase !== 'run') return;
+        for (const p of pins.current) {
+            const d = p.top - p.el.getBoundingClientRect().top;
+            if (Math.abs(d) > 0.5) p.el.style.setProperty('translate', `0 ${d}px`);
+        }
+    }, [anim]);
 
     useEffect(() => {
         if (!anim || anim.phase !== 'run') return;

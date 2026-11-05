@@ -1,5 +1,14 @@
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+    useCallback,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type CSSProperties,
+    type ReactNode,
+    type RefObject,
+} from 'react';
 import { ChevronLeft } from 'lucide-react';
+import { getScrollParent } from './IosStack';
 
 export type BackMode = 'full' | 'short' | 'icon';
 export interface FitInput {
@@ -58,9 +67,31 @@ export function IosNavBar(p: IosNavBarProps) {
 
 const cls = (...parts: (string | false | undefined)[]) => parts.filter(Boolean).join(' ');
 
+/** sticky: `top: 0` haftet an der Inhaltskante des Scroll-Containers, also unter seinem Innenabstand oben
+ *  (.aura-scroll: 8 px mobil, 16 px Desktop), darüber schaute ein Streifen Inhalt heraus. Deshalb
+ *  top = minus Innenabstand oben, gemessen und bei Größenänderung neu. */
+function useStickyTop(ref: RefObject<HTMLElement>, on: boolean): CSSProperties | undefined {
+    const [pad, setPad] = useState(0);
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!on || !el) return;
+        const sc = getScrollParent(el);
+        const isDoc = sc === document.scrollingElement || sc === document.documentElement || sc === document.body;
+        const measure = () => setPad(isDoc ? 0 : parseFloat(getComputedStyle(sc).paddingTop) || 0);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(measure);
+        ro.observe(sc);
+        return () => ro.disconnect();
+    }, [ref, on]);
+    return on ? ({ '--ios-sticky-top': `${-pad}px` } as CSSProperties) : undefined;
+}
+
 function PlainBar({ title, backLabel, onBack, backAttrs, right, rightRef, sticky, className }: IosNavBarProps) {
+    const barRef = useRef<HTMLDivElement>(null);
+    const stickyStyle = useStickyTop(barRef, !!sticky);
     return (
-        <div className={cls('ios-bar', sticky && 'is-sticky', className)}>
+        <div ref={barRef} className={cls('ios-bar', sticky && 'is-sticky', className)} style={stickyStyle}>
             {onBack ? (
                 <button type="button" className="ios-back" {...backAttrs} onClick={onBack}>
                     <ChevronLeft size={22} />
@@ -100,6 +131,7 @@ function FitBar({
     const mTitle = useRef<HTMLSpanElement>(null);
     const [fit, setFit] = useState<FitResult>({ mode: 'full', left: 44, right: 44 });
     const hasBack = !!onBack;
+    const stickyStyle = useStickyTop(barRef, !!sticky);
 
     const setRight = useCallback(
         (el: HTMLElement | null) => {
@@ -147,7 +179,11 @@ function FitBar({
     const label = fit.mode === 'full' ? backLabel : fit.mode === 'short' ? (backFallback ?? backLabel) : '';
     const style = { '--ios-bar-l': `${fit.left}px`, '--ios-bar-r': `${fit.right}px` } as CSSProperties;
     return (
-        <div ref={barRef} className={cls('ios-bar', 'is-fit', sticky && 'is-sticky', className)} style={style}>
+        <div
+            ref={barRef}
+            className={cls('ios-bar', 'is-fit', sticky && 'is-sticky', className)}
+            style={{ ...style, ...stickyStyle }}
+        >
             {onBack ? (
                 <button
                     type="button"

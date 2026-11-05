@@ -221,7 +221,8 @@
 /* Mitlaufender Kopf (nach .is-fit, gleiche Spezifitaet) */
 .ios-bar.is-sticky {
     position: sticky;
-    top: 0;
+    /* top setzt IosNavBar: minus Innenabstand oben des Scroll-Containers */
+    top: var(--ios-sticky-top, 0px);
     z-index: 3;
     background: color-mix(in srgb, var(--app-bg) 88%, transparent);
     -webkit-backdrop-filter: saturate(180%) blur(16px);
