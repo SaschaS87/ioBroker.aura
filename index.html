@@ -70,10 +70,15 @@
          App-Neustart half. Die Kopfzeile ist kein festes Element, sie liegt
          oben im Fluss - verschwindet sie, ist die GANZE Seite verschoben.
          Zurueckscrollen geht nicht, weil html/body im Frontend bewusst
-         overflow:hidden haben (siehe unten). Verdacht: seit 2.5.1 gibt es kein
-         black-translucent mehr, iOS reserviert hochkant oben Platz fuer die
-         Statusleiste und blendet sie quer aus. Beim Zurueckdrehen bleibt die
-         Seite um diesen Betrag verschoben.
+         overflow:hidden haben (siehe unten).
+         Am iPhone gemessen (05.11.2026, iOS 27, Fenster 402x812, Screen
+         402x874): nach dem Zurueckdrehen scrollY=34, visualViewport.offsetTop=0.
+         Die 34 px sind genau die Zusatzhoehe env(safe-area-inset-bottom) aus
+         html/body (100dvh + sab, siehe unten): Das Dokument ist um sie hoeher
+         als das Fenster, und iOS scrollt beim Drehen bis ans Ende. Vor 2.5.1
+         (black-translucent) aenderte sich das Fenster beim Drehen nicht auf
+         diese Weise, seitdem haelt iOS hochkant oben Platz fuer die
+         Statusleiste frei und blendet sie quer aus.
          Abhilfe: Die Seite selbst scrollt im Frontend nie (nur .aura-scroll
          innen), also jede Verschiebung des Dokuments sofort auf 0 zuruecksetzen.
          Nicht, solange ein Eingabefeld den Fokus hat - dort darf iOS die Seite
