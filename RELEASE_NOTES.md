@@ -61,4 +61,4 @@
 - Shutter widgets (floor list / room cards) - no longer a fixed full-tab overlay; both now behave like a normal, growing widget that can sit alongside other widgets and be moved/resized in the editor
 - Shutter widgets - the footer pill was replaced by the same collapsible data-source health box used on the Weather tab, now with a one-click restart button for the shutter adapter instance
 - iOS 27 - the frosted blur iOS draws over the top of the installed Home Screen app is gone; the status bar now takes the header colour. Remove Aura from the Home Screen and add it again once for this to take effect (#662)
-- iOS Home Screen app - turning the iPhone to landscape and back to portrait no longer pushes the header and the menu button off the top of the screen
+- iOS Home Screen app - turning the iPhone to landscape and back to portrait no longer pushes the header and the menu button off the top of the screen; the page also no longer extends below the bottom edge of the screen, so the bottom bar is now fully visible above the home indicator

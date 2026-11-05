@@ -79,8 +79,12 @@
          (black-translucent) aenderte sich das Fenster beim Drehen nicht auf
          diese Weise, seitdem haelt iOS hochkant oben Platz fuer die
          Statusleiste frei und blendet sie quer aus.
-         Abhilfe: Die Seite selbst scrollt im Frontend nie (nur .aura-scroll
-         innen), also jede Verschiebung des Dokuments sofort auf 0 zuruecksetzen.
+         Die eigentliche Behebung ist die Hoehenregel weiter unten (Homescreen-
+         App nur 100dvh, kein Ueberhang mehr): Am iPhone bestaetigt, bleibt die
+         Kopfzeile damit auch OHNE dieses Skript stehen. Das Skript bleibt als
+         Sicherheitsnetz: Die Seite selbst scrollt im Frontend nie (nur
+         .aura-scroll innen), also jede Verschiebung des Dokuments sofort auf 0
+         zuruecksetzen.
          Nicht, solange ein Eingabefeld den Fokus hat - dort darf iOS die Seite
          fuer die Tastatur schieben. Nur iOS als Homescreen-App, wie
          #aura-topedge. Jeder Eingriff wird mit Vorher/Nachher-Werten in
@@ -172,15 +176,19 @@
          propagiert bis .aura-page/Scroll durch (die height:100%-Prozentkette
          propagiert auf iOS NICHT sauber bis #root). */
       /* iOS-Homescreen-App OHNE die Zusatzhoehe (05.11.2026): Seit aura-2.5.1
-         (kein black-translucent mehr) reicht das Fenster unter iOS 27 offenbar
-         bis an die physische Unterkante. Saschas Messung: Screen 874, Fenster
+         (kein black-translucent mehr) reicht das Fenster unter iOS 27 bis an
+         die physische Unterkante. Saschas Messung: Screen 874, Fenster
          812 unter 62 px Statusleiste, Trennlinie der Fussleiste bei ~836 statt
          802 - die Seite ragte also 34 px UNTER den Bildschirm. Genau diesen
          Spielraum nutzte iOS beim Drehen und scrollte die Kopfzeile weg (siehe
          __auraTopFix oben). Hier deshalb nur 100dvh. Nur iOS als
          Homescreen-App, wie #aura-topedge; Browser-Tabs bleiben beim Alten.
-         Am iPhone noch zu bestaetigen: Messfenster im Dev-Server, Knoepfe
-         "Rand faerben" und "Verlaengerung an/aus". */
+         Am iPhone bestaetigt (05.11.2026, iOS 27, Messfenster im Dev-Server):
+         ohne Zusatzhoehe Ueberhang 0 (mit: 34), hochkant und quer kein Pink mit
+         "Rand faerben", Kopfzeile bleibt beim Drehen auch mit abgeschalteter
+         Korrektur stehen. Die damit hoeher sichtbare Fussleiste hat Sascha
+         abgenommen. Nicht gemessen: alte Homescreen-Symbole, die noch mit
+         black-translucent angelegt wurden. */
       @supports (-webkit-touch-callout: none) {
         @media (display-mode: standalone) {
           html:has(.aura-page), body:has(.aura-page) {
