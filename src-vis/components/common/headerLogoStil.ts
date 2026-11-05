@@ -27,7 +27,7 @@
  *   Aendern mit: npm run logo:stil -- --logo-groesse 96 --logo-x -1 --logo-y 0
  */
 export const HEADER_LOGO_MIT_KREIS = true;
-export const HEADER_LOGO_ANZEIGEN = true;
+export const HEADER_LOGO_ANZEIGEN = false;
 export const HEADER_LOGO_GROESSE = 100;
 export const HEADER_LOGO_X = 1;
 export const HEADER_LOGO_Y = 2;
