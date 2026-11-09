@@ -597,6 +597,7 @@ export const en: Record<TranslationKey, string> = {
     'deviceTheme.dpActive': 'An automation currently sets {mode}.',
     'deviceSettings.title': 'Settings',
     'deviceSettings.back': 'Settings',
+    'deviceSettings.backShort': 'Back',
 
     'theme.vars.title': 'Customize CSS Variables',
     'theme.vars.app': 'App',

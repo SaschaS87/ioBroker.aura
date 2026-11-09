@@ -14,6 +14,10 @@
 //   g) narrow: overview row "Darstellung" -> sub page with back arrow; the overview
 //      shows the chosen value (Hell/Dunkel); wide (>= 640 px widget width): list and
 //      choice side by side, the choice is visible without a tap, no back arrow
+//   h) header of the sub page (Feature 30, Phase 2): no collision between back word and title at
+//      352 and 320 px widget width (at least 4 px), the header runs along when the page scrolls
+//   i) leaving the tab (the tab stays mounted, only hidden) returns to the overview (Feature 29, E5),
+//      also when the area is changed
 // plus a table test for the pure rule resolveActiveMode.
 //
 // a), b), d), e), f) run in the screenshot harness (?shot=1, nothing is written to
@@ -76,6 +80,7 @@ const LAYOUT = {
                         options: {},
                     },
                 ]),
+                { id: 'tab-extra', name: 'Extra', slug: 'extra', widgets: [] },
             ],
         },
     ],
@@ -107,12 +112,17 @@ async function openAppearance(page) {
         const hidden = await pick.evaluate((el) => !!el.closest('[inert]'));
         if (!hidden) return;
     }
-    await page.locator('[data-testid="device-settings"] .ds-row--nav').click();
+    await page.locator('[data-testid="device-settings"] .ios-row--nav').click();
     await page.waitForTimeout(400);
 }
 const navValue = (page) =>
-    page.evaluate(() => document.querySelector('[data-testid="device-settings"] .ds-row--nav .ds-val')?.textContent ?? '');
+    page.evaluate(() => document.querySelector('[data-testid="device-settings"] .ios-row--nav .ios-val')?.textContent ?? '');
 
+// the dev hint about the resolution would cover the page in a small viewport
+const dismissHint = async (page) => {
+    const got = page.getByRole('button', { name: 'Verstanden' });
+    if (await got.count()) await got.first().click();
+};
 const isDark = (page) => page.evaluate(() => document.documentElement.classList.contains('dark'));
 const stored = (page) => page.evaluate((k) => localStorage.getItem(k), DEVICE_KEY);
 
@@ -165,11 +175,11 @@ try {
         );
         check(
             'g) sub page is closed at first (slider not open, choice buttons inert)',
-            (await page.locator('.ds-slider.is-open').count()) === 0 &&
+            (await page.locator('.ios-stack.is-pushed').count()) === 0 &&
                 (await page.locator('[data-testid="device-settings"] button[data-pref="light"]').evaluate((el) => !!el.closest('[inert]'))),
         );
         await openAppearance(page);
-        check('g) tap on the row opens the sub page', (await page.locator('.ds-slider.is-open').count()) === 1);
+        check('g) tap on the row opens the sub page', (await page.locator('.ios-stack.is-pushed').count()) === 1);
         check('g) back arrow is shown on the sub page', (await page.locator('button[data-ds-back]').isVisible()));
         const backBox = await page.locator('button[data-ds-back]').boundingBox();
         check('g) back arrow is at least 44 px high', !!backBox && backBox.height >= 44, JSON.stringify(backBox));
@@ -187,7 +197,7 @@ try {
         // g) back arrow returns to the overview, which shows the chosen value
         await page.locator('button[data-ds-back]').click();
         await page.waitForTimeout(400);
-        check('g) back arrow closes the sub page', (await page.locator('.ds-slider.is-open').count()) === 0);
+        check('g) back arrow closes the sub page', (await page.locator('.ios-stack.is-pushed').count()) === 0);
         check('g) overview shows the value Hell', /^(Hell|Light)$/.test(await navValue(page)), await navValue(page));
         await openAppearance(page);
         const box = await page.locator('button[data-pref="light"]').boundingBox();
@@ -288,7 +298,7 @@ try {
         );
         check(
             'g) wide: Darstellung is preselected, no back arrow',
-            (await page.locator('.ds-row--nav.is-selected').count()) === 1 &&
+            (await page.locator('.ios-row--nav.is-selected').count()) === 1 &&
                 (await page.locator('button[data-ds-back]').count()) === 0,
         );
         check(
@@ -298,6 +308,103 @@ try {
         await page.locator('button[data-pref="dark"]').click();
         await page.waitForTimeout(200);
         check('g) wide: a tap on Dunkel switches to dark and shows the value', (await isDark(page)) === true && /^(Dunkel|Dark)$/.test(await navValue(page)));
+        await ctx.close();
+    }
+
+    // h) header of the sub page at 352 and 320 px widget width, sticky
+    for (const [vw, want] of [
+        [390, 352],
+        [358, 320],
+    ]) {
+        const ctx = await browser.newContext({ viewport: { width: vw, height: 330 }, ignoreHTTPSErrors: true });
+        const page = await ctx.newPage();
+        page.on('pageerror', (e) => pageErrors.push(e.message));
+        await boot(page, '#/view/default/s/einstellungen');
+        await dismissHint(page);
+        const root = await page.locator('[data-testid="device-settings"]').boundingBox();
+        check(`h) widget is ${want} px wide (viewport ${vw})`, !!root && Math.abs(root.width - want) <= 1.5, JSON.stringify(root));
+        await openAppearance(page);
+        await page.waitForTimeout(500);
+        const c = await page.evaluate(() => {
+            const a = document.querySelector('[data-testid="device-settings"] .ios-stack-track > .ios-stack-page:not([inert])');
+            const bar = a.querySelector('.ios-bar');
+            const back = bar.querySelector('button.ios-back');
+            const label = back.querySelector('.ios-back-label');
+            const backRight = (label ?? back.querySelector('svg')).getBoundingClientRect().right;
+            const title = bar.querySelector(':scope > .ios-bar-title');
+            const range = document.createRange();
+            range.selectNodeContents(title);
+            const tr = range.getBoundingClientRect();
+            return { gap: tr.left - backRight, label: label ? label.textContent : 'nur Pfeil', cut: title.scrollWidth > title.clientWidth + 0.5 };
+        });
+        check(`h) ${want} px: back word and title keep 4 px apart (${c.label})`, c.gap >= 4 && !c.cut, JSON.stringify(c));
+        if (vw === 390) {
+            const r = await page.evaluate(() => {
+                const t = document.querySelector('.ios-stack-track');
+                let sc = null;
+                for (let p = t.parentElement; p; p = p.parentElement) {
+                    const oy = getComputedStyle(p).overflowY;
+                    if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
+                        sc = p;
+                        break;
+                    }
+                }
+                if (!sc) return { scrollable: false };
+                const scrollable = sc.scrollHeight > sc.clientHeight + 4;
+                if (scrollable) sc.scrollTop = 60;
+                return { scrollable, scrollTop: sc.scrollTop };
+            });
+            await page.waitForTimeout(300);
+            const top = await page.evaluate(() => {
+                const t = document.querySelector('.ios-stack-track');
+                let sc = null;
+                for (let p = t.parentElement; p; p = p.parentElement) {
+                    const oy = getComputedStyle(p).overflowY;
+                    if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') {
+                        sc = p;
+                        break;
+                    }
+                }
+                const bar = document.querySelector('[data-testid="device-settings"] .ios-stack-track > .ios-stack-page:not([inert]) .ios-bar');
+                return { bar: bar.getBoundingClientRect().top, view: sc.getBoundingClientRect().top + sc.clientTop };
+            });
+            check(
+                'h) 390x330: the page scrolls and the header stays flush at the top (<= 1 px)',
+                r.scrollable && r.scrollTop > 20 && Math.abs(top.bar - top.view) <= 1,
+                JSON.stringify({ r, top }),
+            );
+        }
+        await ctx.close();
+    }
+
+    // i) leaving the tab (or the area) returns to the overview
+    {
+        const ctx = await browser.newContext({ viewport: { width: 390, height: 700 }, ignoreHTTPSErrors: true });
+        const page = await ctx.newPage();
+        page.on('pageerror', (e) => pageErrors.push(e.message));
+        await boot(page, '#/view/default/s/einstellungen/tab/dashboard');
+        await dismissHint(page);
+        await openAppearance(page);
+        check('i) sub page is open before leaving', (await page.locator('.ios-stack.is-pushed').count()) === 1);
+        await page.evaluate(() => (window.location.hash = '#/view/default/s/einstellungen/tab/extra'));
+        await page.waitForTimeout(600);
+        await page.evaluate(() => (window.location.hash = '#/view/default/s/einstellungen/tab/dashboard'));
+        await page.waitForTimeout(600);
+        const back1 = await page.evaluate(() => ({
+            pushed: document.querySelectorAll('.ios-stack.is-pushed').length,
+            overviewInert: document.querySelector('[data-testid="device-settings"] .ios-stack-track > .ios-stack-page')?.hasAttribute('inert'),
+        }));
+        check('i) other tab and back: the overview is shown again', back1.pushed === 0 && back1.overviewInert === false, JSON.stringify(back1));
+        await openAppearance(page);
+        await page.evaluate(() => (window.location.hash = '#/view/default/s/home'));
+        await page.waitForTimeout(600);
+        await page.evaluate(() => (window.location.hash = '#/view/default/s/einstellungen/tab/dashboard'));
+        await page.waitForTimeout(600);
+        const back2 = await page.evaluate(() => ({
+            pushed: document.querySelectorAll('.ios-stack.is-pushed').length,
+            overviewInert: document.querySelector('[data-testid="device-settings"] .ios-stack-track > .ios-stack-page')?.hasAttribute('inert'),
+        }));
+        check('i) other area and back: the overview is shown again', back2.pushed === 0 && back2.overviewInert === false, JSON.stringify(back2));
         await ctx.close();
     }
 

@@ -1,23 +1,17 @@
-/* Fenster Zeitplan und Szenen (Feature 27, Fassung 64 „Tages-Zeitleiste",
-   Saschas Wahl vom 03.11.2026). Grund und Karten kommen aus dem Hausstil
-   (--app-bg, --widget-bg, --text-*, --accent*) ueber die --rpp-*-Variablen von
-   .rpp-sheet-backdrop (RollPlan.css). Eigene Farben nur in den farbigen
-   Symbol-Quadraten (Zeitpunkte, Szenen).
+/* Unterseiten Zeitplan und Szenen (Feature 27, Fassung 64 „Tages-Zeitleiste“, Saschas Wahl vom
+   03.11.2026; seit Feature 30, Phase 2 Seiten im Stapel statt Fenster von unten). Grund und Karten kommen
+   aus dem Hausstil (--app-bg, --widget-bg, --text-*, --accent*) ueber die --rpp-*-Variablen von .pp-page
+   (RollPlan.css). Eigene Farben nur in den farbigen Symbol-Quadraten (Zeitpunkte, Szenen).
 
-   Die Fenster haengen per Portal ausserhalb des Widgets. Damit die Regeln fuer
-   die Editoren (Szene, Zeitpunkt) hoeher wiegen als RollPlan.css, stehen sie
-   unter ":root .rpp-sheet-backdrop". */
+   Die Regeln fuer die Editoren (Szene, Zeitpunkt) stehen unter „:root .pp-page“, damit sie hoeher
+   wiegen als RollPlan.css. */
 
-/* ── Fenster-Geruest ──────────────────────────────────────────────────── */
+/* ── Seiten-Geruest ───────────────────────────────────────────────────── */
 
-:root .rpp-sheet-backdrop {
+:root .pp-page {
   --rpp-radius: 12px;
   --pw-sep: color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
-:root .rpp-sheet-backdrop .rpp-sheet { background: var(--app-bg); border-radius: 28px 28px 0 0; }
-:root .rpp-sheet-backdrop .rpp-sheet-header { border-bottom: none; padding: 4px 16px 10px; }
-:root .rpp-sheet-backdrop .rpp-sheet-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
-:root .rpp-sheet-backdrop .rpp-sheet-body { padding-top: 4px; }
 
 /* Startseiten */
 .pw-home { display: flex; flex-direction: column; }
@@ -59,11 +53,21 @@
 .pw-check { flex-shrink: 0; color: var(--rpp-accent); }
 .pw-check-space { width: 20px; flex-shrink: 0; }
 .pw-value { flex-shrink: 0; font-size: 15px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+/* Knopf „Fahren“, bei laufender Szene an derselben Stelle „Stopp“. Beide Beschriftungen liegen in
+   einer Rasterzelle (die unsichtbare mit visibility:hidden): der Knopf bleibt gleich breit. */
 .pw-go {
-  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 30px; padding: 0 12px;
-  border-radius: 999px; background: color-mix(in srgb, var(--rpp-accent) 14%, transparent);
-  color: var(--rpp-accent); font-size: 14px; font-weight: 600;
+  display: inline-grid; align-items: center; justify-items: center; flex-shrink: 0; height: 30px; padding: 0 12px;
+  border: 0; border-radius: 999px; background: color-mix(in srgb, var(--rpp-accent) 14%, transparent);
+  color: var(--rpp-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: transform 0.12s, background-color 0.2s;
 }
+.pw-go:active { transform: scale(0.95); }
+.pw-go-lab { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* Stopp wie in der Zeile (sf-btn--stop): schwarz auf Gelb */
+/* Gelb sofort und ohne Ueberblendung: das Aufleuchten nach dem Tipp darf das Gelb nicht ueberdecken
+   (sonst kam die Faerbung erst nach ~1 s an, Saschas Rueckmeldung vom 09.11.2026). */
+.pw-go.is-stop { background: var(--accent-yellow, #ff9f0a); color: #000; transition: transform 0.12s; }
+.pw-go.is-flash:not(.is-stop) { background: color-mix(in srgb, var(--rpp-accent) 40%, transparent); }
 
 /* Szenen als farbige Kacheln (Wahl in den Einstellungen) */
 .pw-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -73,10 +77,17 @@
   font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); transition: transform 0.12s, filter 0.2s, box-shadow 0.2s;
 }
-.pw-tile:active { transform: scale(0.97); }
+button.pw-tile:active { transform: scale(0.97); }
+div.pw-tile { cursor: default; }
 .pw-tile.is-flash { filter: brightness(1.15); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sq) 35%, transparent); }
 .pw-tile.is-edit { outline: 2px dashed rgb(255 255 255 / 0.65); outline-offset: -6px; }
 .pw-tile-top { display: flex; align-items: flex-start; justify-content: space-between; width: 100%; margin-bottom: auto; }
+/* Der runde Knopf oben rechts ist der einzige Ausloeser: Tippflaeche 44x44, sichtbarer Kreis 28 px */
+.pw-tile-actbtn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 44px; height: 44px; margin: -8px -8px -8px 0; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
 .pw-tile-act { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgb(255 255 255 / 0.22); }
 .pw-tile-name { max-width: 100%; margin-top: 14px; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pw-tile-sub { max-width: 100%; font-size: 12px; opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -130,34 +141,31 @@
 .pw-gh-chev { flex-shrink: 0; transition: transform 0.2s; transform: rotate(-90deg); }
 .pw-gh--fold.is-open .pw-gh-chev { transform: none; }
 
-/* Zahnrad und Stift im Fensterkopf in Theme-Grau statt Akzentblau */
-.rpp-back.pw-head-btn { color: var(--text-secondary); }
-
 /* ── Editoren (Szene, Zeitpunkt) im Look der Einstellungen-App ────────── */
 
-:root .rpp-sheet-backdrop .rpp-editor { gap: 14px; }
-:root .rpp-sheet-backdrop .rpp-section { gap: 10px; padding: 12px 14px; border-radius: 12px; }
-:root .rpp-sheet-backdrop .rpp-section--flush { padding: 0 4px; }
-:root .rpp-sheet-backdrop .rpp-label { font-size: 12.5px; letter-spacing: 0.02em; text-transform: uppercase; }
-:root .rpp-sheet-backdrop .rpp-title { font-size: 16px; }
-:root .rpp-sheet-backdrop .rpp-sub { font-size: 13px; }
-:root .rpp-sheet-backdrop .rpp-hint { font-size: 12.5px; }
-:root .rpp-sheet-backdrop .rpp-caption { padding: 4px 16px 6px; }
-:root .rpp-sheet-backdrop .rpp-caption-text { font-size: 12.5px; font-weight: 400; letter-spacing: 0.02em; }
-:root .rpp-sheet-backdrop .rpp-caption-line { display: none; }
-:root .rpp-sheet-backdrop .rpp-card { border-radius: 12px; }
-:root .rpp-sheet-backdrop .rpp-dev { padding: 10px 14px; border-bottom-color: var(--pw-sep); }
-:root .rpp-sheet-backdrop .rpp-input { min-height: 44px; border: none; border-radius: 10px; background: var(--rpp-fill); font-size: 16px; }
-:root .rpp-sheet-backdrop .rpp-icon-opt { height: 44px; border-radius: 12px; }
-:root .rpp-sheet-backdrop .rpp-chip { min-height: 34px; border-radius: 999px; font-size: 13.5px; }
-:root .rpp-sheet-backdrop .rpp-chip--sm { min-height: 30px; }
-:root .rpp-sheet-backdrop .rpp-daypick-btn { height: 40px; border-radius: 999px; font-weight: 600; }
-:root .rpp-sheet-backdrop .rpp-seg-btn { font-weight: 600; }
-html.dark .rpp-sheet-backdrop .rpp-seg-btn.is-active { background: color-mix(in srgb, var(--text-primary) 24%, var(--rpp-bg)); }
-:root .rpp-sheet-backdrop .rpp-time-input { border-radius: 8px; min-height: 36px; }
-:root .rpp-sheet-backdrop .rpp-stepper { border-radius: 9px; }
+:root .pp-page .rpp-editor { gap: 14px; }
+:root .pp-page .rpp-section { gap: 10px; padding: 12px 14px; border-radius: 12px; }
+:root .pp-page .rpp-section--flush { padding: 0 4px; }
+:root .pp-page .rpp-label { font-size: 12.5px; letter-spacing: 0.02em; text-transform: uppercase; }
+:root .pp-page .rpp-title { font-size: 16px; }
+:root .pp-page .rpp-sub { font-size: 13px; }
+:root .pp-page .rpp-hint { font-size: 12.5px; }
+:root .pp-page .rpp-caption { padding: 4px 16px 6px; }
+:root .pp-page .rpp-caption-text { font-size: 12.5px; font-weight: 400; letter-spacing: 0.02em; }
+:root .pp-page .rpp-caption-line { display: none; }
+:root .pp-page .rpp-card { border-radius: 12px; }
+:root .pp-page .rpp-dev { padding: 10px 14px; border-bottom-color: var(--pw-sep); }
+:root .pp-page .rpp-input { min-height: 44px; border: none; border-radius: 10px; background: var(--rpp-fill); font-size: 16px; }
+:root .pp-page .rpp-icon-opt { height: 44px; border-radius: 12px; }
+:root .pp-page .rpp-chip { min-height: 34px; border-radius: 999px; font-size: 13.5px; }
+:root .pp-page .rpp-chip--sm { min-height: 30px; }
+:root .pp-page .rpp-daypick-btn { height: 40px; border-radius: 999px; font-weight: 600; }
+:root .pp-page .rpp-seg-btn { font-weight: 600; }
+html.dark .pp-page .rpp-seg-btn.is-active { background: color-mix(in srgb, var(--text-primary) 24%, var(--rpp-bg)); }
+:root .pp-page .rpp-time-input { border-radius: 8px; min-height: 36px; }
+:root .pp-page .rpp-stepper { border-radius: 9px; }
 /* Schalter in iPhone-Groesse, gruen wie in der Einstellungen-App */
-:root .rpp-sheet-backdrop .rpp-toggle { width: 51px; height: 31px; }
-:root .rpp-sheet-backdrop .rpp-toggle.is-on { background: var(--accent-green, #34c759); }
-:root .rpp-sheet-backdrop .rpp-toggle-knob { top: 2px; left: 2px; width: 27px; height: 27px; box-shadow: 0 2px 4px rgb(0 0 0 / 0.2); }
-:root .rpp-sheet-backdrop .rpp-toggle.is-on .rpp-toggle-knob { transform: translateX(20px); }
+:root .pp-page .rpp-toggle { width: 51px; height: 31px; }
+:root .pp-page .rpp-toggle.is-on { background: var(--accent-green, #34c759); }
+:root .pp-page .rpp-toggle-knob { top: 2px; left: 2px; width: 27px; height: 27px; box-shadow: 0 2px 4px rgb(0 0 0 / 0.2); }
+:root .pp-page .rpp-toggle.is-on .rpp-toggle-knob { transform: translateX(20px); }

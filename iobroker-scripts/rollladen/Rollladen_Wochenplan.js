@@ -17,6 +17,23 @@
 // nichts. quiet gilt NUR fuer den Minutentakt (Wochenplan), Sofort-Befehle
 // fahren immer normal.
 //
+// Sofort-Befehl und Abbruch (Feature 30, Phase 2, Version 0.3.0): `${ROOT}.Befehl` versteht
+//   - {"sceneId": "..."} bzw. ein reiner String = Szene sofort fahren (wie bisher)
+//   - {"abort": "<sceneId>"} = alle laufenden Laeufe dieser Szene abbrechen
+// Ein laufender Lauf prueft den Abbruch an jeder Wartestelle: vor jedem Sendeversuch, in jedem
+// Takt von wartetAufReaktion und wartenAufStillstand, in der Pause zwischen den Versuchen und
+// vor dem Lamellenbefehl. Ist er gesetzt, wird nichts mehr gesendet (Ergebnis je Geraet
+// 'abgebrochen', letzte30-Eintrag mit abgebrochen:true). Der Abbruch wird SOFORT bestaetigt
+// (ack:true); die spaetere Bestaetigung des Szenen-Befehls schreibt nur noch zurueck, wenn
+// `.Befehl` noch ihren Wert hat - sonst wuerde sie den Abbruch ueberschreiben. Das Skript
+// sendet selbst KEIN commands.stop: das macht die App je Antrieb (Saschas Vorgabe). Ein
+// Befehl, der im selben Moment schon unterwegs ist (await setStateAsync), geht noch raus; den
+// fangen die Stopps der App ab. Aeltere Skriptstaende loggen {"abort"} als "ohne gueltige
+// sceneId" und bestaetigen es, ohne etwas abzubrechen.
+// Im Trockenlauf fahren die Geraete nur zum Schein: TROCKENLAUF_FAHRZEIT_MS simuliert die
+// Fahrzeit (Position, bei Raffstore mit Lamelle zusaetzlich fuer die Lamelle), damit sich der
+// Abbruch auf dem Pi pruefen laesst. Gesendet wird dabei weiterhin nichts auf tahoma.1.*.
+//
 // Race Condition beim allerersten Start (C1): sicherstellenObjekte() wird
 // jetzt abgewartet (await createStateAsync/setObjectAsync), bevor Abos und
 // Zeitplaene angemeldet werden - vorher konnte kalenderAktualisieren() auf
@@ -75,7 +92,12 @@
 
 const ROOT = '0_userdata.0.Rollladen_Dev';
 const TROCKENLAUF = true;
-const VERSION = '0.1.0-dev';
+const VERSION = '0.3.0-dev';
+// Nur bei TROCKENLAUF === true wirksam: so lange "faehrt" ein Geraet zum Schein (Abbruch-Pruefung alle
+// 250 ms). Raffstore mit Lamelle: dieselbe Zeit noch einmal fuer die Lamelle. Im Dev-Betrieb dauert die
+// Bestaetigung eines Szenen-Befehls bei Raffstore-Szenen dadurch ueber 5 s - "Skript antwortet nicht"
+// in der App ist dort also zu erwarten.
+const TROCKENLAUF_FAHRZEIT_MS = 4000;
 const TZ = 'Europe/Berlin';
 const SKRIPTNAME = TROCKENLAUF ? 'Rollladen_Wochenplan_Dev' : 'Rollladen_Wochenplan';
 
@@ -177,6 +199,71 @@ let status = {
     trockenlauf: TROCKENLAUF,
     feiertage: null, // wird von istHeuteFeiertag() befuellt
 };
+
+// ── Laeufe (Abbruch, Feature 30 Phase 2) ──────────────────────────────────
+// Jeder Fahrauftrag (fuehreAus) legt einen Lauf an. sceneId = die Szene (null bei einem Plan-Eintrag
+// mit einzelnem Geraet), quelle = 'plan' oder 'befehl'. Reine Funktionen, ohne ioBroker-Globals.
+
+let laufNr = 0;
+const laeufe = new Map();
+
+function neuerLauf(sceneId, quelle) {
+    const lauf = { nr: ++laufNr, sceneId: sceneId || null, abgebrochen: false, quelle: quelle || 'plan' };
+    laeufe.set(lauf.nr, lauf);
+    return lauf;
+}
+
+function laufBeenden(lauf) {
+    if (lauf) laeufe.delete(lauf.nr);
+}
+
+function abgebrochen(lauf) {
+    return !!lauf && lauf.abgebrochen === true;
+}
+
+// Markiert alle laufenden Laeufe der Szene als abgebrochen; liefert die getroffenen Laeufe.
+function laeufeAbbrechen(sceneId) {
+    const getroffen = [];
+    for (const lauf of laeufe.values()) {
+        if (lauf.sceneId === sceneId && !lauf.abgebrochen) {
+            lauf.abgebrochen = true;
+            getroffen.push(lauf);
+        }
+    }
+    return getroffen;
+}
+
+// Liest den Wert von `${ROOT}.Befehl`: { sceneId } | { abort } | null (ungueltig, z. B. leer oder beide Felder).
+// Ein reiner String ist wie bisher eine sceneId.
+function befehlLesen(wert) {
+    if (typeof wert !== 'string') return null;
+    const t = wert.trim();
+    if (!t) return null;
+    if (!t.startsWith('{')) return { sceneId: t };
+    let p;
+    try {
+        p = JSON.parse(t);
+    } catch (e) {
+        return null;
+    }
+    if (!p || typeof p !== 'object') return null;
+    const hatId = typeof p.sceneId === 'string' && p.sceneId !== '';
+    const hatAbbruch = typeof p.abort === 'string' && p.abort !== '';
+    if (hatId && !('abort' in p)) return { sceneId: p.sceneId };
+    if (hatAbbruch && !('sceneId' in p)) return { abort: p.abort };
+    return null;
+}
+
+// Wartet ms Millisekunden in Schritten von 250 ms und prueft in jedem Schritt den Abbruch.
+// true = abgebrochen (das Warten wurde vorzeitig beendet).
+async function wartenAbbrechbar(ms, lauf) {
+    const ende = Date.now() + ms;
+    while (Date.now() < ende) {
+        if (abgebrochen(lauf)) return true;
+        await new Promise((r) => setTimeout(r, Math.min(250, Math.max(1, ende - Date.now()))));
+    }
+    return abgebrochen(lauf);
+}
 
 // ── Zeit-/Datums-Helfer (Ortszeit Europe/Berlin, Mittag als Ankerstunde wie
 //    in planModel.ts, damit DST-Sprünge das Datum nicht verschieben) ──────
@@ -546,11 +633,12 @@ function zieleAusTarget(target, quiet) {
     return scene.targets.map((t) => ({ key: t.key, closed: t.closed, slat: t.slat, quiet: q }));
 }
 
-async function wartenAufStillstand(geraet, timeoutMs) {
-    // Nur im Live-Betrieb (TROCKENLAUF=false) tatsaechlich genutzt.
+async function wartenAufStillstand(geraet, timeoutMs, lauf) {
+    // Nur im Live-Betrieb (TROCKENLAUF=false) tatsaechlich genutzt. Abbruch: kehrt in jedem Takt sofort zurueck.
     const movingDp = geraet.posDp.replace(/states\.core:ClosureState$/, 'states.core:MovingState');
     const start = Date.now();
     while (true) {
+        if (abgebrochen(lauf)) return;
         if (!existsState(movingDp)) return;
         const moving = getState(movingDp);
         if (!moving || moving.val === false || Date.now() - start > timeoutMs) return;
@@ -579,19 +667,22 @@ function reaktionVorhanden(dp, movingDp, istDp, t0) {
     return false;
 }
 
-async function wartetAufReaktion(dp, movingDp, istDp, t0) {
+async function wartetAufReaktion(dp, movingDp, istDp, t0, lauf) {
     const start = Date.now();
     while (Date.now() - start < REAKTION_MS) {
         if (reaktionVorhanden(dp, movingDp, istDp, t0)) return true;
+        if (abgebrochen(lauf)) return false;
         await new Promise((r) => setTimeout(r, 1000));
     }
     return reaktionVorhanden(dp, movingDp, istDp, t0);
 }
 
-async function sendeMitWiederholung(geraet, dp, wert, istDp) {
+async function sendeMitWiederholung(geraet, dp, wert, istDp, lauf) {
     const movingDp = istDp.replace(/states\.core:(ClosureState|SlateOrientationState)$/, 'states.core:MovingState');
     let letzteMeldung = '';
     for (let n = 1; n <= VERSUCHE; n++) {
+        // Abbruch: vor jedem Sendeversuch pruefen, danach wird nichts mehr gesendet
+        if (abgebrochen(lauf)) return { ok: false, abgebrochen: true, versuche: n - 1 };
         const verbindung = existsState('tahoma.1.info.connection') ? getState('tahoma.1.info.connection') : null;
         const verbunden = !!(verbindung && verbindung.val === true);
         if (!verbunden) {
@@ -600,14 +691,16 @@ async function sendeMitWiederholung(geraet, dp, wert, istDp) {
             try {
                 const t0 = Date.now();
                 await setStateAsync(dp, wert);
-                const reagiert = await wartetAufReaktion(dp, movingDp, istDp, t0);
+                const reagiert = await wartetAufReaktion(dp, movingDp, istDp, t0, lauf);
                 if (reagiert) return { ok: true, versuche: n };
+                if (abgebrochen(lauf)) return { ok: false, abgebrochen: true, versuche: n };
                 letzteMeldung = 'keine Reaktion';
             } catch (e) {
                 letzteMeldung = `Fehler beim Senden: ${e.message}`;
             }
         }
-        if (n < VERSUCHE) await new Promise((r) => setTimeout(r, PAUSE_MS));
+        // Pause zwischen den Versuchen in kurzen Schritten, damit ein Abbruch sofort greift
+        if (n < VERSUCHE && (await wartenAbbrechbar(PAUSE_MS, lauf))) return { ok: false, abgebrochen: true, versuche: n };
     }
     return { ok: false, versuche: VERSUCHE, meldung: letzteMeldung };
 }
@@ -618,9 +711,22 @@ async function sendeMitWiederholung(geraet, dp, wert, istDp) {
 // "Leise fahren" (ziel.quiet + Geraet hat slowPosDp): Position geht auf den
 // slow-Zieldatenpunkt statt auf posDp - die Pruefung "bereits am Ziel" liest
 // trotzdem weiter geraet.posDp, weil das der einzige Istwert ist.
-async function fahreEinzelgeraet(ziel) {
+// Ergebnis eines Geraets, bei dem der Abbruch vor oder waehrend der Fahrt griff.
+function abgebrochenErgebnis(geraet, ziel, ist) {
+    const hatLamelle = !!geraet.slatDp && typeof ziel.slat === 'number';
+    return {
+        position: { aktion: 'position', ziel: ziel.closed, ist, ergebnis: 'abgebrochen' },
+        lamelle: hatLamelle ? { aktion: 'lamelle', ziel: ziel.slat, ist: null, ergebnis: 'abgebrochen' } : null,
+    };
+}
+
+async function fahreEinzelgeraet(ziel, lauf) {
     const geraet = GERAETE[ziel.key];
     if (!geraet) return { key: ziel.key, fehler: 'unbekanntes Geraet (nicht in GERAETE-Tabelle)' };
+    if (abgebrochen(lauf)) {
+        const a = abgebrochenErgebnis(geraet, ziel, null);
+        return { key: ziel.key, position: a.position, lamelle: a.lamelle };
+    }
 
     const leise = ziel.quiet && !!geraet.slowPosDp;
     const posZielDp = leise ? geraet.slowPosDp : geraet.posDp;
@@ -634,11 +740,16 @@ async function fahreEinzelgeraet(ziel) {
     if (posAmZiel) {
         posErgebnis = { aktion: 'position', ziel: ziel.closed, ist: istPos, ergebnis: 'bereits am Ziel', leise, dp: posZielDp };
     } else if (TROCKENLAUF) {
-        const text = leise ? 'würde leise fahren (Trockenlauf)' : 'würde fahren (Trockenlauf)';
+        // simulierte Fahrzeit, in der ein Abbruch greifen kann (gesendet wird nie etwas)
+        const abbruch = await wartenAbbrechbar(TROCKENLAUF_FAHRZEIT_MS, lauf);
+        const text = abbruch ? 'abgebrochen' : leise ? 'würde leise fahren (Trockenlauf)' : 'würde fahren (Trockenlauf)';
         posErgebnis = { aktion: 'position', ziel: ziel.closed, ist: istPos, ergebnis: text, leise, dp: posZielDp };
     } else {
-        const r = await sendeMitWiederholung(geraet, posZielDp, ziel.closed, geraet.posDp);
-        if (r.ok) {
+        const r = await sendeMitWiederholung(geraet, posZielDp, ziel.closed, geraet.posDp, lauf);
+        if (r.abgebrochen) {
+            // Abbruch ist kein Fehler: kein setzeQuellenFehler
+            posErgebnis = { aktion: 'position', ziel: ziel.closed, ist: istPos, ergebnis: 'abgebrochen', leise, dp: posZielDp };
+        } else if (r.ok) {
             posGesendet = true;
             posErgebnis = { aktion: 'position', ziel: ziel.closed, ist: istPos, ergebnis: `gesendet (Versuch ${r.versuche})`, leise, dp: posZielDp };
             loescheQuellenFehler('Fahrt');
@@ -649,7 +760,7 @@ async function fahreEinzelgeraet(ziel) {
     }
 
     if (posGesendet && geraet.slatDp && typeof ziel.slat === 'number') {
-        await wartenAufStillstand(geraet, 90000);
+        await wartenAufStillstand(geraet, 90000, lauf);
     }
 
     let lamelleErgebnis = null;
@@ -657,13 +768,19 @@ async function fahreEinzelgeraet(ziel) {
         const slatState = getState(geraet.slatDp);
         const istSlat = slatState && slatState.ack ? slatState.val : null;
         const slatAmZiel = istSlat !== null && Math.abs(Math.round(istSlat) - Math.round(ziel.slat)) <= 3;
-        if (slatAmZiel) {
+        if (abgebrochen(lauf)) {
+            // Abbruch vor dem Lamellenbefehl: nichts mehr senden
+            lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: 'abgebrochen' };
+        } else if (slatAmZiel) {
             lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: 'bereits am Ziel' };
         } else if (TROCKENLAUF) {
-            lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: 'würde fahren (Trockenlauf)' };
+            const abbruch = await wartenAbbrechbar(TROCKENLAUF_FAHRZEIT_MS, lauf);
+            lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: abbruch ? 'abgebrochen' : 'würde fahren (Trockenlauf)' };
         } else {
-            const r = await sendeMitWiederholung(geraet, geraet.slatDp, ziel.slat, geraet.slatDp);
-            if (r.ok) {
+            const r = await sendeMitWiederholung(geraet, geraet.slatDp, ziel.slat, geraet.slatDp, lauf);
+            if (r.abgebrochen) {
+                lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: 'abgebrochen' };
+            } else if (r.ok) {
                 lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: `gesendet (Versuch ${r.versuche})` };
                 loescheQuellenFehler('Fahrt');
             } else {
@@ -679,8 +796,8 @@ async function fahreEinzelgeraet(ziel) {
 // Alle Ziele einer Szene gleichzeitig senden, ohne Versatz. Verlorene Befehle
 // fängt sendeMitWiederholung je Gerät ab (Bestätigung prüfen, bis zu 3 Versuche,
 // danach Fehlermeldung über setzeQuellenFehler).
-async function fahreZiele(ziele) {
-    return Promise.all(ziele.map((ziel) => fahreEinzelgeraet(ziel)));
+async function fahreZiele(ziele, lauf) {
+    return Promise.all(ziele.map((ziel) => fahreEinzelgeraet(ziel, lauf)));
 }
 
 function letzte30Hinzufuegen(eintrag) {
@@ -688,21 +805,29 @@ function letzte30Hinzufuegen(eintrag) {
     if (status.letzte30.length > 30) status.letzte30.length = 30;
 }
 
-async function fuehreAus(auslöser, target, callback, quiet = false) {
-    const ziele = zieleAusTarget(target, quiet);
-    if (!ziele.length) {
-        const eintrag = { zeit: isoJetzt(), auslöser, ziele: [], hinweis: 'Keine Ziel-Geräte (Szene leer oder unbekannt)', trockenlauf: TROCKENLAUF };
+// quelle: 'plan' (Minutentakt) oder 'befehl' (Sofort-Befehl); nur fuer den Lauf-Eintrag und das Log.
+async function fuehreAus(auslöser, target, callback, quiet = false, quelle = 'plan') {
+    const lauf = neuerLauf(target.kind === 'scene' ? target.sceneId : null, quelle);
+    try {
+        const ziele = zieleAusTarget(target, quiet);
+        if (!ziele.length) {
+            const eintrag = { zeit: isoJetzt(), auslöser, ziele: [], hinweis: 'Keine Ziel-Geräte (Szene leer oder unbekannt)', trockenlauf: TROCKENLAUF };
+            if (abgebrochen(lauf)) eintrag.abgebrochen = true;
+            letzte30Hinzufuegen(eintrag);
+            statusSchreiben();
+            if (callback) callback(eintrag);
+            return eintrag;
+        }
+        const ergebnisse = await fahreZiele(ziele, lauf);
+        const eintrag = { zeit: isoJetzt(), auslöser, ziele: ergebnisse, trockenlauf: TROCKENLAUF };
+        if (abgebrochen(lauf)) eintrag.abgebrochen = true;
         letzte30Hinzufuegen(eintrag);
         statusSchreiben();
         if (callback) callback(eintrag);
         return eintrag;
+    } finally {
+        laufBeenden(lauf);
     }
-    const ergebnisse = await fahreZiele(ziele);
-    const eintrag = { zeit: isoJetzt(), auslöser, ziele: ergebnisse, trockenlauf: TROCKENLAUF };
-    letzte30Hinzufuegen(eintrag);
-    statusSchreiben();
-    if (callback) callback(eintrag);
-    return eintrag;
 }
 
 // ── Minuetlicher Takt (Punkt 5) ────────────────────────────────────────────
@@ -739,30 +864,42 @@ function minuetlicherTakt() {
 
 function sofortBefehl(obj) {
     const wert = obj.state.val;
-    let sceneId = null;
-    if (typeof wert === 'string') {
-        const trimmed = wert.trim();
-        if (trimmed.startsWith('{')) {
-            try {
-                const parsed = JSON.parse(trimmed);
-                if (parsed && typeof parsed.sceneId === 'string') sceneId = parsed.sceneId;
-            } catch (e) {
-                // faellt unten auf "keine gueltige sceneId"
-            }
-        } else if (trimmed) {
-            sceneId = trimmed;
-        }
-    }
+    const befehl = befehlLesen(wert);
 
-    if (!sceneId) {
+    if (!befehl) {
         log(`${SKRIPTNAME}: Befehl ohne gueltige sceneId ignoriert: ${JSON.stringify(wert)}`, 'warn');
         setState(`${ROOT}.Befehl`, wert, true);
         return;
     }
 
-    fuehreAus(`Sofort-Befehl → Szene "${sceneId}"`, { kind: 'scene', sceneId }, () => {
+    if (befehl.abort) {
+        // Abbruch: SOFORT bestaetigen und protokollieren, die laufenden Laeufe der Szene merken sich den Abbruch
+        const getroffen = laeufeAbbrechen(befehl.abort);
+        const n = getroffen.length;
         setState(`${ROOT}.Befehl`, wert, true);
-    });
+        const eintrag = {
+            zeit: isoJetzt(),
+            auslöser: `Abbruch → Szene "${befehl.abort}"`,
+            ziele: [],
+            laeufe: n,
+            hinweis: `${n} ${n === 1 ? 'Lauf' : 'Läufe'} getroffen`,
+            trockenlauf: TROCKENLAUF,
+        };
+        letzte30Hinzufuegen(eintrag);
+        statusSchreiben();
+        log(
+            `${SKRIPTNAME}: Abbruch der Szene "${befehl.abort}": ${eintrag.hinweis}${n ? ` (Quelle: ${getroffen.map((l) => l.quelle).join(', ')})` : ''}`,
+            'info',
+        );
+        return;
+    }
+
+    fuehreAus(`Sofort-Befehl → Szene "${befehl.sceneId}"`, { kind: 'scene', sceneId: befehl.sceneId }, () => {
+        // Nur bestaetigen, wenn .Befehl noch diesen Wert traegt: ein Abbruch dazwischen steht dort mit
+        // ack:true und darf nicht von der spaeten Bestaetigung der Szene ueberschrieben werden.
+        const aktuell = getState(`${ROOT}.Befehl`);
+        if (aktuell && aktuell.val === wert) setState(`${ROOT}.Befehl`, wert, true);
+    }, false, 'befehl');
 }
 
 // ── Datenpunkte anlegen (idempotent) ──────────────────────────────────────
@@ -778,7 +915,7 @@ async function sicherstellenObjekte() {
         { id: `${ROOT}.Szenen`, wert: '[]', common: { name: 'Szenen', type: 'string', role: 'json', read: true, write: true, desc: 'Scene[] als JSON, siehe planModel.ts' } },
         { id: `${ROOT}.Wochenplan`, wert: '[]', common: { name: 'Wochenplan', type: 'string', role: 'json', read: true, write: true, desc: 'PlanEntry[] als JSON, siehe planModel.ts' } },
         { id: `${ROOT}.Einstellungen`, wert: JSON.stringify(DEFAULT_SETTINGS), common: { name: 'Einstellungen', type: 'string', role: 'json', read: true, write: true, desc: 'Settings als JSON (master/pausedTodayDate/holidayMode)' } },
-        { id: `${ROOT}.Befehl`, wert: '', common: { name: 'Befehl', type: 'string', role: 'json', read: true, write: true, desc: 'Sofort-Fahren-Befehl (sceneId als String oder {"sceneId":"..."})' } },
+        { id: `${ROOT}.Befehl`, wert: '', common: { name: 'Befehl', type: 'string', role: 'json', read: true, write: true, desc: 'Sofort-Befehl: sceneId als String oder {"sceneId":"..."} = fahren, {"abort":"<sceneId>"} = abbrechen' } },
         { id: `${ROOT}.Status`, wert: JSON.stringify(status), common: { name: 'Status', type: 'string', role: 'json', read: true, write: false, desc: 'Protokoll/Vorschau als JSON, siehe Skriptkopf' } },
         { id: `${ROOT}.Kalender`, wert: '[]', common: { name: 'Kalender', type: 'string', role: 'json', read: true, write: false, desc: 'Heute + 7 Tage: Sonnenzeiten, Feiertag' } },
     ];

@@ -1,7 +1,8 @@
 import { useDeviceThemeStore, type DeviceThemePref } from '../../../store/deviceThemeStore';
 import { useThemeModeStore, resolveActiveMode } from '../../../utils/themeModeCache';
 import { useT } from '../../../i18n';
-import { Footnote, PickList } from './parts';
+import { IosFootnote } from '../../common/ios';
+import { PickList } from './parts';
 
 const KEYS = {
     auto: 'deviceTheme.auto',
@@ -46,7 +47,7 @@ export function AppearancePage({ inert }: { inert: boolean }) {
                 onPick={setPref}
                 inert={inert}
             />
-            <Footnote desc={t('deviceTheme.desc')} hint={hint} />
+            <IosFootnote desc={t('deviceTheme.desc')} hint={hint} />
         </>
     );
 }

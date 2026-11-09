@@ -11,6 +11,8 @@ import { ShutterDetailSheet } from './ShutterDetailSheet';
 import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
+import { PlannerStack } from './planner/PlannerStack';
+import { PlanTiles } from './planner/PlanWindows';
 import './ShutterFloorsWidget.css';
 
 interface ShutterFloorsOptions {
@@ -276,45 +278,60 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         </>
     );
 
+    const floorList = floors.map((floor) => (
+        <FloorGroup
+            key={floor.name}
+            floor={floor}
+            isFav={fav.has}
+            row={(d, firstRest) => (
+                <ShutterRow
+                    key={d.key}
+                    device={d}
+                    connected={connected}
+                    firstRest={firstRest}
+                    onOpenSheet={handleOpenSheet}
+                />
+            )}
+        />
+    ));
+
+    // Sheet-Overlay
+    const sheet = sheetDevice && (
+        <ShutterDetailSheet
+            key={sheetSeq}
+            device={sheetDevice}
+            connected={connected}
+            fav={fav}
+            onClose={handleCloseSheet}
+        />
+    );
+
+    // Liste mit Etagen und Fuss. Mit Planer (showPlanner) steht darueber die Kopfgruppe Zeitplan/Szenen, und die
+    // Liste ist die unterste Seite des Stapels (Feature 30, Phase 2); ohne Planer bleibt es die Liste allein.
+    const listBody = (head?: React.ReactNode) => (
+        <div className={`sf${connected ? '' : ' is-offline'}`}>
+            {head}
+            {floorList}
+            <div className="sf-foot">{footer}</div>
+        </div>
+    );
+
     return (
         <PendingContext.Provider value={pendingStore}>
             <div className="shutter-floors-widget">
                 {banner}
-                <div className={`sf${connected ? '' : ' is-offline'}`}>
-                    {/* Rolllaeden-Planer (Feature 23): Kopfgruppe Zeitplan/Szenen
-                        ueber der Etagenliste, nur wenn showPlanner===true. */}
-                    {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
-
-                    {floors.map((floor) => (
-                        <FloorGroup
-                            key={floor.name}
-                            floor={floor}
-                            isFav={fav.has}
-                            row={(d, firstRest) => (
-                                <ShutterRow
-                                    key={d.key}
-                                    device={d}
-                                    connected={connected}
-                                    firstRest={firstRest}
-                                    onOpenSheet={handleOpenSheet}
-                                />
-                            )}
-                        />
-                    ))}
-
-                    <div className="sf-foot">{footer}</div>
-                </div>
-
-                {/* Sheet-Overlay */}
-                {sheetDevice && (
-                    <ShutterDetailSheet
-                        key={sheetSeq}
-                        device={sheetDevice}
-                        connected={connected}
-                        fav={fav}
-                        onClose={handleCloseSheet}
+                {showPlanner ? (
+                    <RollPlanTile
+                        floors={floors}
+                        root={effectivePlannerRoot}
+                        render={(m) => (
+                            <PlannerStack m={m} list={(open) => listBody(<PlanTiles m={m} open={open} />)} />
+                        )}
                     />
+                ) : (
+                    listBody()
                 )}
+                {sheet}
             </div>
         </PendingContext.Provider>
     );

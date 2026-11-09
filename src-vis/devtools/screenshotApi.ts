@@ -64,6 +64,7 @@ import {
 } from '../utils/stackedSeries';
 import { withSuppressedDirty, setScreenshotMode } from '../store/persistManager';
 import { NS } from '../utils/namespace';
+import { seedRolllaeden } from './rolllaedenSeed';
 import type { AuraMessage, MessageSeverity, WidgetConfig, ioBrokerState, ObjectViewResult } from '../types';
 
 type MockValue = boolean | number | string | null | Partial<ioBrokerState>;
@@ -680,4 +681,11 @@ if (new URLSearchParams(window.location.search).get('einstellungen') === '1') {
     w.__auraShot.seed({ layouts: [layout] });
     w.__auraShot.setDeviceThemeMode();
     window.location.hash = '#/view/default/s/einstellungen';
+}
+
+// DEV convenience: `/?shot=1&rolllaeden=1` seeds a throw-away layout with a "Rollläden" tab holding the
+// shutterfloors widget with invented sample devices (demo.0.rollladen.*), planner sample data and a
+// second, empty tab (tab-switch test). In memory only, nothing is written.
+if (new URLSearchParams(window.location.search).get('rolllaeden') === '1') {
+    seedRolllaeden((window as unknown as { __auraShot: Parameters<typeof seedRolllaeden>[0] }).__auraShot);
 }

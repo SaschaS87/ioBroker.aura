@@ -1,33 +1,40 @@
 /**
- * Rolllaeden-Planer (Feature 23, Einbau Feature 27) – sitzt in
- * ShutterFloorsWidget.tsx als erste Gruppe der Liste, nur wenn
- * `showPlanner === true`. Baut das PlanModel aus echten Daten (Geraete-
- * stellungen vom Pi, Sonnenzeiten aus javascript.0.variables.astro.*,
- * Szenen/Wochenplan/Einstellungen aus useRollPlanData) und fuehrt Szenen
- * ueber useSceneCommand wirklich aus (im Dev-Trockenlauf gegen
- * Rollladen_Dev, siehe ShutterFloorsWidget.tsx fuer die ROOT-Weiche).
+ * Rolllaeden-Planer (Feature 23, Einbau Feature 27, Unterseiten Feature 30) – sitzt in
+ * ShutterFloorsWidget.tsx, nur wenn `showPlanner === true`. Baut das PlanModel aus echten Daten
+ * (Geraetestellungen vom Pi, Sonnenzeiten aus javascript.0.variables.astro.*, Szenen/Wochenplan/
+ * Einstellungen aus useRollPlanData) und fuehrt Szenen ueber useSceneCommand wirklich aus (im
+ * Dev-Trockenlauf gegen Rollladen_Dev, siehe ShutterFloorsWidget.tsx fuer die ROOT-Weiche).
  *
- * Gibt kein eigenes Wurzelelement zurueck: Die Kopfgruppe „Zeitplan" /
- * „Szenen" (PlanWindows.tsx) ist ein Kind der Liste, die Fenster und der
- * Hinweis haengen per Portal am Frontend.
+ * Gibt kein eigenes Wurzelelement zurueck: Was gezeichnet wird, bestimmt `render` (der Stapel mit
+ * Zeitplan- und Szenen-Unterseiten, PlannerStack.tsx). Das Modell und der Laufzustand der Szenen
+ * (useSceneRun) stehen dort per Context zur Verfuegung.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
 import type { ShutterFloorDef } from '../types';
 import { useRollPlanData } from './useRollPlanData';
 import { useLivePlanModel } from './useLivePlanModel';
 import { useSceneCommand } from './useSceneCommand';
-import { PlanWindows } from './PlanWindows';
+import { SceneRunContext, useSceneRunValue } from './useSceneRun';
 import { Toast } from './parts';
+import type { PlanModel } from './planModel';
 import './RollPlan.css';
 
-/** Liest die aktuelle Stellung eines Antriebs und meldet sie nach oben —
- *  gleiche Idee wie im inzwischen entfernten Entwurf (PosProbe), unveraendert
- *  uebernommen: ein useDatapoint-Aufruf je Geraet, als eigene Komponente
- *  statt in einer Schleife (Regeln der Hooks). */
+/** Liest die aktuelle Stellung eines Antriebs und meldet sie nach oben: ein useDatapoint-Aufruf je
+ *  Geraet, als eigene Komponente statt in einer Schleife (Regeln der Hooks). */
 function PosProbe({ k, dp, onUpdate }: { k: string; dp: string; onUpdate: (k: string, v: number | null) => void }) {
     const { value } = useDatapoint(dp);
     const v = typeof value === 'number' ? value : null;
+    useEffect(() => {
+        onUpdate(k, v);
+    }, [k, v, onUpdate]);
+    return null;
+}
+
+/** Wie PosProbe, fuer core:MovingState (faehrt der Antrieb gerade?). */
+function MovingProbe({ k, dp, onUpdate }: { k: string; dp: string; onUpdate: (k: string, v: boolean) => void }) {
+    const { value } = useDatapoint(dp);
+    const v = value === true;
     useEffect(() => {
         onUpdate(k, v);
     }, [k, v, onUpdate]);
@@ -38,10 +45,22 @@ function parseSunDp(v: unknown): string | null {
     return typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v) ? v : null;
 }
 
-export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root: string }) {
+export function RollPlanTile({
+    floors,
+    root,
+    render,
+}: {
+    floors: ShutterFloorDef[];
+    root: string;
+    render: (model: PlanModel) => ReactNode;
+}) {
     const [positions, setPositions] = useState<Record<string, number | null>>({});
     const onPos = useCallback((k: string, v: number | null) => {
         setPositions((prev) => (prev[k] === v ? prev : { ...prev, [k]: v }));
+    }, []);
+    const [moving, setMoving] = useState<Record<string, boolean>>({});
+    const onMoving = useCallback((k: string, v: boolean) => {
+        setMoving((prev) => (prev[k] === v ? prev : { ...prev, [k]: v }));
     }, []);
     const sunrise = useDatapoint('javascript.0.variables.astro.sunrise');
     const sunset = useDatapoint('javascript.0.variables.astro.sunset');
@@ -63,6 +82,7 @@ export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root
         data,
         runScene,
     );
+    const sceneRun = useSceneRunValue({ floors, scenes: model.scenes, cmd, moving });
 
     // 5 Sekunden ohne Quittierung durch das Skript -> Hinweis ueber den
     // vorhandenen Toast-Mechanismus des Modells (Portal, gleiche Optik wie
@@ -71,13 +91,19 @@ export function RollPlanTile({ floors, root }: { floors: ShutterFloorDef[]; root
         if (cmd.status === 'timeout') model.showToast('Skript antwortet nicht');
     }, [cmd.status, model.showToast]);
 
+    const devices = floors.flatMap((f) => f.devices);
     return (
-        <>
-            {floors.flatMap((f) => f.devices).map((d) => (
+        <SceneRunContext.Provider value={sceneRun}>
+            {devices.map((d) => (
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
-            <PlanWindows model={model} />
+            {devices
+                .filter((d) => d.activityDp)
+                .map((d) => (
+                    <MovingProbe key={d.key} k={d.key} dp={d.activityDp as string} onUpdate={onMoving} />
+                ))}
+            {render(model)}
             <Toast model={model} />
-        </>
+        </SceneRunContext.Provider>
     );
 }

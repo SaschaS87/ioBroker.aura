@@ -1,20 +1,19 @@
 /**
- * Editoren + Fenster-Geruest der Rolllaeden-Planer-Kachel (Produktion,
- * Feature 23): PlanSheet, SceneEditor, EntryEditor.
+ * Editoren der Rolllaeden-Planer-Kachel (Produktion, Feature 23): SceneEditor, EntryEditor.
  *
- * Liegt in einer eigenen Datei statt in parts.tsx, weil PlanSheet direkt auf
- * SceneEditor/EntryEditor verdrahtet ist. parts.tsx importiert von hier NUR
- * den Typ `SheetView` (type-only, zur Kompilierzeit entfernt) — das haelt die
- * beiden Dateien frei von einem echten Laufzeit-Zirkel.
- *
- * Seit 02.11.2026 stehen Loeschen und Speichern der Editoren als Symbole oben
- * rechts im Fensterkopf (per Portal), „Jetzt fahren" gibt es dort nicht mehr.
+ * Seit Feature 30, Phase 2 sind es Seiten im Stapel (PlannerStack.tsx), keine Fenster von unten mehr.
+ * Der Kopf (Zurueck, Titel, "Sichern") gehoert der Seite; "Sichern" kommt per Portal in den Kopf
+ * (headSlot). Das Muster beider Editoren:
+ *   - "Sichern" ist grau, bis sich gegenueber dem Ausgangsstand etwas geaendert hat (editorDirty.ts)
+ *   - Zurueck mit Aenderungen fragt nach (Aenderungen verwerfen / Sichern / Weiter bearbeiten); die Seite
+ *     ruft dazu den Zurueck-Waechter, den der Editor per registerLeaveGuard anmeldet
+ *   - Loeschen steht als rote Knopfzeile ganz unten und fragt nach
+ * parts.tsx importiert von hier nur den Typ SheetView.
  */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronLeft, ChevronRight, Minus, Plus, Trash2 } from 'lucide-react';
-import { usePortalTarget } from '../../../../contexts/PortalTargetContext';
-import { useSheetDismiss } from '../../useSheetDismiss';
+import { ChevronRight, Minus, Plus } from 'lucide-react';
+import { IosActionSheet, IosButtonRow } from '../../../common/ios';
 import {
     daysText,
     devicesOfTarget,
@@ -35,116 +34,76 @@ import {
     type TriggerKind,
 } from './planModel';
 import { Caption, closedWord, DayLetters, DeviceGlyph, SceneGlyph, SCENE_ICONS, Seg, Toggle } from './parts';
+import { sameEntry, sameSceneDraft, sceneDraftOf, type SceneTargets } from './editorDirty';
 
-// ── Sheet-Navigation (Popup-Geruest) ────────────────────────────────────
-
-export type SceneDraft = { name: string; icon: SceneIcon; favorite: boolean; targets: Record<string, { closed: number; slat?: number }> };
-
-/** `back` = wohin „Zurück" und „Speichern" führen (z. B. zurück in die Szene). */
+/** Wohin ein Tipp in einem Editor fuehrt (Szene oeffnet Zeitpunkte; die Szene bleibt darunter eingehaengt). */
 export type SheetView =
-    | { v: 'home' }
-    | { v: 'scene'; id: string | null; draft?: SceneDraft }
-    | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry>; back?: SheetView };
+    | { v: 'scene'; id: string | null }
+    | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> };
 
-export function PlanSheet({
-    title,
-    subtitle,
-    view,
-    setView,
-    onClose,
-    model,
-    home,
-    headerRight,
-    onHomeBack,
-}: {
-    title: string;
-    subtitle?: string;
-    view: SheetView;
-    setView: (v: SheetView) => void;
-    onClose: () => void;
-    model: PlanModel;
-    home: ReactNode;
-    /** Knopf rechts im Kopf, nur auf der Startansicht (z. B. Zahnrad, Stift). */
-    headerRight?: ReactNode;
-    /** Zeigt auch auf der Startansicht „Zurück" (Unterseite wie Einstellungen). */
-    onHomeBack?: () => void;
-}) {
-    const adminPortalTarget = usePortalTarget();
-    const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
-    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick } = useSheetDismiss(onClose);
-    // Löschen/Speichern der Editoren landen per Portal oben rechts im Kopf.
-    const [slot, setHeadSlot] = useState<HTMLElement | null>(null);
-    const back = () => (view.v === 'home' ? onHomeBack?.() : setView(view.v === 'entry' && view.back ? view.back : { v: 'home' }));
-    let head = title;
-    let sub = subtitle;
-    let body: ReactNode = home;
-    if (view.v === 'scene') {
-        const s = view.id ? model.sceneOf(view.id) : undefined;
-        head = s ? s.name : 'Neue Szene';
-        sub = 'Welche Rollläden fahren wohin?';
-        body = <SceneEditor key={view.id ?? 'new'} model={model} scene={s} draft={view.draft} onDone={back} setView={setView} headSlot={slot} />;
-    } else if (view.v === 'entry') {
-        const e = view.id ? model.entries.find((x) => x.id === view.id) : undefined;
-        head = e ? 'Zeitpunkt bearbeiten' : 'Neuer Zeitpunkt';
-        sub = 'Was fährt wann?';
-        body = <EntryEditor key={view.id ?? 'new'} model={model} entry={e} preset={view.preset} onDone={back} headSlot={slot} />;
-    }
+/** Anmeldung des Zurueck-Waechters bei der Seite: true = darf sofort zurueck, false = Editor fragt nach. */
+export type LeaveGuardRegister = (guard: (() => boolean) | null) => void;
+
+/** Meldet den Waechter an und aktuell, ohne bei jedem Rendern neu anzumelden. */
+function useLeaveGuard(register: LeaveGuardRegister | undefined, guard: () => boolean) {
+    const ref = useRef(guard);
+    ref.current = guard;
+    useEffect(() => {
+        register?.(() => ref.current());
+        return () => register?.(null);
+    }, [register]);
+}
+
+/** Meldet "ungesicherte Aenderungen" nach oben (der Stapel haelt dann den Entwurf beim Tab-Wechsel). */
+function useReportDirty(onDirtyChange: ((dirty: boolean) => void) | undefined, dirty: boolean) {
+    useEffect(() => {
+        onDirtyChange?.(dirty);
+    }, [onDirtyChange, dirty]);
+    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+}
+
+interface EditorChrome {
+    /** Platz rechts im Seitenkopf fuer "Sichern" (per Portal) */
+    headSlot?: HTMLElement | null;
+    registerLeaveGuard?: LeaveGuardRegister;
+    onDirtyChange?: (dirty: boolean) => void;
+}
+
+/** "Sichern" im Kopf: fett, blau, grau solange nichts zu sichern ist. */
+function SaveButton({ slot, canSave, onSave }: { slot?: HTMLElement | null; canSave: boolean; onSave: () => void }) {
+    if (!slot) return null;
     return createPortal(
-        <div className="rpp-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
-            <div className="rpp-sheet" style={sheetStyle} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                <div className="rpp-sheet-drag" {...dragHandlers}>
-                    <div className="rpp-sheet-grip">
-                        <div className="rpp-grip-handle" />
-                    </div>
-                    <div className="rpp-sheet-header">
-                        {(view.v !== 'home' || onHomeBack) && (
-                            // Pointer-Stops wie bei der Feder im Rollladen-Popup: sonst
-                            // schluckt setPointerCapture der Wischgeste den Tap.
-                            <button
-                                type="button"
-                                className="rpp-back"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onPointerUp={(e) => e.stopPropagation()}
-                                onPointerMove={(e) => e.stopPropagation()}
-                                onClick={back}
-                                aria-label="Zurück"
-                            >
-                                <ChevronLeft size={20} />
-                            </button>
-                        )}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <h2 className="rpp-sheet-title">{head}</h2>
-                            {sub && <p className="rpp-sheet-subtitle">{sub}</p>}
-                        </div>
-                        {view.v !== 'home' && (
-                            <span
-                                ref={setHeadSlot}
-                                className="rpp-head-actions"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onPointerUp={(e) => e.stopPropagation()}
-                                onPointerMove={(e) => e.stopPropagation()}
-                            />
-                        )}
-                        {view.v === 'home' && headerRight && (
-                            // Pointer-Stops wie beim Zurück-Knopf, sonst schluckt die Wischgeste den Tap.
-                            <span
-                                className="rpp-head-actions"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onPointerUp={(e) => e.stopPropagation()}
-                                onPointerMove={(e) => e.stopPropagation()}
-                            >
-                                {headerRight}
-                            </span>
-                        )}
-                    </div>
-                </div>
-                {/* key: jede Ansicht beginnt oben, statt die Scrollhöhe der vorigen zu erben */}
-                <div className="rpp-sheet-body" key={view.v === 'home' ? 'home' : `${view.v}-${view.id ?? 'new'}`}>
-                    {body}
-                </div>
-            </div>
-        </div>,
-        portalTarget ?? document.body,
+        <button type="button" className="ios-bar-text is-strong" onClick={onSave} disabled={!canSave}>
+            Sichern
+        </button>,
+        slot,
+    );
+}
+
+/** Rueckfrage beim Zurueck mit ungesicherten Aenderungen. */
+function LeaveSheet({
+    open,
+    canSave,
+    onDiscard,
+    onSave,
+    onStay,
+}: {
+    open: boolean;
+    canSave: boolean;
+    onDiscard: () => void;
+    onSave: () => void;
+    onStay: () => void;
+}) {
+    return (
+        <IosActionSheet
+            open={open}
+            actions={[
+                { key: 'discard', label: 'Änderungen verwerfen', tone: 'destructive', onSelect: onDiscard },
+                { key: 'save', label: 'Sichern', disabled: !canSave, onSelect: onSave },
+            ]}
+            cancelLabel="Weiter bearbeiten"
+            onCancel={onStay}
+        />
     );
 }
 
@@ -165,33 +124,37 @@ const SLAT_CHIPS: { v: number; label: string }[] = [
     { v: 90, label: 'geschlossen' },
 ];
 
-function SceneEditor({
+export function SceneEditor({
     model,
     scene,
-    draft,
     onDone,
     setView,
     headSlot,
+    registerLeaveGuard,
+    onDirtyChange,
 }: {
     model: PlanModel;
     scene?: Scene;
-    draft?: SceneDraft;
     onDone: () => void;
     setView: (v: SheetView) => void;
-    headSlot?: HTMLElement | null;
-}) {
-    const [name, setName] = useState(draft?.name ?? scene?.name ?? '');
-    const [icon, setIcon] = useState<SceneIcon>(draft?.icon ?? scene?.icon ?? 'sun');
-    const [favorite, setFavorite] = useState<boolean>(draft?.favorite ?? scene?.favorite ?? false);
-    const [targets, setTargets] = useState<Record<string, { closed: number; slat?: number }>>(() =>
-        draft?.targets ?? Object.fromEntries(
-            (scene?.targets ?? []).map((t) => [
-                t.key,
-                { closed: t.closed, slat: model.deviceOf(t.key)?.hasSlat ? (t.slat ?? 0) : undefined },
-            ]),
-        ),
-    );
+} & EditorChrome) {
+    // Ausgangsstand einmal beim Oeffnen: gegen ihn wird "geaendert" gemessen
+    const [base] = useState(() => sceneDraftOf(scene, model));
+    const [name, setName] = useState(base.name);
+    const [icon, setIcon] = useState<SceneIcon>(base.icon);
+    const [favorite, setFavorite] = useState<boolean>(base.favorite);
+    const [targets, setTargets] = useState<SceneTargets>(base.targets);
+    const [askLeave, setAskLeave] = useState(false);
+    const [askDelete, setAskDelete] = useState(false);
     const count = Object.keys(targets).length;
+    const dirty = !sameSceneDraft({ name, icon, favorite, targets }, base);
+    const canSave = dirty && count > 0;
+    useLeaveGuard(registerLeaveGuard, () => {
+        if (!dirty) return true;
+        setAskLeave(true);
+        return false;
+    });
+    useReportDirty(onDirtyChange, dirty);
 
     const setPos = (key: string, v: number | null, hasSlat: boolean) =>
         setTargets((prev) => {
@@ -220,11 +183,11 @@ function SceneEditor({
             targets: Object.entries(targets).map(([key, v]) => ({ key, closed: v.closed, slat: v.slat })),
         };
         model.saveScene(s);
+        setAskLeave(false);
         onDone();
     };
 
     const usedBy = scene ? model.entriesOfScene(scene.id) : [];
-    const backHere = (): SheetView => ({ v: 'scene', id: scene?.id ?? null, draft: { name, icon, favorite, targets } });
 
     return (
         <div className="rpp-editor">
@@ -329,8 +292,8 @@ function SceneEditor({
             ))}
 
             {scene && (
-                // Kreis schliessen: Zeitpunkt antippen oder anlegen; „Zurück"
-                // fuehrt wieder hierher – mit den noch ungespeicherten Aenderungen.
+                // Kreis schliessen: Zeitpunkt antippen oder anlegen; die Szene bleibt darunter
+                // eingehaengt, „Zurück" fuehrt wieder hierher – mit den noch ungesicherten Aenderungen.
                 <div className="rpp-editor-floor">
                     <Caption>Im Wochenplan</Caption>
                     <div className="rpp-card">
@@ -341,7 +304,7 @@ function SceneEditor({
                                 role="button"
                                 tabIndex={0}
                                 className={`rpp-row rpp-row--tap${e.enabled ? '' : ' is-past'}`}
-                                onClick={() => setView({ v: 'entry', id: e.id, back: backHere() })}
+                                onClick={() => setView({ v: 'entry', id: e.id })}
                             >
                                 <span className="rpp-row-main">
                                     <span className="rpp-title">{triggerText(e.trigger)}</span>
@@ -355,7 +318,11 @@ function SceneEditor({
                             type="button"
                             className="rpp-row rpp-row--tap rpp-row--add"
                             onClick={() =>
-                                setView({ v: 'entry', id: null, preset: { target: { kind: 'scene', sceneId: scene.id } }, back: backHere() })
+                                setView({
+                                    v: 'entry',
+                                    id: null,
+                                    preset: { target: { kind: 'scene', sceneId: scene.id } },
+                                })
                             }
                         >
                             <Plus size={16} /> Zeit hinzufügen
@@ -364,40 +331,43 @@ function SceneEditor({
                 </div>
             )}
 
-            {headSlot &&
-                createPortal(
-                    <HeadActions
-                        what="Szene"
-                        onDelete={
-                            scene
-                                ? () => {
-                                      model.deleteScene(scene.id);
-                                      onDone();
-                                  }
-                                : undefined
-                        }
-                        onSave={save}
-                        canSave={count > 0}
-                    />,
-                    headSlot,
-                )}
-        </div>
-    );
-}
+            {scene && <IosButtonRow label="Szene löschen" tone="danger" onClick={() => setAskDelete(true)} />}
 
-/** Löschen und Speichern als Symbole oben rechts im Fensterkopf. */
-function HeadActions({ what, onDelete, onSave, canSave }: { what: string; onDelete?: () => void; onSave: () => void; canSave: boolean }) {
-    return (
-        <>
-            {onDelete && (
-                <button type="button" className="rpp-back rpp-head-btn is-danger" onClick={onDelete} aria-label={`${what} löschen`} title={`${what} löschen`}>
-                    <Trash2 size={18} />
-                </button>
-            )}
-            <button type="button" className="rpp-back rpp-head-btn" onClick={onSave} disabled={!canSave} aria-label="Speichern" title="Speichern">
-                <Check size={22} />
-            </button>
-        </>
+            <SaveButton slot={headSlot} canSave={canSave} onSave={save} />
+            <LeaveSheet
+                open={askLeave}
+                canSave={canSave}
+                onDiscard={() => {
+                    setAskLeave(false);
+                    onDone();
+                }}
+                onSave={save}
+                onStay={() => setAskLeave(false)}
+            />
+            <IosActionSheet
+                open={askDelete}
+                title={scene ? `„${scene.name}" löschen?` : undefined}
+                message={
+                    usedBy.length > 0
+                        ? `${usedBy.length === 1 ? 'Der Zeitpunkt' : `Die ${usedBy.length} Zeitpunkte`} im Wochenplan, ${usedBy.length === 1 ? 'der' : 'die'} diese Szene ${usedBy.length === 1 ? 'fährt' : 'fahren'}, ${usedBy.length === 1 ? 'wird' : 'werden'} mit gelöscht.`
+                        : undefined
+                }
+                actions={[
+                    {
+                        key: 'delete',
+                        label: 'Szene löschen',
+                        tone: 'destructive',
+                        onSelect: () => {
+                            setAskDelete(false);
+                            if (scene) model.deleteScene(scene.id);
+                            onDone();
+                        },
+                    },
+                ]}
+                cancelLabel="Abbrechen"
+                onCancel={() => setAskDelete(false)}
+            />
+        </div>
     );
 }
 
@@ -440,30 +410,39 @@ function omitQuiet(e: PlanEntry): PlanEntry {
     return rest;
 }
 
-function EntryEditor({
+export function EntryEditor({
     model,
     entry,
     preset,
     onDone,
     headSlot,
+    registerLeaveGuard,
+    onDirtyChange,
 }: {
     model: PlanModel;
     entry?: PlanEntry;
     preset?: Partial<PlanEntry>;
     onDone: () => void;
-    headSlot?: HTMLElement | null;
-}) {
-    const base: PlanEntry = entry ?? {
-        id: newId('e'),
-        days: [true, true, true, true, true, false, false],
-        trigger: { kind: 'time', time: '07:00', offset: 0, earliest: null, latest: null },
-        target: model.scenes[0] ? { kind: 'scene', sceneId: model.scenes[0].id } : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
-        enabled: true,
-        ...preset,
-    };
+} & EditorChrome) {
+    // Ausgangsstand einmal beim Oeffnen (bei einem neuen Zeitpunkt die Vorbelegung)
+    const [base] = useState<PlanEntry>(
+        () =>
+            entry ?? {
+                id: newId('e'),
+                days: [true, true, true, true, true, false, false],
+                trigger: { kind: 'time', time: '07:00', offset: 0, earliest: null, latest: null },
+                target: model.scenes[0]
+                    ? { kind: 'scene', sceneId: model.scenes[0].id }
+                    : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
+                enabled: true,
+                ...preset,
+            },
+    );
     const [e, setE] = useState<PlanEntry>(base);
     const set = (patch: Partial<PlanEntry>) => setE((p) => ({ ...p, ...patch }));
     const setTrig = (patch: Partial<PlanEntry['trigger']>) => setE((p) => ({ ...p, trigger: { ...p.trigger, ...patch } }));
+    const [askLeave, setAskLeave] = useState(false);
+    const [askDelete, setAskDelete] = useState(false);
 
     const todaySun = model.sunFor(model.today);
     const todayRes = triggerMinutes(e.trigger, todaySun);
@@ -484,8 +463,17 @@ function EntryEditor({
     const quietKeys = useMemo(() => devicesOfTarget(e.target, model.scenes), [e.target, model.scenes]);
     const slowCount = quietKeys.filter((k) => model.deviceOf(k)?.hasSlow).length;
     const canSaveEntry = e.days.some(Boolean) && !(e.target.kind === 'scene' && !e.target.sceneId);
+    const dirty = !sameEntry(e, base);
+    const canSave = dirty && canSaveEntry;
+    useLeaveGuard(registerLeaveGuard, () => {
+        if (!dirty) return true;
+        setAskLeave(true);
+        return false;
+    });
+    useReportDirty(onDirtyChange, dirty);
     const saveEntry = () => {
         model.saveEntry(slowCount > 0 && e.quiet ? { ...e, quiet: true } : omitQuiet(e));
+        setAskLeave(false);
         onDone();
     };
 
@@ -667,23 +655,36 @@ function EntryEditor({
                 </span>
             </div>
 
-            {headSlot &&
-                createPortal(
-                    <HeadActions
-                        what="Zeitpunkt"
-                        onDelete={
-                            entry
-                                ? () => {
-                                      model.deleteEntry(entry.id);
-                                      onDone();
-                                  }
-                                : undefined
-                        }
-                        onSave={saveEntry}
-                        canSave={canSaveEntry}
-                    />,
-                    headSlot,
-                )}
+            {entry && <IosButtonRow label="Zeitpunkt löschen" tone="danger" onClick={() => setAskDelete(true)} />}
+
+            <SaveButton slot={headSlot} canSave={canSave} onSave={saveEntry} />
+            <LeaveSheet
+                open={askLeave}
+                canSave={canSave}
+                onDiscard={() => {
+                    setAskLeave(false);
+                    onDone();
+                }}
+                onSave={saveEntry}
+                onStay={() => setAskLeave(false)}
+            />
+            <IosActionSheet
+                open={askDelete}
+                actions={[
+                    {
+                        key: 'delete',
+                        label: 'Zeitpunkt löschen',
+                        tone: 'destructive',
+                        onSelect: () => {
+                            setAskDelete(false);
+                            if (entry) model.deleteEntry(entry.id);
+                            onDone();
+                        },
+                    },
+                ]}
+                cancelLabel="Abbrechen"
+                onCancel={() => setAskDelete(false)}
+            />
         </div>
     );
 }
