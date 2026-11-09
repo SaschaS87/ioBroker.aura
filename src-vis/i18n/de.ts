@@ -598,6 +598,7 @@ export const de = {
     'deviceTheme.dpActive': 'Eine Automation gibt gerade {mode} vor.',
     'deviceSettings.title': 'Einstellungen',
     'deviceSettings.back': 'Einstellungen',
+    'deviceSettings.backShort': 'Zurück',
 
     'theme.vars.title': 'CSS-Variablen anpassen',
     'theme.vars.app': 'App',

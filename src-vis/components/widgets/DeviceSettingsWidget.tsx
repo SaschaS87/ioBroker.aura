@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useT } from '../../i18n';
 import type { WidgetProps } from '../../types';
-import { IosGroup, IosNavBar, IosNavRow, IosSplit, IosStack, useMinWidth } from '../common/ios';
+import { IosGroup, IosNavBar, IosNavRow, IosSplit, IosStack, useMinWidth, useTabHidden } from '../common/ios';
 import { SETTINGS_ROWS, type SettingsRow } from './devicesettings/settingsRows';
 
 /**
@@ -18,6 +18,10 @@ import { SETTINGS_ROWS, type SettingsRow } from './devicesettings/settingsRows';
  * (breit: erste Einstellung vorgewählt).
  *
  * Seit Feature 30 über den iOS-Baustein components/common/ios (Stapel, Kopf, Gruppen, Zeilen).
+ * Der Kopf der Unterseite ist wie in den iPhone-Einstellungen: mitlaufend, mit Kollisionsschutz
+ * (Zurück-Wort wird gekürzt statt den Titel zu überdecken). Tab verlassen: Dashboard.tsx versteckt
+ * besuchte Tabs nur, hängt sie nicht aus; deshalb springt das Widget beim Verdecken auf die
+ * Übersicht zurück (useTabHidden), damit man beim Wiederkommen die Übersicht sieht (Feature 29, E5).
  */
 
 const WIDE_MIN_PX = 640;
@@ -65,12 +69,12 @@ function Detail({ row, inert, onBack }: { row: SettingsRow; inert: boolean; onBa
     const t = useT();
     return (
         <div className="ios-page">
-            {/* fit={false}: Kopf exakt wie Feature 29, Befund Kopf-Kollision bei 352 px bleibt bis Phase 2 */}
             <IosNavBar
-                fit={false}
+                sticky
                 title={t(row.label)}
                 onBack={onBack}
                 backLabel={t('deviceSettings.back')}
+                backFallback={t('deviceSettings.backShort')}
                 backAttrs={{ 'data-ds-back': '' }}
             />
             <row.Page inert={inert} />
@@ -85,6 +89,7 @@ export function DeviceSettingsWidget({ editMode }: WidgetProps) {
 
     const rootRef = useRef<HTMLDivElement>(null);
     const wide = useMinWidth(rootRef, WIDE_MIN_PX);
+    const hidden = useTabHidden(rootRef);
     // key: zuletzt gewählte Einstellung (breit vorgewählt, schmal Inhalt der Unterseite);
     // open: schmal, ob die Unterseite gerade vorne liegt.
     const [state, setState] = useState<{ key: string; open: boolean }>({
@@ -95,6 +100,10 @@ export function DeviceSettingsWidget({ editMode }: WidgetProps) {
     const row = SETTINGS_ROWS.find((r) => r.key === state.key) ?? SETTINGS_ROWS[0];
     const open = (key: string) => setState({ key, open: true });
     const back = () => setState((s) => ({ ...s, open: false }));
+    // Tab verlassen -> beim Wiederkommen die Übersicht (der Tab bleibt eingehängt, nur display:none)
+    useEffect(() => {
+        if (hidden) setState((s) => (s.open ? { ...s, open: false } : s));
+    }, [hidden]);
 
     return (
         <div ref={rootRef} className="ios-root" data-testid="device-settings" aria-label={t('deviceSettings.title')}>
