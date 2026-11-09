@@ -2,8 +2,8 @@
  * "Szene laeuft" und Stopp (Feature 30, Phase 2). Es gibt keinen Datenpunkt, der den Laufzustand einer
  * Szene meldet. Eine Szene gilt deshalb nur dann als laufend, wenn sie auf DIESEM Geraet gestartet wurde
  * und (a) das Skript den Befehl noch nicht quittiert hat oder (b) mindestens ein Antrieb der Szene laut
- * MovingState faehrt. Hoechstens 180 s nach dem Start. Nach einem Stopp wird MovingState 6 s lang
- * ignoriert (der Adapter meldet "steht" erst beim naechsten Poll, siehe useShutterControl.ts).
+ * MovingState faehrt. Hoechstens 180 s nach dem Start. Nach einem Stopp ist der Lauf endgueltig beendet,
+ * spaetere "faehrt"-Meldungen holen die Stopp-Ansicht nicht zurueck.
  *
  * Stopp = zuerst Abbruch-Befehl ans Skript ({"abort": "<id>"}, bricht Wartestellen und Lamellenbefehl ab),
  * dann je Antrieb der Szene derselbe Stopp wie in der Zeile (stopDp = true, Auftrag verwerfen).
@@ -12,7 +12,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useIoBroker } from '../../../../hooks/useIoBroker';
 import { usePendingStore } from '../../shuttershared/useShutterDevice';
-import { STOP_IGNORE_MOVING_MS } from '../useShutterControl';
 import type { ShutterFloorDef } from '../types';
 import type { Scene } from './planModel';
 import type { SceneCommand } from './useSceneCommand';
@@ -46,13 +45,10 @@ export function useSceneRunValue(args: {
     const [tick, setTick] = useState(() => Date.now());
 
     const { pendingSceneId, startedSceneId, startedAt, run: cmdRun, abort: cmdAbort } = cmd;
-    // Sekundentakt nur, solange ein Start oder Stopp noch Folgen haben kann (180-s-Grenze, 6-s-Fenster).
+    // Sekundentakt nur, solange ein Start noch Folgen haben kann (180-s-Grenze). Ein Stopp braucht keinen
+    // Takt: er beendet den Lauf endgueltig (isRunning unten).
     useEffect(() => {
-        const until =
-            Math.max(
-                startedAt !== null ? startedAt + RUN_MAX_MS : 0,
-                stoppedAt !== null ? stoppedAt + STOP_IGNORE_MOVING_MS : 0,
-            ) + 1000;
+        const until = (startedAt !== null ? startedAt + RUN_MAX_MS : 0) + 1000;
         if (until - Date.now() <= 0) return;
         setTick(Date.now());
         const id = window.setInterval(() => {
@@ -61,7 +57,7 @@ export function useSceneRunValue(args: {
             if (n > until) window.clearInterval(id);
         }, 1000);
         return () => window.clearInterval(id);
-    }, [startedAt, stoppedAt]);
+    }, [startedAt]);
 
     const isRunning = useCallback(
         (sceneId: string) => {

@@ -526,34 +526,25 @@ export function PlanSettings({ m }: { m: PlanModel }) {
 
 // ── Szenen ─────────────────────────────────────────────────────────────
 
-function useFlash() {
-    const [flash, setFlash] = useState<string | null>(null);
-    const fire = (id: string) => {
-        setFlash(id);
-        window.setTimeout(() => setFlash((f) => (f === id ? null : f)), 900);
-    };
-    return { flash, fire };
-}
-
 /** Knopf "Fahren"; laeuft die Szene, steht an derselben Stelle "Stopp". Beide Beschriftungen liegen in
- *  einer Rasterzelle (die unsichtbare mit visibility:hidden), damit der Knopf gleich breit bleibt. */
+ *  einer Rasterzelle (die unsichtbare mit visibility:hidden), damit der Knopf gleich breit bleibt.
+ *  Kein eigenes Aufleuchten nach dem Tipp (bis 09.11.2026 gab es 0,9 s Dunkelblau): die Rueckmeldung
+ *  ist das Gelb von "Stopp", das kurz danach ohnehin kommt (Saschas Wunsch vom 09.11.2026). */
 function RunButton({
     name,
     running,
-    flash,
     onRun,
     onStop,
 }: {
     name: string;
     running: boolean;
-    flash: boolean;
     onRun: () => void;
     onStop: () => void;
 }) {
     return (
         <button
             type="button"
-            className={`pw-go${running ? ' is-stop' : ''}${flash ? ' is-flash' : ''}`}
+            className={`pw-go${running ? ' is-stop' : ''}`}
             aria-label={running ? `${name} stoppen` : `${name} fahren`}
             onClick={running ? onStop : onRun}
         >
@@ -576,12 +567,8 @@ function SceneList({
     add,
     kacheln,
 }: W & { edit: boolean; list: Scene[]; add: boolean; kacheln: boolean }) {
-    const { flash, fire } = useFlash();
     const sceneRun = useSceneRun();
-    const runScene = (s: Scene) => {
-        sceneRun.run(s.id);
-        fire(s.id);
-    };
+    const runScene = (s: Scene) => sceneRun.run(s.id);
     const newBtnLabel = 'Neue Szene';
 
     if (kacheln) {
@@ -619,7 +606,7 @@ function SceneList({
                             <span className="pw-tile-sub">{namesLine(m, { kind: 'scene', sceneId: s.id }, 2)}</span>
                         </>
                     );
-                    const cls = `pw-tile${flash === s.id ? ' is-flash' : ''}${edit ? ' is-edit' : ''}`;
+                    const cls = `pw-tile${edit ? ' is-edit' : ''}`;
                     return edit ? (
                         <button
                             key={s.id}
@@ -668,7 +655,6 @@ function SceneList({
                             <RunButton
                                 name={s.name}
                                 running={sceneRun.isRunning(s.id)}
-                                flash={flash === s.id}
                                 onRun={() => runScene(s)}
                                 onStop={() => sceneRun.stop(s.id)}
                             />

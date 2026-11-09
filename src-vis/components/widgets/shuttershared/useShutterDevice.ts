@@ -80,6 +80,10 @@ interface ShutterDeviceState {
     slatShownPos: number | null;
     /** Startwert (Rohwert) der aktuellen Fahrt, null wenn nicht in Fahrt. Eingefroren bei Fahrtbeginn. */
     startOpen: number | null;
+    /** MovingState wie gemeldet (ohne Lamellen-Filter), null = kein Datenpunkt/unbekannt. */
+    movingRaw: boolean | null;
+    /** Zeitstempel dieser Meldung auf dem Pi (state.ts) - nur mit anderen Pi-Zeitstempeln vergleichen. */
+    movingTs: number | null;
 }
 
 export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
@@ -241,5 +245,7 @@ export const useShutterDevice = (dev: ShutterDeviceDef): ShutterDeviceState => {
         slatTarget,
         isSlatActing,
         startOpen,
+        movingRaw: dev.activityDp && typeof activityVal === 'boolean' ? activityVal : null,
+        movingTs: dev.activityDp && typeof activityState.state?.ts === 'number' ? activityState.state.ts : null,
     };
 };

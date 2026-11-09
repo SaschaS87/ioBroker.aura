@@ -152,7 +152,9 @@
   background: color-mix(in srgb, var(--sf-text) 12%, transparent);
   transform: scaleY(0.6);
 }
-.sf-row:active {
+/* Grau nur beim Tipp auf die Zeile selbst (oeffnet den Feinregler). Beim Tipp auf Auf/Zu/Stopp
+   faerbte sich sonst kurz die ganze Zeile, bevor die Stopp-Taste kam (Saschas Rueckmeldung 09.11.2026). */
+.sf-row:active:not(:has(.sf-btns:active)) {
   background: color-mix(in srgb, var(--sf-text) 6%, transparent);
 }
 .sf-row--nav {

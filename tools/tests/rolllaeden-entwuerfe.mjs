@@ -936,14 +936,17 @@ async function runAndStop(browser) {
         check('m) and the button still says "Fahren"', !!b && b.text === 'Fahren', JSON.stringify(b));
     }, { stopOk: true });
 
-    // without a stop the unconfirmed run keeps "Stopp" and the hint appears after 5 s
+    // without a stop the unconfirmed run keeps "Stopp"; the hint appears 5 s (timeout) + 6 s (one poll for
+    // "faehrt") after the start, and only because no drive of the scene reports moving (aura-2.8.1)
     await scenario(browser, async (page) => {
         await openKino(page);
         await jsClick(page, 'button[aria-label="Kino im Wohnzimmer fahren"]');
         await page.waitForTimeout(5600);
+        check('l) 5 s without an answer: no hint yet', (await page.locator('.rpp-toast').count()) === 0);
+        await page.waitForTimeout(6000);
         const b = await runBtn(page, 'Kino im Wohnzimmer');
         check(
-            'l) after 5 s without an answer: the hint appears, the scene still counts as running ("Stopp")',
+            'l) 11 s without an answer and nothing moving: the hint appears, the scene still counts as running ("Stopp")',
             (await page.locator('.rpp-toast', { hasText: 'Skript antwortet nicht' }).count()) === 1 && !!b && b.text === 'Stopp',
             JSON.stringify(b),
         );

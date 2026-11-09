@@ -3,7 +3,7 @@
  * (Feature 27, Rolllaeden modern, Einbau 03.11.2026).
  *
  * Auf/Zu sofort ohne Bestaetigung, Stopp nur waehrend der Fahrt,
- * 6-Sekunden-Stoppfenster gegen Nachflackern, „unbekannt" statt geschaetzter
+ * nach Stopp Sperre bis zur Stillstands-Meldung der Box, „unbekannt" statt geschaetzter
  * Werte. Die Logik stammt unveraendert aus der frueheren Zeile (Feature 17,
  * Ziel C); die Begruendungen stehen unten an den jeweiligen Stellen.
  */
@@ -14,22 +14,38 @@ import { useShutterDevice, usePendingStore } from '../shuttershared/useShutterDe
 import { radioDpsFromPosDp, isRadioOffline } from '../shuttershared/tahomaRadio';
 import type { ShutterFloorDeviceDef } from './types';
 
-// Stopp-Fenster gegen Flackern und Nachhaengen (Feature 17, Ziel C).
-// Der Adapter tahoma.1 laeuft im Polling-Modus: system.adapter.tahoma.1,
-// common.dataSource: "poll", native.pollinterval: 5000. core:MovingState wird
-// nur alle ~5,0 s auf einem festen globalen Raster aktualisiert, nicht an den
-// Tastendruck gekoppelt.
-// Gemessen am 03.09.2026 an Wohnz_gross (Kommandos befristet historisiert,
-// danach wieder auf enabled: false): Stopp 07:27:41.917 -> Poll bestaetigt
-// "steht" 07:27:47.184 = 5,27 s Verzug (Worst Case dieser Messreihe); zweiter
-// Fall 07:27:57.517 -> 07:28:02.19 = 4,67 s. Poll-Zeitpunkte lagen 5,00-5,03 s
-// auseinander.
-// Daraus: 6000 ms = ein Poll-Intervall plus Marge, deckt den gemessenen Worst
-// Case von 5,27 s mit ~0,7 s Reserve ab.
-// Verweis auf PENDING_MAX_AGE_MS = 45000 in useShutterDevice.ts: Das
-// Stopp-Fenster liegt bewusst weit darunter, kann mit der
-// Auftrags-Altersgrenze nicht kollidieren.
-export const STOP_IGNORE_MOVING_MS = 6000;
+// Nach einem Stopp: MovingState erst wieder glauben, wenn die Box den Stillstand
+// bestaetigt hat (Neufassung 09.11.2026, ersetzt das 6-Sekunden-Fenster aus
+// Feature 17, Ziel C).
+//
+// Hintergrund: tahoma.1 laeuft im Polling-Modus (pollinterval 5000).
+// core:MovingState kommt nur alle ~5 s und hinkt der Wirklichkeit hinterher.
+// Nach einem Stopp meldet der naechste Poll oft noch "faehrt" (der Motor lief
+// beim Abfragen noch an oder aus), "steht" kommt einen Poll spaeter.
+// Das alte Fenster nahm dafuer pauschal 6 s an (Messung 03.09.2026: 4,67-5,27 s).
+// Echte Fahrten am 09.11.2026 widerlegen das:
+//   Kinderzimmer_2: Stopp 15:17:17.797Z, "faehrt" 15:17:19.777Z, "steht" erst
+//   15:17:24.789Z = 7,0 s nach dem Stopp. Bad: Stopp 15:19:38.273Z, "steht"
+//   15:19:44.845Z = 6,6 s. In der Luecke zwischen Fensterende und "steht" kam
+//   die Stopp-Taste zurueck, ohne dass jemand etwas gedrueckt hatte.
+// Ausserdem schreibt der Adapter innerhalb eines Polls widerspruechliche
+// Werte kurz hintereinander, z. B. Kinderzimmer 15:17:14.849Z "steht",
+// 15:17:14.850Z "faehrt", 15:17:19.776Z "steht".
+//
+// Deshalb kein geschaetztes Zeitfenster mehr, sondern die Bestaetigung selbst:
+// Nach einem Stopp gehoert jedes "faehrt" zur gestoppten Fahrt, bis die Box
+// "steht" meldet - eine Meldung, die NACH dem Stopp geschrieben wurde
+// (Pi-Zeitstempel gegen Pi-Zeitstempel, kein Uhrenversatz zum Handy) und
+// nicht im selben Poll von einem "faehrt" ueberholt wird. STOP_SETTLE_MS ist
+// dafuer nur die Ruhezeit nach diesem "steht": alle Werte eines Polls kamen
+// in den Messungen innerhalb von 0,1 s.
+// Endet die Sperre auch ohne Bestaetigung: bei einem neuen Auf/Zu von hier
+// (sofort) und als Sicherheitsnetz nach STOP_GUARD_MAX_MS. Das Netz greift
+// nur, wenn nach dem Stopp nie ein "steht" kommt (Box meldete die Fahrt gar
+// nicht erst) - dann soll eine spaetere echte Fremdfahrt (Wandschalter,
+// Zeitplan) nicht dauerhaft unsichtbar bleiben.
+export const STOP_SETTLE_MS = 1500;
+export const STOP_GUARD_MAX_MS = 45000;
 
 export interface ShutterControl {
     /** Prozent zu (0 = offen, 100 = zu), null = unbekannt */
@@ -52,14 +68,11 @@ export function useShutterControl(device: ShutterFloorDeviceDef): ShutterControl
     const state = useShutterDevice(device);
     const { markPending, clearPending } = usePendingStore();
 
-    // Merker fuer das Stopp-Fenster (Feature 17, Ziel C). Bewusst useState,
-    // nicht useRef: Ein useRef loest kein Neuzeichnen aus. Laeuft nach dem
-    // Fensterende noch eine echte Fremdfahrt (Wandschalter), muesste die
-    // Zeile beim Ablauf des Fensters von selbst wieder auf busy umschalten -
-    // ohne Neuzeichnen bliebe die Stopp-Taste unsichtbar, bis zufaellig eine
-    // andere Datenpunktmeldung eintrifft. Ob der Adapter bei unveraendertem
-    // Poll-Wert ueberhaupt erneut ein stateChange sendet, ist nicht belegt.
-    const [stoppedAt, setStoppedAt] = useState<number | null>(null);
+    // Sperre nach einem Stopp (siehe STOP_SETTLE_MS oben). `at` = Handy-Zeit
+    // fuer das Sicherheitsnetz, `ts` = Pi-Zeitstempel der MovingState-Meldung,
+    // die beim Stopp galt. Bewusst useState: das Ende der Sperre muss neu
+    // zeichnen, falls dann eine echte Fremdfahrt laeuft.
+    const [stopGuard, setStopGuard] = useState<{ at: number; ts: number | null } | null>(null);
 
     // Funk-Ausfall (Zeichen in der Zeile, umgesetzt 02.09.2026). Nur der
     // Status-Datenpunkt wird gebraucht, RSSI/Discrete bleiben dem Feinregler
@@ -71,14 +84,10 @@ export function useShutterControl(device: ShutterFloorDeviceDef): ShutterControl
     // Geschlossener Anteil fuer den Statustext
     const closed = state.isUnknown ? null : 100 - (state.posOpen ?? 0);
 
-    // Stopp-Fenster aktiv? Dieselbe Lehre wie bei PENDING_MAX_AGE_MS
-    // (useShutterDevice.ts): iOS friert Timer ein, sobald die App in den
-    // Hintergrund wandert. Ein Fenster, das nur per setTimeout endet, bliebe
-    // nach Rueckkehr aus dem Hintergrund unbegrenzt offen und wuerde echte
-    // Bewegungsmeldungen dauerhaft schlucken. Der Zeitstempelvergleich beim
-    // Rendern ist die massgebliche Pruefung, der Timer weiter unten sorgt nur
-    // fuer das Neuzeichnen.
-    const inStopWindow = stoppedAt !== null && Date.now() - stoppedAt < STOP_IGNORE_MOVING_MS;
+    // Sperre aktiv? Das Sicherheitsnetz per Zeitstempelvergleich beim Rendern,
+    // nicht per Timer: iOS friert Timer im Hintergrund ein (dieselbe Lehre wie
+    // PENDING_MAX_AGE_MS in useShutterDevice.ts).
+    const inStopGuard = stopGuard !== null && Date.now() - stopGuard.at < STOP_GUARD_MAX_MS;
 
     // Bewegungs-Zustand: laeuft, solange die Box Bewegung meldet ODER ein von
     // hier abgeschickter Befehl noch nicht am Ziel angekommen ist.
@@ -90,27 +99,31 @@ export function useShutterControl(device: ShutterFloorDeviceDef): ShutterControl
     // verspaetete isMoving, niemals ein selbst ausgeloestes Fahrsignal.
     //
     // Wahrheitstabelle:
-    // isActing | isMoving | inStopWindow | alt   | neu
-    // false    | false    | -            | false | false
-    // false    | true     | false        | true  | true
-    // false    | true     | true         | true  | false  <- einziger Unterschied
-    // true     | -        | -            | true  | true
-    // "neu" ist nie true, wo "alt" false war.
-    const busy = state.isActing || (state.isMoving && !inStopWindow);
+    // isActing | isMoving | inStopGuard | busy
+    // false    | false    | -           | false
+    // false    | true     | false       | true
+    // false    | true     | true        | false  <- "faehrt" der gestoppten Fahrt
+    // true     | -        | -           | true
+    const busy = state.isActing || (state.isMoving && !inStopGuard);
 
-    // Der Timer beendet das Stopp-Fenster nicht fachlich - das tut der
-    // Zeitstempelvergleich in inStopWindow weiter oben. Er sorgt nur dafuer,
-    // dass die Zeile beim Fensterende einmal neu zeichnet.
+    // Ende der Sperre: Die Box meldet "steht", geschrieben nach dem Stopp, und
+    // im selben Poll kommt kein "faehrt" mehr hinterher. Trifft innerhalb von
+    // STOP_SETTLE_MS ein neues "faehrt" ein, aendern sich die Abhaengigkeiten,
+    // der Timer wird verworfen und die Sperre bleibt.
+    const { movingRaw, movingTs } = state;
     useEffect(() => {
-        if (stoppedAt === null) return;
-        const rest = STOP_IGNORE_MOVING_MS - (Date.now() - stoppedAt);
-        if (rest <= 0) {
-            setStoppedAt(null);
+        if (stopGuard === null) return;
+        const guardAge = Date.now() - stopGuard.at;
+        if (guardAge >= STOP_GUARD_MAX_MS) {
+            setStopGuard(null);
             return;
         }
-        const t = window.setTimeout(() => setStoppedAt(null), rest);
+        const confirmed =
+            movingRaw === false && movingTs !== null && (stopGuard.ts === null || movingTs > stopGuard.ts);
+        const wait = confirmed ? STOP_SETTLE_MS : STOP_GUARD_MAX_MS - guardAge;
+        const t = window.setTimeout(() => setStopGuard(null), wait);
         return () => window.clearTimeout(t);
-    }, [stoppedAt]);
+    }, [stopGuard, movingRaw, movingTs]);
 
     // Statustext
     let status: string;
@@ -143,32 +156,25 @@ export function useShutterControl(device: ShutterFloorDeviceDef): ShutterControl
         const targetRaw = device.invertPosition ? 0 : 100;
         setState(device.upDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
-        // Stopp-Fenster sofort verwerfen: Solange der Auftrag laeuft, traegt
-        // isActing die Anzeige. Der Auftrag endet aber vorzeitig, sobald die
-        // Box die Zielposition im Toleranzband ±3 quittiert
-        // (useShutterDevice.ts) - bei einer kurzen Fahrt kann das noch
-        // innerhalb der 6 Sekunden passieren. Danach traegt allein isMoving.
-        // Ein noch offenes Stopp-Fenster wuerde die Anzeige in diesem Moment
-        // faelschlich abschalten. Deshalb wird das Fenster bei jedem
-        // bewussten Auf/Zu-Tipp sofort verworfen.
-        setStoppedAt(null);
+        // Sperre sofort verwerfen: Das ist eine neue Fahrt. Solange der Auftrag
+        // laeuft, traegt isActing die Anzeige; er endet aber vorzeitig, sobald
+        // die Box die Zielposition (±3) quittiert. Danach traegt allein
+        // isMoving - eine noch offene Sperre wuerde die Anzeige faelschlich
+        // abschalten.
+        setStopGuard(null);
     };
 
     const stop = () => {
         if (!device.stopDp) return;
         setState(device.stopDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         clearPending(device.key);
-        // Stopp-Fenster setzen (Feature 17, Ziel C). Deckt zwei Symptome mit
-        // einem Mechanismus ab:
-        // "Haengt nach": isActing war schon sofort weg, isMoving stand bis
-        // zum naechsten Poll-Tick noch auf true (gemessen 4,67-5,27 s). Das
-        // Fenster blendet diesen Rest aus.
-        // "Flackern": Wurde Stopp gedrueckt, bevor der erste Poll die Fahrt
-        // ueberhaupt als true bestaetigt hatte, fielen isActing und isMoving
-        // gleichzeitig weg, der naechste Poll holte die kurze reale Fahrt
-        // nach, der uebernaechste meldete false. Das Fenster deckt diese
-        // Nachzuegler ab.
-        setStoppedAt(Date.now());
+        // Sperre setzen. Deckt beide Symptome ab, ohne Zeitannahme:
+        // "Haengt nach": isMoving steht bis zum naechsten Poll noch auf true.
+        // "Kommt zurueck": Der erste Poll nach dem Stopp holt die Fahrt erst
+        // nach ("faehrt"), "steht" folgt einen Poll spaeter.
+        // Gemerkt wird der Pi-Zeitstempel der jetzt gueltigen Meldung: nur ein
+        // "steht", das danach geschrieben wurde, bestaetigt den Stillstand.
+        setStopGuard({ at: Date.now(), ts: state.movingTs });
     };
 
     const close = () => {
@@ -178,8 +184,8 @@ export function useShutterControl(device: ShutterFloorDeviceDef): ShutterControl
         const targetRaw = device.invertPosition ? 100 : 0;
         setState(device.downDp, true, { diag: true }); // Diagnose 12.09.2026, siehe useIoBroker.ts
         markPending(device.key, targetRaw, state.lastKnownAckedPos);
-        // Stopp-Fenster sofort verwerfen - Begruendung siehe open.
-        setStoppedAt(null);
+        // Sperre sofort verwerfen - Begruendung siehe open.
+        setStopGuard(null);
     };
 
     return {
