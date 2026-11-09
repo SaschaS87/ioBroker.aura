@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
@@ -11,11 +11,9 @@ import { ShutterDetailSheet } from './ShutterDetailSheet';
 import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
+import { PlannerStack } from './planner/PlannerStack';
+import { PlanTiles } from './planner/PlanWindows';
 import './ShutterFloorsWidget.css';
-
-// Feature 30, Runde 1: Entwürfe A bis C (Zeitplan und Szenen als Unterseiten) nur in der Dev-Vorschau.
-// Im Pi-Build ist import.meta.env.DEV false: dynamischer Import und Ordner preview/ fallen ganz weg.
-const NavPreview = import.meta.env.DEV ? lazy(() => import('./preview/NavPreview')) : null;
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
@@ -308,42 +306,33 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         />
     );
 
-    const ist = (
-        <div className="shutter-floors-widget">
-            {banner}
-            <div className={`sf${connected ? '' : ' is-offline'}`}>
-                {/* Rolllaeden-Planer (Feature 23): Kopfgruppe Zeitplan/Szenen
-                    ueber der Etagenliste, nur wenn showPlanner===true. */}
-                {showPlanner && <RollPlanTile floors={floors} root={effectivePlannerRoot} />}
-
-                {floorList}
-
-                <div className="sf-foot">{footer}</div>
-            </div>
-
-            {sheet}
+    // Liste mit Etagen und Fuss. Mit Planer (showPlanner) steht darueber die Kopfgruppe Zeitplan/Szenen, und die
+    // Liste ist die unterste Seite des Stapels (Feature 30, Phase 2); ohne Planer bleibt es die Liste allein.
+    const listBody = (head?: React.ReactNode) => (
+        <div className={`sf${connected ? '' : ' is-offline'}`}>
+            {head}
+            {floorList}
+            <div className="sf-foot">{footer}</div>
         </div>
     );
 
     return (
         <PendingContext.Provider value={pendingStore}>
-            {NavPreview ? (
-                <Suspense fallback={ist}>
-                    <NavPreview
-                        ist={ist}
+            <div className="shutter-floors-widget">
+                {banner}
+                {showPlanner ? (
+                    <RollPlanTile
                         floors={floors}
                         root={effectivePlannerRoot}
-                        showPlanner={showPlanner}
-                        connected={connected}
-                        banner={banner}
-                        floorList={floorList}
-                        footer={footer}
-                        sheet={sheet}
+                        render={(m) => (
+                            <PlannerStack m={m} list={(open) => listBody(<PlanTiles m={m} open={open} />)} />
+                        )}
                     />
-                </Suspense>
-            ) : (
-                ist
-            )}
+                ) : (
+                    listBody()
+                )}
+                {sheet}
+            </div>
         </PendingContext.Provider>
     );
 };

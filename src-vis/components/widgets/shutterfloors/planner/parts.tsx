@@ -1,7 +1,7 @@
 /**
  * Gemeinsame Bausteine der Rolllaeden-Planer-Kachel (Produktion, Feature 23):
  * Glyphen, Beschriftung, Umschalter, Wochentage, Toast. Kachel und Fenster
- * liegen in PlanWindows.tsx, die Editoren und das Fenster-Geruest (PlanSheet)
+ * liegen in PlanWindows.tsx, die Editoren
  * in editors.tsx.
  */
 import type { ReactNode } from 'react';

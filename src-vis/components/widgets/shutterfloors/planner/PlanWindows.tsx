@@ -1,21 +1,19 @@
 /**
- * Rolllaeden-Planer: Kopfgruppe „Zeitplan" und „Szenen" in der Liste, jede
- * Zeile oeffnet ihr eigenes Fenster (Feature 23, Ueberarbeitung 31.10.–
- * 03.11.2026; Feature 27, Fassung 64 „Tages-Zeitleiste", Saschas Wahl).
+ * Rolllaeden-Planer: Inhalte der Unterseiten „Zeitplan“ und „Szenen“ sowie die Kopfgruppe der
+ * Liste (Feature 23, Ueberarbeitung 31.10.–03.11.2026; Feature 27, Fassung 64 „Tages-Zeitleiste“;
+ * Feature 30, Phase 2: Unterseiten statt Fenster von unten, Rahmen in PlannerStack.tsx).
  *
- * - Zeitplan: Hauptschalter und „Heute aussetzen" als Schalterzeilen, darunter
- *   die Zeitpunkte als Zeitleiste des heutigen Tages mit „jetzt"-Marke. Die
- *   naechste Fahrt ist hervorgehoben und traegt den Countdown. Ausgeschaltete
- *   Zeitpunkte liegen zugeklappt darunter. Feiertagsregel, Sonnenzeiten und
- *   die Wahl der Szenen-Darstellung stehen hinter dem Zahnrad oben rechts.
- * - Szenen: Antippen faehrt sofort, als Liste mit Fahr-Knopf oder als farbige
- *   Kacheln (Wahl in den Einstellungen, gilt je Geraet). „Weitere" klappt ein.
- *   Der Stift oben rechts schaltet aufs Bearbeiten.
- * - Die Editoren (Szene/Zeitpunkt) kommen aus editors.tsx, Loeschen und
- *   Speichern stehen dort als Symbole im Fensterkopf. Ihr Look kommt aus
- *   PlanWindows.css.
+ * - Zeitplan: Hauptschalter und „Heute aussetzen“ als Schalterzeilen, darunter die Zeitpunkte als
+ *   Zeitleiste des heutigen Tages mit „jetzt“-Marke. Die naechste Fahrt ist hervorgehoben und traegt
+ *   den Countdown. Ausgeschaltete Zeitpunkte liegen zugeklappt darunter. Feiertagsregel, Sonnenzeiten und
+ *   die Wahl der Szenen-Darstellung stehen auf der Unterseite „Einstellungen“ (Textknopf oben rechts).
+ * - Szenen: Nur der Knopf „Fahren“ (Liste) bzw. der runde Knopf oben rechts (Kacheln) startet die Szene.
+ *   Laeuft sie, wird derselbe Knopf an derselben Stelle zu „Stopp“ (useSceneRun.ts). Die Darstellung
+ *   (Liste oder farbige Kacheln) waehlt jedes Geraet in den Einstellungen. „Weitere“ klappt ein.
+ *   „Bearbeiten“ oben rechts schaltet aufs Bearbeiten: dann oeffnet die ganze Zeile bzw. Kachel den Editor.
+ * - Die Editoren (Szene/Zeitpunkt) kommen aus editors.tsx. Ihr Look kommt aus PlanWindows.css.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
     AlarmClock,
     CalendarClock,
@@ -29,7 +27,7 @@ import {
     Play,
     Plus,
     Power,
-    Settings,
+    Square,
     Sunrise,
     Sunset,
 } from 'lucide-react';
@@ -50,7 +48,8 @@ import {
     type SceneIcon,
 } from './planModel';
 import { closedWord, DayLetters, SceneGlyph, Toggle } from './parts';
-import { PlanSheet, type SheetView } from './editors';
+import type { SheetView } from './editors';
+import { useSceneRun } from './useSceneRun';
 import './PlanWindows.css';
 
 export type Tab = 'plan' | 'scenes';
@@ -536,7 +535,39 @@ function useFlash() {
     return { flash, fire };
 }
 
-/** Antippen faehrt sofort; im Bearbeiten-Modus oeffnet es den Editor. */
+/** Knopf "Fahren"; laeuft die Szene, steht an derselben Stelle "Stopp". Beide Beschriftungen liegen in
+ *  einer Rasterzelle (die unsichtbare mit visibility:hidden), damit der Knopf gleich breit bleibt. */
+function RunButton({
+    name,
+    running,
+    flash,
+    onRun,
+    onStop,
+}: {
+    name: string;
+    running: boolean;
+    flash: boolean;
+    onRun: () => void;
+    onStop: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            className={`pw-go${running ? ' is-stop' : ''}${flash ? ' is-flash' : ''}`}
+            aria-label={running ? `${name} stoppen` : `${name} fahren`}
+            onClick={running ? onStop : onRun}
+        >
+            <span className="pw-go-lab" style={running ? { visibility: 'hidden' } : undefined}>
+                <Play size={13} fill="currentColor" /> Fahren
+            </span>
+            <span className="pw-go-lab" style={running ? undefined : { visibility: 'hidden' }}>
+                <Square size={12} fill="currentColor" /> Stopp
+            </span>
+        </button>
+    );
+}
+
+/** Nur der Knopf startet (bzw. stoppt); im Bearbeiten-Modus oeffnet die ganze Zeile bzw. Kachel den Editor. */
 function SceneList({
     m,
     setView,
@@ -546,9 +577,9 @@ function SceneList({
     kacheln,
 }: W & { edit: boolean; list: Scene[]; add: boolean; kacheln: boolean }) {
     const { flash, fire } = useFlash();
-    const tapScene = (s: Scene) => {
-        if (edit) return setView({ v: 'scene', id: s.id });
-        m.runScene(s.id);
+    const sceneRun = useSceneRun();
+    const runScene = (s: Scene) => {
+        sceneRun.run(s.id);
         fire(s.id);
     };
     const newBtnLabel = 'Neue Szene';
@@ -556,24 +587,55 @@ function SceneList({
     if (kacheln) {
         return (
             <div className="pw-tiles">
-                {list.map((s) => (
-                    <button
-                        key={s.id}
-                        type="button"
-                        className={`pw-tile${flash === s.id ? ' is-flash' : ''}${edit ? ' is-edit' : ''}`}
-                        style={{ ['--sq' as string]: SCENE_COLOR[s.icon] ?? '#0a84ff' }}
-                        onClick={() => tapScene(s)}
-                    >
-                        <span className="pw-tile-top">
-                            <SceneGlyph icon={s.icon} size={22} />
-                            <span className="pw-tile-act">
-                                {edit ? <Pencil size={14} /> : <Play size={14} fill="currentColor" />}
+                {list.map((s) => {
+                    const running = sceneRun.isRunning(s.id);
+                    const style = { ['--sq' as string]: SCENE_COLOR[s.icon] ?? '#0a84ff' };
+                    const body = (
+                        <>
+                            <span className="pw-tile-top">
+                                <SceneGlyph icon={s.icon} size={22} />
+                                {edit ? (
+                                    <span className="pw-tile-act">
+                                        <Pencil size={14} />
+                                    </span>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        className="pw-tile-actbtn"
+                                        aria-label={running ? `${s.name} stoppen` : `${s.name} fahren`}
+                                        onClick={() => (running ? sceneRun.stop(s.id) : runScene(s))}
+                                    >
+                                        <span className="pw-tile-act">
+                                            {running ? (
+                                                <Square size={12} fill="currentColor" />
+                                            ) : (
+                                                <Play size={14} fill="currentColor" />
+                                            )}
+                                        </span>
+                                    </button>
+                                )}
                             </span>
-                        </span>
-                        <span className="pw-tile-name">{s.name}</span>
-                        <span className="pw-tile-sub">{namesLine(m, { kind: 'scene', sceneId: s.id }, 2)}</span>
-                    </button>
-                ))}
+                            <span className="pw-tile-name">{s.name}</span>
+                            <span className="pw-tile-sub">{namesLine(m, { kind: 'scene', sceneId: s.id }, 2)}</span>
+                        </>
+                    );
+                    const cls = `pw-tile${flash === s.id ? ' is-flash' : ''}${edit ? ' is-edit' : ''}`;
+                    return edit ? (
+                        <button
+                            key={s.id}
+                            type="button"
+                            className={cls}
+                            style={style}
+                            onClick={() => setView({ v: 'scene', id: s.id })}
+                        >
+                            {body}
+                        </button>
+                    ) : (
+                        <div key={s.id} className={cls} style={style}>
+                            {body}
+                        </div>
+                    );
+                })}
                 {edit && add && (
                     <button
                         type="button"
@@ -592,7 +654,6 @@ function SceneList({
             {list.map((s) => (
                 <GRow
                     key={s.id}
-                    cls={flash === s.id ? 'is-flash' : ''}
                     lead={
                         <Sq color={SCENE_COLOR[s.icon] ?? '#0a84ff'}>
                             <SceneGlyph icon={s.icon} size={16} />
@@ -604,12 +665,16 @@ function SceneList({
                         edit ? (
                             <Chev />
                         ) : (
-                            <span className="pw-go">
-                                <Play size={13} fill="currentColor" /> Fahren
-                            </span>
+                            <RunButton
+                                name={s.name}
+                                running={sceneRun.isRunning(s.id)}
+                                flash={flash === s.id}
+                                onRun={() => runScene(s)}
+                                onStop={() => sceneRun.stop(s.id)}
+                            />
                         )
                     }
-                    onClick={() => tapScene(s)}
+                    onClick={edit ? () => setView({ v: 'scene', id: s.id }) : undefined}
                 />
             ))}
             {edit && add && (
@@ -658,15 +723,19 @@ export function ScenesHome({ m, setView, edit }: W & { edit: boolean }) {
             {edit ? (
                 <GF>Szene antippen zum Bearbeiten. Ob sie Favorit ist, stellst du in der Szene ein.</GF>
             ) : m.scenes.length ? (
-                <GF>Antippen fährt die Szene sofort, auch wenn der Zeitplan aus ist.</GF>
+                <GF>
+                    {kacheln
+                        ? 'Der Play-Knopf startet die Szene sofort, auch wenn der Zeitplan aus ist.'
+                        : '„Fahren“ startet die Szene sofort, auch wenn der Zeitplan aus ist.'}
+                </GF>
             ) : (
-                <GF>Noch keine Szenen – über den Stift anlegen.</GF>
+                <GF>Noch keine Szenen – über „Bearbeiten“ anlegen.</GF>
             )}
         </>
     );
 }
 
-// ── Kopfgruppe und Fenster ─────────────────────────────────────────────
+// ── Kopfgruppe der Liste ───────────────────────────────────────────────
 
 /** Kopfgruppe der Liste: zwei Zeilen „Zeitplan" und „Szenen". */
 export function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void }) {
@@ -698,82 +767,5 @@ export function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void })
                 <ChevronRight size={18} className="sf-chev" />
             </button>
         </div>
-    );
-}
-
-function HeadBtn({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
-    return (
-        <button
-            type="button"
-            className="rpp-back rpp-head-btn pw-head-btn"
-            onClick={onClick}
-            aria-label={label}
-            title={label}
-        >
-            {children}
-        </button>
-    );
-}
-
-export function PlanWindows({ model: m }: { model: PlanModel }) {
-    const [tab, setTab] = useState<Tab | null>(null);
-    const [seq, setSeq] = useState(0);
-    const [view, setView] = useState<SheetView>({ v: 'home' });
-    const [opts, setOpts] = useState(false);
-    const [edit, setEdit] = useState(false);
-    useEffect(() => {
-        setOpts(false);
-        setEdit(false);
-    }, [seq]);
-    const open = (t: Tab) => {
-        setSeq((n) => n + 1);
-        setView({ v: 'home' });
-        setTab(t);
-    };
-
-    let title = 'Zeitplan';
-    let subtitle = statusText(m);
-    let home: ReactNode;
-    let headerRight: ReactNode = null;
-    if (tab === 'scenes') {
-        title = 'Szenen';
-        subtitle = `${m.scenes.length} Szenen`;
-        home = <ScenesHome m={m} setView={setView} edit={edit} />;
-        headerRight = (
-            <HeadBtn label={edit ? 'Fertig' : 'Szenen bearbeiten'} onClick={() => setEdit(!edit)}>
-                {edit ? <Check size={20} /> : <Pencil size={18} />}
-            </HeadBtn>
-        );
-    } else if (opts) {
-        title = 'Einstellungen';
-        subtitle = 'Zeitplan';
-        home = <PlanSettings m={m} />;
-    } else {
-        home = <PlanHome m={m} setView={setView} />;
-        headerRight = (
-            <HeadBtn label="Einstellungen" onClick={() => setOpts(true)}>
-                <Settings size={19} />
-            </HeadBtn>
-        );
-    }
-
-    return (
-        <>
-            <PlanTiles m={m} open={open} />
-            {tab && (
-                <PlanSheet
-                    key={seq}
-                    title={title}
-                    subtitle={subtitle}
-                    view={view}
-                    setView={setView}
-                    onClose={() => setTab(null)}
-                    model={m}
-                    headerRight={headerRight}
-                    onHomeBack={tab === 'plan' && opts ? () => setOpts(false) : undefined}
-                    home={<div className="pw-home">{home}</div>}
-                />
-            )}
-        </>
     );
 }

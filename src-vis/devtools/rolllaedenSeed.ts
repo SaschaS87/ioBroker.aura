@@ -1,6 +1,7 @@
-// Feature 30 (Runde 1): Beispieldaten fuer die Rolllaeden-Entwuerfe, ohne Pi.
+// Feature 30: Beispieldaten fuer den Rolllaeden-Tab (Zeitplan und Szenen als Unterseiten), ohne Pi.
 // Nur Dev und nur ueber screenshotApi.ts (`/?shot=1&rolllaeden=1`). Alles erfunden und als
 // "(Beispiel)" markiert: Antriebe unter dem erfundenen Namensraum `demo.0.rollladen.*`.
+// Zweiter Tab "Leer (Beispiel)" (hoher HTML-Block, scrollbar) fuer den Tab-Wechsel-Test.
 // Die Planer-Wurzel ist im Dev-Build immer `0_userdata.0.Rollladen_Dev` (ShutterFloorsWidget.tsx).
 // Nichts davon wird gespeichert oder an ioBroker geschickt.
 
@@ -8,6 +9,8 @@ import type { DashboardLayout } from '../store/dashboardStore';
 
 export interface SeedApi {
     mock(map: Record<string, boolean | number | string | null>): void;
+    /** Was der Server auf getState antwortet (Planer-Datenpunkte lesen vor jedem Schreiben frisch). */
+    mockServerState(byId: Record<string, string>): void;
     seed(p: { layouts: DashboardLayout[] }): void;
     setDeviceThemeMode(): void;
 }
@@ -180,6 +183,16 @@ export function seedRolllaeden(api: SeedApi): void {
             showPlanner: true,
         },
     };
+    // Zweiter Tab: ein hoher Block, damit der Tab eine eigene Scrollstelle hat
+    const filler = {
+        id: 'w-leer',
+        type: 'html',
+        title: 'Platzhalter',
+        datapoint: '',
+        layout: 'default',
+        gridPos: { x: 0, y: 0, w: 42, h: 90 },
+        options: { showTitle: false, htmlContent: '<p style="font-family:sans-serif">Zweiter Beispiel-Tab (leer)</p>' },
+    };
     const layout = {
         id: 'l-dev',
         name: 'Home',
@@ -192,12 +205,22 @@ export function seedRolllaeden(api: SeedApi): void {
                 name: 'Home',
                 slug: 'home',
                 activeTabId: 'tab-rollos',
-                tabs: [{ id: 'tab-rollos', name: 'Rollläden (Beispiel)', slug: 'rollos', widgets: [widget] }],
+                tabs: [
+                    { id: 'tab-rollos', name: 'Rollläden (Beispiel)', slug: 'rollos', widgets: [widget] },
+                    { id: 'tab-leer', name: 'Leer (Beispiel)', slug: 'leer', widgets: [filler] },
+                ],
             },
         ],
     } as unknown as DashboardLayout;
 
     api.mock(mock);
+    // Speichern und Loeschen lesen die Liste vorher frisch vom Server: ohne Pi-Verbindung wuerden sie
+    // 8 s warten und eine leere Liste vorfinden. Hier antwortet der Server mit denselben Beispieldaten.
+    api.mockServerState({
+        [`${ROOT}.Szenen`]: mock[`${ROOT}.Szenen`] as string,
+        [`${ROOT}.Wochenplan`]: mock[`${ROOT}.Wochenplan`] as string,
+        [`${ROOT}.Einstellungen`]: mock[`${ROOT}.Einstellungen`] as string,
+    });
     api.seed({ layouts: [layout] });
     api.setDeviceThemeMode();
     window.location.hash = '#/view/default/s/home/tab/rollos';

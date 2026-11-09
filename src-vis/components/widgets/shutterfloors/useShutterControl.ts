@@ -29,7 +29,7 @@ import type { ShutterFloorDeviceDef } from './types';
 // Verweis auf PENDING_MAX_AGE_MS = 45000 in useShutterDevice.ts: Das
 // Stopp-Fenster liegt bewusst weit darunter, kann mit der
 // Auftrags-Altersgrenze nicht kollidieren.
-const STOP_IGNORE_MOVING_MS = 6000;
+export const STOP_IGNORE_MOVING_MS = 6000;
 
 export interface ShutterControl {
     /** Prozent zu (0 = offen, 100 = zu), null = unbekannt */

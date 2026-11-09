@@ -1,0 +1,5 @@
+/* Seiten des Rolllaeden-Planers im Stapel (Feature 30, Phase 2; frueher die Seitenregel der Dev-Entwuerfe).
+   Variablen (--rpp-*) und Feinregeln der Editoren stehen in RollPlan.css/PlanWindows.css unter .pp-page. */
+.pp-page {
+    color: var(--text-primary);
+}

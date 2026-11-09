@@ -2,6 +2,7 @@
    inzwischen entfernten Entwurf — Masse/Formen unveraendert, nur die
    Dev-Umschaltleiste (.rpp-switch*) ist raus, die gehoert nicht zur
    Produktions-Kachel.
+   (Feature 30, Phase 2: die Fenster-Regeln fuer .rpp-sheet* sind weg, die Seiten heissen .pp-page.)
    Grundregel: Karten sehen aus wie die Etagenkarten desselben Tabs
    (aura.1 Custom-CSS .floor-devices): --widget-bg, Rand
    --widget-border-width/--widget-border, --widget-radius. Zeilen 52 px hoch,
@@ -9,7 +10,7 @@
    FloorHeader (12 px, 600, Versalien, Linie bis zum Rand). Das Popup hat
    Grund, Griff und Kopf des Rollladen-Popups (ShutterSheet.css). */
 
-.rpp-sheet-backdrop,
+.pp-page,
 .rpp-toast {
   --rpp-bg: var(--widget-bg, var(--app-surface));
   --rpp-border: var(--widget-border, var(--app-border));
@@ -348,118 +349,6 @@ button.rpp-card:active {
 
 /* ── E: Kalenderblatt ───────────────────────────────────────────────── */
 
-/* ── Popup (Grundgerüst wie ShutterSheet, aber höher) ───────────────── */
-
-.rpp-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background-color: rgba(0, 0, 0, 0.45);
-  animation: rpp-backdrop-in 280ms ease-out;
-}
-
-@keyframes rpp-backdrop-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.rpp-sheet {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 600px;
-  height: 92dvh;
-  background-color: var(--app-bg);
-  color: var(--text-primary);
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
-  box-sizing: border-box;
-  overflow: hidden;
-  animation: rpp-sheet-in 280ms ease-out;
-}
-
-@keyframes rpp-sheet-in {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-.rpp-sheet-drag {
-  flex-shrink: 0;
-  touch-action: none;
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.rpp-sheet-grip {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0;
-}
-
-.rpp-grip-handle {
-  width: 36px;
-  height: 4px;
-  background-color: var(--app-border);
-  border-radius: 2px;
-}
-
-.rpp-sheet-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px 12px;
-  border-bottom: 1px solid var(--app-border);
-}
-
-.rpp-sheet-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--text-primary);
-}
-
-.rpp-sheet-subtitle {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.rpp-back {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  margin-left: -8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--rpp-accent);
-  cursor: pointer;
-}
-
-.rpp-sheet-body {
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  padding: 14px 12px calc(env(safe-area-inset-bottom) + 20px);
-}
-
 /* ── Editoren ───────────────────────────────────────────────────────── */
 
 .rpp-editor {
@@ -718,13 +607,6 @@ button.rpp-card:active {
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .rpp-sheet,
-  .rpp-sheet-backdrop {
-    animation: none;
-  }
-}
-
 /* Karte, die selbst eine Zeile ist (D: Wochenplan-Einstieg) */
 
 /* G: eine Fahrt pro Seite */
@@ -763,25 +645,3 @@ button.rpp-card:active {
 /* 3 Spalten: Symbol oben, Name bis zwei Zeilen */
 
 /* 4 Spalten: zentriert wie App-Symbole */
-
-/* Löschen/Speichern im Fensterkopf (Entwurf 21, PlanSheet actionsInHeader) */
-
-.rpp-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: -8px;
-}
-
-.rpp-head-btn {
-  margin-left: 0;
-}
-
-.rpp-head-btn.is-danger {
-  color: var(--rpp-red);
-}
-
-.rpp-head-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
