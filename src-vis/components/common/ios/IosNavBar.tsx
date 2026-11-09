@@ -47,21 +47,17 @@ export function fitNavBar(i: FitInput): FitResult {
 export interface IosNavBarProps {
     title: string;
     backLabel?: string; // Wort neben dem Pfeil
-    backFallback?: string; // nur fit: Ersatzwort, wenn backLabel nicht passt
+    backFallback?: string; // Ersatzwort, wenn backLabel nicht passt
     onBack?: () => void;
     backAttrs?: Record<string, string>; // z. B. { 'data-ds-back': '' }
     right?: ReactNode;
-    rightRef?: (el: HTMLElement | null) => void; // Ziel für Portale (Speichern/Löschen der Editoren)
-    variant?: 'inline' | 'large';
-    status?: ReactNode; // nur large
-    fit?: boolean; // nur inline, Standard true; false = Raster wie Feature 29
+    rightRef?: (el: HTMLElement | null) => void; // Ziel für Portale ("Sichern" der Editoren)
     sticky?: boolean;
     className?: string;
 }
 
+/** Kopf wie in den iPhone-Einstellungen: Zurück mit Wort, Titel mittig, rechts Platz für Knöpfe. */
 export function IosNavBar(p: IosNavBarProps) {
-    if (p.variant === 'large') return <LargeBar {...p} />;
-    if (p.fit === false) return <PlainBar {...p} />;
     return <FitBar {...p} />;
 }
 
@@ -85,31 +81,6 @@ function useStickyTop(ref: RefObject<HTMLElement>, on: boolean): CSSProperties |
         return () => ro.disconnect();
     }, [ref, on]);
     return on ? ({ '--ios-sticky-top': `${-pad}px` } as CSSProperties) : undefined;
-}
-
-function PlainBar({ title, backLabel, onBack, backAttrs, right, rightRef, sticky, className }: IosNavBarProps) {
-    const barRef = useRef<HTMLDivElement>(null);
-    const stickyStyle = useStickyTop(barRef, !!sticky);
-    return (
-        <div ref={barRef} className={cls('ios-bar', sticky && 'is-sticky', className)} style={stickyStyle}>
-            {onBack ? (
-                <button type="button" className="ios-back" {...backAttrs} onClick={onBack}>
-                    <ChevronLeft size={22} />
-                    <span className="ios-back-label">{backLabel}</span>
-                </button>
-            ) : (
-                <span />
-            )}
-            <span className="ios-bar-title">{title}</span>
-            {right || rightRef ? (
-                <span className="ios-bar-right" ref={rightRef}>
-                    {right}
-                </span>
-            ) : (
-                <span />
-            )}
-        </div>
-    );
 }
 
 function FitBar({
@@ -218,34 +189,6 @@ function FitBar({
                     {title}
                 </span>
             </span>
-        </div>
-    );
-}
-
-function LargeBar({ title, status, backLabel, onBack, backAttrs, right, rightRef, className }: IosNavBarProps) {
-    return (
-        <div className={cls('ios-bar', 'ios-bar--large', className)}>
-            <div className="ios-bar-row">
-                {onBack ? (
-                    <button
-                        type="button"
-                        className="ios-back"
-                        {...backAttrs}
-                        aria-label={backLabel ? undefined : 'Zurück'}
-                        onClick={onBack}
-                    >
-                        <ChevronLeft size={22} />
-                        {backLabel ? <span className="ios-back-label">{backLabel}</span> : null}
-                    </button>
-                ) : (
-                    <span />
-                )}
-                <span className="ios-bar-right" ref={rightRef}>
-                    {right}
-                </span>
-            </div>
-            <h2 className="ios-large-title">{title}</h2>
-            {status ? <p className="ios-large-status">{status}</p> : null}
         </div>
     );
 }

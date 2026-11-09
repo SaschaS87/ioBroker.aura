@@ -7,8 +7,10 @@
  * Dokument); Unterseite beginnt oben, Zurück stellt die vorige Stelle her; die abgehende Seite wird
  * senkrecht ausgeglichen, damit beim Schieben nichts springt; ein mitlaufender Kopf der abgehenden Seite
  * bleibt dabei stehen.
+ * Verdeckter Stapel (Tab verlassen, display:none): Tiefenwechsel ohne Übergang und ohne jeden Zugriff auf den
+ * Scroll-Container, sonst springt der inzwischen sichtbare andere Tab (siehe useTabHidden).
  */
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 
 export interface IosStackPage {
     key: string;
@@ -22,6 +24,8 @@ export interface IosStackProps {
     bleed?: number;
     inset?: number;
     className?: string;
+    /** Wurzelelement, z. B. für useTabHidden */
+    rootRef?: Ref<HTMLDivElement>;
 }
 /** Muss zu ios.css (.ios-stack.is-moving) passen. */
 export const IOS_PUSH_MS = 280;
@@ -55,6 +59,7 @@ export function IosStack({
     bleed = 0,
     inset = 0,
     className = '',
+    rootRef,
 }: IosStackProps) {
     const trackRef = useRef<HTMLDivElement>(null);
     const pageEls = useRef<(HTMLDivElement | null)[]>([]);
@@ -80,6 +85,13 @@ export function IosStack({
     useLayoutEffect(() => {
         if (!anim || anim.phase !== 'prepare') return;
         const track = trackRef.current;
+        if (track && track.getClientRects().length === 0) {
+            // Stapel ist verdeckt: stiller Wechsel, keine Scrollstelle merken oder herstellen
+            scrollMemo.current.length = 0;
+            pins.current = [];
+            setAnim(null);
+            return;
+        }
         // Lage mitlaufender Köpfe der abgehenden Seite vor dem Scroll-Sprung merken (siehe Effekt unten)
         releasePins(pins.current);
         const fromEl = pageEls.current[anim.from];
@@ -160,6 +172,7 @@ export function IosStack({
     const style = { '--ios-bleed': `${bleed}px`, '--ios-inset': `${inset}px` } as CSSProperties;
     return (
         <div
+            ref={rootRef}
             className={`ios-stack ios-stack--${sizing}${depth > 0 ? ' is-pushed' : ''}${anim?.phase === 'run' ? ' is-moving' : ''}${className ? ` ${className}` : ''}`}
             data-depth={depth}
             style={style}

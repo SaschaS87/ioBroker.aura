@@ -78,6 +78,25 @@ export function IosPickRow({
     );
 }
 
+/** Knopfzeile über die volle Breite, Text mittig, in einer eigenen Gruppe ("Szene löschen" unten im Editor). */
+export function IosButtonRow({
+    label,
+    tone,
+    onClick,
+}: {
+    label: string;
+    tone: 'danger' | 'accent';
+    onClick: () => void;
+}) {
+    return (
+        <IosGroup>
+            <button type="button" className={`ios-row ios-row--btn is-${tone}`} onClick={onClick}>
+                {label}
+            </button>
+        </IosGroup>
+    );
+}
+
 /** Fußnote unter der Gruppe. */
 export function IosFootnote({ desc, hint }: { desc: string; hint?: string | null }) {
     return (
