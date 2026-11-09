@@ -1,10 +1,10 @@
-// Feature 30, Runde 1 - Bilder der Entwuerfe A bis C (und des heutigen Fensters) fuer Zeitplan und Szenen.
+// Feature 30 - Bilder der Rolllaeden-Unterseiten (Zeitplan und Szenen im iOS-Stil), hell und dunkel.
 //
 //   npm run dev            (or set AURA_BASE)
 //   node tools/screenshots/rolllaeden-entwuerfe.mjs <zielordner> [base]
 //
-// Invented sample data (/?shot=1&rolllaeden=1), 390x844 at 2x, light and dark, screen captures (no fullPage).
-// Names: entwurf-<A|B|C>-<hell|dunkel>-<nr>-<ebene>.png, for "Ist": entwurf-Ist-<hell|dunkel>-<nr>-<ebene>.png
+// Invented sample data (/?shot=1&rolllaeden=1), 390x844 at 2x, screen captures (no fullPage).
+// Names: rolllaeden-<hell|dunkel>-<nr>-<ebene>.png
 /* global window, document, getComputedStyle */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -58,7 +58,7 @@ const scrollTo = (page, y) =>
         sc.scrollTop = v;
     }, y);
 
-async function run(browser, draft, mode) {
+async function run(browser, mode) {
     const ctx = await browser.newContext({
         viewport: { width: 390, height: 844 },
         deviceScaleFactor: 2,
@@ -73,37 +73,24 @@ async function run(browser, draft, mode) {
         }
     });
     await page.goto(`${BASE}/?shot=1&rolllaeden=1`, { waitUntil: 'load' });
-    await page.waitForSelector('[data-f30-choice]', { timeout: 30000 });
+    await page.waitForSelector('.ios-stack', { timeout: 30000 });
     await page.evaluate((m) => window.__auraShot.setDeviceThemeMode(m), mode === 'hell' ? 'light' : 'dark');
     const gotIt = page.getByRole('button', { name: 'Verstanden' });
     if (await gotIt.count()) {
         await gotIt.first().click();
     }
-    await page.click(`[data-f30-choice="${draft === 'Ist' ? 'IST' : draft}"]`);
     await page.waitForTimeout(700);
     const shot = async (nr, name) => {
-        const f = `entwurf-${draft}-${mode}-${nr}-${name}.png`;
+        const f = `rolllaeden-${mode}-${nr}-${name}.png`;
         await page.screenshot({ path: join(out, f) });
         files.push(f);
     };
-    if (draft === 'Ist') {
-        await shot('1', 'liste');
-        await page.locator('.sf-row--nav', { hasText: 'Zeitplan' }).first().click();
-        await page.waitForTimeout(700);
-        await shot('2', 'zeitplan');
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
-        await page.locator('.sf-row--nav', { hasText: 'Szenen' }).first().click();
-        await page.waitForTimeout(700);
-        await shot('5', 'szenen');
-        await ctx.close();
-        return;
-    }
+    await shot('1', 'liste');
     await page.locator(`${ACTIVE} .sf-row--nav`, { hasText: 'Zeitplan' }).first().click();
     await settle(page);
     await scrollTo(page, 0);
     await shot('2', 'zeitplan');
-    await jsClick(page, '.ios-bar [aria-label="Einstellungen"]');
+    await jsClick(page, '.ios-bar-right button', 'Einstellungen');
     await shot('3', 'zeitplan-einstellungen');
     await jsClick(page, 'button.ios-back');
     await jsClick(page, '.pw-tl-item');
@@ -114,21 +101,15 @@ async function run(browser, draft, mode) {
     await settle(page);
     await scrollTo(page, 0);
     await shot('5', 'szenen');
-    if (draft === 'B') {
-        await jsClick(page, '.ios-bar .ios-bar-text', 'Bearbeiten');
-    } else {
-        await jsClick(page, '.ios-bar [aria-label="Szenen bearbeiten"]');
-    }
+    await jsClick(page, '.ios-bar .ios-bar-text', 'Bearbeiten');
     await shot('6', 'szenen-bearbeiten');
     await jsClick(page, '.pw-row--tap:not(.pw-row--add)');
     await scrollTo(page, 0);
     await shot('7', 'szene');
-    if (draft === 'B') {
-        await scrollTo(page, 420);
-        await page.waitForTimeout(300);
-        await shot('7b', 'szene-gescrollt');
-        await scrollTo(page, 0);
-    }
+    await scrollTo(page, 420);
+    await page.waitForTimeout(300);
+    await shot('7b', 'szene-gescrollt');
+    await scrollTo(page, 0);
     await jsClick(page, '.rpp-row--tap[role="button"] .rpp-row-main');
     await scrollTo(page, 0);
     await shot('8', 'szene-zeitpunkt');
@@ -137,10 +118,8 @@ async function run(browser, draft, mode) {
 
 const browser = await chromium.launch();
 try {
-    for (const draft of ['A', 'B', 'C', 'Ist']) {
-        for (const mode of ['hell', 'dunkel']) {
-            await run(browser, draft, mode);
-        }
+    for (const mode of ['hell', 'dunkel']) {
+        await run(browser, mode);
     }
 } finally {
     await browser.close();
