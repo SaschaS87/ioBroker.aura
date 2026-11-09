@@ -64,8 +64,10 @@
 .pw-go:active { transform: scale(0.95); }
 .pw-go-lab { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 /* Stopp wie in der Zeile (sf-btn--stop): schwarz auf Gelb */
-.pw-go.is-stop { background: var(--accent-yellow, #ff9f0a); color: #000; }
-.pw-go.is-flash { background: color-mix(in srgb, var(--rpp-accent) 40%, transparent); }
+/* Gelb sofort und ohne Ueberblendung: das Aufleuchten nach dem Tipp darf das Gelb nicht ueberdecken
+   (sonst kam die Faerbung erst nach ~1 s an, Saschas Rueckmeldung vom 09.11.2026). */
+.pw-go.is-stop { background: var(--accent-yellow, #ff9f0a); color: #000; transition: transform 0.12s; }
+.pw-go.is-flash:not(.is-stop) { background: color-mix(in srgb, var(--rpp-accent) 40%, transparent); }
 
 /* Szenen als farbige Kacheln (Wahl in den Einstellungen) */
 .pw-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
