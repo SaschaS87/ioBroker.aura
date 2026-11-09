@@ -28,7 +28,8 @@ export type SceneCommandStatus = 'idle' | 'pending' | 'timeout';
 const TIMEOUT_MS = 5000;
 
 export interface SceneCommand {
-    run: (sceneId: string) => void;
+    /** `silent`: Befehl senden, aber keinen Laufzustand zeigen (alle Ziele stehen schon). */
+    run: (sceneId: string, silent?: boolean) => void;
     /** Bricht die Szene im Skript ab. Die Quittierung wird nicht beachtet und nicht gemeldet. */
     abort: (sceneId: string) => void;
     status: SceneCommandStatus;
@@ -69,8 +70,15 @@ export function useSceneCommand(befehlId: string): SceneCommand {
     );
 
     const run = useCallback(
-        (sceneId: string) => {
+        (sceneId: string, silent = false) => {
             const val = JSON.stringify({ sceneId });
+            if (silent) {
+                // Alle Ziele stehen schon: Befehl trotzdem senden (das Skript prueft selbst nach und
+                // protokolliert), aber keinen Laufzustand zeigen - sonst blitzt der Stopp-Knopf auf.
+                dropPending();
+                setStateDirect(befehlId, val, false);
+                return;
+            }
             pendingVal.current = val;
             setStatus('pending');
             setPendingSceneId(sceneId);
@@ -83,7 +91,7 @@ export function useSceneCommand(befehlId: string): SceneCommand {
                 if (pendingVal.current === val) setStatus('timeout');
             }, TIMEOUT_MS);
         },
-        [befehlId],
+        [befehlId, dropPending],
     );
 
     const abort = useCallback(

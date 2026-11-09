@@ -35,8 +35,11 @@ export function useSceneRunValue(args: {
     cmd: SceneCommand;
     /** MovingState je Antrieb-Schluessel */
     moving: Record<string, boolean>;
+    /** Position (zu in %) und Lamelle je Antrieb-Schluessel; null = unbekannt */
+    positions: Record<string, number | null>;
+    slats: Record<string, number | null>;
 }): SceneRun {
-    const { floors, scenes, cmd, moving } = args;
+    const { floors, scenes, cmd, moving, positions, slats } = args;
     const { setState } = useIoBroker();
     const { clearPending } = usePendingStore();
     const [stoppedAt, setStoppedAt] = useState<number | null>(null);
@@ -67,7 +70,10 @@ export function useSceneRunValue(args: {
             const now = Math.max(tick, Date.now());
             if (now - startedAt > RUN_MAX_MS) return false;
             if (pendingSceneId === sceneId) return true;
-            if (stoppedAt !== null && stoppedAt >= startedAt && now - stoppedAt < STOP_IGNORE_MOVING_MS) return false;
+            // Nach einem Stopp ist dieser Lauf beendet - fuer immer, nicht nur 6 s. Sonst kehrt die
+            // Stopp-Ansicht von selbst zurueck, sobald irgendein Antrieb der Szene spaeter noch
+            // "faehrt" meldet (Nachzuegler des Adapters, Wandschalter, Zeitplan).
+            if (stoppedAt !== null && stoppedAt >= startedAt) return false;
             const scene = scenes.find((s) => s.id === sceneId);
             return !!scene && scene.targets.some((t) => moving[t.key]);
         },
@@ -90,5 +96,27 @@ export function useSceneRunValue(args: {
         [cmdAbort, scenes, floors, setState, clearPending],
     );
 
-    return useMemo(() => ({ isRunning, run: cmdRun, stop }), [isRunning, cmdRun, stop]);
+    // Stehen schon alle Ziele (Position und Lamelle, +-3 wie im Skript), gibt es nichts zu fahren:
+    // der Befehl geht raus, die Oberflaeche zeigt aber keinen Lauf (kein Aufblitzen des Stopp-Knopfs).
+    const run = useCallback(
+        (sceneId: string) => {
+            const scene = scenes.find((s) => s.id === sceneId);
+            const devices = floors.flatMap((f) => f.devices);
+            const near = (is: number | null | undefined, goal: number) =>
+                typeof is === 'number' && Math.abs(Math.round(is) - Math.round(goal)) <= 3;
+            const allDone =
+                !!scene &&
+                scene.targets.length > 0 &&
+                scene.targets.every((t) => {
+                    const d = devices.find((x) => x.key === t.key);
+                    if (!d) return false;
+                    if (!near(positions[t.key], t.closed)) return false;
+                    return !(d.slatDp && typeof t.slat === 'number') || near(slats[t.key], t.slat);
+                });
+            cmdRun(sceneId, allDone);
+        },
+        [cmdRun, scenes, floors, positions, slats],
+    );
+
+    return useMemo(() => ({ isRunning, run, stop }), [isRunning, run, stop]);
 }

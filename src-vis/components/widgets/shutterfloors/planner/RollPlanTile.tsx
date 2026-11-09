@@ -9,7 +9,7 @@
  * Zeitplan- und Szenen-Unterseiten, PlannerStack.tsx). Das Modell und der Laufzustand der Szenen
  * (useSceneRun) stehen dort per Context zur Verfuegung.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
 import type { ShutterFloorDef } from '../types';
 import { useRollPlanData } from './useRollPlanData';
@@ -62,6 +62,10 @@ export function RollPlanTile({
     const onMoving = useCallback((k: string, v: boolean) => {
         setMoving((prev) => (prev[k] === v ? prev : { ...prev, [k]: v }));
     }, []);
+    const [slats, setSlats] = useState<Record<string, number | null>>({});
+    const onSlat = useCallback((k: string, v: number | null) => {
+        setSlats((prev) => (prev[k] === v ? prev : { ...prev, [k]: v }));
+    }, []);
     const sunrise = useDatapoint('javascript.0.variables.astro.sunrise');
     const sunset = useDatapoint('javascript.0.variables.astro.sunset');
     const dawn = useDatapoint('javascript.0.variables.astro.dawn');
@@ -82,14 +86,28 @@ export function RollPlanTile({
         data,
         runScene,
     );
-    const sceneRun = useSceneRunValue({ floors, scenes: model.scenes, cmd, moving });
+    const sceneRun = useSceneRunValue({ floors, scenes: model.scenes, cmd, moving, positions, slats });
 
     // 5 Sekunden ohne Quittierung durch das Skript -> Hinweis ueber den
     // vorhandenen Toast-Mechanismus des Modells (Portal, gleiche Optik wie
     // die anderen Rueckmeldungen der Kachel).
+    // Das Skript quittiert erst am Ende des Laufs (Raffstore-Szenen warten auf den Stillstand, bis
+    // 90 s). Faehrt ein Antrieb der Szene, antwortet das Skript also offensichtlich: kein Hinweis.
+    // Nach den 5 s wird noch eine Poll-Laenge abgewartet, bis der Adapter "faehrt" meldet.
+    const movingRef = useRef(moving);
+    movingRef.current = moving;
+    const scenesRef = useRef(model.scenes);
+    scenesRef.current = model.scenes;
     useEffect(() => {
-        if (cmd.status === 'timeout') model.showToast('Skript antwortet nicht');
-    }, [cmd.status, model.showToast]);
+        if (cmd.status !== 'timeout') return;
+        const sceneId = cmd.pendingSceneId;
+        const t = window.setTimeout(() => {
+            const scene = scenesRef.current.find((s) => s.id === sceneId);
+            const driving = !!scene && scene.targets.some((x) => movingRef.current[x.key]);
+            if (!driving) model.showToast('Skript antwortet nicht');
+        }, 6000);
+        return () => window.clearTimeout(t);
+    }, [cmd.status, cmd.pendingSceneId, model.showToast]);
 
     const devices = floors.flatMap((f) => f.devices);
     return (
@@ -97,6 +115,11 @@ export function RollPlanTile({
             {devices.map((d) => (
                 <PosProbe key={d.key} k={d.key} dp={d.posDp} onUpdate={onPos} />
             ))}
+            {devices
+                .filter((d) => d.slatDp)
+                .map((d) => (
+                    <PosProbe key={`slat-${d.key}`} k={d.key} dp={d.slatDp as string} onUpdate={onSlat} />
+                ))}
             {devices
                 .filter((d) => d.activityDp)
                 .map((d) => (
