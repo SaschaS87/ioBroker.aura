@@ -152,6 +152,12 @@
 .aura-fl-stage[data-sub] .aura-fl-title-large {
     visibility: hidden;
 }
+/* Abstandhalter am Seitenende, Höhe setzt das Einrasten in FaceliftChrome (nur bei kaum scrollbaren Seiten) */
+.aura-fl-snap-spacer {
+    height: 0;
+    flex: none;
+    pointer-events: none;
+}
 
 /* Vergleichsvariante „mit Linie" (Umschalter, Klasse an <html>): gleichmäßiges Glas mit Trennlinie */
 html.aura-fl-line .aura-fl-header::before {

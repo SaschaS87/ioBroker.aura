@@ -142,11 +142,55 @@ export function FaceliftStage({
             else if (y > 40 && y > lastY + 6) stage.setAttribute('data-min', '');
             if (Math.abs(y - lastY) > 6) lastY = y;
         };
+        // Einrasten wie der große Titel in iOS: Bleibt die Seite so stehen, dass die Überschrift halb unter
+        // dem Kopf steckt, fährt sie von selbst ganz heraus oder ganz darunter. Die Rastposition ergibt sich
+        // aus den Maßen im CSS (Kopf groß + Titel - Kopf klein), damit beide nicht auseinanderlaufen.
+        const px = (name: string) => parseFloat(getComputedStyle(stage).getPropertyValue(name)) || 0;
+        let touching = false;
+        let idle: number | undefined;
+        let snapEl: HTMLElement | null = null;
+        const snap = () => {
+            const sc = snapEl;
+            if (!sc || touching || !sc.isConnected || stage.hasAttribute('data-sub')) return;
+            const rest = px('--fl-bar-h') + px('--fl-large-h') - px('--fl-bar-min');
+            const y = sc.scrollTop;
+            if (rest <= 0 || y <= 0 || y >= rest) return;
+            // Seite nur ein kleines Stück scrollbar: Ohne Ausgleich gäbe es unten keine Rastposition, die
+            // Überschrift bliebe halb verdeckt stehen. Ein Abstandhalter am Seitenende verlängert sie so weit,
+            // dass der Titel ganz unter den Kopf passt.
+            const spacer = sc.querySelector<HTMLElement>(':scope > .aura-fl-snap-spacer');
+            if (spacer) {
+                const natural = sc.scrollHeight - sc.clientHeight - spacer.offsetHeight;
+                spacer.style.height = natural > 0 && natural < rest ? `${Math.ceil(rest - natural)}px` : '0px';
+            }
+            const max = sc.scrollHeight - sc.clientHeight;
+            const to = y < rest / 2 || max < rest ? 0 : rest;
+            const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            sc.scrollTo({ top: to, behavior: calm ? 'auto' : 'smooth' });
+        };
+        const arm = () => {
+            window.clearTimeout(idle);
+            idle = window.setTimeout(snap, 110);
+        };
         const onScroll = (e: Event) => {
             const el = e.target as HTMLElement;
-            if (el?.classList?.contains('aura-scroll-touch')) apply(el.scrollTop);
+            if (!el?.classList?.contains('aura-scroll-touch')) return;
+            apply(el.scrollTop);
+            snapEl = el;
+            arm();
+        };
+        const onTouchStart = () => {
+            touching = true;
+            window.clearTimeout(idle);
+        };
+        const onTouchEnd = (e: TouchEvent) => {
+            touching = e.touches.length > 0;
+            if (!touching) arm();
         };
         stage.addEventListener('scroll', onScroll, true);
+        stage.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
+        stage.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
+        stage.addEventListener('touchcancel', onTouchEnd, { passive: true, capture: true });
         // Tabwechsel: neuer Scroll-Container, Stand neu einlesen
         const raf = requestAnimationFrame(() => {
             const sc = stage.querySelector<HTMLElement>('.aura-scroll-touch');
@@ -154,6 +198,10 @@ export function FaceliftStage({
         });
         return () => {
             stage.removeEventListener('scroll', onScroll, true);
+            stage.removeEventListener('touchstart', onTouchStart, true);
+            stage.removeEventListener('touchend', onTouchEnd, true);
+            stage.removeEventListener('touchcancel', onTouchEnd, true);
+            window.clearTimeout(idle);
             cancelAnimationFrame(raf);
         };
     }, [activeTabId, enabled]);
@@ -198,9 +246,12 @@ export function FaceliftStage({
             </header>
             {scrollEl &&
                 createPortal(
-                    <h1 className="aura-fl-title-large" aria-hidden="true">
-                        {title}
-                    </h1>,
+                    <>
+                        <h1 className="aura-fl-title-large" aria-hidden="true">
+                            {title}
+                        </h1>
+                        <div className="aura-fl-snap-spacer" aria-hidden="true" />
+                    </>,
                     scrollEl,
                 )}
 
