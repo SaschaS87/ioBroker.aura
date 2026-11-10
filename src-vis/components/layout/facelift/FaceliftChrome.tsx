@@ -1,6 +1,7 @@
 /**
- * UI-Facelift (Entwurf): durchscheinender Kopf, dessen großer Titel in der Kopfzeile sitzt und beim
- * Scrollen klein wird, und schwebende Glas-Leiste unten. Der Inhalt scrollt unter beiden hindurch.
+ * UI-Facelift (Entwurf): durchscheinender Kopf mit großem Titel darunter. Scrollt der Inhalt unter den
+ * Kopf, wandert der Titel klein in die Kopfzeile und die Kopfzeile wird niedriger. Unten schwebt die
+ * Glas-Leiste. Der Inhalt scrollt unter beiden hindurch.
  *
  * Alle Farben kommen aus Theme-Variablen mit Rückfallkette (--fl-* → --nav-* → --app-*), damit
  * sie sich später im Backend je Theme anpassen lassen. Jedes Element trägt eine eigene Klasse
@@ -103,6 +104,7 @@ export function FaceliftStage({
         const apply = (y: number) => {
             stage.style.setProperty('--fl-scroll', `${Math.max(-80, Math.min(y, 200))}px`);
             stage.toggleAttribute('data-scrolled', y > 4);
+            stage.toggleAttribute('data-collapsed', y > 34);
             // Leiste wie in iOS: beim Runterscrollen klein, beim Hochscrollen wieder groß
             if (y <= 4 || y < lastY - 6) stage.removeAttribute('data-min');
             else if (y > 40 && y > lastY + 6) stage.setAttribute('data-min', '');
@@ -151,13 +153,19 @@ export function FaceliftStage({
 
     return (
         <div ref={stageRef} className="aura-fl-stage">
-            <header className="aura-fl-header aura-header" aria-label={appTitle}>
+            <header className="aura-fl-header aura-header">
                 <div className="aura-fl-header-left">
                     {left}
-                    <h1 className="aura-fl-title">{title}</h1>
+                    <div className="aura-fl-header-titles">
+                        <span className="aura-fl-app-title aura-titel">{appTitle}</span>
+                        <span className="aura-fl-title-compact">{title}</span>
+                    </div>
                 </div>
                 <div className="aura-fl-header-right">{right}</div>
             </header>
+            <h1 className="aura-fl-title-large" aria-hidden="true">
+                {title}
+            </h1>
 
             {children}
 
