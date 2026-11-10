@@ -181,18 +181,105 @@
         max-width 0.25s ease,
         border-radius 0.25s ease;
 }
-.aura-fl-stage[data-min] .aura-fl-tabbar {
+.aura-fl-stage[data-min] .aura-fl-tabbar,
+.aura-fl-stage[data-sub] .aura-fl-tabbar {
     --fl-tabbar-h: 46px;
     --fl-tabbar-pad: 4px;
     max-width: 290px;
 }
-.aura-fl-stage[data-min] .aura-fl-tab-label {
+.aura-fl-stage[data-min] .aura-fl-tab-label,
+.aura-fl-stage[data-sub] .aura-fl-tab-label {
     display: none;
 }
 
 /* Viele Reiter: nur Symbole */
 .aura-fl-tabbar[data-icons-only] .aura-fl-tab-label {
     display: none;
+}
+
+/* ── Unterseiten: ein Kopf statt zwei ─────────────────────────────────── */
+/* Der Kopf der Unterseite (Zurück · Titel · Aktion) ist der einzige Kopf. */
+.aura-fl-header {
+    transition:
+        background-color 0.2s,
+        border-color 0.2s,
+        opacity 0.2s;
+}
+.aura-fl-stage[data-sub] .aura-fl-header {
+    opacity: 0;
+    pointer-events: none;
+}
+.aura-fl-stage[data-sub] .aura-fl-title-large {
+    visibility: hidden;
+}
+.aura-fl-stage[data-sub] .aura-scroll.aura-scroll-touch {
+    padding-top: 0;
+}
+.aura-fl-stage .ios-bar.is-sticky {
+    min-height: var(--fl-bar-h);
+    padding-top: env(safe-area-inset-top);
+    background: var(--fl-glass);
+    -webkit-backdrop-filter: var(--fl-blur);
+    backdrop-filter: var(--fl-blur);
+}
+.aura-fl-stage .ios-bar-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--fl-title, var(--header-text, var(--text-primary)));
+}
+
+/* Knopf Einstellungen im Kopf */
+.aura-fl-settings-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--fl-tab, var(--text-secondary));
+    background: var(--fl-glass);
+    border: 1px solid var(--fl-glass-border, var(--app-border));
+}
+
+/* Eigene Unterseite über dem Inhalt (Einstellungen) */
+.aura-fl-page {
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    display: flex;
+    flex-direction: column;
+    background: var(--app-bg);
+    animation: aura-fl-push 0.28s ease;
+}
+.aura-fl-page-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 12px calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom));
+}
+.aura-fl-page-inner {
+    max-width: 720px;
+    margin: 0 auto;
+}
+/* Unterseite der Einstellungen offen: deren Kopf ersetzt den Kopf der Seite */
+.aura-fl-page:has(.ios-stack.is-pushed) .aura-fl-page-bar,
+.aura-fl-page:has(.ios-stack.is-pushed) .aura-fl-settings-admin {
+    display: none;
+}
+/* verdeckte Seite des Stapels nimmt hier keinen Platz ein, sonst klafft eine Lücke vor der nächsten Gruppe */
+.aura-fl-settings .ios-stack-page.is-hidden {
+    display: none;
+}
+@keyframes aura-fl-push {
+    from {
+        transform: translateX(100%);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .aura-fl-page {
+        animation: none;
+    }
 }
 
 /* ── Entwurfs-Umschalter (nur Dev) ────────────────────────────────────── */

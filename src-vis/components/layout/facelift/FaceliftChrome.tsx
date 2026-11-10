@@ -8,6 +8,10 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '@iconify/react';
+import { Wrench } from 'lucide-react';
+import type { WidgetProps } from '../../../types';
+import { IosFootnote, IosGroup, IosNavBar, IosNavRow } from '../../common/ios';
+import { DeviceSettingsWidget } from '../../widgets/DeviceSettingsWidget';
 import type { Tab } from '../../../store/dashboardStore';
 import './facelift.css';
 
@@ -70,6 +74,9 @@ export function FaceliftStage({
     tabs,
     activeTabId,
     onTabClick,
+    settingsOpen,
+    onSettingsClose,
+    adminHref,
     children,
 }: {
     enabled: boolean;
@@ -80,6 +87,11 @@ export function FaceliftStage({
     tabs: Tab[];
     activeTabId: string | null | undefined;
     onTabClick: (tab: Tab) => void;
+    /** Einstellungsseite der App (Hell/Dunkel …) liegt als Unterseite über dem Inhalt. */
+    settingsOpen?: boolean;
+    onSettingsClose?: () => void;
+    /** Weg in den Admin-Bereich, als Zeile auf der Einstellungsseite. */
+    adminHref?: string;
     children: ReactNode;
 }) {
     const stageRef = useRef<HTMLDivElement>(null);
@@ -113,6 +125,27 @@ export function FaceliftStage({
         };
     }, [activeTabId, enabled]);
 
+    // Unterseite offen (iOS-Stapel eine Ebene tiefer oder Einstellungsseite): Dann ist der Kopf der
+    // Unterseite der einzige Kopf, großer Titel und App-Kopf treten zurück, die Leiste bleibt klein.
+    useEffect(() => {
+        const stage = stageRef.current;
+        if (!enabled || !stage) return;
+        const update = () => {
+            const pushed = Array.from(stage.querySelectorAll('.ios-stack.is-pushed')).some(
+                (el) => el.getClientRects().length > 0,
+            );
+            stage.toggleAttribute('data-sub', !!settingsOpen || pushed);
+        };
+        update();
+        const raf = requestAnimationFrame(update);
+        const mo = new MutationObserver(update);
+        mo.observe(stage, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+        return () => {
+            mo.disconnect();
+            cancelAnimationFrame(raf);
+        };
+    }, [activeTabId, enabled, settingsOpen]);
+
     if (!enabled) return <div className="flex-1 min-h-0 flex flex-col">{children}</div>;
 
     const visibleTabs = tabs.filter((t) => !t.disabled && !t.hidden);
@@ -135,6 +168,39 @@ export function FaceliftStage({
 
             {children}
 
+            {settingsOpen && (
+                <div className="aura-fl-page aura-fl-settings" role="dialog" aria-label="Einstellungen">
+                    <div className="aura-fl-page-scroll">
+                        <div className="ios-root aura-fl-page-inner">
+                            <IosNavBar
+                                sticky
+                                className="aura-fl-page-bar"
+                                title="Einstellungen"
+                                onBack={onSettingsClose}
+                                backLabel={title}
+                                backFallback="Zurück"
+                            />
+                            <DeviceSettingsWidget {...({ editMode: false } as WidgetProps)} />
+                            {adminHref && (
+                                <div className="ios-page aura-fl-settings-admin">
+                                    <IosGroup>
+                                        <IosNavRow
+                                            icon={Wrench}
+                                            iconColor="#8e8e93"
+                                            label="Admin-Bereich"
+                                            onClick={() => {
+                                                window.location.hash = adminHref;
+                                            }}
+                                        />
+                                    </IosGroup>
+                                    <IosFootnote desc="Dashboard bearbeiten, Themes und Farben anpassen." />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {visibleTabs.length > 1 && (
                 <nav
                     className="aura-fl-tabbar aura-tabs"
@@ -152,7 +218,10 @@ export function FaceliftStage({
                                 aria-current={active ? 'page' : undefined}
                                 aria-label={tab.name}
                                 title={tab.name}
-                                onClick={() => onTabClick(tab)}
+                                onClick={() => {
+                                    onSettingsClose?.();
+                                    onTabClick(tab);
+                                }}
                             >
                                 <Icon icon={icon} className="aura-fl-tab-icon" width={22} height={22} />
                                 {!tab.hideLabel && <span className="aura-fl-tab-label">{tab.name}</span>}

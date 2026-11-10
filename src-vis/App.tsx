@@ -955,6 +955,7 @@ export default function App() {
     // UI-Facelift (Entwurf): vorerst nur in der Dev-Vorschau, per gelbem Umschalter.
     const [flChoice, setFlChoice] = useFaceliftChoice();
     const facelift = import.meta.env.DEV && flChoice === 'NEU' && effectiveSettings.showHeader && !shotEditMode;
+    const [flSettingsOpen, setFlSettingsOpen] = useState(false);
 
     const activeTabSlug = useMemo(() => {
         const t = tabs.find((t) => t.id === activeTabId);
@@ -1162,7 +1163,18 @@ export default function App() {
             {effectiveSettings.headerClockEnabled && <HeaderClock f={effectiveSettings} />}
             {showBadge && <ConnectionBadge />}
             {effectiveSettings.showMessageBell && <MessageBell />}
-            {effectiveSettings.showAdminLink && (
+            {facelift && (
+                <button
+                    type="button"
+                    className="aura-fl-settings-btn"
+                    aria-label="Einstellungen"
+                    title="Einstellungen"
+                    onClick={() => setFlSettingsOpen(true)}
+                >
+                    <Settings size={17} />
+                </button>
+            )}
+            {!facelift && effectiveSettings.showAdminLink && (
                 <a
                     href="#/admin"
                     className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
@@ -1269,6 +1281,9 @@ export default function App() {
                     {!tabBarAtBottom && !facelift && tabBarNode}
                     <FaceliftStage
                         enabled={facelift}
+                        settingsOpen={facelift && flSettingsOpen}
+                        onSettingsClose={() => setFlSettingsOpen(false)}
+                        adminHref={effectiveSettings.showAdminLink ? '#/admin' : undefined}
                         title={activeTab?.name ?? ''}
                         appTitle={effectiveSettings.headerTitle || 'Aura'}
                         left={<HeaderLogo />}
