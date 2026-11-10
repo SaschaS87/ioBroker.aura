@@ -98,8 +98,9 @@ function mount(): void {
         'border-radius:10px;padding:8px 10px;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;' +
         'white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;';
     const FOLDED_CSS =
-        'position:fixed;right:calc(3px + env(safe-area-inset-right));top:calc(42% + 62px);' +
-        'z-index:2147483000;width:22px;height:22px;border-radius:50%;overflow:hidden;opacity:.85;' +
+        // 28 px vom Rand: Die aeussersten 24 px sperrt index.html fuer Taps (Schutz vor der Wischgeste)
+        'position:fixed;right:calc(28px + env(safe-area-inset-right));top:calc(42% + 70px);' +
+        'z-index:2147483000;width:36px;height:36px;border-radius:50%;overflow:hidden;opacity:.85;' +
         'background:rgba(10,10,10,0.75);border:1.5px dashed #facc15;padding:0;';
     const FOLD_KEY = 'aura.probe.folded';
     const ZONES_KEY = 'aura.probe.zones';
@@ -184,7 +185,7 @@ function mount(): void {
         btnFold.textContent = collapsed ? 'M' : 'Einklappen';
         btnFold.title = collapsed ? 'Aura-Messfenster öffnen (nur Dev)' : '';
         btnFold.style.cssText = collapsed
-            ? 'font:600 10px/1 ui-monospace,Menlo,monospace;width:100%;height:19px;padding:0;border:none;' +
+            ? 'font:600 13px/1 ui-monospace,Menlo,monospace;width:100%;height:33px;padding:0;border:none;' +
               'background:transparent;color:#facc15;'
             : 'font:inherit;padding:4px 8px;border-radius:6px;border:1px solid #facc15;' +
               'background:transparent;color:#facc15;';

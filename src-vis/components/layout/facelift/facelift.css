@@ -255,7 +255,8 @@
     position: fixed;
     z-index: 9999;
     top: 42%;
-    right: 3px;
+    /* 28 px vom Rand: die aeussersten 24 px sperrt index.html fuer Taps */
+    right: calc(28px + env(safe-area-inset-right));
     display: flex;
     flex-direction: column;
     opacity: 0.85;
@@ -267,7 +268,7 @@
     font-size: 11px;
 }
 .aura-fl-switch button {
-    padding: 3px 5px;
+    padding: 6px 7px;
     border-radius: 999px;
     color: var(--text-secondary);
 }
