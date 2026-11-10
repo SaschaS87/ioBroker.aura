@@ -495,6 +495,54 @@ export const THEMES: Theme[] = [
             '--accent-red': '#ff453a', // Apple red dark
         },
     },
+    // ── iOS ───────────────────────────────────────────────────────────────────
+    // Systemfarben von iOS (Human Interface Guidelines, „grouped"-Hintergründe): grauer bzw. schwarzer
+    // Seitengrund, Karten ohne Rahmen und ohne Schatten, Trennlinien in der Separator-Farbe.
+    // Angelegt am 10.11.2026 für das UI-Facelift. Hier ist die eine Stelle, an der diese Farben stehen.
+    {
+        id: 'ios-light',
+        name: 'iOS Hell',
+        dark: false,
+        vars: {
+            '--app-bg': '#F2F2F7', // systemGroupedBackground
+            '--app-surface': '#FFFFFF', // secondarySystemGroupedBackground
+            '--app-border': '#C6C6C8', // opaqueSeparator
+            '--widget-bg': '#FFFFFF',
+            '--widget-border': 'transparent',
+            '--widget-border-width': '0px',
+            '--widget-radius': '0.75rem',
+            '--widget-shadow': 'none',
+            '--widget-backdrop': 'none',
+            '--text-primary': '#000000', // label
+            '--text-secondary': '#8A8A8E', // secondaryLabel (60 % auf Weiß)
+            '--accent': '#007AFF', // systemBlue
+            '--accent-green': '#34C759', // systemGreen
+            '--accent-yellow': '#FFCC00', // systemYellow
+            '--accent-red': '#FF3B30', // systemRed
+        },
+    },
+    {
+        id: 'ios-dark',
+        name: 'iOS Dunkel',
+        dark: true,
+        vars: {
+            '--app-bg': '#000000', // systemGroupedBackground
+            '--app-surface': '#1C1C1E', // secondarySystemGroupedBackground
+            '--app-border': '#38383A', // opaqueSeparator
+            '--widget-bg': '#1C1C1E',
+            '--widget-border': 'transparent',
+            '--widget-border-width': '0px',
+            '--widget-radius': '0.75rem',
+            '--widget-shadow': 'none',
+            '--widget-backdrop': 'none',
+            '--text-primary': '#FFFFFF', // label
+            '--text-secondary': '#98989F', // secondaryLabel (60 % auf Kartengrund)
+            '--accent': '#0A84FF', // systemBlue
+            '--accent-green': '#30D158', // systemGreen
+            '--accent-yellow': '#FFD60A', // systemYellow
+            '--accent-red': '#FF453A', // systemRed
+        },
+    },
 ];
 
 export const DEFAULT_THEME_ID = 'dark';

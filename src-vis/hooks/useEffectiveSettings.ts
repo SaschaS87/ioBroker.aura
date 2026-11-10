@@ -5,6 +5,7 @@ import type { FrontendSettings } from '../store/configStore';
 import type { LayoutSettings } from '../store/dashboardStore';
 import type { ThemeVars } from '../themes';
 import { resolveThemeModeId, useActiveThemeMode } from '../utils/themeModeCache';
+import { usePreviewThemeId } from '../themes/faceliftPreview';
 
 // ── 3-level keys: overridable per layout AND per section (section wins) ──────
 const LAYOUT_FRONTEND_KEYS: (keyof LayoutSettings & keyof FrontendSettings)[] = [
@@ -119,7 +120,7 @@ export function useGlobalThemeId(): string {
     const darkId = useThemeStore((s) => s.browserDarkThemeId);
     const lightId = useThemeStore((s) => s.browserLightThemeId);
     const mode = useActiveThemeMode();
-    return resolveThemeModeId(themeId, mode, darkId, lightId);
+    return usePreviewThemeId(resolveThemeModeId(themeId, mode, darkId, lightId));
 }
 
 /** Effective theme ID: global → layout → section (falls back up the chain). */
@@ -134,7 +135,7 @@ export function useEffectiveThemeId(layoutId?: string, sectionId?: string): stri
     // The active mode (device choice → datapoint → system) wins over the design,
     // but only when the design has the wrong polarity — a dark design stays put
     // in dark mode.
-    return resolveThemeModeId(base, mode, darkId, lightId);
+    return usePreviewThemeId(resolveThemeModeId(base, mode, darkId, lightId));
 }
 
 /** Effective custom theme vars: global → layout → section. */

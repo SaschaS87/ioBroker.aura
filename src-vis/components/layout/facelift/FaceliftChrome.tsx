@@ -15,9 +15,10 @@ import type { WidgetProps } from '../../../types';
 import { IosFootnote, IosGroup, IosNavBar, IosNavRow } from '../../common/ios';
 import { DeviceSettingsWidget } from '../../widgets/DeviceSettingsWidget';
 import type { Tab } from '../../../store/dashboardStore';
+import { FACELIFT_KEY, useFaceliftPreviewStore } from '../../../themes/faceliftPreview';
 import './facelift.css';
 
-const KEY = 'aura.facelift.preview';
+const KEY = FACELIFT_KEY;
 const LINE_KEY = 'aura.facelift.line';
 export type FaceliftChoice = 'IST' | 'NEU';
 
@@ -32,6 +33,8 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
     });
     const set = (c: FaceliftChoice) => {
         setChoice(c);
+        // Farben der Vorschau mit umschalten (iOS-Themes nur bei „Neu")
+        useFaceliftPreviewStore.getState().setNeu(c === 'NEU');
         try {
             localStorage.setItem(KEY, c);
         } catch {

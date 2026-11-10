@@ -149,6 +149,7 @@ export function TouchScrollbar({ target, revision }: { target: HTMLElement | nul
                 <div
                     role="scrollbar"
                     aria-orientation="horizontal"
+                    className="aura-touch-scrollbar"
                     aria-hidden
                     onPointerDown={onThumbDown('x')}
                     onPointerMove={onThumbMove}
@@ -161,6 +162,7 @@ export function TouchScrollbar({ target, revision }: { target: HTMLElement | nul
                 <div
                     role="scrollbar"
                     aria-orientation="vertical"
+                    className="aura-touch-scrollbar"
                     aria-hidden
                     onPointerDown={onThumbDown('y')}
                     onPointerMove={onThumbMove}
