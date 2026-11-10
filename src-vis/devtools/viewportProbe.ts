@@ -99,7 +99,7 @@ function mount(): void {
         'white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;';
     const FOLDED_CSS =
         // 28 px vom Rand: Die aeussersten 24 px sperrt index.html fuer Taps (Schutz vor der Wischgeste)
-        'position:fixed;right:calc(28px + env(safe-area-inset-right));top:calc(42% + 70px);' +
+        'position:fixed;right:calc(28px + env(safe-area-inset-right));top:calc(42% - 44px);' +
         'z-index:2147483000;width:36px;height:36px;border-radius:50%;overflow:hidden;opacity:.85;' +
         'background:rgba(10,10,10,0.75);border:1.5px dashed #facc15;padding:0;';
     const FOLD_KEY = 'aura.probe.folded';
