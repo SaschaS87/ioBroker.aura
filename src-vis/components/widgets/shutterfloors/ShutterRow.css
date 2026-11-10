@@ -72,7 +72,7 @@
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  color: var(--control-soft, var(--sf-accent));
+  color: var(--control, var(--sf-accent));
 }
 .sf-btn:not(.sf-btn--stop):active:not(:disabled) {
   background: var(--sf-soft);
