@@ -8,8 +8,8 @@
  *   --fl-glass-blur    Stärke der Unschärfe
  *   --fl-title         Farbe großer/kleiner Titel   (sonst --header-text, sonst --text-primary)
  *   --fl-tab           Farbe inaktiver Einträge     (sonst --text-secondary)
- *   --fl-tab-active    Farbe des aktiven Eintrags   (sonst --nav-active, sonst --accent)
- *   --fl-tab-active-bg Fläche hinter dem aktiven Eintrag
+ *   --fl-tab-active    Farbe des aktiven Eintrags   (sonst --text-primary)
+ *   --fl-tab-active-bg Fläche hinter dem aktiven Eintrag (sonst iOS-Füllgrau, hell/dunkel verschieden)
  */
 .aura-fl-stage {
     --fl-bar-h: 48px;
@@ -231,12 +231,17 @@ html.aura-fl-line .aura-fl-header::before {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Aktiver Reiter in Grau statt in der Akzentfarbe (Wunsch Sascha, 10.11.2026): Schrift in der Textfarbe,
+   dahinter das Füllgrau von iOS (systemFill: 120/120/128, hell 20 %, dunkel 36 %). */
+.aura-fl-stage {
+    --fl-tab-fill: rgba(120, 120, 128, 0.2);
+}
+html.dark .aura-fl-stage {
+    --fl-tab-fill: rgba(120, 120, 128, 0.36);
+}
 .aura-fl-tab--active {
-    color: var(--fl-tab-active, var(--nav-active, var(--accent)));
-    background: var(
-        --fl-tab-active-bg,
-        color-mix(in srgb, var(--fl-tab-active, var(--nav-active, var(--accent))) 14%, transparent)
-    );
+    color: var(--fl-tab-active, var(--text-primary));
+    background: var(--fl-tab-active-bg, var(--fl-tab-fill));
 }
 
 /* Beim Runterscrollen schrumpft die Leiste auf Symbole, beim Hochscrollen wächst sie wieder */
