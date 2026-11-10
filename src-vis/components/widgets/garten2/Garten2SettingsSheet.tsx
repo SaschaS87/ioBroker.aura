@@ -46,7 +46,8 @@ interface Props {
 export function Garten2SettingsSheet({ instance, anyRunning, plantInteractive, onClose }: Props) {
     const adminPortalTarget = usePortalTarget();
     const portalTarget = document.querySelector('[data-aura-app="frontend"]') ?? adminPortalTarget;
-    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onClose);
+    const { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose } =
+        useSheetDismiss(onClose);
 
     const [loaded, setLoaded] = useState(false);
     const [saved, setSaved] = useState<number | null>(null);
@@ -106,7 +107,12 @@ export function Garten2SettingsSheet({ instance, anyRunning, plantInteractive, o
     };
 
     return createPortal(
-        <div className="garten2-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
+        <div
+            className="garten2-sheet-backdrop aura-scrim"
+            data-scrim-closing={scrimClosing}
+            style={backdropStyle}
+            onClick={onBackdropClick}
+        >
             <div className="garten2-sheet" style={sheetStyle} role="dialog" aria-modal="true">
                 <div
                     className="garten2-sheet-drag"

@@ -38,10 +38,16 @@ export function RoomClimateSheet({
 
     // Swipe-down-to-dismiss. Only the grip/header block is draggable — the body
     // keeps its own scrolling, so a drag there would fight the scroll gesture.
-    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onClose);
+    const { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose } =
+        useSheetDismiss(onClose);
 
     return createPortal(
-        <div className="rc-sheet-backdrop" style={backdropStyle} onClick={onBackdropClick}>
+        <div
+            className="rc-sheet-backdrop aura-scrim"
+            data-scrim-closing={scrimClosing}
+            style={backdropStyle}
+            onClick={onBackdropClick}
+        >
             <div className="rc-sheet" style={sheetStyle} onClick={(e) => e.stopPropagation()}>
                 {/* Drag zone: grip + title. touch-action none so the browser does
                     not claim the vertical gesture for scrolling. */}

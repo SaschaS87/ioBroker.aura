@@ -7,10 +7,8 @@
 .sds-backdrop {
   position: fixed; inset: 0; z-index: 1000;
   display: flex; align-items: flex-end; justify-content: center;
-  background: rgb(0 0 0 / 0.4);
-  animation: sds-fade 0.25s ease-out;
+  /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
 }
-@keyframes sds-fade { from { opacity: 0; } to { opacity: 1; } }
 .sds {
   --sf-kind: #0a84ff;
   width: 100%; max-width: 520px; max-height: 94dvh; overflow-y: auto;

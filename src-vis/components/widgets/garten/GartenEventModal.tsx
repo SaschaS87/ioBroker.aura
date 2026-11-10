@@ -60,7 +60,8 @@ export function GartenEventModal({ initial, circleLabel, onSave, onCancel, onDel
 
     // Wischen am Griff, Tippen auf den Hintergrund und Escape schliessen das
     // Blatt mit derselben Ausfahr-Bewegung wie bei Wohnklima und Rollaeden.
-    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onCancel);
+    const { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose } =
+        useSheetDismiss(onCancel);
 
     const patch = (p: Partial<TimerEvent>) => setEvent((cur) => ({ ...cur, ...p }));
 
@@ -97,7 +98,8 @@ export function GartenEventModal({ initial, circleLabel, onSave, onCancel, onDel
     return createPortal(
         <div
             data-aura-app="frontend"
-            className="garten-sheet-backdrop"
+            className="garten-sheet-backdrop aura-scrim"
+            data-scrim-closing={scrimClosing}
             style={{ ...themeVars, ...backdropStyle }}
             onClick={onBackdropClick}
         >

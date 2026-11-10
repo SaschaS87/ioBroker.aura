@@ -292,8 +292,7 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
-    animation: ios-as-fade 220ms ease-out;
+    /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
 }
 .ios-as {
     box-sizing: border-box;

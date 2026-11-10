@@ -301,7 +301,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: color-mix(in srgb, black 45%, transparent);
+  /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
 }
 
 .garten2-sheet {

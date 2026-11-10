@@ -9,13 +9,12 @@
 .garten-sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 1000;
   color: var(--text-primary);
-  animation: garten-backdrop-in 280ms ease-out;
 }
 
 .garten-sheet {

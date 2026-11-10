@@ -139,7 +139,8 @@ export function ShutterDetailSheet({
     const checkedTs = rs?.ts ?? 0;
     const sinceTs = rs?.lc ?? 0;
 
-    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onClose);
+    const { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose } =
+        useSheetDismiss(onClose);
 
     const closedNow = ctl.closed ?? 0;
     const shown = posDraft ?? closedNow;
@@ -300,7 +301,12 @@ export function ShutterDetailSheet({
     const running = busy && !hasDraft;
 
     return createPortal(
-        <div className="sds-backdrop" style={backdropStyle} onClick={onBackdropClick}>
+        <div
+            className="sds-backdrop aura-scrim"
+            data-scrim-closing={scrimClosing}
+            style={backdropStyle}
+            onClick={onBackdropClick}
+        >
             <div
                 className={cls('sds', `is-${device.kind}`)}
                 style={sheetStyle}

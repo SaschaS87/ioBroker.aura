@@ -52,7 +52,7 @@ export function IosActionSheet({ open, title, message, actions, cancelLabel, onC
     if (!open) return null;
     const target = document.querySelector('[data-aura-app="frontend"]') ?? adminTarget ?? document.body;
     return createPortal(
-        <div className="ios-as-backdrop" onClick={() => cancelRef.current()}>
+        <div className="ios-as-backdrop aura-scrim" onClick={() => cancelRef.current()}>
             <div
                 ref={sheetRef}
                 className="ios-as"

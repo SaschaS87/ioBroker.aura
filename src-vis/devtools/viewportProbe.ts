@@ -69,10 +69,10 @@ function installTestStyles(): void {
         'min-height: calc(100dvh + env(safe-area-inset-bottom)) !important; }' +
         'html.aura-probe-magenta, html.aura-probe-magenta body { background: #ff00ff !important; }' +
         // Abdunkeln aus: Pop-ups ohne dunklen Schleier (Vergleich fuer die Notch-Frage)
-        'html.aura-probe-nodim .ios-as-backdrop, html.aura-probe-nodim .rc-sheet-backdrop,' +
-        'html.aura-probe-nodim .sds-backdrop, html.aura-probe-nodim .garten2-sheet-backdrop,' +
-        'html.aura-probe-nodim .garten-sheet-backdrop { background: transparent !important; }' +
-        'html.aura-probe-nodim #aura-topedge { background-color: var(--app-bg) !important; }' +
+        'html.aura-probe-nodim .aura-scrim { background: transparent !important; }' +
+        // Schleier sofort: ohne Ein- und Ausblenden, Notch springt im selben Bild mit
+        'html.aura-probe-instant .aura-scrim { animation: none !important; transition: none !important; }' +
+        'html.aura-probe-instant #aura-topedge { transition: none !important; }' +
         // Flächen färben: jede Zone der Oberfläche in eigener Farbe (Legende im Messfenster)
         'html.aura-probe-zones body::before, html.aura-probe-zones body::after {' +
         'content:"";position:fixed;left:0;right:0;z-index:2147482000;pointer-events:none; }' +
@@ -110,6 +110,7 @@ function mount(): void {
     const FOLD_KEY = 'aura.probe.folded';
     const ZONES_KEY = 'aura.probe.zones';
     const NODIM_KEY = 'aura.probe.nodim';
+    const INSTANT_KEY = 'aura.probe.instant';
     const recall = (key: string, fallback: boolean): boolean => {
         try {
             const v = localStorage.getItem(key);
@@ -127,6 +128,7 @@ function mount(): void {
     };
     if (recall(ZONES_KEY, false)) root.classList.add('aura-probe-zones');
     if (recall(NODIM_KEY, false)) root.classList.add('aura-probe-nodim');
+    if (recall(INSTANT_KEY, false)) root.classList.add('aura-probe-instant');
 
     const text = document.createElement('div');
     const bar = document.createElement('div');
@@ -172,12 +174,16 @@ function mount(): void {
         remember(NODIM_KEY, root.classList.toggle('aura-probe-nodim'));
         render();
     });
+    const btnInstant = mkBtn('', () => {
+        remember(INSTANT_KEY, root.classList.toggle('aura-probe-instant'));
+        render();
+    });
     const btnFold = mkBtn('Einklappen', () => {
         collapsed = !collapsed;
         remember(FOLD_KEY, collapsed);
         render();
     });
-    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim, btnFold);
+    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim, btnInstant, btnFold);
     panel.append(text, bar);
     document.body.appendChild(panel);
 
@@ -190,7 +196,8 @@ function mount(): void {
         const zones = root.classList.contains('aura-probe-zones');
         btnZones.textContent = `Flächen färben: ${zones ? 'an' : 'aus'}`;
         btnDim.textContent = `Abdunkeln: ${root.classList.contains('aura-probe-nodim') ? 'aus' : 'an'}`;
-        for (const b of [btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim]) b.style.display = collapsed ? 'none' : '';
+        btnInstant.textContent = `Schleier: ${root.classList.contains('aura-probe-instant') ? 'sofort' : 'weich'}`;
+        for (const b of [btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim, btnInstant]) b.style.display = collapsed ? 'none' : '';
         panel.style.cssText = collapsed ? FOLDED_CSS : OPEN_CSS;
         bar.style.marginTop = collapsed ? '0' : '6px';
         text.style.display = collapsed ? 'none' : '';

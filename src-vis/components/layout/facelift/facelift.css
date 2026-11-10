@@ -352,22 +352,20 @@ html.aura-fl-line .aura-fl-header::before {
     font-weight: 600;
 }
 
-/* Statusleiste der Homescreen-App (index.html, #aura-topedge) in der Farbe der Seite statt der alten
-   Kopfzeile, sonst hebt sich der Notch-Bereich vom durchscheinenden Kopf ab. */
+/* Statusleiste der Homescreen-App (index.html, #aura-topedge): iOS färbt sie in der Farbe dieses
+   Randstreifens. Im Facelift ist das die Farbe der Seite, damit Notch und Kopf eine Fläche sind.
+   Pop-up offen: Der Streifen dunkelt mit derselben Stärke, Dauer und Kurve ab wie der Schleier
+   (.aura-scrim in index.css, eine Quelle für alle Pop-ups). Schließt das Pop-up, hellt er im selben
+   Moment wieder auf (data-scrim-closing aus useSheetDismiss).
+   html:not(.aura-probe-nodim): Testschalter „Abdunkeln aus" im Messfenster. */
 body:has(.aura-fl-stage) #aura-topedge {
     background-color: var(--fl-head-bg, var(--app-bg)) !important;
+    transition: background-color var(--aura-scrim-ms) ease-out;
 }
-
-/* Pop-up offen: Der Hintergrund wird abgedunkelt, die Statusleiste färbt iOS aber selbst (siehe oben).
-   Deshalb bekommt der Randstreifen exakt dieselbe abgedunkelte Farbe wie die Seite unter dem Schleier.
-   Am iPhone gemessen (10.11.2026): iOS übernimmt den Farbwechsel im laufenden Betrieb. Die Prozentwerte
-   müssen zur Deckkraft des jeweiligen Schleiers passen (40 % bzw. 45 % Schwarz), sonst sieht man eine Kante.
-   html:not(.aura-probe-nodim): Testschalter „Abdunkeln aus" im Messfenster. */
-html:not(.aura-probe-nodim) body:has(.aura-fl-stage):has(.ios-as-backdrop, .sds-backdrop) #aura-topedge {
-    background-color: color-mix(in srgb, var(--fl-head-bg, var(--app-bg)), black 40%) !important;
-}
-html:not(.aura-probe-nodim)
-    body:has(.aura-fl-stage):has(.rc-sheet-backdrop, .garten2-sheet-backdrop, .garten-sheet-backdrop)
-    #aura-topedge {
-    background-color: color-mix(in srgb, var(--fl-head-bg, var(--app-bg)), black 45%) !important;
+html:not(.aura-probe-nodim) body:has(.aura-fl-stage):has(.aura-scrim:not([data-scrim-closing])) #aura-topedge {
+    background-color: color-mix(
+        in srgb,
+        var(--fl-head-bg, var(--app-bg)),
+        black var(--aura-scrim-strength)
+    ) !important;
 }
