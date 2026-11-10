@@ -231,6 +231,15 @@ html.aura-fl-line .aura-fl-header::before {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Bedienelemente schlicht statt in der Akzentfarbe (Wunsch Sascha, 10.11.2026), wie in iOS:
+     --control       Zurück und Textknöpfe im Kopf (Bearbeiten, Sichern): Textfarbe
+     --control-soft  Pfeile, Aufklapp-Winkel, „x weitere": zweitrangiges Grau
+   Bausteine lesen sie mit Rückfall auf die Akzentfarbe, in der Ansicht „Ist" bleibt also alles blau.
+   An body, weil Pop-ups außerhalb der Bühne hängen. Die Akzentfarbe bleibt für Auswahl und Hauptaktionen. */
+body:has(.aura-fl-stage) {
+    --control: var(--text-primary);
+    --control-soft: var(--text-secondary);
+}
 /* Aktiver Reiter in Grau statt in der Akzentfarbe (Wunsch Sascha, 10.11.2026): Schrift in der Textfarbe,
    dahinter das Füllgrau von iOS (systemFill: 120/120/128, hell 20 %, dunkel 36 %). */
 .aura-fl-stage {

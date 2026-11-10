@@ -133,7 +133,8 @@
     background: transparent;
     /* Schrift erbt wie in Feature 29: die dort notierten 16 px griffen nie (.ds-root button war staerker) */
     font: inherit;
-    color: var(--accent, #0a84ff);
+    /* --control: Farbe der Kopf-Bedienelemente, sonst Akzent (siehe facelift.css) */
+    color: var(--control, var(--accent, #0a84ff));
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
@@ -199,7 +200,7 @@
     background: transparent;
     font: inherit;
     font-size: 16px;
-    color: var(--accent, #0a84ff);
+    color: var(--control, var(--accent, #0a84ff));
     white-space: nowrap;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
