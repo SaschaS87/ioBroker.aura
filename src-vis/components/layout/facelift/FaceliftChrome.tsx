@@ -131,7 +131,11 @@ export function FaceliftStage({
             {children}
 
             {visibleTabs.length > 1 && (
-                <nav className="aura-fl-tabbar aura-tabs" aria-label="Bereiche">
+                <nav
+                    className="aura-fl-tabbar aura-tabs"
+                    aria-label="Bereiche"
+                    data-icons-only={visibleTabs.length > 5 || undefined}
+                >
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId;
                         const icon = tab.icon ?? FALLBACK_ICONS[tab.slug] ?? 'lucide:circle';
@@ -141,6 +145,8 @@ export function FaceliftStage({
                                 type="button"
                                 className={`aura-fl-tab${active ? ' aura-fl-tab--active' : ''}`}
                                 aria-current={active ? 'page' : undefined}
+                                aria-label={tab.name}
+                                title={tab.name}
                                 onClick={() => onTabClick(tab)}
                             >
                                 <Icon icon={icon} className="aura-fl-tab-icon" width={22} height={22} />

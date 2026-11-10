@@ -15,6 +15,7 @@
     --fl-large-h: 48px;
     --fl-tabbar-h: 58px;
     --fl-tabbar-gap: 10px;
+    --fl-tabbar-pad: 5px;
     --fl-scroll: 0px;
     --fl-glass: color-mix(in srgb, var(--fl-glass-bg, var(--nav-bg, var(--app-surface))) 62%, transparent);
     --fl-blur: blur(var(--fl-glass-blur, 18px)) saturate(170%);
@@ -127,7 +128,10 @@
     width: calc(100% - 24px);
     max-width: 460px;
     height: var(--fl-tabbar-h);
-    padding: 4px;
+    box-sizing: border-box;
+    /* !important: .aura-tabs (Basis/Custom-CSS) setzt sonst den Seitenabstand auf 0 */
+    padding: var(--fl-tabbar-pad) !important;
+    gap: 2px;
     display: flex;
     align-items: stretch;
     border-radius: calc(var(--fl-tabbar-h) / 2);
@@ -145,7 +149,8 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
-    border-radius: calc(var(--fl-tabbar-h) / 2);
+    /* gleichlaufend zur Leiste: Außenrundung minus Innenabstand */
+    border-radius: calc(var(--fl-tabbar-h) / 2 - var(--fl-tabbar-pad));
     color: var(--fl-tab, var(--text-secondary));
     -webkit-tap-highlight-color: transparent;
     transition:
@@ -167,6 +172,11 @@
         --fl-tab-active-bg,
         color-mix(in srgb, var(--fl-tab-active, var(--nav-active, var(--accent))) 14%, transparent)
     );
+}
+
+/* Viele Reiter: nur Symbole */
+.aura-fl-tabbar[data-icons-only] .aura-fl-tab-label {
+    display: none;
 }
 
 /* ── Entwurfs-Umschalter (nur Dev) ────────────────────────────────────── */
