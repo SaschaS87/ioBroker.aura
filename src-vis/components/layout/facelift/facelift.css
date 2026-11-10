@@ -1,0 +1,197 @@
+/*
+ * UI-Facelift – Kopf und Glas-Leiste.
+ *
+ * Einstellbar je Theme (alle optional, sonst greift die Rückfallkette):
+ *   --fl-glass-bg      Grundfarbe der Glasflächen   (sonst --nav-bg, sonst --app-surface)
+ *   --fl-glass-border  Rand der Glasflächen         (sonst --app-border)
+ *   --fl-glass-blur    Stärke der Unschärfe
+ *   --fl-title         Farbe großer/kleiner Titel   (sonst --header-text, sonst --text-primary)
+ *   --fl-tab           Farbe inaktiver Einträge     (sonst --text-secondary)
+ *   --fl-tab-active    Farbe des aktiven Eintrags   (sonst --nav-active, sonst --accent)
+ *   --fl-tab-active-bg Fläche hinter dem aktiven Eintrag
+ */
+.aura-fl-stage {
+    --fl-bar-h: 48px;
+    --fl-large-h: 48px;
+    --fl-tabbar-h: 58px;
+    --fl-tabbar-gap: 10px;
+    --fl-scroll: 0px;
+    --fl-glass: color-mix(in srgb, var(--fl-glass-bg, var(--nav-bg, var(--app-surface))) 62%, transparent);
+    --fl-blur: blur(var(--fl-glass-blur, 18px)) saturate(170%);
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Inhalt scrollt unter Kopf und Leiste hindurch */
+.aura-fl-stage .aura-scroll.aura-scroll-touch {
+    padding-top: calc(var(--fl-bar-h) + var(--fl-large-h) + env(safe-area-inset-top) + 4px);
+    padding-bottom: calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom));
+    bottom: 0;
+}
+.aura-fl-stage .tab-footer-bar {
+    display: none;
+}
+
+/* ── Kopf ─────────────────────────────────────────────────────────────── */
+.aura-fl-header {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 30;
+    height: calc(var(--fl-bar-h) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 16px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid transparent;
+    transition:
+        background-color 0.2s,
+        border-color 0.2s;
+}
+.aura-fl-stage[data-scrolled] .aura-fl-header {
+    background: var(--fl-glass);
+    -webkit-backdrop-filter: var(--fl-blur);
+    backdrop-filter: var(--fl-blur);
+    border-bottom-color: var(--fl-glass-border, var(--app-border));
+}
+.aura-fl-header-left,
+.aura-fl-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.aura-fl-header-titles {
+    position: relative;
+    min-width: 0;
+    display: grid;
+}
+.aura-fl-header-titles > * {
+    grid-area: 1 / 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.18s;
+}
+.aura-fl-app-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.aura-fl-title-compact {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--fl-title, var(--header-text, var(--text-primary)));
+    opacity: 0;
+}
+.aura-fl-stage[data-collapsed] .aura-fl-app-title {
+    opacity: 0;
+}
+.aura-fl-stage[data-collapsed] .aura-fl-title-compact {
+    opacity: 1;
+}
+
+.aura-fl-title-large {
+    position: absolute;
+    z-index: 25;
+    top: calc(var(--fl-bar-h) + env(safe-area-inset-top));
+    left: 16px;
+    right: 16px;
+    height: var(--fl-large-h);
+    margin: 0;
+    font-size: 30px;
+    line-height: var(--fl-large-h);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--fl-title, var(--header-text, var(--text-primary)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    transform: translateY(calc(var(--fl-scroll) * -1));
+}
+.aura-fl-stage[data-collapsed] .aura-fl-title-large {
+    visibility: hidden;
+}
+
+/* ── Schwebende Glas-Leiste ───────────────────────────────────────────── */
+.aura-fl-tabbar {
+    position: absolute;
+    z-index: 30;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--fl-tabbar-gap) + env(safe-area-inset-bottom));
+    width: calc(100% - 24px);
+    max-width: 460px;
+    height: var(--fl-tabbar-h);
+    padding: 4px;
+    display: flex;
+    align-items: stretch;
+    border-radius: calc(var(--fl-tabbar-h) / 2);
+    background: var(--fl-glass);
+    -webkit-backdrop-filter: var(--fl-blur);
+    backdrop-filter: var(--fl-blur);
+    border: 1px solid var(--fl-glass-border, var(--app-border));
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+.aura-fl-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border-radius: calc(var(--fl-tabbar-h) / 2);
+    color: var(--fl-tab, var(--text-secondary));
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        color 0.15s,
+        background-color 0.15s;
+}
+.aura-fl-tab-label {
+    max-width: 100%;
+    font-size: 11px;
+    line-height: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.aura-fl-tab--active {
+    color: var(--fl-tab-active, var(--nav-active, var(--accent)));
+    background: var(
+        --fl-tab-active-bg,
+        color-mix(in srgb, var(--fl-tab-active, var(--nav-active, var(--accent))) 14%, transparent)
+    );
+}
+
+/* ── Entwurfs-Umschalter (nur Dev) ────────────────────────────────────── */
+.aura-fl-switch {
+    position: fixed;
+    z-index: 9999;
+    top: 42%;
+    right: 3px;
+    display: flex;
+    flex-direction: column;
+    opacity: 0.85;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    border: 1.5px dashed var(--accent-yellow);
+    background: var(--app-surface);
+    font-size: 11px;
+}
+.aura-fl-switch button {
+    padding: 3px 5px;
+    border-radius: 999px;
+    color: var(--text-secondary);
+}
+.aura-fl-switch button[data-on] {
+    background: var(--accent-yellow);
+    color: #000;
+    font-weight: 600;
+}
