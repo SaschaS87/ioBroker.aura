@@ -19,8 +19,9 @@ import { FACELIFT_KEY, useFaceliftPreviewStore } from '../../../themes/faceliftP
 import './facelift.css';
 
 const KEY = FACELIFT_KEY;
-const LINE_KEY = 'aura.facelift.line';
 export type FaceliftChoice = 'IST' | 'NEU';
+/** Dauer des Herein- und Hinausfahrens der Einstellungsseite; muss zu .aura-fl-page in facelift.css passen */
+const PAGE_MS = 420;
 
 /** Wahl des Entwurfs-Umschalters, nur in der Dev-Vorschau. */
 export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => void] {
@@ -46,22 +47,6 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
 
 /** Gelber Umschalter „Ist / Neu" – existiert nur in der Dev-Vorschau, nie im Pi-Build. */
 export function FaceliftSwitch({ choice, onChange }: { choice: FaceliftChoice; onChange: (c: FaceliftChoice) => void }) {
-    // Vergleich „Kopf mit Linie / ohne Linie": Klasse an <html>, Wahl bleibt im Browser.
-    const [line, setLine] = useState<boolean>(() => {
-        try {
-            return localStorage.getItem(LINE_KEY) === '1';
-        } catch {
-            return false;
-        }
-    });
-    useEffect(() => {
-        document.documentElement.classList.toggle('aura-fl-line', line);
-        try {
-            localStorage.setItem(LINE_KEY, line ? '1' : '0');
-        } catch {
-            /* privater Modus */
-        }
-    }, [line]);
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             {(['IST', 'NEU'] as const).map((c) => (
@@ -69,17 +54,6 @@ export function FaceliftSwitch({ choice, onChange }: { choice: FaceliftChoice; o
                     {c === 'IST' ? 'Ist' : 'Neu'}
                 </button>
             ))}
-            {choice === 'NEU' && (
-                <button
-                    type="button"
-                    className="aura-fl-switch-opt"
-                    data-on={line || undefined}
-                    title="Kopf mit oder ohne Trennlinie"
-                    onClick={() => setLine((v) => !v)}
-                >
-                    Linie
-                </button>
-            )}
         </div>
     );
 }
@@ -234,6 +208,18 @@ export function FaceliftStage({
         };
     }, [activeTabId, enabled, settingsOpen]);
 
+    // Einstellungsseite: bleibt beim Schließen noch so lange stehen, bis sie nach rechts hinausgefahren ist
+    // (gleiche Dauer wie das Hereinfahren, PAGE_MS = Animation .aura-fl-page in facelift.css).
+    const [page, setPage] = useState<'closed' | 'open' | 'closing'>('closed');
+    useEffect(() => {
+        setPage((p) => (settingsOpen ? 'open' : p === 'open' ? 'closing' : p));
+    }, [settingsOpen]);
+    useEffect(() => {
+        if (page !== 'closing') return;
+        const t = window.setTimeout(() => setPage('closed'), PAGE_MS);
+        return () => window.clearTimeout(t);
+    }, [page]);
+
     if (!enabled) return <div className="flex-1 min-h-0 flex flex-col">{children}</div>;
 
     const visibleTabs = tabs.filter((t) => !t.disabled && !t.hidden);
@@ -260,8 +246,13 @@ export function FaceliftStage({
 
             {children}
 
-            {settingsOpen && (
-                <div className="aura-fl-page aura-fl-settings" role="dialog" aria-label="Einstellungen">
+            {page !== 'closed' && (
+                <div
+                    className="aura-fl-page aura-fl-settings"
+                    role="dialog"
+                    aria-label="Einstellungen"
+                    data-closing={page === 'closing' || undefined}
+                >
                     <div className="aura-fl-page-scroll">
                         <div className="ios-root aura-fl-page-inner">
                             <IosNavBar

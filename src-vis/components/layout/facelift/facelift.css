@@ -174,15 +174,6 @@
     pointer-events: none;
 }
 
-/* Vergleichsvariante „mit Linie" (Umschalter, Klasse an <html>): gleichmäßiges Glas mit Trennlinie */
-html.aura-fl-line .aura-fl-header::before {
-    inset: 0;
-    background: var(--fl-head-glass);
-    -webkit-mask-image: none;
-    mask-image: none;
-    border-bottom: 1px solid var(--fl-glass-border, var(--app-border));
-}
-
 /* ── Schwebende Glas-Leiste ───────────────────────────────────────────── */
 .aura-fl-tabbar {
     position: absolute;
@@ -346,9 +337,22 @@ html.dark .aura-fl-stage {
         transform: translateX(100%);
     }
 }
+/* Schließen: fährt auf demselben Weg wieder hinaus (Dauer = PAGE_MS in FaceliftChrome.tsx) */
+.aura-fl-page[data-closing] {
+    animation: aura-fl-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+    pointer-events: none;
+}
+@keyframes aura-fl-pop {
+    to {
+        transform: translateX(100%);
+    }
+}
 @media (prefers-reduced-motion: reduce) {
     .aura-fl-page {
         animation: none;
+    }
+    .aura-fl-page[data-closing] {
+        display: none;
     }
 }
 
@@ -373,10 +377,6 @@ html.dark .aura-fl-stage {
     padding: 6px 7px;
     border-radius: 999px;
     color: var(--text-secondary);
-}
-.aura-fl-switch .aura-fl-switch-opt {
-    margin-top: 4px;
-    border: 1px dashed var(--accent-yellow);
 }
 .aura-fl-switch button[data-on] {
     background: var(--accent-yellow);
