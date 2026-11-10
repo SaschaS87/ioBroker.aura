@@ -3,7 +3,7 @@
 .rc-sheet-backdrop {
     position: fixed;
     inset: 0;
-    /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
+    /* Hintergrund: .aura-scrim in index.css */
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -23,7 +23,7 @@
     overscroll-behavior: contain;
     padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
     box-sizing: border-box;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+    /* Schatten und Kante: .aura-scrim in index.css */
     animation: rc-sheet-in 280ms ease-out;
 }
 

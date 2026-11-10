@@ -292,7 +292,7 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
+    /* Hintergrund: .aura-scrim in index.css */
 }
 .ios-as {
     box-sizing: border-box;
@@ -309,7 +309,7 @@
     overflow: hidden;
     border-radius: 14px;
     background: var(--app-surface, var(--widget-bg, #fff));
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+    /* Schatten und Kante: .aura-scrim in index.css */
 }
 .ios-as-head {
     padding: 14px 16px 12px;

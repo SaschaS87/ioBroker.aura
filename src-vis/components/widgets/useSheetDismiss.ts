@@ -111,8 +111,7 @@ export function useSheetDismiss(onClose: () => void) {
     const backdropStyle: React.CSSProperties | undefined = closing
         ? { opacity: 0, transition: `opacity ${CLOSE_MS}ms ease-out` }
         : undefined;
-    // Fuer .aura-scrim (index.css): Mit diesem Attribut hellt die Statusleiste des iPhones zeitgleich
-    // mit dem Schleier wieder auf (facelift.css). An das Schleier-Element als data-scrim-closing haengen.
+    // Marker am Hintergrund-Element (.aura-scrim), solange das Fenster herausfaehrt.
     const scrimClosing = closing ? '' : undefined;
 
     const onBackdropClick = (e: React.MouseEvent) => {

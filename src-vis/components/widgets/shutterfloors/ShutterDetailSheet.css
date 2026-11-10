@@ -7,14 +7,14 @@
 .sds-backdrop {
   position: fixed; inset: 0; z-index: 1000;
   display: flex; align-items: flex-end; justify-content: center;
-  /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
+  /* Hintergrund: .aura-scrim in index.css */
 }
 .sds {
   --sf-kind: #0a84ff;
   width: 100%; max-width: 520px; max-height: 94dvh; overflow-y: auto;
   border-radius: 28px 28px 0 0;
   background: var(--sf-bg); color: var(--sf-text);
-  box-shadow: 0 -10px 40px rgb(0 0 0 / 0.25);
+  /* Schatten und Kante: .aura-scrim in index.css */
   padding-bottom: max(16px, env(safe-area-inset-bottom));
   animation: sds-in 0.32s cubic-bezier(0.2, 0.9, 0.25, 1);
 }

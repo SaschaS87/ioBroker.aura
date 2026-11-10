@@ -9,7 +9,7 @@
 .garten-sheet-backdrop {
   position: fixed;
   inset: 0;
-  /* Schleier: Farbe und Einblenden kommen aus .aura-scrim (index.css) */
+  /* Hintergrund: .aura-scrim in index.css */
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -26,7 +26,7 @@
   box-sizing: border-box;
   background: var(--g-surface);
   border-radius: 16px 16px 0 0;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  /* Schatten und Kante: .aura-scrim in index.css */
   padding-bottom: calc(env(safe-area-inset-bottom) + 14px);
   animation: garten-sheet-in 280ms ease-out;
 }

@@ -697,37 +697,37 @@ input[type='range']::-moz-range-thumb {
     --tab-footer-h: 38px;
 }
 
-/* ── Schleier hinter Pop-ups: EINE Quelle fuer alle ───────────────────────
-   Jedes Fenster, das von unten hochfaehrt, dunkelt den Hintergrund mit der Klasse .aura-scrim ab.
-   Staerke und Dauer stehen nur hier. Kein Pop-up setzt eigene Werte (prueft test/scrim.test.js).
-   Grund (10.11.2026): Die Statusleiste des iPhones wird passend mit abgedunkelt (facelift.css,
-   #aura-topedge). Fuenf Pop-ups hatten eigene Werte (40/45 %, 220-280 ms), dadurch passte die
-   Notch nicht zur Seite. Beim Schliessen setzt useSheetDismiss data-scrim-closing und blendet aus. */
+/* ── Pop-ups von unten: EINE Quelle fuer die Abgrenzung zum Hintergrund ────
+   Entscheidung Sascha, 10.11.2026: kein dunkler Schleier mehr. Das Pop-up hebt sich durch einen knappen
+   Schlagschatten ab, im dunklen Modus zusaetzlich durch eine helle Kantenlinie. Grund: Die Statusleiste
+   des iPhones zeichnet iOS selbst; sie liess sich nicht ruckelfrei mit abdunkeln.
+   Jedes Pop-up haengt .aura-scrim an sein flaechiges Hintergrund-Element (faengt nur den Tipp daneben).
+   Schatten und Kante stehen nur hier, kein Pop-up setzt eigene Werte (prueft test/scrim.test.js).
+   Je Theme anpassbar: --aura-sheet-shadow, --aura-sheet-edge. */
 :root {
-    --aura-scrim-strength: 40%;
+    --aura-sheet-shadow: 0 -3px 10px rgba(0, 0, 0, 0.16), 0 -1px 2px rgba(0, 0, 0, 0.1);
+    --aura-sheet-edge: transparent;
+    /* Dauer des Herausfahrens; muss zu CLOSE_MS in useSheetDismiss.ts passen */
     --aura-scrim-ms: 220ms;
-    --aura-scrim: color-mix(in srgb, black var(--aura-scrim-strength), transparent);
+}
+html.dark {
+    --aura-sheet-shadow: 0 -3px 12px rgba(0, 0, 0, 0.5);
+    --aura-sheet-edge: color-mix(in srgb, white 26%, transparent);
 }
 .aura-scrim {
-    background: var(--aura-scrim);
-    animation: aura-scrim-in var(--aura-scrim-ms) ease-out;
+    background: transparent;
 }
-.aura-scrim[data-scrim-closing] {
-    opacity: 0;
-    transition: opacity var(--aura-scrim-ms) ease-out;
+/* das Fenster selbst: Kante oben, darunter der Schatten */
+.aura-scrim > :not(.ios-as) {
+    box-shadow:
+        0 -1px 0 var(--aura-sheet-edge),
+        var(--aura-sheet-shadow);
 }
-@keyframes aura-scrim-in {
-    from {
-        opacity: 0;
-    }
-}
-@media (prefers-reduced-motion: reduce) {
-    .aura-scrim {
-        animation: none;
-    }
-    .aura-scrim[data-scrim-closing] {
-        transition: none;
-    }
+/* Auswahlmenue (IosActionSheet): frei schwebende Karten, Kante rundum */
+.aura-scrim .ios-as-card {
+    box-shadow:
+        0 0 0 1px var(--aura-sheet-edge),
+        0 2px 10px rgba(0, 0, 0, 0.18);
 }
 
 .tab-footer-bar {
