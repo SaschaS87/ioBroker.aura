@@ -357,12 +357,15 @@ html.aura-fl-line .aura-fl-header::before {
    Pop-up offen: Der Streifen dunkelt mit derselben Stärke, Dauer und Kurve ab wie der Schleier
    (.aura-scrim in index.css, eine Quelle für alle Pop-ups). Schließt das Pop-up, hellt er im selben
    Moment wieder auf (data-scrim-closing aus useSheetDismiss).
-   html:not(.aura-probe-nodim): Testschalter „Abdunkeln aus" im Messfenster. */
+   html:not(.aura-probe-nodim): Testschalter „Abdunkeln aus" im Messfenster.
+   html:not(.aura-probe-fade): Testschalter „Schleier: Verlauf", dort bleibt die Notch hell. */
 body:has(.aura-fl-stage) #aura-topedge {
     background-color: var(--fl-head-bg, var(--app-bg)) !important;
     transition: background-color var(--aura-scrim-ms) ease-out;
 }
-html:not(.aura-probe-nodim) body:has(.aura-fl-stage):has(.aura-scrim:not([data-scrim-closing])) #aura-topedge {
+html:not(.aura-probe-nodim):not(.aura-probe-fade)
+    body:has(.aura-fl-stage):has(.aura-scrim:not([data-scrim-closing]))
+    #aura-topedge {
     background-color: color-mix(
         in srgb,
         var(--fl-head-bg, var(--app-bg)),

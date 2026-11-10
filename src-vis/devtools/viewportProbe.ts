@@ -73,6 +73,10 @@ function installTestStyles(): void {
         // Schleier sofort: ohne Ein- und Ausblenden, Notch springt im selben Bild mit
         'html.aura-probe-instant .aura-scrim { animation: none !important; transition: none !important; }' +
         'html.aura-probe-instant #aura-topedge { transition: none !important; }' +
+        // Schleier als Verlauf: oben hell, nach unten dunkler. Die Notch bleibt in der Seitenfarbe,
+        // es muss also nichts zeitgleich umfaerben.
+        'html.aura-probe-fade .aura-scrim { background: linear-gradient(to bottom, transparent 0,' +
+        ' var(--aura-scrim) 160px) !important; }' +
         // Flächen färben: jede Zone der Oberfläche in eigener Farbe (Legende im Messfenster)
         'html.aura-probe-zones body::before, html.aura-probe-zones body::after {' +
         'content:"";position:fixed;left:0;right:0;z-index:2147482000;pointer-events:none; }' +
@@ -110,7 +114,8 @@ function mount(): void {
     const FOLD_KEY = 'aura.probe.folded';
     const ZONES_KEY = 'aura.probe.zones';
     const NODIM_KEY = 'aura.probe.nodim';
-    const INSTANT_KEY = 'aura.probe.instant';
+    const SCRIM_KEY = 'aura.probe.scrim';
+    const SCRIM_MODES = ['weich', 'sofort', 'Verlauf'] as const;
     const recall = (key: string, fallback: boolean): boolean => {
         try {
             const v = localStorage.getItem(key);
@@ -128,7 +133,17 @@ function mount(): void {
     };
     if (recall(ZONES_KEY, false)) root.classList.add('aura-probe-zones');
     if (recall(NODIM_KEY, false)) root.classList.add('aura-probe-nodim');
-    if (recall(INSTANT_KEY, false)) root.classList.add('aura-probe-instant');
+    let scrimMode = 0;
+    try {
+        scrimMode = Math.max(0, Math.min(2, Number(localStorage.getItem(SCRIM_KEY)) || 0));
+    } catch {
+        /* privater Modus */
+    }
+    const applyScrim = (): void => {
+        root.classList.toggle('aura-probe-instant', scrimMode === 1);
+        root.classList.toggle('aura-probe-fade', scrimMode === 2);
+    };
+    applyScrim();
 
     const text = document.createElement('div');
     const bar = document.createElement('div');
@@ -175,7 +190,13 @@ function mount(): void {
         render();
     });
     const btnInstant = mkBtn('', () => {
-        remember(INSTANT_KEY, root.classList.toggle('aura-probe-instant'));
+        scrimMode = (scrimMode + 1) % 3;
+        try {
+            localStorage.setItem(SCRIM_KEY, String(scrimMode));
+        } catch {
+            /* privater Modus */
+        }
+        applyScrim();
         render();
     });
     const btnFold = mkBtn('Einklappen', () => {
@@ -196,7 +217,7 @@ function mount(): void {
         const zones = root.classList.contains('aura-probe-zones');
         btnZones.textContent = `Flächen färben: ${zones ? 'an' : 'aus'}`;
         btnDim.textContent = `Abdunkeln: ${root.classList.contains('aura-probe-nodim') ? 'aus' : 'an'}`;
-        btnInstant.textContent = `Schleier: ${root.classList.contains('aura-probe-instant') ? 'sofort' : 'weich'}`;
+        btnInstant.textContent = `Schleier: ${SCRIM_MODES[scrimMode]}`;
         for (const b of [btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim, btnInstant]) b.style.display = collapsed ? 'none' : '';
         panel.style.cssText = collapsed ? FOLDED_CSS : OPEN_CSS;
         bar.style.marginTop = collapsed ? '0' : '6px';
