@@ -19,7 +19,6 @@
     --fl-tabbar-h: 58px;
     --fl-tabbar-gap: 10px;
     --fl-tabbar-pad: 5px;
-    --fl-scroll: 0px;
     --fl-glass: color-mix(in srgb, var(--fl-glass-bg, var(--nav-bg, var(--app-surface))) 62%, transparent);
     --fl-blur: blur(var(--fl-glass-blur, 18px)) saturate(170%);
     /* Kopf: Glas in der Farbe des Seitenhintergrunds, damit Kopf, Notch und Seite eine Fläche sind */
@@ -134,7 +133,6 @@
 
 .aura-fl-title-large {
     position: absolute;
-    z-index: 25;
     top: calc(var(--fl-bar-h) + env(safe-area-inset-top));
     left: 16px;
     right: 16px;
@@ -149,9 +147,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     pointer-events: none;
-    transform: translateY(calc(var(--fl-scroll) * -1));
+    /* hängt im Scroll-Container (Portal aus FaceliftChrome) und scrollt mit dem Inhalt, ohne Skript */
 }
-.aura-fl-stage[data-collapsed] .aura-fl-title-large,
 .aura-fl-stage[data-sub] .aura-fl-title-large {
     visibility: hidden;
 }

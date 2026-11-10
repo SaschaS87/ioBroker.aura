@@ -8,6 +8,7 @@
  * `aura-fl-…` (siehe facelift.css).
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '@iconify/react';
 import { Wrench } from 'lucide-react';
 import type { WidgetProps } from '../../../types';
@@ -92,7 +93,7 @@ const FALLBACK_ICONS: Record<string, string> = {
 /**
  * Bühne: füllt den Platz unter der Statusleiste. Kopf und Leiste liegen darüber, der Scroll-Container
  * des Dashboards (.aura-scroll-touch) bekommt per CSS oben und unten Luft. Die Scrollposition wird
- * ohne React-Render direkt als CSS-Variable gesetzt.
+ * ohne React-Render als Attribut gesetzt; der große Titel hängt im Scroll-Container und scrollt selbst mit.
  */
 export function FaceliftStage({
     enabled,
@@ -124,13 +125,16 @@ export function FaceliftStage({
     children: ReactNode;
 }) {
     const stageRef = useRef<HTMLDivElement>(null);
+    // Scroll-Container des Dashboards: Der große Titel wird dort hineingehängt und scrollt dadurch mit dem
+    // Inhalt selbst mit. Früher lag er außerhalb und wurde per Skript nachgeführt; beim Zurückfedern nach
+    // dem Überziehen (iOS) kam das Skript nicht Bild für Bild hinterher, der Titel ruckelte.
+    const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
 
     useEffect(() => {
         const stage = stageRef.current;
         if (!enabled || !stage) return;
         let lastY = 0;
         const apply = (y: number) => {
-            stage.style.setProperty('--fl-scroll', `${Math.max(-80, Math.min(y, 200))}px`);
             stage.toggleAttribute('data-scrolled', y > 4);
             stage.toggleAttribute('data-collapsed', y > 34);
             // Leiste wie in iOS: beim Runterscrollen klein, beim Hochscrollen wieder groß
@@ -164,6 +168,10 @@ export function FaceliftStage({
                 (el) => el.getClientRects().length > 0,
             );
             stage.toggleAttribute('data-sub', !!settingsOpen || pushed);
+            const sc = Array.from(stage.querySelectorAll<HTMLElement>('.aura-scroll-touch')).find(
+                (el) => el.getClientRects().length > 0,
+            );
+            setScrollEl((prev) => (sc && sc !== prev ? sc : prev && !prev.isConnected ? (sc ?? null) : prev));
         };
         update();
         const raf = requestAnimationFrame(update);
@@ -188,9 +196,13 @@ export function FaceliftStage({
                 </div>
                 <div className="aura-fl-header-right">{right}</div>
             </header>
-            <h1 className="aura-fl-title-large" aria-hidden="true">
-                {title}
-            </h1>
+            {scrollEl &&
+                createPortal(
+                    <h1 className="aura-fl-title-large" aria-hidden="true">
+                        {title}
+                    </h1>,
+                    scrollEl,
+                )}
 
             {children}
 
