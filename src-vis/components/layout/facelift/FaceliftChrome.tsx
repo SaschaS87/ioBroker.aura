@@ -1,6 +1,6 @@
 /**
- * UI-Facelift (Entwurf): durchscheinender Kopf mit großem Titel, der beim Scrollen klein wird,
- * und schwebende Glas-Leiste unten. Der Inhalt scrollt unter beiden hindurch.
+ * UI-Facelift (Entwurf): durchscheinender Kopf, dessen großer Titel in der Kopfzeile sitzt und beim
+ * Scrollen klein wird, und schwebende Glas-Leiste unten. Der Inhalt scrollt unter beiden hindurch.
  *
  * Alle Farben kommen aus Theme-Variablen mit Rückfallkette (--fl-* → --nav-* → --app-*), damit
  * sie sich später im Backend je Theme anpassen lassen. Jedes Element trägt eine eigene Klasse
@@ -103,7 +103,6 @@ export function FaceliftStage({
         const apply = (y: number) => {
             stage.style.setProperty('--fl-scroll', `${Math.max(-80, Math.min(y, 200))}px`);
             stage.toggleAttribute('data-scrolled', y > 4);
-            stage.toggleAttribute('data-collapsed', y > 34);
             // Leiste wie in iOS: beim Runterscrollen klein, beim Hochscrollen wieder groß
             if (y <= 4 || y < lastY - 6) stage.removeAttribute('data-min');
             else if (y > 40 && y > lastY + 6) stage.setAttribute('data-min', '');
@@ -152,19 +151,13 @@ export function FaceliftStage({
 
     return (
         <div ref={stageRef} className="aura-fl-stage">
-            <header className="aura-fl-header aura-header">
+            <header className="aura-fl-header aura-header" aria-label={appTitle}>
                 <div className="aura-fl-header-left">
                     {left}
-                    <div className="aura-fl-header-titles">
-                        <span className="aura-fl-app-title aura-titel">{appTitle}</span>
-                        <span className="aura-fl-title-compact">{title}</span>
-                    </div>
+                    <h1 className="aura-fl-title">{title}</h1>
                 </div>
                 <div className="aura-fl-header-right">{right}</div>
             </header>
-            <h1 className="aura-fl-title-large" aria-hidden="true">
-                {title}
-            </h1>
 
             {children}
 

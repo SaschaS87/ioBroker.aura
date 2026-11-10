@@ -2,7 +2,8 @@
  * UI-Facelift – Kopf und Glas-Leiste.
  *
  * Einstellbar je Theme (alle optional, sonst greift die Rückfallkette):
- *   --fl-glass-bg      Grundfarbe der Glasflächen   (sonst --nav-bg, sonst --app-surface)
+ *   --fl-glass-bg      Grundfarbe der Glas-Leiste   (sonst --nav-bg, sonst --app-surface)
+ *   --fl-head-bg       Grundfarbe des Kopfes        (sonst --app-bg)
  *   --fl-glass-border  Rand der Glasflächen         (sonst --app-border)
  *   --fl-glass-blur    Stärke der Unschärfe
  *   --fl-title         Farbe großer/kleiner Titel   (sonst --header-text, sonst --text-primary)
@@ -11,14 +12,15 @@
  *   --fl-tab-active-bg Fläche hinter dem aktiven Eintrag
  */
 .aura-fl-stage {
-    --fl-bar-h: 48px;
-    --fl-large-h: 48px;
+    --fl-bar-h: 44px;
     --fl-tabbar-h: 58px;
     --fl-tabbar-gap: 10px;
     --fl-tabbar-pad: 5px;
     --fl-scroll: 0px;
     --fl-glass: color-mix(in srgb, var(--fl-glass-bg, var(--nav-bg, var(--app-surface))) 62%, transparent);
     --fl-blur: blur(var(--fl-glass-blur, 18px)) saturate(170%);
+    /* Kopf: Glas in der Farbe des Seitenhintergrunds, damit Kopf, Notch und Seite eine Fläche sind */
+    --fl-head-glass: color-mix(in srgb, var(--fl-head-bg, var(--app-bg)) 72%, transparent);
     position: relative;
     flex: 1 1 0;
     min-height: 0;
@@ -28,7 +30,7 @@
 
 /* Inhalt scrollt unter Kopf und Leiste hindurch */
 .aura-fl-stage .aura-scroll.aura-scroll-touch {
-    padding-top: calc(var(--fl-bar-h) + var(--fl-large-h) + env(safe-area-inset-top) + 4px);
+    padding-top: calc(var(--fl-bar-h) + env(safe-area-inset-top) + 6px);
     padding-bottom: calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom));
     bottom: 0;
 }
@@ -37,12 +39,15 @@
 }
 
 /* ── Kopf ─────────────────────────────────────────────────────────────── */
-.aura-fl-header {
+/* Eine Zeile: links der Titel der Seite (groß, beim Scrollen klein), rechts Status und Einstellungen.
+   .aura-fl-stage davor, damit die Abstände aus index.html (.aura-page .aura-header) nicht greifen. */
+.aura-fl-stage .aura-fl-header.aura-header {
     position: absolute;
     inset: 0 0 auto 0;
     z-index: 30;
+    margin: 0;
     height: calc(var(--fl-bar-h) + env(safe-area-inset-top));
-    padding: env(safe-area-inset-top) 16px 0;
+    padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -50,10 +55,11 @@
     border-bottom: 1px solid transparent;
     transition:
         background-color 0.2s,
-        border-color 0.2s;
+        border-color 0.2s,
+        opacity 0.2s;
 }
 .aura-fl-stage[data-scrolled] .aura-fl-header {
-    background: var(--fl-glass);
+    background: var(--fl-head-glass);
     -webkit-backdrop-filter: var(--fl-blur);
     backdrop-filter: var(--fl-blur);
     border-bottom-color: var(--fl-glass-border, var(--app-border));
@@ -65,57 +71,28 @@
     gap: 10px;
     min-width: 0;
 }
-.aura-fl-header-titles {
-    position: relative;
-    min-width: 0;
-    display: grid;
+.aura-fl-header-right {
+    flex: none;
 }
-.aura-fl-header-titles > * {
-    grid-area: 1 / 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: opacity 0.18s;
-}
-.aura-fl-app-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-.aura-fl-title-compact {
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--fl-title, var(--header-text, var(--text-primary)));
-    opacity: 0;
-}
-.aura-fl-stage[data-collapsed] .aura-fl-app-title {
-    opacity: 0;
-}
-.aura-fl-stage[data-collapsed] .aura-fl-title-compact {
-    opacity: 1;
-}
-
-.aura-fl-title-large {
-    position: absolute;
-    z-index: 25;
-    top: calc(var(--fl-bar-h) + env(safe-area-inset-top));
-    left: 16px;
-    right: 16px;
-    height: var(--fl-large-h);
+.aura-fl-title {
     margin: 0;
-    font-size: 30px;
-    line-height: var(--fl-large-h);
+    min-width: 0;
+    font-size: 28px;
+    line-height: var(--fl-bar-h);
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--fl-title, var(--header-text, var(--text-primary)));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    pointer-events: none;
-    transform: translateY(calc(var(--fl-scroll) * -1));
+    transition:
+        font-size 0.2s ease,
+        letter-spacing 0.2s ease;
 }
-.aura-fl-stage[data-collapsed] .aura-fl-title-large {
-    visibility: hidden;
+.aura-fl-stage[data-scrolled] .aura-fl-title {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0;
 }
 
 /* ── Schwebende Glas-Leiste ───────────────────────────────────────────── */
@@ -199,18 +176,9 @@
 
 /* ── Unterseiten: ein Kopf statt zwei ─────────────────────────────────── */
 /* Der Kopf der Unterseite (Zurück · Titel · Aktion) ist der einzige Kopf. */
-.aura-fl-header {
-    transition:
-        background-color 0.2s,
-        border-color 0.2s,
-        opacity 0.2s;
-}
 .aura-fl-stage[data-sub] .aura-fl-header {
     opacity: 0;
     pointer-events: none;
-}
-.aura-fl-stage[data-sub] .aura-fl-title-large {
-    visibility: hidden;
 }
 .aura-fl-stage[data-sub] .aura-scroll.aura-scroll-touch {
     padding-top: 0;
@@ -218,7 +186,7 @@
 .aura-fl-stage .ios-bar.is-sticky {
     min-height: var(--fl-bar-h);
     padding-top: env(safe-area-inset-top);
-    background: var(--fl-glass);
+    background: var(--fl-head-glass);
     -webkit-backdrop-filter: var(--fl-blur);
     backdrop-filter: var(--fl-blur);
 }
@@ -230,8 +198,8 @@
 
 /* Knopf Einstellungen im Kopf */
 .aura-fl-settings-btn {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -249,7 +217,7 @@
     display: flex;
     flex-direction: column;
     background: var(--app-bg);
-    animation: aura-fl-push 0.28s ease;
+    animation: aura-fl-push 0.42s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .aura-fl-page-scroll {
     flex: 1 1 0;
@@ -307,4 +275,10 @@
     background: var(--accent-yellow);
     color: #000;
     font-weight: 600;
+}
+
+/* Statusleiste der Homescreen-App (index.html, #aura-topedge) in der Farbe der Seite statt der alten
+   Kopfzeile, sonst hebt sich der Notch-Bereich vom durchscheinenden Kopf ab. */
+body:has(.aura-fl-stage) #aura-topedge {
+    background-color: var(--fl-head-bg, var(--app-bg)) !important;
 }

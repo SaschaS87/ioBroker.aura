@@ -67,7 +67,19 @@ function installTestStyles(): void {
         'html.aura-probe-ext:has(.aura-page), html.aura-probe-ext:has(.aura-page) body {' +
         'height: calc(100dvh + env(safe-area-inset-bottom)) !important;' +
         'min-height: calc(100dvh + env(safe-area-inset-bottom)) !important; }' +
-        'html.aura-probe-magenta, html.aura-probe-magenta body { background: #ff00ff !important; }';
+        'html.aura-probe-magenta, html.aura-probe-magenta body { background: #ff00ff !important; }' +
+        // Flächen färben: jede Zone der Oberfläche in eigener Farbe (Legende im Messfenster)
+        'html.aura-probe-zones body::before, html.aura-probe-zones body::after {' +
+        'content:"";position:fixed;left:0;right:0;z-index:2147482000;pointer-events:none; }' +
+        'html.aura-probe-zones body::before { top:0;height:env(safe-area-inset-top);background:rgba(255,0,0,.45); }' +
+        'html.aura-probe-zones body::after { bottom:0;height:env(safe-area-inset-bottom);background:rgba(255,0,0,.45); }' +
+        'html.aura-probe-zones .aura-page { background: #ffe600 !important; }' +
+        'html.aura-probe-zones .aura-fl-header, html.aura-probe-zones .aura-header { background: rgba(0,120,255,.5) !important; }' +
+        'html.aura-probe-zones .ios-bar { background: rgba(255,140,0,.6) !important; }' +
+        'html.aura-probe-zones .aura-scroll-touch { background: rgba(0,200,90,.35) !important; }' +
+        'html.aura-probe-zones .aura-fl-page { background: rgba(0,200,200,.9) !important; }' +
+        'html.aura-probe-zones .aura-fl-tabbar { background: rgba(170,0,255,.55) !important; }' +
+        'html.aura-probe-zones .aura-widget { outline: 1px dashed rgba(0,0,0,.6); outline-offset: -1px; }';
     document.head.appendChild(st);
 }
 
@@ -78,11 +90,35 @@ function mount(): void {
 
     const panel = document.createElement('div');
     panel.setAttribute('data-aura-probe', '');
-    panel.style.cssText =
-        'position:fixed;left:32px;right:32px;bottom:calc(12px + env(safe-area-inset-bottom));' +
+    // Offen: Kasten am rechten Rand. Eingeklappt: nur ein gelber Punkt am rechten Rand.
+    const OPEN_CSS =
+        'position:fixed;right:calc(6px + env(safe-area-inset-right));top:calc(56px + env(safe-area-inset-top));' +
+        'width:min(330px, calc(100vw - 12px));box-sizing:border-box;' +
         'z-index:2147483000;background:rgba(10,10,10,0.88);color:#e5e7eb;border:1px solid #facc15;' +
         'border-radius:10px;padding:8px 10px;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;' +
-        'white-space:pre-wrap;word-break:break-all;max-height:45vh;overflow:auto;';
+        'white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;';
+    const FOLDED_CSS =
+        'position:fixed;right:calc(3px + env(safe-area-inset-right));top:calc(42% + 62px);' +
+        'z-index:2147483000;width:22px;height:22px;border-radius:50%;overflow:hidden;opacity:.85;' +
+        'background:rgba(10,10,10,0.75);border:1.5px dashed #facc15;padding:0;';
+    const FOLD_KEY = 'aura.probe.folded';
+    const ZONES_KEY = 'aura.probe.zones';
+    const recall = (key: string, fallback: boolean): boolean => {
+        try {
+            const v = localStorage.getItem(key);
+            return v === null ? fallback : v === '1';
+        } catch {
+            return fallback;
+        }
+    };
+    const remember = (key: string, on: boolean): void => {
+        try {
+            localStorage.setItem(key, on ? '1' : '0');
+        } catch {
+            /* privater Modus */
+        }
+    };
+    if (recall(ZONES_KEY, false)) root.classList.add('aura-probe-zones');
 
     const text = document.createElement('div');
     const bar = document.createElement('div');
@@ -99,7 +135,7 @@ function mount(): void {
         return b;
     };
 
-    let collapsed = false;
+    let collapsed = recall(FOLD_KEY, true);
     const btnFix = mkBtn('', () => {
         const f = topFix();
         if (f) f.enabled = !f.enabled;
@@ -120,11 +156,16 @@ function mount(): void {
         root.classList.toggle('aura-probe-magenta');
         render();
     });
-    const btnFold = mkBtn('Einklappen', () => {
-        collapsed = !collapsed;
+    const btnZones = mkBtn('', () => {
+        remember(ZONES_KEY, root.classList.toggle('aura-probe-zones'));
         render();
     });
-    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnFold);
+    const btnFold = mkBtn('Einklappen', () => {
+        collapsed = !collapsed;
+        remember(FOLD_KEY, collapsed);
+        render();
+    });
+    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnZones, btnFold);
     panel.append(text, bar);
     document.body.appendChild(panel);
 
@@ -134,12 +175,20 @@ function mount(): void {
         btnFix.disabled = !f;
         btnExt.textContent = `Verlängerung: ${root.classList.contains('aura-probe-ext') ? 'an (alt)' : 'aus (neu)'}`;
         btnMagenta.textContent = `Rand färben: ${root.classList.contains('aura-probe-magenta') ? 'an' : 'aus'}`;
-        for (const b of [btnReset, btnExt, btnMagenta]) b.style.display = collapsed ? 'none' : '';
-        btnFold.textContent = collapsed ? 'Messwerte' : 'Einklappen';
-        if (collapsed) {
-            text.textContent = `Aura-Messfenster · Eingriffe ${f?.resets ?? 0}`;
-            return;
-        }
+        const zones = root.classList.contains('aura-probe-zones');
+        btnZones.textContent = `Flächen färben: ${zones ? 'an' : 'aus'}`;
+        for (const b of [btnFix, btnReset, btnExt, btnMagenta, btnZones]) b.style.display = collapsed ? 'none' : '';
+        panel.style.cssText = collapsed ? FOLDED_CSS : OPEN_CSS;
+        bar.style.marginTop = collapsed ? '0' : '6px';
+        text.style.display = collapsed ? 'none' : '';
+        btnFold.textContent = collapsed ? 'M' : 'Einklappen';
+        btnFold.title = collapsed ? 'Aura-Messfenster öffnen (nur Dev)' : '';
+        btnFold.style.cssText = collapsed
+            ? 'font:600 10px/1 ui-monospace,Menlo,monospace;width:100%;height:19px;padding:0;border:none;' +
+              'background:transparent;color:#facc15;'
+            : 'font:inherit;padding:4px 8px;border-radius:6px;border:1px solid #facc15;' +
+              'background:transparent;color:#facc15;';
+        if (collapsed) return;
 
         const vv = window.visualViewport;
         const se = document.scrollingElement ?? document.documentElement;
@@ -170,6 +219,12 @@ function mount(): void {
                 ? `Korrektur ${f.enabled ? 'an' : 'aus'}: Pruefungen ${f.checks}, Eingriffe ${f.resets}`
                 : 'Korrektur: nicht aktiv (kein iOS-Homescreen)',
         ];
+        if (zones) {
+            lines.push(
+                'Farben: rot Notch/Home-Balken · blau Kopf · orange Kopf Unterseite',
+                '  grün Scrollbereich · gelb Seitengrund · türkis Einstellungsseite · lila Leiste',
+            );
+        }
         for (const e of f?.log.slice(0, 4) ?? []) {
             lines.push(`  ${e.at} ${e.reason}`, `    vorher  ${fmt(e.before)}`, `    nachher ${fmt(e.after)}`);
         }

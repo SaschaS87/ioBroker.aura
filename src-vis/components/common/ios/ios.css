@@ -239,14 +239,19 @@
     min-width: 0;
     padding: 0 var(--ios-inset, 0px);
 }
+/* wie in iOS: die alte Seite weicht nur ein Stück nach links und blendet aus */
 .ios-stack-page.is-left {
-    transform: translateX(-100%);
+    transform: translateX(-30%);
+    opacity: 0;
 }
 .ios-stack-page.is-right {
     transform: translateX(100%);
 }
+/* schnell hinein, weich auslaufen (Kurve der iOS-Navigation) */
 .ios-stack.is-moving .ios-stack-page {
-    transition: transform 280ms ease;
+    transition:
+        transform 420ms cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 420ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .ios-stack-page.is-hidden {
     visibility: hidden;
