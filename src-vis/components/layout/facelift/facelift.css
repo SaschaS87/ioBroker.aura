@@ -156,6 +156,15 @@
     visibility: hidden;
 }
 
+/* Vergleichsvariante „mit Linie" (Umschalter, Klasse an <html>): gleichmäßiges Glas mit Trennlinie */
+html.aura-fl-line .aura-fl-header::before {
+    inset: 0;
+    background: var(--fl-head-glass);
+    -webkit-mask-image: none;
+    mask-image: none;
+    border-bottom: 1px solid var(--fl-glass-border, var(--app-border));
+}
+
 /* ── Schwebende Glas-Leiste ───────────────────────────────────────────── */
 .aura-fl-tabbar {
     position: absolute;
@@ -332,6 +341,10 @@
     padding: 6px 7px;
     border-radius: 999px;
     color: var(--text-secondary);
+}
+.aura-fl-switch .aura-fl-switch-opt {
+    margin-top: 4px;
+    border: 1px dashed var(--accent-yellow);
 }
 .aura-fl-switch button[data-on] {
     background: var(--accent-yellow);

@@ -17,6 +17,7 @@ import type { Tab } from '../../../store/dashboardStore';
 import './facelift.css';
 
 const KEY = 'aura.facelift.preview';
+const LINE_KEY = 'aura.facelift.line';
 export type FaceliftChoice = 'IST' | 'NEU';
 
 /** Wahl des Entwurfs-Umschalters, nur in der Dev-Vorschau. */
@@ -41,6 +42,22 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
 
 /** Gelber Umschalter „Ist / Neu" – existiert nur in der Dev-Vorschau, nie im Pi-Build. */
 export function FaceliftSwitch({ choice, onChange }: { choice: FaceliftChoice; onChange: (c: FaceliftChoice) => void }) {
+    // Vergleich „Kopf mit Linie / ohne Linie": Klasse an <html>, Wahl bleibt im Browser.
+    const [line, setLine] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem(LINE_KEY) === '1';
+        } catch {
+            return false;
+        }
+    });
+    useEffect(() => {
+        document.documentElement.classList.toggle('aura-fl-line', line);
+        try {
+            localStorage.setItem(LINE_KEY, line ? '1' : '0');
+        } catch {
+            /* privater Modus */
+        }
+    }, [line]);
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             {(['IST', 'NEU'] as const).map((c) => (
@@ -48,6 +65,17 @@ export function FaceliftSwitch({ choice, onChange }: { choice: FaceliftChoice; o
                     {c === 'IST' ? 'Ist' : 'Neu'}
                 </button>
             ))}
+            {choice === 'NEU' && (
+                <button
+                    type="button"
+                    className="aura-fl-switch-opt"
+                    data-on={line || undefined}
+                    title="Kopf mit oder ohne Trennlinie"
+                    onClick={() => setLine((v) => !v)}
+                >
+                    Linie
+                </button>
+            )}
         </div>
     );
 }
