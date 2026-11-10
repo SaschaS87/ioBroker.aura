@@ -87,10 +87,15 @@ export function FaceliftStage({
     useEffect(() => {
         const stage = stageRef.current;
         if (!enabled || !stage) return;
+        let lastY = 0;
         const apply = (y: number) => {
             stage.style.setProperty('--fl-scroll', `${Math.max(-80, Math.min(y, 200))}px`);
             stage.toggleAttribute('data-scrolled', y > 4);
             stage.toggleAttribute('data-collapsed', y > 34);
+            // Leiste wie in iOS: beim Runterscrollen klein, beim Hochscrollen wieder groß
+            if (y <= 4 || y < lastY - 6) stage.removeAttribute('data-min');
+            else if (y > 40 && y > lastY + 6) stage.setAttribute('data-min', '');
+            if (Math.abs(y - lastY) > 6) lastY = y;
         };
         const onScroll = (e: Event) => {
             const el = e.target as HTMLElement;
