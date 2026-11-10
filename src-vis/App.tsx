@@ -1161,7 +1161,7 @@ export default function App() {
                 />
             )}
             {effectiveSettings.headerClockEnabled && <HeaderClock f={effectiveSettings} />}
-            {showBadge && <ConnectionBadge />}
+            {showBadge && !facelift && <ConnectionBadge />}
             {effectiveSettings.showMessageBell && <MessageBell />}
             {facelift && (
                 <button
@@ -1197,7 +1197,7 @@ export default function App() {
             className={`aura-page${layout?.slug ? ` aura-page-${layout.slug}` : ''}${activeTabSlug ? ` aura-${activeTabSlug}` : ''} h-full flex flex-col overflow-hidden`}
             style={{ background: 'var(--app-bg)', color: 'var(--text-primary)' }}
         >
-            <ConnectionIndicator showBadge={showBadge} />
+            <ConnectionIndicator showBadge={showBadge && !facelift} />
             <TabSleepHint />
             {showClientIdBadge && <ClientIdBadge />}
             <DpPopupTriggers layoutId={layout?.id} tabId={activeTabId} />
@@ -1286,7 +1286,7 @@ export default function App() {
                         adminHref={effectiveSettings.showAdminLink ? '#/admin' : undefined}
                         title={activeTab?.name ?? ''}
                         appTitle={effectiveSettings.headerTitle || 'Aura'}
-                        left={<HeaderLogo />}
+                        left={<HeaderLogo immer />}
                         right={headerRight}
                         tabs={sectionLocked ? [] : tabs}
                         activeTabId={activeTabId}

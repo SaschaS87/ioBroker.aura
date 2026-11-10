@@ -153,13 +153,10 @@ export function FaceliftStage({
 
     return (
         <div ref={stageRef} className="aura-fl-stage">
-            <header className="aura-fl-header aura-header">
+            <header className="aura-fl-header aura-header" aria-label={appTitle}>
                 <div className="aura-fl-header-left">
-                    {left}
-                    <div className="aura-fl-header-titles">
-                        <span className="aura-fl-app-title aura-titel">{appTitle}</span>
-                        <span className="aura-fl-title-compact">{title}</span>
-                    </div>
+                    <span className="aura-fl-logo">{left}</span>
+                    <span className="aura-fl-title-compact">{title}</span>
                 </div>
                 <div className="aura-fl-header-right">{right}</div>
             </header>

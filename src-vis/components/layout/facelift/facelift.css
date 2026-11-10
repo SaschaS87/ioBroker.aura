@@ -56,18 +56,34 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    border-bottom: 1px solid transparent;
     transition:
         height 0.22s ease,
-        background-color 0.2s,
-        border-color 0.2s,
         opacity 0.2s;
 }
-.aura-fl-stage[data-scrolled] .aura-fl-header {
-    background: var(--fl-head-glass);
+/* Keine Linie: Der Kopf ist oben (Notch) deckend in der Seitenfarbe und läuft nach unten weich aus,
+   der Inhalt verschwimmt darunter. So wirken Notch, Kopf und Seite wie eine Fläche. */
+.aura-fl-header::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 -14px 0;
+    pointer-events: none;
+    background: linear-gradient(
+        to bottom,
+        var(--fl-head-bg, var(--app-bg)) 0,
+        var(--fl-head-bg, var(--app-bg)) env(safe-area-inset-top),
+        var(--fl-head-glass) 70%,
+        transparent 100%
+    );
     -webkit-backdrop-filter: var(--fl-blur);
     backdrop-filter: var(--fl-blur);
-    border-bottom-color: var(--fl-glass-border, var(--app-border));
+    -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.aura-fl-stage[data-scrolled] .aura-fl-header::before {
+    opacity: 1;
 }
 /* Inhalt liegt unter dem Kopf: Kopfzeile niedriger, Knöpfe rechts etwas kleiner */
 .aura-fl-stage[data-collapsed] {
@@ -88,31 +104,29 @@
 .aura-fl-stage[data-collapsed] .aura-fl-header-right {
     transform: scale(0.88);
 }
-.aura-fl-header-titles {
-    position: relative;
-    min-width: 0;
-    display: grid;
+/* Logo links; beim Schrumpfen des Kopfes etwas kleiner */
+.aura-fl-logo {
+    display: flex;
+    flex: none;
+    transform-origin: left center;
+    transition: transform 0.22s ease;
 }
-.aura-fl-header-titles > * {
-    grid-area: 1 / 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: opacity 0.18s;
+.aura-fl-logo:empty {
+    display: none;
 }
-.aura-fl-app-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-secondary);
+.aura-fl-stage[data-collapsed] .aura-fl-logo {
+    transform: scale(0.88);
 }
 .aura-fl-title-compact {
+    min-width: 0;
     font-size: 16px;
     font-weight: 600;
     color: var(--fl-title, var(--header-text, var(--text-primary)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     opacity: 0;
-}
-.aura-fl-stage[data-collapsed] .aura-fl-app-title {
-    opacity: 0;
+    transition: opacity 0.18s;
 }
 .aura-fl-stage[data-collapsed] .aura-fl-title-compact {
     opacity: 1;
