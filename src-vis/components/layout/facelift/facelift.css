@@ -363,7 +363,7 @@ body:has(.aura-fl-stage) #aura-topedge {
     background-color: var(--fl-head-bg, var(--app-bg)) !important;
     transition: background-color var(--aura-scrim-ms) ease-out;
 }
-html:not(.aura-probe-nodim):not(.aura-probe-fade)
+html:not(.aura-probe-nodim):not(.aura-probe-fade):not(.aura-probe-shadow)
     body:has(.aura-fl-stage):has(.aura-scrim:not([data-scrim-closing]))
     #aura-topedge {
     background-color: color-mix(

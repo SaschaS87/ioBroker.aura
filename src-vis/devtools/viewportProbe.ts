@@ -77,6 +77,10 @@ function installTestStyles(): void {
         // es muss also nichts zeitgleich umfaerben.
         'html.aura-probe-fade .aura-scrim { background: linear-gradient(to bottom, transparent 0,' +
         ' var(--aura-scrim) 160px) !important; }' +
+        // Schatten: gar kein Schleier, das Pop-up hebt sich nur durch einen Schlagschatten ab
+        'html.aura-probe-shadow .aura-scrim { background: transparent !important; }' +
+        'html.aura-probe-shadow .aura-scrim > * { box-shadow: 0 -14px 44px rgba(0,0,0,.30),' +
+        ' 0 -2px 8px rgba(0,0,0,.14) !important; }' +
         // Flächen färben: jede Zone der Oberfläche in eigener Farbe (Legende im Messfenster)
         'html.aura-probe-zones body::before, html.aura-probe-zones body::after {' +
         'content:"";position:fixed;left:0;right:0;z-index:2147482000;pointer-events:none; }' +
@@ -115,7 +119,7 @@ function mount(): void {
     const ZONES_KEY = 'aura.probe.zones';
     const NODIM_KEY = 'aura.probe.nodim';
     const SCRIM_KEY = 'aura.probe.scrim';
-    const SCRIM_MODES = ['weich', 'sofort', 'Verlauf'] as const;
+    const SCRIM_MODES = ['weich', 'sofort', 'Verlauf', 'Schatten'] as const;
     const recall = (key: string, fallback: boolean): boolean => {
         try {
             const v = localStorage.getItem(key);
@@ -135,13 +139,14 @@ function mount(): void {
     if (recall(NODIM_KEY, false)) root.classList.add('aura-probe-nodim');
     let scrimMode = 0;
     try {
-        scrimMode = Math.max(0, Math.min(2, Number(localStorage.getItem(SCRIM_KEY)) || 0));
+        scrimMode = Math.max(0, Math.min(3, Number(localStorage.getItem(SCRIM_KEY)) || 0));
     } catch {
         /* privater Modus */
     }
     const applyScrim = (): void => {
         root.classList.toggle('aura-probe-instant', scrimMode === 1);
         root.classList.toggle('aura-probe-fade', scrimMode === 2);
+        root.classList.toggle('aura-probe-shadow', scrimMode === 3);
     };
     applyScrim();
 
@@ -190,7 +195,7 @@ function mount(): void {
         render();
     });
     const btnInstant = mkBtn('', () => {
-        scrimMode = (scrimMode + 1) % 3;
+        scrimMode = (scrimMode + 1) % 4;
         try {
             localStorage.setItem(SCRIM_KEY, String(scrimMode));
         } catch {
