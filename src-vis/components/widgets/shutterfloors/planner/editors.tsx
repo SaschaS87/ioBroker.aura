@@ -73,7 +73,14 @@ interface EditorChrome {
 function SaveButton({ slot, canSave, onSave }: { slot?: HTMLElement | null; canSave: boolean; onSave: () => void }) {
     if (!slot) return null;
     return createPortal(
-        <button type="button" className="ios-bar-text is-strong" onClick={onSave} disabled={!canSave}>
+        // data-ios-editing: Hier wird gerade bearbeitet, die Leiste unten tritt zurück (facelift.css)
+        <button
+            type="button"
+            className="ios-bar-text is-strong"
+            data-ios-editing=""
+            onClick={onSave}
+            disabled={!canSave}
+        >
             Sichern
         </button>,
         slot,

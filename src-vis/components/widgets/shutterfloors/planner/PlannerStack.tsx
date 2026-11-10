@@ -66,7 +66,12 @@ function PlanPage({ route, parent, m, push, pop, reportDirty }: PlanPageProps) {
             </div>
         );
         right = (
-            <button type="button" className={`ios-bar-text${edit ? ' is-strong' : ''}`} onClick={() => setEdit(!edit)}>
+            <button
+                type="button"
+                className={`ios-bar-text${edit ? ' is-strong' : ''}`}
+                data-ios-editing={edit ? '' : undefined}
+                onClick={() => setEdit(!edit)}
+            >
                 {edit ? 'Fertig' : 'Bearbeiten'}
             </button>
         );
