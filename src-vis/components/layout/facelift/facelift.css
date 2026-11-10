@@ -357,3 +357,10 @@ html.aura-fl-line .aura-fl-header::before {
 body:has(.aura-fl-stage) #aura-topedge {
     background-color: var(--fl-head-bg, var(--app-bg)) !important;
 }
+
+/* Pop-up offen: Der Hintergrund wird abgedunkelt, die Statusleiste färbt iOS aber selbst (siehe oben).
+   Deshalb bekommt der Randstreifen dieselbe abgedunkelte Farbe. Ob iOS den Farbwechsel im laufenden
+   Betrieb übernimmt, ist am iPhone zu prüfen (Messfenster, Schalter „Abdunkeln"). */
+body:has(.aura-fl-stage):has(.ios-as-backdrop, .rc-sheet-backdrop, .sds-backdrop, .garten2-sheet-backdrop, .garten-sheet-backdrop) #aura-topedge {
+    background-color: color-mix(in srgb, var(--fl-head-bg, var(--app-bg)), black 43%) !important;
+}

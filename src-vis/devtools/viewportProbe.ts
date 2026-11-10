@@ -68,6 +68,11 @@ function installTestStyles(): void {
         'height: calc(100dvh + env(safe-area-inset-bottom)) !important;' +
         'min-height: calc(100dvh + env(safe-area-inset-bottom)) !important; }' +
         'html.aura-probe-magenta, html.aura-probe-magenta body { background: #ff00ff !important; }' +
+        // Abdunkeln aus: Pop-ups ohne dunklen Schleier (Vergleich fuer die Notch-Frage)
+        'html.aura-probe-nodim .ios-as-backdrop, html.aura-probe-nodim .rc-sheet-backdrop,' +
+        'html.aura-probe-nodim .sds-backdrop, html.aura-probe-nodim .garten2-sheet-backdrop,' +
+        'html.aura-probe-nodim .garten-sheet-backdrop { background: transparent !important; }' +
+        'html.aura-probe-nodim #aura-topedge { background-color: var(--app-bg) !important; }' +
         // Flächen färben: jede Zone der Oberfläche in eigener Farbe (Legende im Messfenster)
         'html.aura-probe-zones body::before, html.aura-probe-zones body::after {' +
         'content:"";position:fixed;left:0;right:0;z-index:2147482000;pointer-events:none; }' +
@@ -104,6 +109,7 @@ function mount(): void {
         'background:rgba(10,10,10,0.75);border:1.5px dashed #facc15;padding:0;';
     const FOLD_KEY = 'aura.probe.folded';
     const ZONES_KEY = 'aura.probe.zones';
+    const NODIM_KEY = 'aura.probe.nodim';
     const recall = (key: string, fallback: boolean): boolean => {
         try {
             const v = localStorage.getItem(key);
@@ -120,6 +126,7 @@ function mount(): void {
         }
     };
     if (recall(ZONES_KEY, false)) root.classList.add('aura-probe-zones');
+    if (recall(NODIM_KEY, false)) root.classList.add('aura-probe-nodim');
 
     const text = document.createElement('div');
     const bar = document.createElement('div');
@@ -161,12 +168,16 @@ function mount(): void {
         remember(ZONES_KEY, root.classList.toggle('aura-probe-zones'));
         render();
     });
+    const btnDim = mkBtn('', () => {
+        remember(NODIM_KEY, root.classList.toggle('aura-probe-nodim'));
+        render();
+    });
     const btnFold = mkBtn('Einklappen', () => {
         collapsed = !collapsed;
         remember(FOLD_KEY, collapsed);
         render();
     });
-    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnZones, btnFold);
+    bar.append(btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim, btnFold);
     panel.append(text, bar);
     document.body.appendChild(panel);
 
@@ -178,7 +189,8 @@ function mount(): void {
         btnMagenta.textContent = `Rand färben: ${root.classList.contains('aura-probe-magenta') ? 'an' : 'aus'}`;
         const zones = root.classList.contains('aura-probe-zones');
         btnZones.textContent = `Flächen färben: ${zones ? 'an' : 'aus'}`;
-        for (const b of [btnFix, btnReset, btnExt, btnMagenta, btnZones]) b.style.display = collapsed ? 'none' : '';
+        btnDim.textContent = `Abdunkeln: ${root.classList.contains('aura-probe-nodim') ? 'aus' : 'an'}`;
+        for (const b of [btnFix, btnReset, btnExt, btnMagenta, btnZones, btnDim]) b.style.display = collapsed ? 'none' : '';
         panel.style.cssText = collapsed ? FOLDED_CSS : OPEN_CSS;
         bar.style.marginTop = collapsed ? '0' : '6px';
         text.style.display = collapsed ? 'none' : '';
