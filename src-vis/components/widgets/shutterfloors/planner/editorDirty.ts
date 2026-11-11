@@ -2,9 +2,10 @@
  * Änderungs-Erkennung der Editoren (Feature 30, Phase 2): "Sichern" ist grau, bis sich gegenüber dem
  * Ausgangsstand etwas geändert hat. Reine Funktionen, ohne React.
  */
-import type { PlanEntry, PlanModel, Scene, SceneIcon } from './planModel';
+import type { PlanEntry, PlanModel, Scene, SceneIcon, SceneTarget } from './planModel';
 
-export type SceneTargets = Record<string, { closed: number; slat?: number }>;
+export type SceneTargetDraft = { closed: number; slat?: number; quiet?: true };
+export type SceneTargets = Record<string, SceneTargetDraft>;
 export type SceneDraft = { name: string; icon: SceneIcon; favorite: boolean; targets: SceneTargets };
 
 /** Ausgangsstand einer Szene, so wie der Editor sie lädt. Neue Szene: leer. */
@@ -16,7 +17,11 @@ export function sceneDraftOf(scene: Scene | undefined, model: Pick<PlanModel, 'd
         targets: Object.fromEntries(
             (scene?.targets ?? []).map((t) => [
                 t.key,
-                { closed: t.closed, slat: model.deviceOf(t.key)?.hasSlat ? (t.slat ?? 0) : undefined },
+                {
+                    closed: t.closed,
+                    slat: model.deviceOf(t.key)?.hasSlat ? (t.slat ?? 0) : undefined,
+                    ...(t.quiet === true ? { quiet: true as const } : {}),
+                },
             ]),
         ),
     };
@@ -32,8 +37,29 @@ export function sameSceneDraft(a: SceneDraft, b: SceneDraft): boolean {
     return ka.every((k) => {
         const x = a.targets[k];
         const y = b.targets[k];
-        return !!y && x.closed === y.closed && (x.slat ?? null) === (y.slat ?? null);
+        return !!y && x.closed === y.closed && (x.slat ?? null) === (y.slat ?? null) && !!x.quiet === !!y.quiet;
     });
+}
+
+/** Ziele des Entwurfs als Liste fürs Speichern: Schlüsselreihenfolge key, closed, slat, quiet; nie ein Schlüssel mit undefined. */
+export function sceneTargetsToList(targets: SceneTargets): SceneTarget[] {
+    return Object.entries(targets).map(([key, v]) => {
+        const out: SceneTarget = { key, closed: v.closed };
+        if (v.slat !== undefined) out.slat = v.slat;
+        if (v.quiet === true) out.quiet = true;
+        return out;
+    });
+}
+
+/** Szene aus dem Editor-Entwurf, so wie sie gespeichert wird. */
+export function sceneFromDraft(id: string, d: SceneDraft): Scene {
+    return {
+        id,
+        name: d.name.trim() || 'Ohne Namen',
+        icon: d.icon,
+        favorite: d.favorite,
+        targets: sceneTargetsToList(d.targets),
+    };
 }
 
 /** Zeitpunkt in fester Schlüsselreihenfolge; quiet false und fehlend gelten gleich. */

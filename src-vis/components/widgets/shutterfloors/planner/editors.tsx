@@ -10,7 +10,7 @@
  *   - Loeschen steht als rote Knopfzeile ganz unten und fragt nach
  * parts.tsx importiert von hier nur den Typ SheetView.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight, Minus, Plus } from 'lucide-react';
 import { IosActionSheet, IosButtonRow } from '../../../common/ios';
@@ -23,18 +23,24 @@ import {
     dayLabel,
     newId,
     nextHoliday,
+    sceneQuietKeys,
+    sceneTargetText,
     triggerMinutes,
     triggerText,
     WD_SHORT,
     WEEKDAYS,
     type PlanEntry,
     type PlanModel,
+    type PlanDevice,
     type Scene,
     type SceneIcon,
     type TriggerKind,
 } from './planModel';
 import { Caption, closedWord, DayLetters, DeviceGlyph, SceneGlyph, SCENE_ICONS, Seg, Toggle } from './parts';
-import { sameEntry, sameSceneDraft, sceneDraftOf, type SceneTargets } from './editorDirty';
+import { sameEntry, sameSceneDraft, sceneDraftOf, sceneFromDraft, type SceneTargets } from './editorDirty';
+import { useFaceliftVariant } from '../../../layout/facelift/faceliftVariant';
+import { ShutterKindIcon } from '../ShutterKindIcon';
+import { SceneTargetSheet } from './SceneTargetSheet';
 
 /** Wohin ein Tipp in einem Editor fuehrt (Szene oeffnet Zeitpunkte; die Szene bleibt darunter eingehaengt). */
 export type SheetView =
@@ -131,107 +137,24 @@ const SLAT_CHIPS: { v: number; label: string }[] = [
     { v: 90, label: 'geschlossen' },
 ];
 
-export function SceneEditor({
+/** Ziele-Block des Szenen-Editors in der Ist-Fassung (Chips je Rollladen), unverändert aus SceneEditor. */
+function ClassicSceneTargets({
     model,
-    scene,
-    onDone,
-    setView,
-    headSlot,
-    registerLeaveGuard,
-    onDirtyChange,
+    targets,
+    count,
+    setPos,
+    setSlat,
+    takeCurrent,
 }: {
     model: PlanModel;
-    scene?: Scene;
-    onDone: () => void;
-    setView: (v: SheetView) => void;
-} & EditorChrome) {
-    // Ausgangsstand einmal beim Oeffnen: gegen ihn wird "geaendert" gemessen
-    const [base] = useState(() => sceneDraftOf(scene, model));
-    const [name, setName] = useState(base.name);
-    const [icon, setIcon] = useState<SceneIcon>(base.icon);
-    const [favorite, setFavorite] = useState<boolean>(base.favorite);
-    const [targets, setTargets] = useState<SceneTargets>(base.targets);
-    const [askLeave, setAskLeave] = useState(false);
-    const [askDelete, setAskDelete] = useState(false);
-    const count = Object.keys(targets).length;
-    const dirty = !sameSceneDraft({ name, icon, favorite, targets }, base);
-    const canSave = dirty && count > 0;
-    useLeaveGuard(registerLeaveGuard, () => {
-        if (!dirty) return true;
-        setAskLeave(true);
-        return false;
-    });
-    useReportDirty(onDirtyChange, dirty);
-
-    const setPos = (key: string, v: number | null, hasSlat: boolean) =>
-        setTargets((prev) => {
-            const next = { ...prev };
-            if (v === null) delete next[key];
-            else next[key] = { closed: v, slat: hasSlat ? (prev[key]?.slat ?? 0) : undefined };
-            return next;
-        });
-    const setSlat = (key: string, s: number) => setTargets((prev) => ({ ...prev, [key]: { ...prev[key], slat: s } }));
-
-    const takeCurrent = () => {
-        const next: Record<string, { closed: number; slat?: number }> = {};
-        model.devices.forEach((d) => {
-            if (d.closed !== null) next[d.key] = { closed: Math.round(d.closed / 5) * 5, slat: d.hasSlat ? 0 : undefined };
-        });
-        setTargets(next);
-        model.showToast('Aktuelle Stellung aller Rollläden übernommen');
-    };
-
-    const save = () => {
-        const s: Scene = {
-            id: scene?.id ?? newId('s'),
-            name: name.trim() || 'Ohne Namen',
-            icon,
-            favorite,
-            targets: Object.entries(targets).map(([key, v]) => ({ key, closed: v.closed, slat: v.slat })),
-        };
-        model.saveScene(s);
-        setAskLeave(false);
-        onDone();
-    };
-
-    const usedBy = scene ? model.entriesOfScene(scene.id) : [];
-
+    targets: SceneTargets;
+    count: number;
+    setPos: (key: string, v: number | null, hasSlat: boolean) => void;
+    setSlat: (key: string, s: number) => void;
+    takeCurrent: () => void;
+}) {
     return (
-        <div className="rpp-editor">
-            <div className="rpp-section">
-                <label className="rpp-label" htmlFor="rpp-scene-name">
-                    Name
-                </label>
-                <input
-                    id="rpp-scene-name"
-                    className="rpp-input"
-                    value={name}
-                    placeholder="z. B. Guten Morgen"
-                    onChange={(e) => setName(e.target.value)}
-                />
-                <div className="rpp-icon-pick" role="radiogroup" aria-label="Symbol">
-                    {(Object.keys(SCENE_ICONS) as SceneIcon[]).map((k) => (
-                        <button
-                            key={k}
-                            type="button"
-                            role="radio"
-                            aria-checked={icon === k}
-                            className={`rpp-icon-opt${icon === k ? ' is-active' : ''}`}
-                            onClick={() => setIcon(k)}
-                        >
-                            <SceneGlyph icon={k} />
-                        </button>
-                    ))}
-                </div>
-                <div className="rpp-kv">
-                    <span className="rpp-row-main">
-                        <span className="rpp-title">Favorit</span>
-                        <span className="rpp-sub">Als Schnellknopf auf der Kachel zeigen</span>
-                    </span>
-                    <Toggle on={favorite} onChange={setFavorite} label="Favorit" />
-                </div>
-            </div>
-
+        <>
             <div className="rpp-section rpp-section--flush">
                 <div className="rpp-section-head">
                     <span className="rpp-label">
@@ -297,6 +220,225 @@ export function SceneEditor({
                     </div>
                 </div>
             ))}
+        </>
+    );
+}
+
+/** Ziele-Block des Szenen-Editors im Facelift: Liste je Etage, Antippen öffnet das Ziel-Pop-up. */
+function FaceliftSceneTargets({
+    model,
+    targets,
+    setTargets,
+    takeCurrent,
+}: {
+    model: PlanModel;
+    targets: SceneTargets;
+    setTargets: Dispatch<SetStateAction<SceneTargets>>;
+    takeCurrent: () => void;
+}) {
+    const [pick, setPick] = useState<string | null>(null);
+    const count = Object.keys(targets).length;
+    const m = Object.entries(targets).filter(([k, t]) => {
+        const d = model.deviceOf(k);
+        return t.quiet === true && !!d && d.hasSlow && !d.hasSlat;
+    }).length;
+    const device: PlanDevice | undefined = pick ? model.deviceOf(pick) : undefined;
+
+    return (
+        <>
+            <div className="rpp-section rpp-section--flush">
+                <div className="rpp-section-head">
+                    <span className="rpp-label">
+                        {count} {count === 1 ? 'Rollladen' : 'Rollläden'} beteiligt{m > 0 ? ` · ${m} leise` : ''}
+                    </span>
+                    <button type="button" className="rpp-textbtn" onClick={takeCurrent}>
+                        Aktuellen Stand übernehmen
+                    </button>
+                </div>
+                <div className="rpp-hint">Tippe auf einen Rollladen, um sein Ziel in dieser Szene festzulegen.</div>
+            </div>
+
+            {model.floors.map((floor) => (
+                <section key={floor} className="aura-fl-section">
+                    <div className="aura-fl-section-head">
+                        <h2 className="aura-fl-section-title">{floor}</h2>
+                    </div>
+                    <div className="aura-fl-card">
+                        {model.devices
+                            .filter((d) => d.floor === floor)
+                            .map((d) => {
+                                const t = targets[d.key];
+                                const text = sceneTargetText(t, d);
+                                return (
+                                    <button
+                                        key={d.key}
+                                        type="button"
+                                        className="aura-fl-row aura-fl-row--nav"
+                                        onClick={() => setPick(d.key)}
+                                        aria-label={`${d.label}: ${text}`}
+                                    >
+                                        <span className={`sf-ico is-${d.kind} aura-fl-row-icon`}>
+                                            <ShutterKindIcon kind={d.kind} closed={t ? t.closed : null} busy={false} />
+                                        </span>
+                                        <span className="aura-fl-row-main">
+                                            <span className="aura-fl-row-title">{d.label}</span>
+                                            <span className="aura-fl-row-sub">{text}</span>
+                                        </span>
+                                        <ChevronRight size={18} className="aura-fl-chev" />
+                                    </button>
+                                );
+                            })}
+                    </div>
+                </section>
+            ))}
+
+            {pick && device && (
+                <SceneTargetSheet
+                    device={device}
+                    value={targets[pick] ?? null}
+                    onApply={(v) =>
+                        setTargets((prev) => {
+                            const n = { ...prev };
+                            if (v) n[pick] = v;
+                            else delete n[pick];
+                            return n;
+                        })
+                    }
+                    onClose={() => setPick(null)}
+                />
+            )}
+        </>
+    );
+}
+
+export function SceneEditor({
+    model,
+    scene,
+    onDone,
+    setView,
+    headSlot,
+    registerLeaveGuard,
+    onDirtyChange,
+}: {
+    model: PlanModel;
+    scene?: Scene;
+    onDone: () => void;
+    setView: (v: SheetView) => void;
+} & EditorChrome) {
+    // Ausgangsstand einmal beim Oeffnen: gegen ihn wird "geaendert" gemessen
+    const [base] = useState(() => sceneDraftOf(scene, model));
+    const [name, setName] = useState(base.name);
+    const [icon, setIcon] = useState<SceneIcon>(base.icon);
+    const [favorite, setFavorite] = useState<boolean>(base.favorite);
+    const [targets, setTargets] = useState<SceneTargets>(base.targets);
+    const [askLeave, setAskLeave] = useState(false);
+    const [askDelete, setAskDelete] = useState(false);
+    const flv = useFaceliftVariant();
+    const count = Object.keys(targets).length;
+    const dirty = !sameSceneDraft({ name, icon, favorite, targets }, base);
+    const canSave = dirty && count > 0;
+    useLeaveGuard(registerLeaveGuard, () => {
+        if (!dirty) return true;
+        setAskLeave(true);
+        return false;
+    });
+    useReportDirty(onDirtyChange, dirty);
+
+    const setPos = (key: string, v: number | null, hasSlat: boolean) =>
+        setTargets((prev) => {
+            const next = { ...prev };
+            if (v === null) delete next[key];
+            else
+                next[key] = {
+                    closed: v,
+                    slat: hasSlat ? (prev[key]?.slat ?? 0) : undefined,
+                    ...(prev[key]?.quiet ? { quiet: true as const } : {}),
+                };
+            return next;
+        });
+    const setSlat = (key: string, s: number) => setTargets((prev) => ({ ...prev, [key]: { ...prev[key], slat: s } }));
+
+    const takeCurrent = () => {
+        setTargets((prev) => {
+            const next: SceneTargets = {};
+            model.devices.forEach((d) => {
+                if (d.closed === null) return;
+                const quiet = prev[d.key]?.quiet ? { quiet: true as const } : {};
+                if (flv)
+                    next[d.key] = {
+                        closed: Math.round(d.closed),
+                        slat: d.hasSlat ? (prev[d.key]?.slat ?? 0) : undefined,
+                        ...quiet,
+                    };
+                else next[d.key] = { closed: Math.round(d.closed / 5) * 5, slat: d.hasSlat ? 0 : undefined, ...quiet };
+            });
+            return next;
+        });
+        model.showToast('Aktuelle Stellung aller Rollläden übernommen');
+    };
+
+    const save = () => {
+        const s = sceneFromDraft(scene?.id ?? newId('s'), { name, icon, favorite, targets });
+        model.saveScene(s);
+        setAskLeave(false);
+        onDone();
+    };
+
+    const usedBy = scene ? model.entriesOfScene(scene.id) : [];
+
+    return (
+        <div className="rpp-editor">
+            <div className="rpp-section">
+                <label className="rpp-label" htmlFor="rpp-scene-name">
+                    Name
+                </label>
+                <input
+                    id="rpp-scene-name"
+                    className="rpp-input"
+                    value={name}
+                    placeholder="z. B. Guten Morgen"
+                    onChange={(e) => setName(e.target.value)}
+                />
+                <div className="rpp-icon-pick" role="radiogroup" aria-label="Symbol">
+                    {(Object.keys(SCENE_ICONS) as SceneIcon[]).map((k) => (
+                        <button
+                            key={k}
+                            type="button"
+                            role="radio"
+                            aria-checked={icon === k}
+                            className={`rpp-icon-opt${icon === k ? ' is-active' : ''}`}
+                            onClick={() => setIcon(k)}
+                        >
+                            <SceneGlyph icon={k} />
+                        </button>
+                    ))}
+                </div>
+                <div className="rpp-kv">
+                    <span className="rpp-row-main">
+                        <span className="rpp-title">Favorit</span>
+                        <span className="rpp-sub">Als Schnellknopf auf der Kachel zeigen</span>
+                    </span>
+                    <Toggle on={favorite} onChange={setFavorite} label="Favorit" />
+                </div>
+            </div>
+
+            {flv ? (
+                <FaceliftSceneTargets
+                    model={model}
+                    targets={targets}
+                    setTargets={setTargets}
+                    takeCurrent={takeCurrent}
+                />
+            ) : (
+                <ClassicSceneTargets
+                    model={model}
+                    targets={targets}
+                    count={count}
+                    setPos={setPos}
+                    setSlat={setSlat}
+                    takeCurrent={takeCurrent}
+                />
+            )}
 
             {scene && (
                 // Kreis schliessen: Zeitpunkt antippen oder anlegen; die Szene bleibt darunter
@@ -469,6 +611,11 @@ export function EntryEditor({
 
     const quietKeys = useMemo(() => devicesOfTarget(e.target, model.scenes), [e.target, model.scenes]);
     const slowCount = quietKeys.filter((k) => model.deviceOf(k)?.hasSlow).length;
+    const deviceOf = model.deviceOf;
+    const sceneQuiet = useMemo(
+        () => sceneQuietKeys(e.target, model.scenes).filter((k) => deviceOf(k)?.hasSlow).length,
+        [e.target, model.scenes, deviceOf],
+    );
     const canSaveEntry = e.days.some(Boolean) && !(e.target.kind === 'scene' && !e.target.sceneId);
     const dirty = !sameEntry(e, base);
     const canSave = dirty && canSaveEntry;
@@ -637,9 +784,11 @@ export function EntryEditor({
                         <span className="rpp-row-main">
                             <span className="rpp-title">Leise fahren</span>
                             <span className="rpp-sub">
-                                {slowCount < quietKeys.length
-                                    ? `Leise bei ${slowCount} von ${quietKeys.length} Rollläden, die übrigen fahren normal`
-                                    : 'Langsamer und leiser, dauert etwa doppelt so lange'}
+                                {!e.quiet && sceneQuiet > 0
+                                    ? `${sceneQuiet} ${sceneQuiet === 1 ? 'Rollladen fährt' : 'Rollläden fahren'} durch die Szene ohnehin leise`
+                                    : slowCount < quietKeys.length
+                                      ? `Leise bei ${slowCount} von ${quietKeys.length} Rollläden, die übrigen fahren normal${e.quiet && sceneQuiet > 0 ? `, ${sceneQuiet} davon schon durch die Szene` : ''}`
+                                      : `Langsamer und leiser, dauert etwa doppelt so lange${e.quiet && sceneQuiet > 0 ? ` (${sceneQuiet} schon durch die Szene)` : ''}`}
                             </span>
                         </span>
                         <Toggle on={!!e.quiet} onChange={(v) => set({ quiet: v })} label="Leise fahren" />

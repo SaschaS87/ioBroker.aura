@@ -51,7 +51,18 @@ const SCENES = [
         ],
     },
     { id: 's-eins', name: 'Eins', icon: 'sun', targets: [{ key: 'Wohnz_gross', closed: 100 }] },
+    {
+        id: 's-leise',
+        name: 'Leise',
+        icon: 'moon',
+        targets: [
+            { key: 'Wohnz_gross', closed: 100, quiet: true },
+            { key: 'Raffstore_(Garten)', closed: 100, slat: 90, quiet: true },
+        ],
+    },
+    { id: 's-leise1', name: 'Leise eins', icon: 'moon', targets: [{ key: 'Wohnz_gross', closed: 100, quiet: true }] },
 ];
+const WOHNZ_SLOW = 'tahoma.1.devices.Wohnz_gross.states.core:TargetClosureState:slow';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(cond, ms = 6000, what = '') {
@@ -114,9 +125,11 @@ async function start(opts) {
         if (!o.reaktion) {
             return; // der Antrieb antwortet nicht
         }
-        setTimeout(() => put(dp, val, true), 30);
-        if (/ClosureState$/.test(dp)) {
-            const moving = dp.replace(/ClosureState$/, 'MovingState');
+        // Der Leise-Datenpunkt (TargetClosureState:slow) bewegt denselben Antrieb wie ClosureState
+        const real = dp.replace(/TargetClosureState:slow$/, 'ClosureState');
+        setTimeout(() => put(real, val, true), 30);
+        if (/ClosureState$/.test(real)) {
+            const moving = real.replace(/ClosureState$/, 'MovingState');
             setTimeout(() => put(moving, true, true), 30);
             setTimeout(() => put(moving, false, true), 30 + o.fahrMs);
         }
@@ -335,6 +348,39 @@ const SZENE_ABBRUCH = JSON.stringify({ abort: 's-test' });
         '7) beide Felder: Warnung im Log, bestaetigt, nichts gestartet',
         sc.logs.some((l) => l.level === 'warn' && /ohne gueltige sceneId/.test(l.msg)) && sc.befehl().ack === true && sc.status().letzte30.length === n && sc.running() === 0,
     );
+}
+
+// ── (8) Leise je Szenen-Ziel ("leise gewinnt") ──
+{
+    const sc = await start({ trockenlauf: true, fahrzeitMs: 100 });
+    sc.extern(BEFEHL, JSON.stringify({ sceneId: 's-leise' }));
+    await sc.idle();
+    const z = sc.status().letzte30[0].ziele;
+    const w = z.find((x) => x.key === 'Wohnz_gross');
+    const r = z.find((x) => x.key === 'Raffstore_(Garten)');
+    check('8) Sofort-Befehl s-leise im Trockenlauf: Wohnz_gross fährt leise, dp endet auf :slow', w.position.leise === true && /:slow$/.test(w.position.dp), JSON.stringify(w.position));
+    check('8) Sofort-Befehl s-leise: Raffstore ohne slowPosDp fährt nicht leise', !r.position.leise && !/:slow$/.test(r.position.dp), JSON.stringify(r.position));
+    sc.extern(BEFEHL, JSON.stringify({ sceneId: 's-eins' }));
+    await sc.idle();
+    const e = sc.status().letzte30[0].ziele[0];
+    check('8) Sofort-Befehl einer Szene ohne quiet: nicht leise', !e.position.leise && !/:slow$/.test(e.position.dp), JSON.stringify(e.position));
+    check('8) Trockenlauf: nichts auf tahoma.1.* geschrieben', sc.tahomaWrites().length === 0);
+
+    const q = (target, quiet) => JSON.parse(sc.evalIn(`JSON.stringify(zieleAusTarget(${JSON.stringify(target)}, ${quiet}))`));
+    check('8) zieleAusTarget: Szene ohne quiet + true = leise', q({ kind: 'scene', sceneId: 's-eins' }, true)[0].quiet === true);
+    check('8) zieleAusTarget: Szene ohne quiet + false = nicht leise', q({ kind: 'scene', sceneId: 's-eins' }, false)[0].quiet === false);
+    const zs = q({ kind: 'scene', sceneId: 's-leise' }, false);
+    check('8) zieleAusTarget: Szene mit quiet + false = leise beim leisen Ziel', zs.every((x) => x.quiet === true), JSON.stringify(zs));
+    check('8) zieleAusTarget: Geräte-Ziel + false = nicht leise', q({ kind: 'device', key: 'Wohnz_gross', closed: 100 }, false)[0].quiet === false);
+    const zz = sc.evalIn(`JSON.stringify(zuSzenenZiel({key:'a',closed:1,quiet:false}))`);
+    check('8) zuSzenenZiel verwirft quiet:false (kein quiet-Schlüssel)', !('quiet' in JSON.parse(zz)), zz);
+    check('8) zuSzenenZiel behält quiet:true', JSON.parse(sc.evalIn(`JSON.stringify(zuSzenenZiel({key:'a',closed:1,quiet:true}))`)).quiet === true);
+}
+{
+    const sc = await start({ trockenlauf: false, fahrMs: 200 });
+    sc.extern(BEFEHL, JSON.stringify({ sceneId: 's-leise1' }));
+    await sc.idle();
+    check('8) live s-leise1: geschrieben wird auf …TargetClosureState:slow', sc.writesTo(WOHNZ_SLOW).length >= 1 && sc.writesTo(WOHNZ).length === 0, JSON.stringify(sc.tahomaWrites().map((x) => x.id)));
 }
 
 const failed = results.filter((r) => !r.ok).length;

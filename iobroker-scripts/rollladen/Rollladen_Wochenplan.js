@@ -9,13 +9,12 @@
 // tahoma.1.* aufgerufen wird — es wird nur protokolliert, was JETZT SO
 // passieren wuerde.
 //
-// Leise fahren (Durchgang 3, C1-C3): ein PlanEntry kann quiet:true tragen
-// (siehe planModel.ts/Frontend-Editor "Leise fahren"). Ist das Zielgeraet
-// eines von 10 leisefaehigen Rollläden (GERAETE.*.slowPosDp gesetzt), faehrt
-// die Position dann auf den slow-Zieldatenpunkt (core:TargetClosureState:
-// slow) statt auf den normalen posDp - an der Lamelle aendert sich dabei
-// nichts. quiet gilt NUR fuer den Minutentakt (Wochenplan), Sofort-Befehle
-// fahren immer normal.
+// Leise fahren (Durchgang 3, C1-C3; Szenen-Ziele ab Version 0.4.0): Ein Rollladen faehrt leise,
+// wenn (PlanEntry quiet:true ODER Szenen-Ziel quiet:true) UND das Geraet einen slowPosDp hat
+// (GERAETE.*.slowPosDp gesetzt, "leise gewinnt", Entscheidung Sascha 11.11.2026). Die Position
+// faehrt dann auf den slow-Zieldatenpunkt (core:TargetClosureState:slow) statt auf den normalen
+// posDp - an der Lamelle aendert sich dabei nichts. PlanEntry-quiet gilt NUR im Minutentakt
+// (Wochenplan); Szenen-quiet gilt immer, auch beim Sofort-Befehl der Szene.
 //
 // Sofort-Befehl und Abbruch (Feature 30, Phase 2, Version 0.3.0): `${ROOT}.Befehl` versteht
 //   - {"sceneId": "..."} bzw. ein reiner String = Szene sofort fahren (wie bisher)
@@ -92,7 +91,7 @@
 
 const ROOT = '0_userdata.0.Rollladen_Dev';
 const TROCKENLAUF = true;
-const VERSION = '0.3.0-dev';
+const VERSION = '0.4.0-dev';
 // Nur bei TROCKENLAUF === true wirksam: so lange "faehrt" ein Geraet zum Schein (Abbruch-Pruefung alle
 // 250 ms). Raffstore mit Lamelle: dieselbe Zeit noch einmal fuer die Lamelle. Im Dev-Betrieb dauert die
 // Bestaetigung eines Szenen-Befehls bei Raffstore-Szenen dadurch ueber 5 s - "Skript antwortet nicht"
@@ -414,6 +413,7 @@ function zuSzenenZiel(v) {
     if (!istObjekt(v) || typeof v.key !== 'string' || typeof v.closed !== 'number') return null;
     const out = { key: v.key, closed: v.closed };
     if (typeof v.slat === 'number') out.slat = v.slat;
+    if (v.quiet === true) out.quiet = true;
     return out;
 }
 
@@ -630,7 +630,8 @@ function zieleAusTarget(target, quiet) {
     if (target.kind === 'device') return [{ key: target.key, closed: target.closed, quiet: q }];
     const scene = scenes.find((s) => s.id === target.sceneId);
     if (!scene) return [];
-    return scene.targets.map((t) => ({ key: t.key, closed: t.closed, slat: t.slat, quiet: q }));
+    // "leise gewinnt": Plan-Eintrag ODER Szenen-Ziel leise (Wirkung erst mit slowPosDp, siehe fahreEinzelgeraet)
+    return scene.targets.map((t) => ({ key: t.key, closed: t.closed, slat: t.slat, quiet: q || t.quiet === true }));
 }
 
 async function wartenAufStillstand(geraet, timeoutMs, lauf) {
@@ -894,6 +895,7 @@ function sofortBefehl(obj) {
         return;
     }
 
+    // quiet=false gilt nur fuer den Plan-Eintrag; leise Szenen-Ziele kommen ueber zieleAusTarget (Szenen-quiet gilt auch hier)
     fuehreAus(`Sofort-Befehl → Szene "${befehl.sceneId}"`, { kind: 'scene', sceneId: befehl.sceneId }, () => {
         // Nur bestaetigen, wenn .Befehl noch diesen Wert traegt: ein Abbruch dazwischen steht dort mit
         // ack:true und darf nicht von der spaeten Bestaetigung der Szene ueberschrieben werden.

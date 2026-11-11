@@ -37,6 +37,8 @@ export interface SceneTarget {
     closed: number;
     /** Nur Raffstore: Lamelle in Prozent (0 = waagerecht, 90 = geschlossen). */
     slat?: number;
+    /** Leise fahren für dieses Ziel (nur mit slowPosDp wirksam); nur gesetzt, wenn true */
+    quiet?: true;
 }
 
 export interface Scene {
@@ -310,6 +312,27 @@ export function devicesOfTarget(t: PlanTarget, scenes: Scene[]): string[] {
     if (t.kind === 'device') return [t.key];
     const s = scenes.find((sc) => sc.id === t.sceneId);
     return s ? s.targets.map((tg) => tg.key) : [];
+}
+
+/** Geräte einer Szene, deren Ziel quiet:true trägt (Einzelgerät-Ziele: keine). */
+export function sceneQuietKeys(t: PlanTarget, scenes: Scene[]): string[] {
+    if (t.kind === 'device') return [];
+    const s = scenes.find((sc) => sc.id === t.sceneId);
+    return s ? s.targets.filter((tg) => tg.quiet === true).map((tg) => tg.key) : [];
+}
+
+/** Kurztext eines Szenen-Ziels für die Liste im Szenen-Editor. */
+export function sceneTargetText(
+    t: { closed: number; slat?: number; quiet?: true } | undefined,
+    dev: { hasSlat: boolean; hasSlow: boolean },
+): string {
+    if (!t) return 'fährt nicht mit';
+    const pos = t.closed <= 0 ? 'offen' : t.closed >= 100 ? 'zu' : `${Math.round(t.closed)} % zu`;
+    if (dev.hasSlat) {
+        const posSlat = t.closed <= 0 ? 'offen' : `${Math.round(t.closed)} % zu`;
+        return `${posSlat} · Lamelle ${Math.round(t.slat ?? 0)}°`;
+    }
+    return t.quiet === true && dev.hasSlow ? `${pos} · leise` : pos;
 }
 
 /** Findet, für einen Eintrag, alle anderen aktiven Einträge, die in den
@@ -736,6 +759,7 @@ function toSceneTarget(v: unknown): SceneTarget | null {
     if (!isRecord(v) || typeof v.key !== 'string' || typeof v.closed !== 'number') return null;
     const out: SceneTarget = { key: v.key, closed: v.closed };
     if (typeof v.slat === 'number') out.slat = v.slat;
+    if (v.quiet === true) out.quiet = true;
     return out;
 }
 

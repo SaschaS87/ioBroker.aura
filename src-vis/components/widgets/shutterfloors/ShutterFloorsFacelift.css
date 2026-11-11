@@ -141,3 +141,50 @@ body[data-fl-variant] .aura-fl-status-page {
 body[data-fl-variant] .sds .sds-sub {
     font-size: var(--fl-font-sub);
 }
+
+/* ── Ziel-Pop-up im Szenen-Editor: Tasten „−" und „+" für jeden ganzen Prozentwert ── */
+body[data-fl-variant] .sds .sds-valrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+body[data-fl-variant] .sds .sds-valrow .sds-val {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+body[data-fl-variant] .sds .sds-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: 18px;
+    background: transparent;
+    color: var(--sf-sub);
+    font: inherit;
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: color 0.15s, transform 0.09s, opacity 0.15s;
+}
+body[data-fl-variant] .sds .sds-step:active:not(:disabled) {
+    transform: scale(0.9);
+    color: var(--sf-accent);
+}
+body[data-fl-variant] .sds .sds-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+body[data-fl-variant] .sds .sds-slot--steps {
+    gap: 0;
+}
+body[data-fl-variant] .sds .sds-col--slat .sds-word {
+    overflow: visible;
+}
