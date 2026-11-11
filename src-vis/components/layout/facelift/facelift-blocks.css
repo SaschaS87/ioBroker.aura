@@ -296,6 +296,77 @@ body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbox-oldhint {
     display: none;
 }
 
+/* Inhalt der Status-Blöcke im Raster. Die alten Boxen setzen 11/12 px inline, daher !important. */
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow {
+    min-height: 44px;
+    font-size: var(--fl-font-meta) !important;
+}
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow-age,
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow-detail {
+    font-size: var(--fl-font-sub) !important;
+}
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbtn {
+    padding: 8px 14px !important;
+    border-radius: 10px !important;
+    font-size: var(--fl-font-meta) !important;
+}
+/* Signal-Zeile: Name, darunter Urteil und Alter; rechts Balken und Zahl */
+body[data-fl-variant] .aura-fl-sigrow {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 50px;
+    padding: 5px 0;
+}
+body[data-fl-variant] .aura-fl-sigrow + .aura-fl-sigrow::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .aura-fl-sigrow-name {
+    font-size: var(--fl-font-meta);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-sigrow-sub {
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-sigrow-sub.is-crit {
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .aura-fl-sigrow-bar {
+    flex-shrink: 0;
+    width: 56px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--fl-soft);
+    overflow: hidden;
+}
+body[data-fl-variant] .aura-fl-sigrow-bar > span {
+    display: block;
+    height: 100%;
+}
+body[data-fl-variant] .aura-fl-sigrow-num {
+    flex-shrink: 0;
+    width: 30px;
+    text-align: right;
+    font-size: var(--fl-font-meta);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
 /* Leere Karte samt Abschnitt ausblenden (z. B. Status ohne eingerichtete Quelle) */
 body[data-fl-variant] .aura-fl-card:empty,
 body[data-fl-variant] .aura-fl-section:has(> .aura-fl-card:empty) {

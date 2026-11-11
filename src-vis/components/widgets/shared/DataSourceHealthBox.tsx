@@ -221,7 +221,7 @@ export function DataSourceHealthBox({
         <>
             {rows.map((r) => (
                 <div key={r.id}>
-                    <div className="flex items-center" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
+                    <div className="flex items-center aura-fl-dsrow" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
                         <span
                             style={{
                                 width: 6,
@@ -236,7 +236,7 @@ export function DataSourceHealthBox({
                             }}
                         />
                         <span style={{ flex: 1, color: 'var(--text-primary)' }}>{r.label}</span>
-                        <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                        <span className="aura-fl-dsrow-age" style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                             {!r.isLoaded
                                 ? 'wird geprüft…'
                                 : r.ts > 0
@@ -246,6 +246,7 @@ export function DataSourceHealthBox({
                     </div>
                     {r.detailDps && r.detailDps.length > 0 && (
                         <div
+                            className="aura-fl-dsrow-detail"
                             style={{
                                 padding: '0 0 6px 14px',
                                 marginLeft: 3,
@@ -290,7 +291,7 @@ export function DataSourceHealthBox({
                             <button
                                 onClick={() => triggerRestart(r)}
                                 disabled={!!phase}
-                                className="inline-flex items-center"
+                                className="inline-flex items-center aura-fl-statusbtn"
                                 style={{
                                     marginTop: 6,
                                     padding: '6px 12px',

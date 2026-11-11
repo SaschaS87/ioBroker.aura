@@ -212,11 +212,42 @@ export function SignalStrengthBox({
     };
 
     // Inhalt der aufgeklappten Box; die Facelift-Entwürfe zeigen denselben Inhalt in eigener Hülle.
+    // Facelift-Unterseite: Zeile im Raster (Name 15 px, darunter Urteil und Alter in 13 px, rechts Balken
+    // und Zahl) statt der engen Fünf-Spalten-Tabelle in 11/12 px.
+    const pageRows = sortedRows.map((r) => (
+        <div key={r.key} className="aura-fl-sigrow">
+            <span className="aura-fl-row-main">
+                <span className="aura-fl-sigrow-name">{r.label}</span>
+                {r.offline ? (
+                    <span className="aura-fl-sigrow-sub is-crit">
+                        {t('signalbox.offlineRow')} {t('shuttersheet.radio.since', { time: clockTime(r.sinceTs) })}
+                    </span>
+                ) : (
+                    <span className="aura-fl-sigrow-sub">
+                        {r.level && <span style={{ color: judgementColor(r.level) }}>{JUDGEMENT_LABEL[r.level]}</span>}
+                        {r.level ? ' · ' : ''}
+                        {t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
+                    </span>
+                )}
+            </span>
+            {!r.offline && (
+                <>
+                    <span className="aura-fl-sigrow-bar">
+                        <span style={{ width: `${clampPct(r.rssi ?? 0)}%`, background: judgementColor(r.level) }} />
+                    </span>
+                    <span className="aura-fl-sigrow-num">{r.rssi !== null ? r.rssi : '–'}</span>
+                </>
+            )}
+        </div>
+    ));
+
     const body = (
         <>
-            {sortedRows.map((r) => (
-                <div key={r.key} className="flex items-center" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
-                    {/* Name-Spalte: flex: 1 gibt ihr den Rest, minWidth: 0 hebt
+            {appearance === 'page' && pageRows}
+            {appearance !== 'page' &&
+                sortedRows.map((r) => (
+                    <div key={r.key} className="flex items-center" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
+                        {/* Name-Spalte: flex: 1 gibt ihr den Rest, minWidth: 0 hebt
                                 Flexboxens Default-Mindestbreite (auto = eigene Wortbreite)
                                 auf - erst dadurch darf sie unter ihren Inhalt schrumpfen und
                                 abschneiden statt die Zeile zu sprengen. Korrektur 03.09.2026:
@@ -224,102 +255,102 @@ export function SignalStrengthBox({
                                 ohne Leerstelle ("Speisekammer") drueckte sich seinen Raum,
                                 wodurch Balken/Zahl/Urteil in jeder Zeile an anderer Stelle
                                 standen - der Bug, den Sascha am Screenshot gezeigt hat. */}
-                    <span
-                        title={r.label}
-                        style={{
-                            flex: 1,
-                            minWidth: 0,
-                            color: 'var(--text-primary)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                        }}
-                    >
-                        {r.label}
-                    </span>
-                    {r.offline ? (
-                        <>
-                            <span style={{ color: 'var(--accent-red)', flexShrink: 0 }}>
-                                {t('signalbox.offlineRow')}
-                            </span>
-                            <span style={{ color: 'var(--text-secondary)', fontSize: 11, flexShrink: 0 }}>
-                                {t('shuttersheet.radio.since', { time: clockTime(r.sinceTs) })}
-                            </span>
-                        </>
-                    ) : (
-                        <>
-                            <span
-                                style={{
-                                    width: 44,
-                                    height: 4,
-                                    borderRadius: 2,
-                                    background: 'var(--widget-border)',
-                                    overflow: 'hidden',
-                                    display: 'inline-block',
-                                    flexShrink: 0,
-                                }}
-                            >
+                        <span
+                            title={r.label}
+                            style={{
+                                flex: 1,
+                                minWidth: 0,
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                            }}
+                        >
+                            {r.label}
+                        </span>
+                        {r.offline ? (
+                            <>
+                                <span style={{ color: 'var(--accent-red)', flexShrink: 0 }}>
+                                    {t('signalbox.offlineRow')}
+                                </span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11, flexShrink: 0 }}>
+                                    {t('shuttersheet.radio.since', { time: clockTime(r.sinceTs) })}
+                                </span>
+                            </>
+                        ) : (
+                            <>
                                 <span
                                     style={{
-                                        display: 'block',
-                                        height: '100%',
-                                        width: `${clampPct(r.rssi ?? 0)}%`,
-                                        background: judgementColor(r.level),
+                                        width: 44,
+                                        height: 4,
+                                        borderRadius: 2,
+                                        background: 'var(--widget-border)',
+                                        overflow: 'hidden',
+                                        display: 'inline-block',
+                                        flexShrink: 0,
                                     }}
-                                />
-                            </span>
-                            {/* Zahl/Urteil/Zeit: alle drei jetzt mit flexShrink: 0 (fehlte
+                                >
+                                    <span
+                                        style={{
+                                            display: 'block',
+                                            height: '100%',
+                                            width: `${clampPct(r.rssi ?? 0)}%`,
+                                            background: judgementColor(r.level),
+                                        }}
+                                    />
+                                </span>
+                                {/* Zahl/Urteil/Zeit: alle drei jetzt mit flexShrink: 0 (fehlte
                                         vorher bei Zahl und Urteil) - ohne das schrumpften sie
                                         unterschiedlich stark je nachdem, wie viel Platz die
                                         Namens-Spalte in genau dieser Zeile beanspruchte. */}
-                            <span
-                                style={{
-                                    width: 22,
-                                    flexShrink: 0,
-                                    textAlign: 'right',
-                                    fontVariantNumeric: 'tabular-nums',
-                                    color: 'var(--text-primary)',
-                                }}
-                            >
-                                {r.rssi !== null ? r.rssi : '–'}
-                            </span>
-                            <span
-                                style={{
-                                    fontSize: 11,
-                                    color: judgementColor(r.level),
-                                    width: 46,
-                                    flexShrink: 0,
-                                }}
-                            >
-                                {r.level ? JUDGEMENT_LABEL[r.level] : ''}
-                            </span>
-                            <span
-                                title={t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
-                                style={{
-                                    // Nur noch der Alterswert, ohne "unveraendert seit"
-                                    // (Korrektur 03.09.2026): der volle Satz braucht 143px
-                                    // im laengsten Fall ("gerade eben") - zusammen mit den
-                                    // anderen vier Spalten blieb dafuer auf dem iPhone (334px
-                                    // Zeilenbreite) schlicht kein Platz fuer die Namens-Spalte
-                                    // mehr. Der volle Satz steht weiter als title-Tooltip zur
-                                    // Verfuegung. Breite 66px deckt den laengsten Fall
-                                    // ("gerade eben", 62px) mit etwas Luft.
-                                    width: 66,
-                                    flexShrink: 0,
-                                    textAlign: 'right',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    fontSize: 11,
-                                    color: 'var(--text-secondary)',
-                                }}
-                            >
-                                {formatAgeShort(r.unchangedTs)}
-                            </span>
-                        </>
-                    )}
-                </div>
-            ))}
+                                <span
+                                    style={{
+                                        width: 22,
+                                        flexShrink: 0,
+                                        textAlign: 'right',
+                                        fontVariantNumeric: 'tabular-nums',
+                                        color: 'var(--text-primary)',
+                                    }}
+                                >
+                                    {r.rssi !== null ? r.rssi : '–'}
+                                </span>
+                                <span
+                                    style={{
+                                        fontSize: 11,
+                                        color: judgementColor(r.level),
+                                        width: 46,
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {r.level ? JUDGEMENT_LABEL[r.level] : ''}
+                                </span>
+                                <span
+                                    title={t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
+                                    style={{
+                                        // Nur noch der Alterswert, ohne "unveraendert seit"
+                                        // (Korrektur 03.09.2026): der volle Satz braucht 143px
+                                        // im laengsten Fall ("gerade eben") - zusammen mit den
+                                        // anderen vier Spalten blieb dafuer auf dem iPhone (334px
+                                        // Zeilenbreite) schlicht kein Platz fuer die Namens-Spalte
+                                        // mehr. Der volle Satz steht weiter als title-Tooltip zur
+                                        // Verfuegung. Breite 66px deckt den laengsten Fall
+                                        // ("gerade eben", 62px) mit etwas Luft.
+                                        width: 66,
+                                        flexShrink: 0,
+                                        textAlign: 'right',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        fontSize: 11,
+                                        color: 'var(--text-secondary)',
+                                    }}
+                                >
+                                    {formatAgeShort(r.unchangedTs)}
+                                </span>
+                            </>
+                        )}
+                    </div>
+                ))}
 
             {/* Neu-messen-Knopf neben statt ueber den zwei Textzeilen - spart
                         eine Zeile Hoehe (Saschas Wunsch vom 02.09.2026). */}
@@ -328,7 +359,7 @@ export function SignalStrengthBox({
                     <button
                         onClick={handleRemeasure}
                         disabled={remeasuring}
-                        className="inline-flex items-center"
+                        className="inline-flex items-center aura-fl-statusbtn"
                         style={{
                             flexShrink: 0,
                             padding: '6px 12px',
