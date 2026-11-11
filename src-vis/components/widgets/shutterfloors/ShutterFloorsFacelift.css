@@ -188,3 +188,14 @@ body[data-fl-variant] .sds .sds-slot--steps {
 body[data-fl-variant] .sds .sds-col--slat .sds-word {
     overflow: visible;
 }
+
+/* ── Szenen-Editor: Zähler-Zeile bündig mit den Abschnittstiteln, Knopf rutscht bei Platzmangel darunter ── */
+body[data-fl-variant] .pp-page .rpp-scene-head {
+    padding: 0 var(--fl-title-pad-x);
+}
+body[data-fl-variant] .pp-page .rpp-scene-head .rpp-section-head {
+    flex-wrap: wrap;
+}
+body[data-fl-variant] .pp-page .rpp-scene-head .rpp-label {
+    white-space: nowrap;
+}

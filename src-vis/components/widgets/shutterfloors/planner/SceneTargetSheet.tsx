@@ -48,7 +48,7 @@ export function SceneTargetSheet({
     const canSlow = device.hasSlow && !device.hasSlat;
     const [included, setIncluded] = useState(value !== null);
     const [pos, setPos] = useState(value?.closed ?? Math.round(device.closed ?? 0));
-    const [slat, setSlat] = useState(value?.slat ?? 0);
+    const [slat, setSlat] = useState(clampInt(value?.slat ?? 0, SLAT_MAX));
     const [quiet, setQuiet] = useState(value?.quiet === true);
 
     const build = (inc: boolean, p: number, s: number, q: boolean, keepQuiet: boolean): SceneTargetDraft | null =>
@@ -70,12 +70,12 @@ export function SceneTargetSheet({
     );
     const changed = JSON.stringify(result) !== JSON.stringify(initial);
 
-    const setPosition = (v: number) => {
-        setPos(clampInt(v, 100));
+    const setPosition = (v: number | ((p: number) => number)) => {
+        setPos((p) => clampInt(typeof v === 'function' ? v(p) : v, 100));
         setIncluded(true);
     };
-    const setSlatValue = (v: number) => {
-        setSlat(clampInt(v, SLAT_MAX));
+    const setSlatValue = (v: number | ((p: number) => number)) => {
+        setSlat((p) => clampInt(typeof v === 'function' ? v(p) : v, SLAT_MAX));
         setIncluded(true);
     };
 
@@ -116,7 +116,7 @@ export function SceneTargetSheet({
     const posCol = (
         <div className="sds-col" style={{ width: POS_W }}>
             <div className="sds-valrow">
-                {step('1 % weniger', '−', () => setPosition(pos - 1), included && pos <= 0)}
+                {step('1 % weniger', '−', () => setPosition((p) => p - 1), included && pos <= 0)}
                 <div className={cls('sds-val', !included && 'is-stale')}>
                     {included ? (
                         <>
@@ -127,7 +127,7 @@ export function SceneTargetSheet({
                         '–'
                     )}
                 </div>
-                {step('1 % mehr', '+', () => setPosition(pos + 1), included && pos >= 100)}
+                {step('1 % mehr', '+', () => setPosition((p) => p + 1), included && pos >= 100)}
             </div>
             <div className="sds-word">{posWord}</div>
             {slot}
@@ -152,8 +152,8 @@ export function SceneTargetSheet({
                 <span className="sds-cap">Lamelle</span>
             </div>
             <div className="sds-slot sds-slot--steps">
-                {step('1 % weniger', '−', () => setSlatValue(slat - 1), included && slat <= 0)}
-                {step('1 % mehr', '+', () => setSlatValue(slat + 1), included && slat >= SLAT_MAX)}
+                {step('1 Grad weniger', '−', () => setSlatValue((p) => p - 1), included && slat <= 0)}
+                {step('1 Grad mehr', '+', () => setSlatValue((p) => p + 1), included && slat >= SLAT_MAX)}
             </div>
             <Pill
                 value={slat}

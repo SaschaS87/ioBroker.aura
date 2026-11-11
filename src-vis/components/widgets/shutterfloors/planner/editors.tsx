@@ -246,7 +246,7 @@ function FaceliftSceneTargets({
 
     return (
         <>
-            <div className="rpp-section rpp-section--flush">
+            <div className="rpp-section rpp-section--flush rpp-scene-head">
                 <div className="rpp-section-head">
                     <span className="rpp-label">
                         {count} {count === 1 ? 'Rollladen' : 'Rollläden'} beteiligt{m > 0 ? ` · ${m} leise` : ''}
