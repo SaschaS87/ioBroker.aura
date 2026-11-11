@@ -1,7 +1,7 @@
 /**
  * Status-Bausteine des Facelifts (Datenquellen, Signalstärke). Aussehen: facelift-blocks.css.
  *
- *   'bit'   Kurzform für die Sammelzeile der Hauptseite: Punkt in der Zustandsfarbe + „Titel Kurztext"
+ *   'bit'   Kurzform für die Sammelzeile der Hauptseite: Punkt in der Zustandsfarbe + Kurztext
  *   'page'  Block auf der Unterseite „Status": grauer Titel, Karte mit dem Inhalt, Begleittext darunter
  *   'row'   Rückfall ohne Unterseite: Zeile, die in der Karte aufklappt
  */
@@ -35,10 +35,7 @@ export function FaceliftStatusBox({
         return (
             <span className="aura-fl-statusbit" data-level={level}>
                 <span className="aura-fl-statusbox-dot" />
-                <span className="aura-fl-statusbit-text">
-                    {title}
-                    {sub ? ` ${sub}` : ''}
-                </span>
+                <span className="aura-fl-statusbit-text">{sub || title}</span>
             </span>
         );
     }

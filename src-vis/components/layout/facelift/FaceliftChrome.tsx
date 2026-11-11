@@ -17,10 +17,8 @@ import { DeviceSettingsWidget } from '../../widgets/DeviceSettingsWidget';
 import type { Tab } from '../../../store/dashboardStore';
 import { FACELIFT_KEY, useFaceliftPreviewStore } from '../../../themes/faceliftPreview';
 import {
-    FACELIFT_KNOBS,
     FaceliftVariantContext,
     parseChoice,
-    useFaceliftOptionsStore,
     type FaceliftChoice,
     type FaceliftVariant,
 } from './faceliftVariant';
@@ -55,9 +53,8 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
 }
 
 /**
- * Gelber Entwurfs-Umschalter – existiert nur in der Dev-Vorschau, nie im Pi-Build. Zugeklappt ein kleiner
- * Kreis (verdeckt die Pfeiltasten der Seite nicht). Aufgeklappt: „Ist/Neu" und darunter je offene
- * Gestaltungsfrage eine Zeile zum Durchklicken (FACELIFT_KNOBS).
+ * Gelber Entwurfs-Umschalter – existiert nur in der Dev-Vorschau, nie im Pi-Build. Ein kleiner Kreis
+ * (verdeckt die Pfeiltasten der Seite nicht); ein Tipp wechselt zwischen „Ist" und „Neu".
  */
 export function FaceliftSwitch({
     choice,
@@ -66,51 +63,16 @@ export function FaceliftSwitch({
     choice: FaceliftChoice;
     onChange: (c: FaceliftChoice) => void;
 }) {
-    const [open, setOpen] = useState(false);
-    const { options, setOption } = useFaceliftOptionsStore();
-    if (!open) {
-        return (
-            <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
-                <button type="button" data-on aria-label="Entwurfs-Umschalter öffnen" onClick={() => setOpen(true)}>
-                    {choice === 'IST' ? 'Ist' : 'Neu'}
-                </button>
-            </div>
-        );
-    }
     return (
-        <div className="aura-fl-switch aura-fl-switch--open" title="Entwurfs-Umschalter, nur lokal">
-            <div className="aura-fl-switch-row">
-                <span className="aura-fl-switch-label">Ansicht</span>
-                {(['IST', 'NEU'] as const).map((c) => (
-                    <button key={c} type="button" data-on={choice === c || undefined} onClick={() => onChange(c)}>
-                        {c === 'IST' ? 'Ist' : 'Neu'}
-                    </button>
-                ))}
-                <button
-                    type="button"
-                    className="aura-fl-switch-close"
-                    aria-label="Umschalter schließen"
-                    onClick={() => setOpen(false)}
-                >
-                    ✕
-                </button>
-            </div>
-            {choice !== 'IST' &&
-                FACELIFT_KNOBS.map((k) => (
-                    <div key={k.name} className="aura-fl-switch-row">
-                        <span className="aura-fl-switch-label">{k.label}</span>
-                        {k.options.map((o) => (
-                            <button
-                                key={o.key}
-                                type="button"
-                                data-on={options[k.name] === o.key || undefined}
-                                onClick={() => setOption(k.name, o.key)}
-                            >
-                                {o.label}
-                            </button>
-                        ))}
-                    </div>
-                ))}
+        <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
+            <button
+                type="button"
+                data-on
+                aria-label="Zwischen Ist und Neu wechseln"
+                onClick={() => onChange(choice === 'IST' ? 'NEU' : 'IST')}
+            >
+                {choice === 'IST' ? 'Ist' : 'Neu'}
+            </button>
         </div>
     );
 }
@@ -280,16 +242,11 @@ export function FaceliftStage({
         return () => window.clearTimeout(t);
     }, [page]);
 
-    const flOptions = useFaceliftOptionsStore((s) => s.options);
     useLayoutEffect(() => {
         if (!enabled || !variant) return;
-        const attrs: Record<string, string> = { 'data-fl-variant': variant };
-        for (const k of FACELIFT_KNOBS) attrs[`data-fl-${k.name}`] = flOptions[k.name];
-        for (const [a, v] of Object.entries(attrs)) document.body.setAttribute(a, v);
-        return () => {
-            for (const a of Object.keys(attrs)) document.body.removeAttribute(a);
-        };
-    }, [enabled, variant, flOptions]);
+        document.body.setAttribute('data-fl-variant', variant);
+        return () => document.body.removeAttribute('data-fl-variant');
+    }, [enabled, variant]);
 
     if (!enabled) return <div className="flex-1 min-h-0 flex flex-col">{children}</div>;
 

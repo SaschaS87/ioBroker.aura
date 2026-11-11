@@ -12,12 +12,12 @@
  * eingeblendeten Nicht-Favoriten (Trennlinie ueber volle Breite).
  *
  * Facelift (nur Dev-Vorschau, useFaceliftVariant): gleiche Regel, eigener
- * Aufbau aus den gemeinsamen Bausteinen. Der Aufklapp-Knopf sitzt je nach
- * Regler „x weitere" rechts im Titel oder als Zeile am Kartenende.
+ * Aufbau aus den gemeinsamen Bausteinen. Der Aufklapp-Knopf „x weitere"
+ * sitzt rechts im Titel.
  */
 import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { useFaceliftOptions, useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
+import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 
 interface FloorGroupProps {
@@ -28,7 +28,6 @@ interface FloorGroupProps {
 
 function FaceliftFloorGroup({ floor, isFav, row }: FloorGroupProps) {
     const [open, setOpen] = useState(false);
-    const asRow = useFaceliftOptions().more === 'row';
     const favs = floor.devices.filter((d) => isFav(d.key));
     const rest = floor.devices.filter((d) => !isFav(d.key));
     const hasFold = favs.length > 0 && rest.length > 0;
@@ -38,13 +37,7 @@ function FaceliftFloorGroup({ floor, isFav, row }: FloorGroupProps) {
         ? [...favs.map((d) => row(d, false)), ...(open ? rest.map((d, i) => row(d, i === 0)) : [])]
         : floor.devices.map((d) => row(d, false));
     const title = <h2 className="aura-fl-section-title sf-floor-title">{floor.name}</h2>;
-    const label = asRow
-        ? open
-            ? 'Weniger anzeigen'
-            : `${rest.length} weitere anzeigen`
-        : open
-          ? 'weniger'
-          : `${rest.length} weitere`;
+    const label = open ? 'weniger' : `${rest.length} weitere`;
     const fold = (
         <>
             <span className="aura-fl-fold-label sf-floor-fold-label">{label}</span>
@@ -54,7 +47,7 @@ function FaceliftFloorGroup({ floor, isFav, row }: FloorGroupProps) {
 
     return (
         <section className="aura-fl-section sf-floor">
-            {hasFold && !asRow ? (
+            {hasFold ? (
                 <button
                     type="button"
                     className="aura-fl-section-head aura-fl-section-head--fold sf-floor-head"
@@ -69,16 +62,6 @@ function FaceliftFloorGroup({ floor, isFav, row }: FloorGroupProps) {
             )}
             <div className="aura-fl-card sf-group sf-floor-card">
                 {rows}
-                {hasFold && asRow && (
-                    <button
-                        type="button"
-                        className="aura-fl-fold aura-fl-fold--row sf-floor-fold"
-                        onClick={toggle}
-                        aria-expanded={open}
-                    >
-                        {fold}
-                    </button>
-                )}
             </div>
         </section>
     );

@@ -36,42 +36,25 @@ body[data-fl-variant] .sf-group.aura-fl-card {
 }
 /* Pfeiltasten wie abgenommen: nur die Winkel in Textfarbe, ohne Fläche (ShutterRow.css). */
 
-/* Farbe je Symbol für den Regler „Symbole: zart" (getönte Fläche, Zeichen in der Farbe) */
-body[data-fl-variant] .sf-ico.is-fenster {
-    --fl-icon-c: var(--sf-ico-fenster, #0a84ff);
-}
-body[data-fl-variant] .sf-ico.is-dachfenster {
-    --fl-icon-c: var(--sf-ico-dachfenster, #5e5ce6);
-}
-body[data-fl-variant] .sf-ico.is-raffstore {
-    --fl-icon-c: var(--sf-ico-raffstore, #30b0c7);
-}
-body[data-fl-variant] .sf-ico.is-orange {
-    --fl-icon-c: var(--sf-ico-plan, #ff9f0a);
-}
-body[data-fl-variant] .sf-ico.is-purple {
-    --fl-icon-c: var(--sf-ico-scenes, #bf5af2);
-}
+/* Status-Symbol: grüne Fläche */
 body[data-fl-variant] .sf-ico.is-status {
-    --fl-icon-c: var(--sf-ico-status, var(--accent-green, #34c759));
+    background: var(--sf-ico-status, var(--accent-green, #34c759));
 }
-body[data-fl-variant]:not([data-fl-icons='zart']) .sf-ico.is-status {
-    background: var(--fl-icon-c);
-}
-/* Rollladen-Symbol: im Regler „kleiner" auch mit dünnerem Strich, damit es nicht so wuchtig wirkt */
-body[data-fl-variant][data-fl-icons='fein'] .sf-kind-svg {
+/* Rollladen-Symbol mit dünnerem Strich, damit es nicht so wuchtig wirkt */
+body[data-fl-variant] .sf-kind-svg {
     stroke-width: 1.7;
 }
-body[data-fl-variant][data-fl-icons='fein'] .sf-kind-svg .sf-kind-curtain path {
+body[data-fl-variant] .sf-kind-svg .sf-kind-curtain path {
     stroke-width: 1.6;
 }
 
-/* Sammelzeile „Verbindung & Funk": beide Kurzstände dürfen umbrechen */
+/* Sammelzeile „Verbindung & Funk": genau eine Unterzeile mit beiden Kurzständen, kürzt statt umzubrechen */
 body[data-fl-variant] .sf-status-bits {
     display: flex;
-    flex-wrap: wrap;
-    gap: 1px 12px;
-    white-space: normal;
+    flex-wrap: nowrap;
+    gap: 12px;
+    min-width: 0;
+    overflow: hidden;
 }
 
 /* ── Unterseiten (Zeitplan, Einstellungen, Szenen, Editoren, Status) ──── */
@@ -135,10 +118,6 @@ body[data-fl-variant] .pp-page .pw-sq {
 }
 body[data-fl-variant] .pp-page .pw-sq > svg {
     transform: scale(var(--fl-icon-glyph));
-}
-body[data-fl-variant][data-fl-icons='zart'] .pp-page .pw-sq {
-    background: color-mix(in srgb, var(--sq) 16%, transparent);
-    color: var(--sq);
 }
 body[data-fl-variant] .pp-page .pw-row + .pw-row::before {
     left: 16px;
