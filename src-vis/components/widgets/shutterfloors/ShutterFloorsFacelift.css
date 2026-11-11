@@ -36,9 +36,15 @@ body[data-fl-variant] .sf-group.aura-fl-card {
 }
 /* Pfeiltasten wie abgenommen: nur die Winkel in Textfarbe, ohne Fläche (ShutterRow.css). */
 
-/* Status-Symbol: grüne Fläche */
+/* Status-Symbol: grüne Fläche; meldet ein Fühler der Zeile eine Warnung, gelb, bei einer Störung rot */
 body[data-fl-variant] .sf-ico.is-status {
     background: var(--sf-ico-status, var(--accent-green, #34c759));
+}
+body[data-fl-variant] .sf-status-row:has(.aura-fl-statusprobe[data-level='warn']) .sf-ico.is-status {
+    background: var(--fl-warn);
+}
+body[data-fl-variant] .sf-status-row:has(.aura-fl-statusprobe[data-level='crit']) .sf-ico.is-status {
+    background: var(--fl-crit);
 }
 /* Rollladen-Symbol mit dünnerem Strich, damit es nicht so wuchtig wirkt */
 body[data-fl-variant] .sf-kind-svg {

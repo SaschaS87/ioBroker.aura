@@ -1,13 +1,15 @@
 /**
  * Status-Bausteine des Facelifts (Datenquellen, Signalstärke). Aussehen: facelift-blocks.css.
  *
+ *   'probe' unsichtbarer Fühler: trägt nur den Zustand als data-level, damit die Sammelzeile der
+ *           Hauptseite ihr Symbol einfärben kann (CSS :has, siehe ShutterFloorsFacelift.css)
  *   'page'  Block auf der Unterseite „Status": grauer Titel, Karte mit dem Inhalt, Begleittext darunter
  *   'row'   Rückfall ohne Unterseite: Zeile, die in der Karte aufklappt
  */
 import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export type StatusAppearance = 'box' | 'row' | 'page';
+export type StatusAppearance = 'box' | 'row' | 'page' | 'probe';
 export type StatusLevel = 'ok' | 'warn' | 'crit' | 'loading';
 
 export function FaceliftStatusBox({
@@ -20,7 +22,7 @@ export function FaceliftStatusBox({
     onToggle,
     children,
 }: {
-    appearance: 'row' | 'page';
+    appearance: 'row' | 'page' | 'probe';
     level: StatusLevel;
     title: string;
     sub?: string | null;
@@ -30,6 +32,9 @@ export function FaceliftStatusBox({
     onToggle: () => void;
     children: ReactNode;
 }) {
+    if (appearance === 'probe') {
+        return <span className="aura-fl-statusprobe" data-level={level} hidden />;
+    }
     if (appearance === 'page') {
         return (
             <section className="aura-fl-section aura-fl-statusbox aura-fl-statusbox--page">
