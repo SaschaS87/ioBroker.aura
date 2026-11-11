@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, ChevronRight } from 'lucide-react';
 import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
@@ -321,58 +322,82 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         </div>
     );
 
-    // Facelift-Entwürfe: drei Blöcke (Zeitplan/Szenen, Etagen, Status). Ihre Reihenfolge und ihr Aussehen
-    // stellt der Entwurf per CSS um (--fl-order-*, ShutterFloorsFacelift.css). Datenquellen und Signalstärke
-    // stehen als Zeilen in einer gemeinsamen Status-Gruppe statt als zwei lose Boxen am Seitenende; in B und E
-    // führen sie auf die Unterseite „Status" (nur mit Planer-Stapel, sonst klappen sie auf).
-    const hasStatus = (showFooter && healthSources.length > 0) || signalBoxVisible;
-    const faceliftBody = (head?: React.ReactNode, open?: (t: Tab) => void) => {
-        const openStatus = (flv === 'b' || flv === 'e') && open ? () => open('status') : undefined;
-        return (
-            <div className={`sf aura-fl-scope${connected ? '' : ' is-offline'}`}>
-                {head && (
-                    <section className="aura-fl-section sf-block sf-block--plan">
-                        <div className="aura-fl-section-head sf-block-head">
-                            <h2 className="aura-fl-section-title sf-block-title">Automatik</h2>
-                        </div>
-                        {head}
-                    </section>
-                )}
-                <div className="aura-fl-stack sf-block sf-block--floors">{floorList}</div>
-                {hasStatus && (
-                    <section className="aura-fl-section sf-block sf-block--status">
-                        <div className="aura-fl-section-head sf-block-head">
-                            <h2 className="aura-fl-section-title sf-block-title">Status</h2>
-                        </div>
-                        <div className="aura-fl-card sf-group sf-status-card">
-                            {showFooter && (
-                                <DataSourceHealthBox sources={healthSources} appearance="row" onOpen={openStatus} />
-                            )}
-                            {signalBoxVisible && (
-                                <SignalStrengthBox
-                                    devices={signalDevices}
-                                    updateDp={updateDp}
-                                    appearance="row"
-                                    onOpen={openStatus}
-                                />
-                            )}
-                        </div>
-                    </section>
-                )}
-            </div>
-        );
-    };
+    // Facelift: vier Rubriken – Etagen, „Automatik" (Zeitplan, Szenen) und „Status". Datenquellen und
+    // Signalstärke stehen nicht mehr als zwei lose Boxen am Seitenende, sondern hinter EINER Zeile
+    // „Verbindung & Funk" mit beiden Kurzständen; sie führt auf die Unterseite „Status" mit zwei Blöcken
+    // samt Begleittext. Ohne Planer-Stapel gibt es keine Unterseite, dann klappen die Zeilen in der Karte auf.
+    const hasHealth = showFooter && healthSources.length > 0;
+    const hasStatus = hasHealth || signalBoxVisible;
+    const faceliftBody = (head?: React.ReactNode, open?: (t: Tab) => void) => (
+        <div className={`sf aura-fl-scope${connected ? '' : ' is-offline'}`}>
+            <div className="aura-fl-stack sf-block sf-block--floors">{floorList}</div>
+            {head && (
+                <section className="aura-fl-section sf-block sf-block--plan">
+                    <div className="aura-fl-section-head sf-block-head">
+                        <h2 className="aura-fl-section-title sf-block-title">Automatik</h2>
+                    </div>
+                    {head}
+                </section>
+            )}
+            {hasStatus && (
+                <section className="aura-fl-section sf-block sf-block--status">
+                    <div className="aura-fl-section-head sf-block-head">
+                        <h2 className="aura-fl-section-title sf-block-title">Status</h2>
+                    </div>
+                    <div className="aura-fl-card sf-group sf-status-card">
+                        {open ? (
+                            <button
+                                type="button"
+                                className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav sf-status-row"
+                                onClick={() => open('status')}
+                            >
+                                <span className="sf-ico is-status aura-fl-row-icon">
+                                    <Activity size={16} />
+                                </span>
+                                <span className="sf-main aura-fl-row-main">
+                                    <span className="sf-name aura-fl-row-title">Verbindung &amp; Funk</span>
+                                    <span className="sf-val aura-fl-row-sub sf-status-bits">
+                                        {hasHealth && <DataSourceHealthBox sources={healthSources} appearance="bit" />}
+                                        {signalBoxVisible && (
+                                            <SignalStrengthBox
+                                                devices={signalDevices}
+                                                updateDp={updateDp}
+                                                appearance="bit"
+                                            />
+                                        )}
+                                    </span>
+                                </span>
+                                <ChevronRight size={18} className="sf-chev aura-fl-chev" />
+                            </button>
+                        ) : (
+                            <>
+                                {hasHealth && <DataSourceHealthBox sources={healthSources} appearance="row" />}
+                                {signalBoxVisible && (
+                                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} appearance="row" />
+                                )}
+                            </>
+                        )}
+                    </div>
+                </section>
+            )}
+        </div>
+    );
     const statusPage = flv ? (
         <>
-            {showFooter && healthSources.length > 0 && (
-                <div className="pw-group aura-fl-card">
-                    <DataSourceHealthBox sources={healthSources} appearance="page" />
-                </div>
+            {hasHealth && (
+                <DataSourceHealthBox
+                    sources={healthSources}
+                    appearance="page"
+                    footnote={`Zeigt, ob der Adapter ${instanceLabel} läuft und mit der TaHoma-Box verbunden ist. Über ihn gehen alle Fahrbefehle an die Rollläden. Bei einer Störung lässt er sich hier neu starten.`}
+                />
             )}
             {signalBoxVisible && (
-                <div className="pw-group aura-fl-card">
-                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} appearance="page" />
-                </div>
+                <SignalStrengthBox
+                    devices={signalDevices}
+                    updateDp={updateDp}
+                    appearance="page"
+                    footnote="Funkempfang jedes Antriebs von 0 bis 100, der schwächste steht oben. Rechts steht, seit wann sich der Wert nicht geändert hat. „Neu messen“ fragt alle Antriebe frisch ab."
+                />
             )}
         </>
     ) : undefined;

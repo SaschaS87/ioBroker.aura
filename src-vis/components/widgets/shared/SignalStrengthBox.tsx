@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useIoBroker, getStateFromCache } from '../../../hooks/useIoBroker';
 import { SEVERITY_COLOR } from '../../../utils/statusOverview';
@@ -71,12 +71,12 @@ export function SignalStrengthBox({
     devices,
     updateDp,
     appearance = 'box',
-    onOpen,
+    footnote,
 }: SignalStrengthBoxProps & {
     /** 'box' = heutige Klapp-Box; 'row'/'page' nur in den Facelift-Entwürfen (FaceliftStatusBox) */
     appearance?: StatusAppearance;
-    /** nur 'row': Zeile führt auf eine Unterseite statt aufzuklappen */
-    onOpen?: () => void;
+    /** nur 'page': Begleittext unter der Karte; die Zeile „Letzte Änderung …" hängt die Box selbst an */
+    footnote?: ReactNode;
 }) {
     const { subscribe, getState, setState } = useIoBroker();
     const t = useT();
@@ -344,7 +344,10 @@ export function SignalStrengthBox({
                         {remeasuring ? t('signalbox.remeasuring') : t('signalbox.remeasure')}
                     </button>
                 )}
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                <div
+                    className="aura-fl-statusbox-oldhint"
+                    style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}
+                >
                     {lastCountTs > 0 && <div>{t('signalbox.lastCount', { time: clockTime(lastCountTs) })}</div>}
                     <div>{t('signalbox.hint')}</div>
                 </div>
@@ -362,7 +365,12 @@ export function SignalStrengthBox({
                 sub={headerSuffix}
                 expanded={expanded}
                 onToggle={() => setExpanded((e) => !e)}
-                onOpen={onOpen}
+                foot={
+                    <>
+                        {footnote}
+                        {lastCountTs > 0 && <> {t('signalbox.lastCount', { time: clockTime(lastCountTs) })}.</>}
+                    </>
+                }
             >
                 {body}
             </FaceliftStatusBox>

@@ -17,9 +17,10 @@ import { DeviceSettingsWidget } from '../../widgets/DeviceSettingsWidget';
 import type { Tab } from '../../../store/dashboardStore';
 import { FACELIFT_KEY, useFaceliftPreviewStore } from '../../../themes/faceliftPreview';
 import {
-    FACELIFT_CHOICES,
+    FACELIFT_KNOBS,
     FaceliftVariantContext,
     parseChoice,
+    useFaceliftOptionsStore,
     type FaceliftChoice,
     type FaceliftVariant,
 } from './faceliftVariant';
@@ -37,7 +38,7 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
         try {
             return parseChoice(localStorage.getItem(KEY));
         } catch {
-            return 'A';
+            return 'NEU';
         }
     });
     const set = (c: FaceliftChoice) => {
@@ -53,7 +54,11 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
     return [choice, set];
 }
 
-/** Gelber Umschalter „Ist / A … E" – existiert nur in der Dev-Vorschau, nie im Pi-Build. */
+/**
+ * Gelber Entwurfs-Umschalter – existiert nur in der Dev-Vorschau, nie im Pi-Build. Zugeklappt ein kleiner
+ * Kreis (verdeckt die Pfeiltasten der Seite nicht). Aufgeklappt: „Ist/Neu" und darunter je offene
+ * Gestaltungsfrage eine Zeile zum Durchklicken (FACELIFT_KNOBS).
+ */
 export function FaceliftSwitch({
     choice,
     onChange,
@@ -61,26 +66,51 @@ export function FaceliftSwitch({
     choice: FaceliftChoice;
     onChange: (c: FaceliftChoice) => void;
 }) {
-    // Zugeklappt zeigt er nur die aktuelle Wahl (ein Kreis), damit er die Pfeiltasten der Seite nicht verdeckt.
-    // Ein Tipp klappt die sechs Stellungen nach links auf, die Wahl klappt ihn wieder zu.
     const [open, setOpen] = useState(false);
-    return (
-        <div className="aura-fl-switch" data-open={open || undefined} title="Entwurfs-Umschalter, nur lokal">
-            {FACELIFT_CHOICES.filter((c) => open || c.key === choice).map(({ key, label, name }) => (
-                <button
-                    key={key}
-                    type="button"
-                    data-on={choice === key || undefined}
-                    aria-label={`Entwurf ${name}`}
-                    title={name}
-                    onClick={() => {
-                        if (open) onChange(key);
-                        setOpen(!open);
-                    }}
-                >
-                    {label}
+    const { options, setOption } = useFaceliftOptionsStore();
+    if (!open) {
+        return (
+            <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
+                <button type="button" data-on aria-label="Entwurfs-Umschalter öffnen" onClick={() => setOpen(true)}>
+                    {choice === 'IST' ? 'Ist' : 'Neu'}
                 </button>
-            ))}
+            </div>
+        );
+    }
+    return (
+        <div className="aura-fl-switch aura-fl-switch--open" title="Entwurfs-Umschalter, nur lokal">
+            <div className="aura-fl-switch-row">
+                <span className="aura-fl-switch-label">Ansicht</span>
+                {(['IST', 'NEU'] as const).map((c) => (
+                    <button key={c} type="button" data-on={choice === c || undefined} onClick={() => onChange(c)}>
+                        {c === 'IST' ? 'Ist' : 'Neu'}
+                    </button>
+                ))}
+                <button
+                    type="button"
+                    className="aura-fl-switch-close"
+                    aria-label="Umschalter schließen"
+                    onClick={() => setOpen(false)}
+                >
+                    ✕
+                </button>
+            </div>
+            {choice !== 'IST' &&
+                FACELIFT_KNOBS.map((k) => (
+                    <div key={k.name} className="aura-fl-switch-row">
+                        <span className="aura-fl-switch-label">{k.label}</span>
+                        {k.options.map((o) => (
+                            <button
+                                key={o.key}
+                                type="button"
+                                data-on={options[k.name] === o.key || undefined}
+                                onClick={() => setOption(k.name, o.key)}
+                            >
+                                {o.label}
+                            </button>
+                        ))}
+                    </div>
+                ))}
         </div>
     );
 }
@@ -250,11 +280,16 @@ export function FaceliftStage({
         return () => window.clearTimeout(t);
     }, [page]);
 
+    const flOptions = useFaceliftOptionsStore((s) => s.options);
     useLayoutEffect(() => {
         if (!enabled || !variant) return;
-        document.body.setAttribute('data-fl-variant', variant);
-        return () => document.body.removeAttribute('data-fl-variant');
-    }, [enabled, variant]);
+        const attrs: Record<string, string> = { 'data-fl-variant': variant };
+        for (const k of FACELIFT_KNOBS) attrs[`data-fl-${k.name}`] = flOptions[k.name];
+        for (const [a, v] of Object.entries(attrs)) document.body.setAttribute(a, v);
+        return () => {
+            for (const a of Object.keys(attrs)) document.body.removeAttribute(a);
+        };
+    }, [enabled, variant, flOptions]);
 
     if (!enabled) return <div className="flex-1 min-h-0 flex flex-col">{children}</div>;
 

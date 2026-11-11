@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useDashboardMobile } from '../../../contexts/DashboardMobileContext';
 import { useIoBroker, sendToDirect, getStateFromCache } from '../../../hooks/useIoBroker';
@@ -74,13 +74,13 @@ type RestartPhase = 'restarting' | 'waiting' | 'done';
 export function DataSourceHealthBox({
     sources,
     appearance = 'box',
-    onOpen,
+    footnote,
 }: {
     sources: HealthSourceDef[];
     /** 'box' = heutige Klapp-Box; 'row'/'page' nur in den Facelift-Entwürfen (FaceliftStatusBox) */
     appearance?: StatusAppearance;
-    /** nur 'row': Zeile führt auf eine Unterseite statt aufzuklappen */
-    onOpen?: () => void;
+    /** nur 'page': Begleittext unter der Karte */
+    footnote?: ReactNode;
 }) {
     const isMobile = useDashboardMobile();
     const { subscribe, getState } = useIoBroker();
@@ -326,7 +326,7 @@ export function DataSourceHealthBox({
                 sub={hasProblem ? `${problemCount} ${problemCount === 1 ? 'Problem' : 'Probleme'}` : 'alles aktuell'}
                 expanded={expanded}
                 onToggle={() => setExpanded((e) => !e)}
-                onOpen={onOpen}
+                foot={footnote}
             >
                 {body}
             </FaceliftStatusBox>
