@@ -1,14 +1,13 @@
 /**
  * Status-Bausteine des Facelifts (Datenquellen, Signalstärke). Aussehen: facelift-blocks.css.
  *
- *   'bit'   Kurzform für die Sammelzeile der Hauptseite: Punkt in der Zustandsfarbe + Kurztext
  *   'page'  Block auf der Unterseite „Status": grauer Titel, Karte mit dem Inhalt, Begleittext darunter
  *   'row'   Rückfall ohne Unterseite: Zeile, die in der Karte aufklappt
  */
 import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export type StatusAppearance = 'box' | 'row' | 'page' | 'bit';
+export type StatusAppearance = 'box' | 'row' | 'page';
 export type StatusLevel = 'ok' | 'warn' | 'crit' | 'loading';
 
 export function FaceliftStatusBox({
@@ -21,7 +20,7 @@ export function FaceliftStatusBox({
     onToggle,
     children,
 }: {
-    appearance: 'row' | 'page' | 'bit';
+    appearance: 'row' | 'page';
     level: StatusLevel;
     title: string;
     sub?: string | null;
@@ -31,14 +30,6 @@ export function FaceliftStatusBox({
     onToggle: () => void;
     children: ReactNode;
 }) {
-    if (appearance === 'bit') {
-        return (
-            <span className="aura-fl-statusbit" data-level={level}>
-                <span className="aura-fl-statusbox-dot" />
-                <span className="aura-fl-statusbit-text">{sub || title}</span>
-            </span>
-        );
-    }
     if (appearance === 'page') {
         return (
             <section className="aura-fl-section aura-fl-statusbox aura-fl-statusbox--page">

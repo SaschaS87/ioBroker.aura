@@ -260,7 +260,7 @@ body[data-fl-variant] [data-level='crit'] > .aura-fl-statusbox-dot,
 body[data-fl-variant] [data-level='crit'] > .aura-fl-statusbox-head .aura-fl-statusbox-dot {
     background: var(--fl-crit);
 }
-/* Kurzstand: Punkt + Text, in der Sammelzeile und rechts im Titel der Unterseite; kürzt mit „…" */
+/* Kurzstand: Punkt + Text rechts im Titel eines Blocks der Unterseite; kürzt mit „…" */
 body[data-fl-variant] .aura-fl-statusbit {
     display: inline-flex;
     align-items: center;

@@ -48,15 +48,6 @@ body[data-fl-variant] .sf-kind-svg .sf-kind-curtain path {
     stroke-width: 1.6;
 }
 
-/* Sammelzeile „Verbindung & Funk": genau eine Unterzeile mit beiden Kurzständen, kürzt statt umzubrechen */
-body[data-fl-variant] .sf-status-bits {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 12px;
-    min-width: 0;
-    overflow: hidden;
-}
-
 /* ── Unterseiten (Zeitplan, Einstellungen, Szenen, Editoren, Status) ──── */
 body[data-fl-variant] .pp-page .pw-gh,
 body[data-fl-variant] .pp-page .rpp-caption-text {

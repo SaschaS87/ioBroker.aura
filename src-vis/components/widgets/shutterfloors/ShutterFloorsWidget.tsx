@@ -324,7 +324,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
 
     // Facelift: vier Rubriken – Etagen, „Automatik" (Zeitplan, Szenen) und „Status". Datenquellen und
     // Signalstärke stehen nicht mehr als zwei lose Boxen am Seitenende, sondern hinter EINER Zeile
-    // „Verbindung & Funk" mit beiden Kurzständen; sie führt auf die Unterseite „Status" mit zwei Blöcken
+    // „Verbindung & Funk" ohne Unterzeile; sie führt auf die Unterseite „Status" mit zwei Blöcken
     // samt Begleittext. Ohne Planer-Stapel gibt es keine Unterseite, dann klappen die Zeilen in der Karte auf.
     const hasHealth = showFooter && healthSources.length > 0;
     const hasStatus = hasHealth || signalBoxVisible;
@@ -356,16 +356,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                                 </span>
                                 <span className="sf-main aura-fl-row-main">
                                     <span className="sf-name aura-fl-row-title">Verbindung &amp; Funk</span>
-                                    <span className="sf-val aura-fl-row-sub sf-status-bits">
-                                        {hasHealth && <DataSourceHealthBox sources={healthSources} appearance="bit" />}
-                                        {signalBoxVisible && (
-                                            <SignalStrengthBox
-                                                devices={signalDevices}
-                                                updateDp={updateDp}
-                                                appearance="bit"
-                                            />
-                                        )}
-                                    </span>
                                 </span>
                                 <ChevronRight size={18} className="sf-chev aura-fl-chev" />
                             </button>
