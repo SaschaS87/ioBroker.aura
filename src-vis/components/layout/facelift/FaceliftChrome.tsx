@@ -7,7 +7,7 @@
  * sie sich später im Backend je Theme anpassen lassen. Jedes Element trägt eine eigene Klasse
  * `aura-fl-…` (siehe facelift.css).
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '@iconify/react';
 import { Wrench } from 'lucide-react';
@@ -16,10 +16,18 @@ import { IosFootnote, IosGroup, IosNavBar, IosNavRow } from '../../common/ios';
 import { DeviceSettingsWidget } from '../../widgets/DeviceSettingsWidget';
 import type { Tab } from '../../../store/dashboardStore';
 import { FACELIFT_KEY, useFaceliftPreviewStore } from '../../../themes/faceliftPreview';
+import {
+    FACELIFT_CHOICES,
+    FaceliftVariantContext,
+    parseChoice,
+    type FaceliftChoice,
+    type FaceliftVariant,
+} from './faceliftVariant';
 import './facelift.css';
+import './facelift-blocks.css';
 
 const KEY = FACELIFT_KEY;
-export type FaceliftChoice = 'IST' | 'NEU';
+export type { FaceliftChoice } from './faceliftVariant';
 /** Dauer des Herein- und Hinausfahrens der Einstellungsseite; muss zu .aura-fl-page in facelift.css passen */
 const PAGE_MS = 420;
 
@@ -27,15 +35,15 @@ const PAGE_MS = 420;
 export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => void] {
     const [choice, setChoice] = useState<FaceliftChoice>(() => {
         try {
-            return localStorage.getItem(KEY) === 'IST' ? 'IST' : 'NEU';
+            return parseChoice(localStorage.getItem(KEY));
         } catch {
-            return 'NEU';
+            return 'A';
         }
     });
     const set = (c: FaceliftChoice) => {
         setChoice(c);
         // Farben der Vorschau mit umschalten (iOS-Themes nur bei „Neu")
-        useFaceliftPreviewStore.getState().setNeu(c === 'NEU');
+        useFaceliftPreviewStore.getState().setNeu(c !== 'IST');
         try {
             localStorage.setItem(KEY, c);
         } catch {
@@ -45,13 +53,32 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
     return [choice, set];
 }
 
-/** Gelber Umschalter „Ist / Neu" – existiert nur in der Dev-Vorschau, nie im Pi-Build. */
-export function FaceliftSwitch({ choice, onChange }: { choice: FaceliftChoice; onChange: (c: FaceliftChoice) => void }) {
+/** Gelber Umschalter „Ist / A … E" – existiert nur in der Dev-Vorschau, nie im Pi-Build. */
+export function FaceliftSwitch({
+    choice,
+    onChange,
+}: {
+    choice: FaceliftChoice;
+    onChange: (c: FaceliftChoice) => void;
+}) {
+    // Zugeklappt zeigt er nur die aktuelle Wahl (ein Kreis), damit er die Pfeiltasten der Seite nicht verdeckt.
+    // Ein Tipp klappt die sechs Stellungen nach links auf, die Wahl klappt ihn wieder zu.
+    const [open, setOpen] = useState(false);
     return (
-        <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
-            {(['IST', 'NEU'] as const).map((c) => (
-                <button key={c} type="button" data-on={choice === c || undefined} onClick={() => onChange(c)}>
-                    {c === 'IST' ? 'Ist' : 'Neu'}
+        <div className="aura-fl-switch" data-open={open || undefined} title="Entwurfs-Umschalter, nur lokal">
+            {FACELIFT_CHOICES.filter((c) => open || c.key === choice).map(({ key, label, name }) => (
+                <button
+                    key={key}
+                    type="button"
+                    data-on={choice === key || undefined}
+                    aria-label={`Entwurf ${name}`}
+                    title={name}
+                    onClick={() => {
+                        if (open) onChange(key);
+                        setOpen(!open);
+                    }}
+                >
+                    {label}
                 </button>
             ))}
         </div>
@@ -84,9 +111,12 @@ export function FaceliftStage({
     settingsOpen,
     onSettingsClose,
     adminHref,
+    variant,
     children,
 }: {
     enabled: boolean;
+    /** Gewählter Entwurf (nur Dev-Vorschau); steht als data-fl-variant am <body>, damit er auch Pop-ups erreicht. */
+    variant?: FaceliftVariant | null;
     title: string;
     appTitle: string;
     left?: ReactNode;
@@ -220,99 +250,107 @@ export function FaceliftStage({
         return () => window.clearTimeout(t);
     }, [page]);
 
+    useLayoutEffect(() => {
+        if (!enabled || !variant) return;
+        document.body.setAttribute('data-fl-variant', variant);
+        return () => document.body.removeAttribute('data-fl-variant');
+    }, [enabled, variant]);
+
     if (!enabled) return <div className="flex-1 min-h-0 flex flex-col">{children}</div>;
 
     const visibleTabs = tabs.filter((t) => !t.disabled && !t.hidden);
 
     return (
-        <div ref={stageRef} className="aura-fl-stage">
-            <header className="aura-fl-header aura-header" aria-label={appTitle}>
-                <div className="aura-fl-header-left">
-                    <span className="aura-fl-logo">{left}</span>
-                    <span className="aura-fl-title-compact">{title}</span>
-                </div>
-                <div className="aura-fl-header-right">{right}</div>
-            </header>
-            {scrollEl &&
-                createPortal(
-                    <>
-                        <h1 className="aura-fl-title-large" aria-hidden="true">
-                            {title}
-                        </h1>
-                        <div className="aura-fl-snap-spacer" aria-hidden="true" />
-                    </>,
-                    scrollEl,
-                )}
+        <FaceliftVariantContext.Provider value={variant ?? null}>
+            <div ref={stageRef} className="aura-fl-stage">
+                <header className="aura-fl-header aura-header" aria-label={appTitle}>
+                    <div className="aura-fl-header-left">
+                        <span className="aura-fl-logo">{left}</span>
+                        <span className="aura-fl-title-compact">{title}</span>
+                    </div>
+                    <div className="aura-fl-header-right">{right}</div>
+                </header>
+                {scrollEl &&
+                    createPortal(
+                        <>
+                            <h1 className="aura-fl-title-large" aria-hidden="true">
+                                {title}
+                            </h1>
+                            <div className="aura-fl-snap-spacer" aria-hidden="true" />
+                        </>,
+                        scrollEl,
+                    )}
 
-            {children}
+                {children}
 
-            {page !== 'closed' && (
-                <div
-                    className="aura-fl-page aura-fl-settings"
-                    role="dialog"
-                    aria-label="Einstellungen"
-                    data-closing={page === 'closing' || undefined}
-                >
-                    <div className="aura-fl-page-scroll">
-                        <div className="ios-root aura-fl-page-inner">
-                            <IosNavBar
-                                sticky
-                                className="aura-fl-page-bar"
-                                title="Einstellungen"
-                                onBack={onSettingsClose}
-                                backLabel={title}
-                                backFallback="Zurück"
-                            />
-                            <DeviceSettingsWidget {...({ editMode: false } as WidgetProps)} />
-                            {adminHref && (
-                                <div className="ios-page aura-fl-settings-admin">
-                                    <IosGroup>
-                                        <IosNavRow
-                                            icon={Wrench}
-                                            iconColor="#8e8e93"
-                                            label="Admin-Bereich"
-                                            onClick={() => {
-                                                window.location.hash = adminHref;
-                                            }}
-                                        />
-                                    </IosGroup>
-                                    <IosFootnote desc="Dashboard bearbeiten, Themes und Farben anpassen." />
-                                </div>
-                            )}
+                {page !== 'closed' && (
+                    <div
+                        className="aura-fl-page aura-fl-settings"
+                        role="dialog"
+                        aria-label="Einstellungen"
+                        data-closing={page === 'closing' || undefined}
+                    >
+                        <div className="aura-fl-page-scroll">
+                            <div className="ios-root aura-fl-page-inner">
+                                <IosNavBar
+                                    sticky
+                                    className="aura-fl-page-bar"
+                                    title="Einstellungen"
+                                    onBack={onSettingsClose}
+                                    backLabel={title}
+                                    backFallback="Zurück"
+                                />
+                                <DeviceSettingsWidget {...({ editMode: false } as WidgetProps)} />
+                                {adminHref && (
+                                    <div className="ios-page aura-fl-settings-admin">
+                                        <IosGroup>
+                                            <IosNavRow
+                                                icon={Wrench}
+                                                iconColor="#8e8e93"
+                                                label="Admin-Bereich"
+                                                onClick={() => {
+                                                    window.location.hash = adminHref;
+                                                }}
+                                            />
+                                        </IosGroup>
+                                        <IosFootnote desc="Dashboard bearbeiten, Themes und Farben anpassen." />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {visibleTabs.length > 1 && (
-                <nav
-                    className="aura-fl-tabbar aura-tabs"
-                    aria-label="Bereiche"
-                    data-icons-only={visibleTabs.length > 5 || undefined}
-                >
-                    {visibleTabs.map((tab) => {
-                        const active = tab.id === activeTabId;
-                        const icon = tab.icon ?? FALLBACK_ICONS[tab.slug] ?? 'lucide:circle';
-                        return (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                className={`aura-fl-tab${active ? ' aura-fl-tab--active' : ''}`}
-                                aria-current={active ? 'page' : undefined}
-                                aria-label={tab.name}
-                                title={tab.name}
-                                onClick={() => {
-                                    onSettingsClose?.();
-                                    onTabClick(tab);
-                                }}
-                            >
-                                <Icon icon={icon} className="aura-fl-tab-icon" width={22} height={22} />
-                                {!tab.hideLabel && <span className="aura-fl-tab-label">{tab.name}</span>}
-                            </button>
-                        );
-                    })}
-                </nav>
-            )}
-        </div>
+                {visibleTabs.length > 1 && (
+                    <nav
+                        className="aura-fl-tabbar aura-tabs"
+                        aria-label="Bereiche"
+                        data-icons-only={visibleTabs.length > 5 || undefined}
+                    >
+                        {visibleTabs.map((tab) => {
+                            const active = tab.id === activeTabId;
+                            const icon = tab.icon ?? FALLBACK_ICONS[tab.slug] ?? 'lucide:circle';
+                            return (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    className={`aura-fl-tab${active ? ' aura-fl-tab--active' : ''}`}
+                                    aria-current={active ? 'page' : undefined}
+                                    aria-label={tab.name}
+                                    title={tab.name}
+                                    onClick={() => {
+                                        onSettingsClose?.();
+                                        onTabClick(tab);
+                                    }}
+                                >
+                                    <Icon icon={icon} className="aura-fl-tab-icon" width={22} height={22} />
+                                    {!tab.hideLabel && <span className="aura-fl-tab-label">{tab.name}</span>}
+                                </button>
+                            );
+                        })}
+                    </nav>
+                )}
+            </div>
+        </FaceliftVariantContext.Provider>
     );
 }

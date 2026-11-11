@@ -52,7 +52,7 @@ import type { SheetView } from './editors';
 import { useSceneRun } from './useSceneRun';
 import './PlanWindows.css';
 
-export type Tab = 'plan' | 'scenes';
+export type Tab = 'plan' | 'scenes' | 'status';
 type W = { m: PlanModel; setView: (v: SheetView) => void };
 type Next = { date: Date; occ: Occurrence };
 
@@ -727,30 +727,30 @@ export function ScenesHome({ m, setView, edit }: W & { edit: boolean }) {
 export function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void }) {
     const n = nextRun(m);
     return (
-        <div className="sf-group">
-            <button type="button" className="sf-row sf-row--nav" onClick={() => open('plan')}>
-                <span className="sf-ico is-orange">
+        <div className="sf-group aura-fl-card">
+            <button type="button" className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav" onClick={() => open('plan')}>
+                <span className="sf-ico is-orange aura-fl-row-icon">
                     <CalendarClock size={16} />
                 </span>
-                <span className="sf-main">
-                    <span className="sf-name">Zeitplan</span>
-                    <span className="sf-val">
+                <span className="sf-main aura-fl-row-main">
+                    <span className="sf-name aura-fl-row-title">Zeitplan</span>
+                    <span className="sf-val aura-fl-row-sub">
                         {n
                             ? `${statusText(m)} · ${dayLabel(n.date, m.today)} ${hhmm(n.occ.min)}`
                             : statusText(m)}
                     </span>
                 </span>
-                <ChevronRight size={18} className="sf-chev" />
+                <ChevronRight size={18} className="sf-chev aura-fl-chev" />
             </button>
-            <button type="button" className="sf-row sf-row--nav" onClick={() => open('scenes')}>
-                <span className="sf-ico is-purple">
+            <button type="button" className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav" onClick={() => open('scenes')}>
+                <span className="sf-ico is-purple aura-fl-row-icon">
                     <Layers size={16} />
                 </span>
-                <span className="sf-main">
-                    <span className="sf-name">Szenen</span>
-                    <span className="sf-val">{m.scenes.length} angelegt</span>
+                <span className="sf-main aura-fl-row-main">
+                    <span className="sf-name aura-fl-row-title">Szenen</span>
+                    <span className="sf-val aura-fl-row-sub">{m.scenes.length} angelegt</span>
                 </span>
-                <ChevronRight size={18} className="sf-chev" />
+                <ChevronRight size={18} className="sf-chev aura-fl-chev" />
             </button>
         </div>
     );

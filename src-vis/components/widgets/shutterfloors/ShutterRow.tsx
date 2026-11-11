@@ -101,7 +101,7 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, first
 
     return (
         <div
-            className={`sf-row sf-row--dev${c.busy ? ' is-busy' : ''}${firstRest ? ' sf-row--rest-first' : ''}`}
+            className={`sf-row sf-row--dev aura-fl-row${c.busy ? ' is-busy' : ''}${firstRest ? ' sf-row--rest-first' : ''}`}
             role="button"
             tabIndex={0}
             onClick={open}
@@ -113,13 +113,13 @@ export const ShutterRow: React.FC<ShutterRowProps> = ({ device, connected, first
             {/* Symbol: zeigt auch den Stand (der Behang faellt so weit herunter,
                 wie der Rollladen zu ist) und pulsiert waehrend der Fahrt.
                 Funk-Ausfall: durchgestrichenes Funksymbol unten rechts. */}
-            <span className={`sf-ico is-${device.kind}`}>
+            <span className={`sf-ico is-${device.kind} aura-fl-row-icon`}>
                 <ShutterKindIcon kind={device.kind} closed={c.closed} busy={c.busy} />
                 <RadioBadge show={c.offline} />
             </span>
-            <span className="sf-main">
-                <span className="sf-name">{device.label}</span>
-                <span className={`sf-val${c.busy ? ' is-busy' : ''}`}>{c.status}</span>
+            <span className="sf-main aura-fl-row-main">
+                <span className="sf-name aura-fl-row-title">{device.label}</span>
+                <span className={`sf-val aura-fl-row-sub${c.busy ? ' is-busy' : ''}`}>{c.status}</span>
             </span>
             <RowButtons c={c} label={device.label} connected={connected} kind={device.kind} />
         </div>

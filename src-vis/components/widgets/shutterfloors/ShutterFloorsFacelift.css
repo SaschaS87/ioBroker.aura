@@ -1,0 +1,453 @@
+/*
+ * Rollläden in den Facelift-Entwürfen A bis E (nur Dev-Vorschau).
+ *
+ * Brücke: bildet die vorhandenen Klassen der Rollladen-Seite (.sf-*), der Unterseiten (.pw-*, .rpp-*) und
+ * des Feinreglers (.sds-*) auf das gemeinsame Raster aus facelift-blocks.css ab. So sehen Hauptseite,
+ * Zeitplan, Szenen, Editoren, Status und Feinregler je Entwurf aus wie aus einem Guss.
+ *
+ * Jede Regel hängt an body[data-fl-variant]. Ohne das Attribut („Ist", Pi-Build) greift nichts.
+ * Den Schleier der Pop-ups (.aura-scrim) fasst diese Datei nicht an.
+ */
+
+/* ── Hauptseite, alle Entwürfe ────────────────────────────────────────── */
+body[data-fl-variant] .sf.aura-fl-scope {
+    gap: var(--fl-gap-block);
+}
+body[data-fl-variant] .sf-block--plan {
+    order: var(--fl-order-plan);
+}
+body[data-fl-variant] .sf-block--floors {
+    order: var(--fl-order-floors);
+}
+body[data-fl-variant] .sf-block--status {
+    order: var(--fl-order-status);
+}
+/* Blocktitel „Automatik" und „Status": nur dort, wo der Entwurf sie vorsieht */
+body[data-fl-variant] .sf-block-head {
+    display: none;
+}
+body[data-fl-variant='a'] .sf-block--status > .sf-block-head,
+body[data-fl-variant='b'] .sf-block > .sf-block-head,
+body[data-fl-variant='e'] .sf-block--status > .sf-block-head {
+    display: flex;
+}
+/* Trennlinie der Geräte-Zeilen folgt dem Raster */
+body[data-fl-variant] .sf-row + .sf-row::before {
+    left: var(--fl-sep-inset);
+    background: var(--fl-line);
+}
+/* Funk-Zeichen sitzt auf dem Kartengrund des Entwurfs */
+body[data-fl-variant] .sf-ico .sf-radio-badge {
+    background: var(--fl-card-bg);
+}
+/* Karte: iPhone-Rundungs-Fix der Rollladen-Karte bleibt erhalten */
+body[data-fl-variant] .sf-group.aura-fl-card {
+    isolation: isolate;
+    transform: translateZ(0);
+}
+/* Status-Inhalt (aufgeklappt oder auf der Unterseite) im Raster */
+body[data-fl-variant] .aura-fl-status-page {
+    gap: 18px;
+    padding-top: 6px;
+}
+
+/* ── A „Einstellungen" ────────────────────────────────────────────────── */
+/* Pfeiltasten wie abgenommen: nur die Winkel, 42 px rund, ohne Fläche (ShutterRow.css). */
+
+/* ── B „Große Titel" ──────────────────────────────────────────────────── */
+/* erster Titel direkt unter dem Seitentitel: ohne den großen Abstand davor */
+body[data-fl-variant='b'] .sf-block--floors > .sf-floor:first-child > .aura-fl-section-head {
+    padding-top: 6px;
+}
+/* Pfeiltasten: gefüllte Kreise, sichtbar 38 px in 44 px Tippfläche */
+body[data-fl-variant='b'] .sf-btns {
+    gap: 4px;
+}
+body[data-fl-variant='b'] .sf-btns .sf-btn:not(.sf-btn--stop) {
+    width: 44px;
+    height: 44px;
+    padding: 3px;
+    border-radius: 50%;
+    background: var(--fl-soft);
+    background-clip: content-box;
+}
+body[data-fl-variant='b'] .sf-btns .sf-btn:not(.sf-btn--stop):active:not(:disabled) {
+    background: var(--fl-line-strong);
+    background-clip: content-box;
+}
+body[data-fl-variant='b'] .sf-btns .sf-btn svg {
+    width: 22px;
+    height: 22px;
+}
+body[data-fl-variant='b'] .sf-btns .sf-btn--stop {
+    height: 36px;
+}
+
+/* ── C „Kompakt" ──────────────────────────────────────────────────────── */
+/* Zeitplan und Szenen als zwei Kacheln nebeneinander */
+body[data-fl-variant='c'] .sf-block--plan .aura-fl-card {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+    transform: none;
+}
+body[data-fl-variant='c'] .sf-block--plan .aura-fl-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 84px;
+    padding: 12px;
+    background: var(--fl-card-bg);
+    border-radius: var(--fl-card-radius);
+}
+body[data-fl-variant='c'] .sf-block--plan .aura-fl-row::before {
+    display: none;
+}
+body[data-fl-variant='c'] .sf-block--plan .aura-fl-row-main {
+    width: 100%;
+    flex: none;
+}
+body[data-fl-variant='c'] .sf-block--plan .aura-fl-chev {
+    position: absolute;
+    top: 14px;
+    right: 10px;
+}
+/* „+3" als kleine Pille */
+body[data-fl-variant='c'] .sf-floor-fold {
+    padding: 3px 6px 3px 10px;
+    border-radius: 999px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant='c'] .sf-floor-fold-chev {
+    width: 15px;
+    height: 15px;
+}
+/* Pfeiltasten: eine Pille mit zwei Hälften */
+body[data-fl-variant='c'] .sf-btns:not(.is-busy) {
+    height: 36px;
+    border-radius: 18px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant='c'] .sf-btns .sf-btn:not(.sf-btn--stop) {
+    width: 44px;
+    height: 44px;
+    margin: -4px 0;
+    border-radius: 18px;
+}
+body[data-fl-variant='c'] .sf-btns .sf-btn--up::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 13px;
+    bottom: 13px;
+    width: 1px;
+    background: var(--fl-line-strong);
+}
+body[data-fl-variant='c'] .sf-btns .sf-btn:not(.sf-btn--stop):active:not(:disabled) {
+    background: transparent;
+    opacity: 0.5;
+}
+body[data-fl-variant='c'] .sf-btns .sf-btn svg {
+    width: 20px;
+    height: 20px;
+}
+body[data-fl-variant='c'] .sf-btns .sf-btn--stop {
+    height: 32px;
+}
+/* Status als dezente Fußzeile ohne Karte */
+body[data-fl-variant='c'] .sf-block--status {
+    margin-top: 18px;
+}
+body[data-fl-variant='c'] .sf-status-card {
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--fl-line);
+    border-radius: 0;
+    box-shadow: none;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-head {
+    min-height: 44px;
+    padding: 0 4px;
+    gap: 8px;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-head::before {
+    display: none;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-lead {
+    width: 12px;
+    height: 12px;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-dot {
+    width: 8px;
+    height: 8px;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-main {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 5px;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-row-title,
+body[data-fl-variant='c'] .sf-status-card .aura-fl-row-sub {
+    font-size: var(--fl-font-meta);
+    color: var(--text-secondary);
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-sub::before {
+    content: '· ';
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-chev {
+    width: 15px;
+    height: 15px;
+}
+body[data-fl-variant='c'] .sf-status-card .aura-fl-statusbox-body {
+    padding: 0 4px 10px;
+    border-top: 0;
+}
+
+/* ── D „Etagen-Karten" ────────────────────────────────────────────────── */
+/* Pfeiltasten: umrandete Quadrate, sichtbar 38 px in 44 px Tippfläche */
+body[data-fl-variant='d'] .sf-btns {
+    gap: 2px;
+}
+body[data-fl-variant='d'] .sf-btns .sf-btn:not(.sf-btn--stop) {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+}
+body[data-fl-variant='d'] .sf-btns .sf-btn:not(.sf-btn--stop)::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 11px;
+    border: 1px solid var(--fl-line-strong);
+}
+body[data-fl-variant='d'] .sf-btns .sf-btn svg {
+    width: 20px;
+    height: 20px;
+}
+body[data-fl-variant='d'] .sf-btns .sf-btn--stop {
+    height: 34px;
+}
+/* Status oben: kompakte Zeilen, Wert rechtsbündig wie in den iPhone-Einstellungen */
+body[data-fl-variant='d'] .sf-status-card .aura-fl-statusbox-head {
+    min-height: 48px;
+}
+body[data-fl-variant='d'] .sf-status-card .aura-fl-statusbox-main {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+body[data-fl-variant='d'] .sf-status-card .aura-fl-row-title {
+    flex-shrink: 0;
+}
+
+/* ── E „Flache Liste" ─────────────────────────────────────────────────── */
+/* Abschnittstitel mit Linie darunter, Zeilen direkt auf dem Seitengrund */
+body[data-fl-variant='e'] .sf.aura-fl-scope {
+    padding-left: 4px;
+    padding-right: 4px;
+}
+body[data-fl-variant='e'] .aura-fl-section-head {
+    border-bottom: 1px solid var(--fl-line-strong);
+    padding-bottom: 8px;
+}
+body[data-fl-variant='e'] .sf-group.aura-fl-card {
+    overflow: visible;
+    transform: none;
+}
+body[data-fl-variant='e'] .sf-row--rest-first::before {
+    left: var(--fl-sep-inset) !important;
+    background: var(--fl-line) !important;
+}
+/* Zeitplan und Szenen als zwei Chips nebeneinander, ganz oben */
+body[data-fl-variant='e'] .sf-block--plan .aura-fl-card {
+    display: flex;
+    gap: 8px;
+    padding-top: 2px;
+}
+body[data-fl-variant='e'] .sf-block--plan .aura-fl-row {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    gap: 8px;
+    padding: 0 12px 0 7px;
+    border-radius: 999px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant='e'] .sf-block--plan .aura-fl-row::before,
+body[data-fl-variant='e'] .sf-block--plan .aura-fl-row-sub,
+body[data-fl-variant='e'] .sf-block--plan .aura-fl-chev {
+    display: none;
+}
+body[data-fl-variant='e'] .sf-block--plan .aura-fl-row-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+/* Tasten als Wörter: „Auf" und „Zu" in Pillen (Winkel ausgeblendet, Beschriftung für Screenreader bleibt) */
+body[data-fl-variant='e'] .sf-btns {
+    gap: 6px;
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn:not(.sf-btn--stop) {
+    width: auto;
+    min-width: 50px;
+    height: 44px;
+    padding: 0 13px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 0;
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn:not(.sf-btn--stop) svg {
+    display: none;
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn:not(.sf-btn--stop)::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 6px 0;
+    border-radius: 999px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn--up::after {
+    content: 'Auf';
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn--down::after {
+    content: 'Zu';
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn:not(.sf-btn--stop):active:not(:disabled) {
+    background: transparent;
+    opacity: 0.5;
+}
+body[data-fl-variant='e'] .sf-btns .sf-btn--stop {
+    height: 32px;
+    margin-right: 0;
+}
+
+/* ── Unterseiten (Zeitplan, Einstellungen, Szenen, Editoren, Status) ──── */
+body[data-fl-variant] .pp-page .pw-gh,
+body[data-fl-variant] .pp-page .rpp-caption-text {
+    font-size: var(--fl-font-section);
+    font-weight: var(--fl-weight-section);
+    text-transform: var(--fl-case-section);
+    letter-spacing: var(--fl-track-section);
+    color: var(--fl-color-section);
+}
+body[data-fl-variant] .pp-page .pw-gh {
+    padding: max(18px, var(--fl-head-top)) var(--fl-title-pad-x) var(--fl-gap-title);
+}
+body[data-fl-variant] .pp-page .pw-home > .pw-gh:first-child {
+    padding-top: 6px;
+}
+body[data-fl-variant] .pp-page .rpp-caption {
+    padding-left: var(--fl-title-pad-x);
+    padding-right: var(--fl-title-pad-x);
+}
+body[data-fl-variant] .pp-page .rpp-label {
+    font-size: var(--fl-font-label);
+    font-weight: var(--fl-weight-label);
+    text-transform: var(--fl-case-label);
+}
+body[data-fl-variant] .pp-page .pw-title,
+body[data-fl-variant] .pp-page .rpp-title {
+    font-size: var(--fl-font-title);
+    font-weight: var(--fl-weight-title);
+}
+body[data-fl-variant] .pp-page .pw-sub,
+body[data-fl-variant] .pp-page .rpp-sub {
+    font-size: var(--fl-font-sub);
+}
+body[data-fl-variant] .pp-page .pw-gf,
+body[data-fl-variant] .pp-page .rpp-hint {
+    font-size: var(--fl-font-meta);
+    padding-left: var(--fl-title-pad-x);
+    padding-right: var(--fl-title-pad-x);
+}
+body[data-fl-variant] .pp-page .rpp-hint {
+    padding-left: 0;
+    padding-right: 0;
+}
+body[data-fl-variant] .pp-page .pw-row {
+    min-height: var(--fl-row-min-h);
+}
+body[data-fl-variant] .pp-page .pw-group,
+body[data-fl-variant] .pp-page .rpp-card,
+body[data-fl-variant] .pp-page .rpp-section:not(.rpp-section--flush) {
+    background: var(--fl-card-bg);
+    border-width: var(--fl-card-border-w);
+    border-radius: var(--fl-card-radius);
+    box-shadow: var(--fl-card-shadow);
+}
+body[data-fl-variant] .pp-page .pw-sq {
+    width: var(--fl-icon-size);
+    height: var(--fl-icon-size);
+    border-radius: var(--fl-icon-radius);
+}
+body[data-fl-variant] .pp-page .pw-row + .pw-row::before {
+    background: var(--fl-line);
+}
+body[data-fl-variant] .pp-page .pw-row + .pw-row:has(> .pw-sq, > .pw-add-ico)::before {
+    left: var(--fl-sep-inset);
+}
+body[data-fl-variant] .pp-page .pw-add-ico {
+    width: var(--fl-icon-size);
+}
+/* Szenen-Kacheln: Rundung passend zur Karte des Entwurfs */
+body[data-fl-variant] .pp-page .pw-tile {
+    border-radius: max(12px, var(--fl-card-radius));
+}
+
+/* C: dichtere Zeitleiste */
+body[data-fl-variant='c'] .pp-page .pw-group + .pw-group {
+    margin-top: 14px;
+}
+/* E: Unterseiten ebenfalls ohne Karten, Gruppentitel mit Linie, Zeilen bis an den Rand */
+body[data-fl-variant='e'] .pp-page .pw-gh {
+    margin: 0 4px;
+    padding-left: 0;
+    padding-right: 0;
+    border-bottom: 1px solid var(--fl-line-strong);
+    padding-bottom: 8px;
+}
+body[data-fl-variant='e'] .pp-page .pw-group,
+body[data-fl-variant='e'] .pp-page .rpp-card,
+body[data-fl-variant='e'] .pp-page .rpp-section:not(.rpp-section--flush) {
+    border-top: 1px solid var(--fl-line);
+    border-bottom: 1px solid var(--fl-line);
+}
+body[data-fl-variant='e'] .pp-page .pw-gh + .pw-group {
+    border-top: 0;
+}
+
+/* ── Feinregler (Pop-up von unten) ────────────────────────────────────── */
+body[data-fl-variant] .sds .sds-sub {
+    font-size: var(--fl-font-sub);
+}
+body[data-fl-variant='b'] .sds .sds-title {
+    font-size: 26px;
+    font-weight: 800;
+}
+body[data-fl-variant='b'] .sds .sds-go {
+    border-radius: 999px;
+}
+body[data-fl-variant='c'] .sds .sds-title {
+    font-size: 19px;
+}
+body[data-fl-variant='c'] .sds .sds-go {
+    border-radius: 10px;
+}
+body[data-fl-variant='d'] .sds .sds-go {
+    border-radius: 16px;
+}
+body[data-fl-variant='e'] .sds .sds-title {
+    font-size: 20px;
+    font-weight: 600;
+}
+body[data-fl-variant='e'] .sds .sds-go {
+    border-radius: 999px;
+}

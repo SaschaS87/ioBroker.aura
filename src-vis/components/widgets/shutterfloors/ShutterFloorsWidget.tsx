@@ -12,8 +12,10 @@ import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
 import { PlannerStack } from './planner/PlannerStack';
-import { PlanTiles } from './planner/PlanWindows';
+import { PlanTiles, type Tab } from './planner/PlanWindows';
+import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 import './ShutterFloorsWidget.css';
+import './ShutterFloorsFacelift.css';
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
@@ -63,6 +65,9 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Dev-/Live-Weiche wie der Planer. Vor dem fruehen Return unten, damit die
     // Reihenfolge der Hooks gleich bleibt.
     const fav = useFavorites(`${effectivePlannerRoot}.Favoriten`);
+
+    // Facelift-Entwurf (nur Dev-Vorschau, sonst null): bestimmt Aufbau und Platz des Status-Blocks
+    const flv = useFaceliftVariant();
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -308,13 +313,70 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
 
     // Liste mit Etagen und Fuss. Mit Planer (showPlanner) steht darueber die Kopfgruppe Zeitplan/Szenen, und die
     // Liste ist die unterste Seite des Stapels (Feature 30, Phase 2); ohne Planer bleibt es die Liste allein.
-    const listBody = (head?: React.ReactNode) => (
+    const classicBody = (head?: React.ReactNode) => (
         <div className={`sf${connected ? '' : ' is-offline'}`}>
             {head}
             {floorList}
             <div className="sf-foot">{footer}</div>
         </div>
     );
+
+    // Facelift-Entwürfe: drei Blöcke (Zeitplan/Szenen, Etagen, Status). Ihre Reihenfolge und ihr Aussehen
+    // stellt der Entwurf per CSS um (--fl-order-*, ShutterFloorsFacelift.css). Datenquellen und Signalstärke
+    // stehen als Zeilen in einer gemeinsamen Status-Gruppe statt als zwei lose Boxen am Seitenende; in B und E
+    // führen sie auf die Unterseite „Status" (nur mit Planer-Stapel, sonst klappen sie auf).
+    const hasStatus = (showFooter && healthSources.length > 0) || signalBoxVisible;
+    const faceliftBody = (head?: React.ReactNode, open?: (t: Tab) => void) => {
+        const openStatus = (flv === 'b' || flv === 'e') && open ? () => open('status') : undefined;
+        return (
+            <div className={`sf aura-fl-scope${connected ? '' : ' is-offline'}`}>
+                {head && (
+                    <section className="aura-fl-section sf-block sf-block--plan">
+                        <div className="aura-fl-section-head sf-block-head">
+                            <h2 className="aura-fl-section-title sf-block-title">Automatik</h2>
+                        </div>
+                        {head}
+                    </section>
+                )}
+                <div className="aura-fl-stack sf-block sf-block--floors">{floorList}</div>
+                {hasStatus && (
+                    <section className="aura-fl-section sf-block sf-block--status">
+                        <div className="aura-fl-section-head sf-block-head">
+                            <h2 className="aura-fl-section-title sf-block-title">Status</h2>
+                        </div>
+                        <div className="aura-fl-card sf-group sf-status-card">
+                            {showFooter && (
+                                <DataSourceHealthBox sources={healthSources} appearance="row" onOpen={openStatus} />
+                            )}
+                            {signalBoxVisible && (
+                                <SignalStrengthBox
+                                    devices={signalDevices}
+                                    updateDp={updateDp}
+                                    appearance="row"
+                                    onOpen={openStatus}
+                                />
+                            )}
+                        </div>
+                    </section>
+                )}
+            </div>
+        );
+    };
+    const statusPage = flv ? (
+        <>
+            {showFooter && healthSources.length > 0 && (
+                <div className="pw-group aura-fl-card">
+                    <DataSourceHealthBox sources={healthSources} appearance="page" />
+                </div>
+            )}
+            {signalBoxVisible && (
+                <div className="pw-group aura-fl-card">
+                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} appearance="page" />
+                </div>
+            )}
+        </>
+    ) : undefined;
+    const listBody = flv ? faceliftBody : classicBody;
 
     return (
         <PendingContext.Provider value={pendingStore}>
@@ -325,7 +387,11 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                         floors={floors}
                         root={effectivePlannerRoot}
                         render={(m) => (
-                            <PlannerStack m={m} list={(open) => listBody(<PlanTiles m={m} open={open} />)} />
+                            <PlannerStack
+                                m={m}
+                                statusPage={statusPage}
+                                list={(open) => listBody(<PlanTiles m={m} open={open} />, open)}
+                            />
                         )}
                     />
                 ) : (

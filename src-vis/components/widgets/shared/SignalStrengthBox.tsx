@@ -4,6 +4,7 @@ import { useIoBroker, getStateFromCache } from '../../../hooks/useIoBroker';
 import { SEVERITY_COLOR } from '../../../utils/statusOverview';
 import { useT } from '../../../i18n';
 import type { ioBrokerState } from '../../../types';
+import { FaceliftStatusBox, type StatusAppearance, type StatusLevel } from '../../layout/facelift/FaceliftStatusBox';
 import {
     radioDpsFromPosDp,
     radioLevel,
@@ -66,7 +67,17 @@ function allRadioDpIds(devices: SignalStrengthDeviceDef[]): string[] {
     return Array.from(set);
 }
 
-export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps) {
+export function SignalStrengthBox({
+    devices,
+    updateDp,
+    appearance = 'box',
+    onOpen,
+}: SignalStrengthBoxProps & {
+    /** 'box' = heutige Klapp-Box; 'row'/'page' nur in den Facelift-Entwürfen (FaceliftStatusBox) */
+    appearance?: StatusAppearance;
+    /** nur 'row': Zeile führt auf eine Unterseite statt aufzuklappen */
+    onOpen?: () => void;
+}) {
     const { subscribe, getState, setState } = useIoBroker();
     const t = useT();
 
@@ -200,6 +211,164 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
         remeasureTimeoutRef.current = window.setTimeout(() => setRemeasuring(false), 20_000);
     };
 
+    // Inhalt der aufgeklappten Box; die Facelift-Entwürfe zeigen denselben Inhalt in eigener Hülle.
+    const body = (
+        <>
+            {sortedRows.map((r) => (
+                <div key={r.key} className="flex items-center" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
+                    {/* Name-Spalte: flex: 1 gibt ihr den Rest, minWidth: 0 hebt
+                                Flexboxens Default-Mindestbreite (auto = eigene Wortbreite)
+                                auf - erst dadurch darf sie unter ihren Inhalt schrumpfen und
+                                abschneiden statt die Zeile zu sprengen. Korrektur 03.09.2026:
+                                vorher gab es dafuer keinen Platz, ein einzelnes langes Wort
+                                ohne Leerstelle ("Speisekammer") drueckte sich seinen Raum,
+                                wodurch Balken/Zahl/Urteil in jeder Zeile an anderer Stelle
+                                standen - der Bug, den Sascha am Screenshot gezeigt hat. */}
+                    <span
+                        title={r.label}
+                        style={{
+                            flex: 1,
+                            minWidth: 0,
+                            color: 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {r.label}
+                    </span>
+                    {r.offline ? (
+                        <>
+                            <span style={{ color: 'var(--accent-red)', flexShrink: 0 }}>
+                                {t('signalbox.offlineRow')}
+                            </span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: 11, flexShrink: 0 }}>
+                                {t('shuttersheet.radio.since', { time: clockTime(r.sinceTs) })}
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <span
+                                style={{
+                                    width: 44,
+                                    height: 4,
+                                    borderRadius: 2,
+                                    background: 'var(--widget-border)',
+                                    overflow: 'hidden',
+                                    display: 'inline-block',
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        display: 'block',
+                                        height: '100%',
+                                        width: `${clampPct(r.rssi ?? 0)}%`,
+                                        background: judgementColor(r.level),
+                                    }}
+                                />
+                            </span>
+                            {/* Zahl/Urteil/Zeit: alle drei jetzt mit flexShrink: 0 (fehlte
+                                        vorher bei Zahl und Urteil) - ohne das schrumpften sie
+                                        unterschiedlich stark je nachdem, wie viel Platz die
+                                        Namens-Spalte in genau dieser Zeile beanspruchte. */}
+                            <span
+                                style={{
+                                    width: 22,
+                                    flexShrink: 0,
+                                    textAlign: 'right',
+                                    fontVariantNumeric: 'tabular-nums',
+                                    color: 'var(--text-primary)',
+                                }}
+                            >
+                                {r.rssi !== null ? r.rssi : '–'}
+                            </span>
+                            <span
+                                style={{
+                                    fontSize: 11,
+                                    color: judgementColor(r.level),
+                                    width: 46,
+                                    flexShrink: 0,
+                                }}
+                            >
+                                {r.level ? JUDGEMENT_LABEL[r.level] : ''}
+                            </span>
+                            <span
+                                title={t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
+                                style={{
+                                    // Nur noch der Alterswert, ohne "unveraendert seit"
+                                    // (Korrektur 03.09.2026): der volle Satz braucht 143px
+                                    // im laengsten Fall ("gerade eben") - zusammen mit den
+                                    // anderen vier Spalten blieb dafuer auf dem iPhone (334px
+                                    // Zeilenbreite) schlicht kein Platz fuer die Namens-Spalte
+                                    // mehr. Der volle Satz steht weiter als title-Tooltip zur
+                                    // Verfuegung. Breite 66px deckt den laengsten Fall
+                                    // ("gerade eben", 62px) mit etwas Luft.
+                                    width: 66,
+                                    flexShrink: 0,
+                                    textAlign: 'right',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    fontSize: 11,
+                                    color: 'var(--text-secondary)',
+                                }}
+                            >
+                                {formatAgeShort(r.unchangedTs)}
+                            </span>
+                        </>
+                    )}
+                </div>
+            ))}
+
+            {/* Neu-messen-Knopf neben statt ueber den zwei Textzeilen - spart
+                        eine Zeile Hoehe (Saschas Wunsch vom 02.09.2026). */}
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                {updateDp && (
+                    <button
+                        onClick={handleRemeasure}
+                        disabled={remeasuring}
+                        className="inline-flex items-center"
+                        style={{
+                            flexShrink: 0,
+                            padding: '6px 12px',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: '#fff',
+                            background: remeasuring ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
+                            border: 'none',
+                            borderRadius: 6,
+                            cursor: remeasuring ? 'default' : 'pointer',
+                        }}
+                    >
+                        {remeasuring ? t('signalbox.remeasuring') : t('signalbox.remeasure')}
+                    </button>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    {lastCountTs > 0 && <div>{t('signalbox.lastCount', { time: clockTime(lastCountTs) })}</div>}
+                    <div>{t('signalbox.hint')}</div>
+                </div>
+            </div>
+        </>
+    );
+
+    if (appearance !== 'box') {
+        const level: StatusLevel = !anyAnswered ? 'loading' : hasOffline ? 'crit' : hasLow ? 'warn' : 'ok';
+        return (
+            <FaceliftStatusBox
+                appearance={appearance}
+                level={level}
+                title={t('signalbox.title')}
+                sub={headerSuffix}
+                expanded={expanded}
+                onToggle={() => setExpanded((e) => !e)}
+                onOpen={onOpen}
+            >
+                {body}
+            </FaceliftStatusBox>
+        );
+    }
+
     return (
         <div
             style={{
@@ -246,147 +415,7 @@ export function SignalStrengthBox({ devices, updateDp }: SignalStrengthBoxProps)
                 />
             </button>
             {expanded && (
-                <div style={{ padding: '2px 12px 12px', borderTop: '1px solid var(--widget-border)' }}>
-                    {sortedRows.map((r) => (
-                        <div
-                            key={r.key}
-                            className="flex items-center"
-                            style={{ gap: 8, padding: '6px 0', fontSize: 12 }}
-                        >
-                            {/* Name-Spalte: flex: 1 gibt ihr den Rest, minWidth: 0 hebt
-                                Flexboxens Default-Mindestbreite (auto = eigene Wortbreite)
-                                auf - erst dadurch darf sie unter ihren Inhalt schrumpfen und
-                                abschneiden statt die Zeile zu sprengen. Korrektur 03.09.2026:
-                                vorher gab es dafuer keinen Platz, ein einzelnes langes Wort
-                                ohne Leerstelle ("Speisekammer") drueckte sich seinen Raum,
-                                wodurch Balken/Zahl/Urteil in jeder Zeile an anderer Stelle
-                                standen - der Bug, den Sascha am Screenshot gezeigt hat. */}
-                            <span
-                                title={r.label}
-                                style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    color: 'var(--text-primary)',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                }}
-                            >
-                                {r.label}
-                            </span>
-                            {r.offline ? (
-                                <>
-                                    <span style={{ color: 'var(--accent-red)', flexShrink: 0 }}>
-                                        {t('signalbox.offlineRow')}
-                                    </span>
-                                    <span style={{ color: 'var(--text-secondary)', fontSize: 11, flexShrink: 0 }}>
-                                        {t('shuttersheet.radio.since', { time: clockTime(r.sinceTs) })}
-                                    </span>
-                                </>
-                            ) : (
-                                <>
-                                    <span
-                                        style={{
-                                            width: 44,
-                                            height: 4,
-                                            borderRadius: 2,
-                                            background: 'var(--widget-border)',
-                                            overflow: 'hidden',
-                                            display: 'inline-block',
-                                            flexShrink: 0,
-                                        }}
-                                    >
-                                        <span
-                                            style={{
-                                                display: 'block',
-                                                height: '100%',
-                                                width: `${clampPct(r.rssi ?? 0)}%`,
-                                                background: judgementColor(r.level),
-                                            }}
-                                        />
-                                    </span>
-                                    {/* Zahl/Urteil/Zeit: alle drei jetzt mit flexShrink: 0 (fehlte
-                                        vorher bei Zahl und Urteil) - ohne das schrumpften sie
-                                        unterschiedlich stark je nachdem, wie viel Platz die
-                                        Namens-Spalte in genau dieser Zeile beanspruchte. */}
-                                    <span
-                                        style={{
-                                            width: 22,
-                                            flexShrink: 0,
-                                            textAlign: 'right',
-                                            fontVariantNumeric: 'tabular-nums',
-                                            color: 'var(--text-primary)',
-                                        }}
-                                    >
-                                        {r.rssi !== null ? r.rssi : '–'}
-                                    </span>
-                                    <span
-                                        style={{
-                                            fontSize: 11,
-                                            color: judgementColor(r.level),
-                                            width: 46,
-                                            flexShrink: 0,
-                                        }}
-                                    >
-                                        {r.level ? JUDGEMENT_LABEL[r.level] : ''}
-                                    </span>
-                                    <span
-                                        title={t('signalbox.unchangedSince', { age: formatAgeShort(r.unchangedTs) })}
-                                        style={{
-                                            // Nur noch der Alterswert, ohne "unveraendert seit"
-                                            // (Korrektur 03.09.2026): der volle Satz braucht 143px
-                                            // im laengsten Fall ("gerade eben") - zusammen mit den
-                                            // anderen vier Spalten blieb dafuer auf dem iPhone (334px
-                                            // Zeilenbreite) schlicht kein Platz fuer die Namens-Spalte
-                                            // mehr. Der volle Satz steht weiter als title-Tooltip zur
-                                            // Verfuegung. Breite 66px deckt den laengsten Fall
-                                            // ("gerade eben", 62px) mit etwas Luft.
-                                            width: 66,
-                                            flexShrink: 0,
-                                            textAlign: 'right',
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            fontSize: 11,
-                                            color: 'var(--text-secondary)',
-                                        }}
-                                    >
-                                        {formatAgeShort(r.unchangedTs)}
-                                    </span>
-                                </>
-                            )}
-                        </div>
-                    ))}
-
-                    {/* Neu-messen-Knopf neben statt ueber den zwei Textzeilen - spart
-                        eine Zeile Hoehe (Saschas Wunsch vom 02.09.2026). */}
-                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-                        {updateDp && (
-                            <button
-                                onClick={handleRemeasure}
-                                disabled={remeasuring}
-                                className="inline-flex items-center"
-                                style={{
-                                    flexShrink: 0,
-                                    padding: '6px 12px',
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    color: '#fff',
-                                    background: remeasuring ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
-                                    border: 'none',
-                                    borderRadius: 6,
-                                    cursor: remeasuring ? 'default' : 'pointer',
-                                }}
-                            >
-                                {remeasuring ? t('signalbox.remeasuring') : t('signalbox.remeasure')}
-                            </button>
-                        )}
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                            {lastCountTs > 0 && <div>{t('signalbox.lastCount', { time: clockTime(lastCountTs) })}</div>}
-                            <div>{t('signalbox.hint')}</div>
-                        </div>
-                    </div>
-                </div>
+                <div style={{ padding: '2px 12px 12px', borderTop: '1px solid var(--widget-border)' }}>{body}</div>
             )}
         </div>
     );

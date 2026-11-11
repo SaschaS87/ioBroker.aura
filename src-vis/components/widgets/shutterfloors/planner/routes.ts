@@ -5,6 +5,8 @@ export type Route =
     | { v: 'plan' }
     | { v: 'scenes' }
     | { v: 'settings' }
+    /** Status-Unterseite (Datenquellen, Signalstärke); nur in Facelift-Entwürfen erreichbar */
+    | { v: 'status' }
     | { v: 'scene'; id: string | null }
     | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> };
 /** Eintrag im Stapel; uid macht den Schlüssel auch bei erneutem Öffnen derselben Seite eindeutig. */
@@ -19,6 +21,8 @@ export function pageTitle(r: Route, m: PlanModel): string {
             return 'Szenen';
         case 'settings':
             return 'Einstellungen';
+        case 'status':
+            return 'Status';
         case 'scene':
             return (r.id && m.sceneOf(r.id)?.name) || 'Neue Szene';
         case 'entry': {
