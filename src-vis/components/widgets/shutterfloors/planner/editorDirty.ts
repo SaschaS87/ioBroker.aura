@@ -62,9 +62,8 @@ export function sceneFromDraft(id: string, d: SceneDraft): Scene {
     };
 }
 
-/** Zeitpunkt in fester Schlüsselreihenfolge; quiet false und fehlend gelten gleich. */
+/** Zeitpunkt in fester Schlüsselreihenfolge; quiet false und fehlend gelten gleich, Ziel-Reihenfolge zählt. */
 function normEntry(e: PlanEntry) {
-    const t = e.target;
     return {
         id: e.id,
         days: e.days.map(Boolean),
@@ -75,12 +74,12 @@ function normEntry(e: PlanEntry) {
             earliest: e.trigger.earliest ?? null,
             latest: e.trigger.latest ?? null,
         },
-        target:
-            t.kind === 'scene'
-                ? { kind: 'scene', sceneId: t.sceneId }
-                : { kind: 'device', key: t.key, closed: t.closed },
+        targets: e.targets.map((t) =>
+            t.kind === 'scene' ? { kind: 'scene', sceneId: t.sceneId } : { kind: 'device', key: t.key, closed: t.closed },
+        ),
         enabled: !!e.enabled,
         quiet: !!e.quiet,
+        name: e.name?.trim() || null,
     };
 }
 

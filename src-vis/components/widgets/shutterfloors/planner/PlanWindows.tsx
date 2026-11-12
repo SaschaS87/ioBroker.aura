@@ -38,6 +38,7 @@ import {
     hhmm,
     nextHoliday,
     quietSplit,
+    resolveTargets,
     triggerMinutes,
     WD_SHORT,
     type HolidayMode,
@@ -80,10 +81,17 @@ function membersOf(m: PlanModel, tg: PlanTarget): { dev: PlanDevice; closed: num
     });
 }
 
+/** Beteiligte Antriebe eines ganzen Zeitpunkts (alle Ziele, nach der Auflöseregel), in Etagenreihenfolge. */
+function membersOfEntry(m: PlanModel, e: PlanEntry): { dev: PlanDevice; closed: number }[] {
+    const r = new Map(resolveTargets(e, m.scenes).map((x) => [x.key, x]));
+    return m.devices.flatMap((dev) => {
+        const x = r.get(dev.key);
+        return x ? [{ dev, closed: x.closed }] : [];
+    });
+}
+
 /** „ganzes Erdgeschoss, Büro Maxi, Mika +2" – volle Etagen zusammengefasst. */
-function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
-    if (tg.kind === 'device') return `auf ${closedWord(tg.closed)}`;
-    const mem = membersOf(m, tg);
+function namesLineOf(m: PlanModel, mem: { dev: PlanDevice; closed: number }[], max = 3): string {
     if (mem.length && mem.length === m.devices.length) return `alle ${mem.length} Rollläden`;
     const parts: string[] = [];
     m.floors.forEach((f) => {
@@ -94,6 +102,16 @@ function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
         else inScene.forEach((x) => parts.push(x.dev.label));
     });
     return parts.slice(0, max).join(', ') + (parts.length > max ? ` +${parts.length - max}` : '');
+}
+
+function namesLine(m: PlanModel, tg: PlanTarget, max = 3): string {
+    if (tg.kind === 'device') return `auf ${closedWord(tg.closed)}`;
+    return namesLineOf(m, membersOf(m, tg), max);
+}
+
+function entryNamesLine(m: PlanModel, e: PlanEntry, max = 3): string {
+    if (e.targets.length === 1) return namesLine(m, e.targets[0], max);
+    return namesLineOf(m, membersOfEntry(m, e), max);
 }
 
 function trig(e: PlanEntry): string {
@@ -341,14 +359,14 @@ function Timeline({ m, setView }: W) {
                 </span>
                 <span className="pw-main">
                     <span className="pw-title pw-title--mark">
-                        <span className="pw-ell">{m.targetName(x.e.target)}</span>
+                        <span className="pw-ell">{m.entryName(x.e)}</span>
                         <QuietMark m={m} e={x.e} />
                     </span>
                     {isNext && <span className="pw-tl-when">{nextWhen}</span>}
                     <span className="pw-sub pw-inline">
                         {!paused && <DayLetters days={x.e.days} />}
                         <span className="pw-ell">
-                            {paused ? 'heute ausgesetzt' : today ? namesLine(m, x.e.target, 2) : 'heute nicht'}
+                            {paused ? 'heute ausgesetzt' : today ? entryNamesLine(m, x.e, 2) : 'heute nicht'}
                         </span>
                     </span>
                 </span>
@@ -388,7 +406,7 @@ function Timeline({ m, setView }: W) {
                                     <>
                                         {trig(e)}
                                         <span className="pw-dot">·</span>
-                                        {m.targetName(e.target)}
+                                        {m.entryName(e)}
                                         <QuietMark m={m} e={e} />
                                     </>
                                 }

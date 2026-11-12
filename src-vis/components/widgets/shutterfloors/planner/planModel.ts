@@ -15,6 +15,9 @@
  * Lokal gerechnet: Sonnenzeiten der anderen Wochentage (fuer Mühlacker, gegen
  * die Pi-Werte von heute abgeglichen) und die Feiertage. feiertage.0 ist auf
  * dem Pi seit Mai 2026 abgeschaltet und meldet noch Pfingstmontag.
+ *
+ * Wochenplan-Speicherform: `serializePlan` schreibt einen Zeitpunkt mit einem
+ * Ziel im alten Feld `target`, ab zwei Zielen nur als `targets`.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from '../types';
@@ -65,14 +68,27 @@ export interface Trigger {
 
 export type PlanTarget = { kind: 'scene'; sceneId: string } | { kind: 'device'; key: string; closed: number };
 
+export interface ResolvedTarget {
+    key: string; closed: number; slat?: number;
+    /** gewünscht leise (Zeitpunkt oder gewinnendes Szenen-Ziel); mit canSlow: wirksam leise */
+    quiet: boolean;
+    /** Index des gewinnenden Ziels in entry.targets */
+    from: number;
+    kind: 'scene' | 'device';
+}
+export interface TargetConflict { key: string; sources: number[]; winner: ResolvedTarget }
+
 export interface PlanEntry {
     id: string;
     days: boolean[]; // Länge 7, Mo … So
     trigger: Trigger;
-    target: PlanTarget;
+    /** In Listenreihenfolge, mindestens eins */
+    targets: PlanTarget[];
     enabled: boolean;
     /** Leise Fahrt (core:TargetClosureState:slow), nur bei Geräten mit slowPosDp, sonst normal */
     quiet?: boolean;
+    /** Freiwilliger eigener Name, nur gesetzt wenn nicht leer */
+    name?: string;
 }
 
 export type HolidayMode = 'sunday' | 'normal' | 'skip';
@@ -321,21 +337,85 @@ export function sceneQuietKeys(t: PlanTarget, scenes: Scene[]): string[] {
     return s ? s.targets.filter((tg) => tg.quiet === true).map((tg) => tg.key) : [];
 }
 
+export function resolveTargets(
+    entry: Pick<PlanEntry, 'targets' | 'quiet'>, scenes: Scene[], canSlow?: (key: string) => boolean,
+): ResolvedTarget[] {
+    const q = entry.quiet === true;
+    const order: string[] = [];
+    const bySc = new Map<string, ResolvedTarget>();
+    const byDev = new Map<string, ResolvedTarget>();
+    const seen = (k: string) => { if (!order.includes(k)) order.push(k); };
+    entry.targets.forEach((t, i) => {
+        if (t.kind === 'device') { seen(t.key); byDev.set(t.key, { key: t.key, closed: t.closed, quiet: q, from: i, kind: 'device' }); return; }
+        const s = scenes.find((x) => x.id === t.sceneId);
+        if (!s) return;                                   // gelöschte Szene: übergehen
+        for (const st of s.targets) {
+            seen(st.key);
+            const r: ResolvedTarget = { key: st.key, closed: st.closed, quiet: q || st.quiet === true, from: i, kind: 'scene' };
+            if (typeof st.slat === 'number') r.slat = st.slat;
+            bySc.set(st.key, r);                          // untere Szene überschreibt obere
+        }
+    });
+    return order.map((k) => {
+        const r = { ...(byDev.get(k) ?? bySc.get(k)!) }; // einzeln schlägt Szene, unteres Einzel-Ziel gewinnt
+        if (canSlow) r.quiet = r.quiet && canSlow(k);
+        return r;
+    });
+}
+export function devicesOfEntry(e: Pick<PlanEntry, 'targets' | 'quiet'>, scenes: Scene[]): string[] {
+    return resolveTargets(e, scenes).map((r) => r.key);
+}
+export function targetConflicts(entry: Pick<PlanEntry, 'targets' | 'quiet'>, scenes: Scene[]): TargetConflict[] {
+    const hits = new Map<string, { i: number; closed: number; slat: number | null }[]>();
+    const add = (k: string, h: { i: number; closed: number; slat: number | null }) => hits.set(k, [...(hits.get(k) ?? []), h]);
+    entry.targets.forEach((t, i) => {
+        if (t.kind === 'device') add(t.key, { i, closed: t.closed, slat: null });
+        else scenes.find((s) => s.id === t.sceneId)?.targets.forEach((st) => add(st.key, { i, closed: st.closed, slat: st.slat ?? null }));
+    });
+    const win = new Map(resolveTargets(entry, scenes).map((r) => [r.key, r]));
+    const out: TargetConflict[] = [];
+    hits.forEach((list, key) => {
+        if (list.length < 2) return;
+        if (!list.some((h) => h.closed !== list[0].closed || h.slat !== list[0].slat)) return;
+        out.push({ key, sources: list.map((h) => h.i), winner: win.get(key)! });
+    });
+    return out;
+}
+export function entryUsesScene(e: Pick<PlanEntry, 'targets'>, sceneId: string): boolean {
+    return e.targets.some((t) => t.kind === 'scene' && t.sceneId === sceneId);
+}
+/** Entfernt nur das Ziel dieser Szene; ein Zeitpunkt ohne Ziel danach fällt weg. */
+export function removeSceneFromEntries(entries: PlanEntry[], sceneId: string): { entries: PlanEntry[]; removed: number; shortened: number } {
+    let removed = 0, shortened = 0;
+    const out: PlanEntry[] = [];
+    for (const e of entries) {
+        if (!entryUsesScene(e, sceneId)) { out.push(e); continue; }
+        const rest = e.targets.filter((t) => !(t.kind === 'scene' && t.sceneId === sceneId));
+        if (rest.length === 0) removed++; else { shortened++; out.push({ ...e, targets: rest }); }
+    }
+    return { entries: out, removed, shortened };
+}
+export function entryNameOf(e: Pick<PlanEntry, 'targets' | 'name'>, targetName: (t: PlanTarget) => string): string {
+    const own = e.name?.trim();
+    if (own) return own;
+    if (e.targets.length === 0) return 'Ohne Ziel';
+    const first = targetName(e.targets[0]);
+    const n = e.targets.length - 1;
+    return n === 0 ? first : `${first} + ${n} ${n === 1 ? 'weiteres' : 'weitere'}`;
+}
+
 /**
- * Wer fährt bei diesem Zeitpunkt leise, wer normal? Regel „leise gewinnt": leise, wenn der
- * Zeitpunkt oder das Szenen-Ziel leise ist UND der Antrieb es kann (hasSlow).
+ * Wer fährt bei diesem Zeitpunkt leise, wer normal? Über alle Ziele, gewinnendes Ziel entscheidet:
+ * leise, wenn der Zeitpunkt oder das gewinnende Szenen-Ziel leise ist UND der Antrieb es kann (hasSlow).
  */
 export function quietSplit(
-    e: Pick<PlanEntry, 'target' | 'quiet'>,
+    e: Pick<PlanEntry, 'targets' | 'quiet'>,
     scenes: Scene[],
     canSlow: (key: string) => boolean,
 ): { quiet: string[]; normal: string[] } {
-    const byScene = new Set(sceneQuietKeys(e.target, scenes));
     const quiet: string[] = [];
     const normal: string[] = [];
-    for (const k of devicesOfTarget(e.target, scenes)) {
-        (canSlow(k) && (e.quiet === true || byScene.has(k)) ? quiet : normal).push(k);
-    }
+    for (const r of resolveTargets(e, scenes, canSlow)) (r.quiet ? quiet : normal).push(r.key);
     return { quiet, normal };
 }
 
@@ -357,12 +437,12 @@ export function sceneTargetText(
  *  nächsten 7 Tagen an einem gemeinsamen Wochentag dieselben Rollläden
  *  innerhalb von {@link KOLLISION_FENSTER_MIN} Minuten ansteuern. */
 export function findCollisions(entry: PlanEntry, all: PlanEntry[], scenes: Scene[], sunFor: (d: Date) => SunDay, today: Date): Collision[] {
-    const myDevices = devicesOfTarget(entry.target, scenes);
+    const myDevices = devicesOfEntry(entry, scenes);
     if (myDevices.length === 0) return [];
     const out: Collision[] = [];
     for (const o of all) {
         if (o.id === entry.id || !o.enabled) continue;
-        const otherDevices = devicesOfTarget(o.target, scenes);
+        const otherDevices = devicesOfEntry(o, scenes);
         const shared = myDevices.filter((k) => otherDevices.includes(k));
         if (shared.length === 0) continue;
         for (let i = 0; i < 7; i++) {
@@ -462,24 +542,39 @@ const ALL = [true, true, true, true, true, true, true];
 
 function sampleEntries(): PlanEntry[] {
     return [
-        { id: 'e1', days: WK, trigger: t('06:30'), target: { kind: 'scene', sceneId: 's-morgen' }, enabled: true },
-        { id: 'e2', days: WE, trigger: t('08:00'), target: { kind: 'scene', sceneId: 's-morgen' }, enabled: true },
-        { id: 'e3', days: WK, trigger: t('07:30'), target: { kind: 'scene', sceneId: 's-kinder' }, enabled: true },
-        { id: 'e4', days: WE, trigger: t('09:00'), target: { kind: 'scene', sceneId: 's-kinder' }, enabled: true },
-        { id: 'e5', days: WE, trigger: t('09:30'), target: { kind: 'scene', sceneId: 's-eltern' }, enabled: true },
+        { id: 'e1', days: WK, trigger: t('06:30'), targets: [{ kind: 'scene', sceneId: 's-morgen' }], enabled: true },
+        { id: 'e2', days: WE, trigger: t('08:00'), targets: [{ kind: 'scene', sceneId: 's-morgen' }], enabled: true },
+        { id: 'e3', days: WK, trigger: t('07:30'), targets: [{ kind: 'scene', sceneId: 's-kinder' }], enabled: true },
+        { id: 'e4', days: WE, trigger: t('09:00'), targets: [{ kind: 'scene', sceneId: 's-kinder' }], enabled: true },
+        { id: 'e5', days: WE, trigger: t('09:30'), targets: [{ kind: 'scene', sceneId: 's-eltern' }], enabled: true },
         {
             id: 'e6',
             days: ALL,
             trigger: { kind: 'sunset', time: '19:00', offset: 5, earliest: '17:30', latest: null },
-            target: { kind: 'scene', sceneId: 's-abend' },
+            targets: [{ kind: 'scene', sceneId: 's-abend' }],
             enabled: true,
         },
         {
             id: 'e7',
             days: [false, false, false, false, false, true, false],
             trigger: { kind: 'sunrise', time: '07:00', offset: 30, earliest: '07:30', latest: null },
-            target: { kind: 'device', key: 'Küchenfenster', closed: 0 },
+            targets: [{ kind: 'device', key: 'Küchenfenster', closed: 0 }],
             enabled: false,
+        },
+        {
+            id: 'e8',
+            days: WK,
+            trigger: t('18:30'),
+            targets: [{ kind: 'scene', sceneId: 's-essen' }, { kind: 'scene', sceneId: 's-tv' }, { kind: 'device', key: 'Küchenfenster', closed: 50 }],
+            enabled: true,
+        },
+        {
+            id: 'e9',
+            days: WE,
+            trigger: t('17:00'),
+            name: 'Feierabend',
+            targets: [{ kind: 'scene', sceneId: 's-hitze' }, { kind: 'scene', sceneId: 's-bad' }],
+            enabled: true,
         },
     ];
 }
@@ -507,6 +602,7 @@ export interface PlanModel {
     targetName: (t: PlanTarget) => string;
     targetCount: (t: PlanTarget) => number;
     entriesOfScene: (sceneId: string) => PlanEntry[];
+    entryName: (e: Pick<PlanEntry, 'targets' | 'name'>) => string;
     setMaster: (v: boolean) => void;
     setPausedToday: (v: boolean) => void;
     setHolidayMode: (m: HolidayMode) => void;
@@ -655,9 +751,10 @@ export function usePlanModel(
         [scenes],
     );
     const entriesOfScene = useCallback(
-        (sceneId: string) => entries.filter((e) => e.target.kind === 'scene' && e.target.sceneId === sceneId),
+        (sceneId: string) => entries.filter((e) => entryUsesScene(e, sceneId)),
         [entries],
     );
+    const entryName = useCallback((e: Pick<PlanEntry, 'targets' | 'name'>) => entryNameOf(e, targetName), [targetName]);
 
     const showToast = useCallback((text: string) => {
         setToast(text);
@@ -672,7 +769,7 @@ export function usePlanModel(
     }, []);
     const deleteScene = useCallback((id: string) => {
         setScenes((prev) => prev.filter((x) => x.id !== id));
-        setEntries((prev) => prev.filter((e) => !(e.target.kind === 'scene' && e.target.sceneId === id)));
+        setEntries((prev) => removeSceneFromEntries(prev, id).entries);
     }, []);
     const saveEntry = useCallback((e: PlanEntry) => {
         setEntries((prev) => (prev.some((x) => x.id === e.id) ? prev.map((x) => (x.id === e.id ? e : x)) : [...prev, e]));
@@ -711,6 +808,7 @@ export function usePlanModel(
         targetName,
         targetCount,
         entriesOfScene,
+        entryName,
         setMaster,
         setPausedToday,
         setHolidayMode,
@@ -826,10 +924,18 @@ function toPlanEntry(v: unknown): PlanEntry | null {
     if (!isRecord(v) || typeof v.id !== 'string' || typeof v.enabled !== 'boolean') return null;
     if (!Array.isArray(v.days) || v.days.length !== 7 || !v.days.every((d) => typeof d === 'boolean')) return null;
     const trigger = toTrigger(v.trigger);
-    const target = toPlanTarget(v.target);
-    if (!trigger || !target) return null;
-    const out: PlanEntry = { id: v.id, days: v.days as boolean[], trigger, target, enabled: v.enabled };
-    if (typeof v.quiet === 'boolean' && v.quiet === true) out.quiet = true;
+    let targets: PlanTarget[] | null;
+    if (Array.isArray(v.targets)) {
+        const list = v.targets.map(toPlanTarget).filter((t): t is PlanTarget => t !== null);
+        targets = list.length > 0 ? list : null;
+    } else {
+        const one = toPlanTarget(v.target);
+        targets = one ? [one] : null;
+    }
+    if (!trigger || !targets) return null;
+    const out: PlanEntry = { id: v.id, days: v.days as boolean[], trigger, targets, enabled: v.enabled };
+    if (v.quiet === true) out.quiet = true;
+    if (typeof v.name === 'string' && v.name.trim()) out.name = v.name.trim();
     return out;
 }
 
@@ -841,6 +947,25 @@ export function parsePlan(raw: string): ParseResult<PlanEntry[]> {
     const entries = parsed.map(toPlanEntry).filter((e): e is PlanEntry => e !== null);
     const skipped = parsed.length - entries.length;
     return { value: entries, error: skipped > 0 ? `${skipped} Eintrag/Einträge übersprungen (falsches Format)` : null };
+}
+
+function targetToJson(t: PlanTarget) {
+    return t.kind === 'scene' ? { kind: 'scene', sceneId: t.sceneId } : { kind: 'device', key: t.key, closed: t.closed };
+}
+/** Speicherform eines Zeitpunkts: 1 Ziel -> altes Feld `target`, ab 2 -> nur `targets`
+ *  (ein altes Skript überspringt den Eintrag dann ganz statt halb zu fahren). */
+export function entryToJson(e: PlanEntry): Record<string, unknown> {
+    const out: Record<string, unknown> = { id: e.id, days: e.days, trigger: e.trigger };
+    if (e.targets.length === 1) out.target = targetToJson(e.targets[0]);
+    else out.targets = e.targets.map(targetToJson);
+    out.enabled = e.enabled;
+    if (e.quiet === true) out.quiet = true;
+    const name = e.name?.trim();
+    if (name) out.name = name;
+    return out;
+}
+export function serializePlan(entries: PlanEntry[]): string {
+    return JSON.stringify(entries.map(entryToJson));
 }
 
 const HOLIDAY_MODES: HolidayMode[] = ['sunday', 'normal', 'skip'];

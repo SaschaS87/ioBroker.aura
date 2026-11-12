@@ -14,6 +14,8 @@
  * - Vor dem Schreiben wird geprüft, dass das Dev-Skript auf dem Pi im Trockenlauf steht. Sonst
  *   Abbruch, denn aktive Zeitpunkte würden sonst echte Rollläden fahren.
  * - Der alte Stand wird vorher als Datei gesichert (Pfad steht in der Ausgabe).
+ * - Format: Ein Zeitpunkt mit einem Ziel hat `target`, mit mehreren Zielen nur `targets` (Liste), dazu
+ *   optional `name` (siehe eintragMehr).
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -121,6 +123,10 @@ const eintrag = (id, days, trigger, target, enabled, quiet) => ({
     ...(quiet ? { quiet: true } : {}),
 });
 
+const eintragMehr = (id, days, trigger, targets, enabled, quiet, name) => ({
+    id, days, trigger, targets, enabled, ...(quiet ? { quiet: true } : {}), ...(name ? { name } : {}),
+});
+
 const ZEITPUNKTE = [
     // aktiv
     eintrag('test-e-01', WERKTAGS, uhr('06:30'), szene('test-alle-leise'), true, false),
@@ -137,6 +143,9 @@ const ZEITPUNKTE = [
     eintrag('test-e-11', TAEGLICH, sonne('sunset', 0), szene('test-ein-leise'), false, false),
     eintrag('test-e-12', WERKTAGS, sonne('sunrise', 20, '06:15', '08:00'), szene('test-kinder-halb'), false, true),
     eintrag('test-e-13', WOCHENENDE, uhr('08:30'), szene('test-ohne-leise-antrieb'), false, true),
+    // Mehrere Ziele je Zeitpunkt
+    eintragMehr('test-e-14', WERKTAGS, uhr('18:15'), [szene('test-gemischt'), szene('test-kinder-halb'), geraet('Küchenfenster', 100)], true, false),
+    eintragMehr('test-e-15', WOCHENENDE, sonne('sunset', 10), [szene('test-raffstores'), szene('test-dach-leise')], true, true, 'Test: Wochenend-Abend'),
 ];
 
 function ssh(cmd, input) {

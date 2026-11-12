@@ -159,6 +159,7 @@
     "test:device-theme": "node tools/tests/device-theme-mode.mjs",
     "test:rollladen-skript": "node tools/tests/rollladen-skript-abbruch.mjs",
     "test:szene-leise": "node tools/tests/rollladen-szene-leise.mjs",
+    "test:mehrere-ziele": "node tools/tests/rollladen-mehrere-ziele.mjs",
     "test:calendar-auto-height": "node tools/tests/calendar-auto-height.mjs",
     "test:calendar-custom-editor": "node tools/tests/calendar-custom-editor.mjs",
     "test:calendar-custom-fields": "node tools/tests/calendar-custom-fields.mjs",
