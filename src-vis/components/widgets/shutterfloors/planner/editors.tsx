@@ -10,7 +10,7 @@
  *   - Loeschen steht als rote Knopfzeile ganz unten und fragt nach
  * parts.tsx importiert von hier nur den Typ SheetView.
  */
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight, Minus, Plus } from 'lucide-react';
 import { IosActionSheet, IosButtonRow } from '../../../common/ios';
@@ -23,7 +23,7 @@ import {
     dayLabel,
     newId,
     nextHoliday,
-    sceneQuietKeys,
+    quietSplit,
     sceneTargetText,
     triggerMinutes,
     triggerText,
@@ -413,13 +413,9 @@ export function SceneEditor({
                         </button>
                     ))}
                 </div>
-                <div className="rpp-kv">
-                    <span className="rpp-row-main">
-                        <span className="rpp-title">Favorit</span>
-                        <span className="rpp-sub">Als Schnellknopf auf der Kachel zeigen</span>
-                    </span>
+                <SwitchRow title="Favorit" sub="Als Schnellknopf auf der Kachel zeigen">
                     <Toggle on={favorite} onChange={setFavorite} label="Favorit" />
-                </div>
+                </SwitchRow>
             </div>
 
             {flv ? (
@@ -559,6 +555,34 @@ function omitQuiet(e: PlanEntry): PlanEntry {
     return rest;
 }
 
+/**
+ * Schalterzeile. Im Facelift steht der Schalter immer auf Höhe der Überschrift, der Erklärtext
+ * darunter über die volle Breite (so wie bei „Aktiv"). Bei „Ist" bleibt der alte Aufbau.
+ */
+function SwitchRow({ title, sub, children }: { title: string; sub?: ReactNode; children: ReactNode }) {
+    const flv = useFaceliftVariant();
+    if (!flv) {
+        return (
+            <div className="rpp-kv">
+                <span className="rpp-row-main">
+                    <span className="rpp-title">{title}</span>
+                    {sub && <span className="rpp-sub">{sub}</span>}
+                </span>
+                {children}
+            </div>
+        );
+    }
+    return (
+        <>
+            <div className="rpp-kv">
+                <span className="rpp-title">{title}</span>
+                {children}
+            </div>
+            {sub && <span className="rpp-sub rpp-switch-sub">{sub}</span>}
+        </>
+    );
+}
+
 export function EntryEditor({
     model,
     entry,
@@ -612,10 +636,12 @@ export function EntryEditor({
     const quietKeys = useMemo(() => devicesOfTarget(e.target, model.scenes), [e.target, model.scenes]);
     const slowCount = quietKeys.filter((k) => model.deviceOf(k)?.hasSlow).length;
     const deviceOf = model.deviceOf;
-    const sceneQuiet = useMemo(
-        () => sceneQuietKeys(e.target, model.scenes).filter((k) => deviceOf(k)?.hasSlow).length,
-        [e.target, model.scenes, deviceOf],
+    // Wer fährt mit dem jetzigen Schalterstand leise, wer normal (Namen für den Hinweis)
+    const split = useMemo(
+        () => quietSplit(e, model.scenes, (k) => !!deviceOf(k)?.hasSlow),
+        [e, model.scenes, deviceOf],
     );
+    const names = (keys: string[]) => keys.map((k) => deviceOf(k)?.label ?? k).join(', ');
     const canSaveEntry = e.days.some(Boolean) && !(e.target.kind === 'scene' && !e.target.sceneId);
     const dirty = !sameEntry(e, base);
     const canSave = dirty && canSaveEntry;
@@ -780,19 +806,28 @@ export function EntryEditor({
 
             {slowCount > 0 && (
                 <div className="rpp-section">
-                    <div className="rpp-kv">
-                        <span className="rpp-row-main">
-                            <span className="rpp-title">Leise fahren</span>
-                            <span className="rpp-sub">
-                                {!e.quiet && sceneQuiet > 0
-                                    ? `${sceneQuiet} ${sceneQuiet === 1 ? 'Rollladen fährt' : 'Rollläden fahren'} durch die Szene ohnehin leise`
-                                    : slowCount < quietKeys.length
-                                      ? `Leise bei ${slowCount} von ${quietKeys.length} Rollläden, die übrigen fahren normal${e.quiet && sceneQuiet > 0 ? `, ${sceneQuiet} davon schon durch die Szene` : ''}`
-                                      : `Langsamer und leiser, dauert etwa doppelt so lange${e.quiet && sceneQuiet > 0 ? ` (${sceneQuiet} schon durch die Szene)` : ''}`}
-                            </span>
-                        </span>
+                    <SwitchRow
+                        title="Leise fahren"
+                        sub={
+                            e.target.kind === 'device' ? (
+                                'Langsamer und leiser, dauert etwa doppelt so lange'
+                            ) : (
+                                <>
+                                    <span className="rpp-quiet-line">
+                                        <b>{e.quiet ? 'Leise:' : 'Leise durch die Szene:'}</b>{' '}
+                                        {split.quiet.length > 0 ? names(split.quiet) : 'keiner'}
+                                    </span>
+                                    {split.normal.length > 0 && (
+                                        <span className="rpp-quiet-line">
+                                            <b>Normal:</b> {names(split.normal)}
+                                        </span>
+                                    )}
+                                </>
+                            )
+                        }
+                    >
                         <Toggle on={!!e.quiet} onChange={(v) => set({ quiet: v })} label="Leise fahren" />
-                    </div>
+                    </SwitchRow>
                 </div>
             )}
             {slowCount === 0 && e.target.kind === 'device' && (

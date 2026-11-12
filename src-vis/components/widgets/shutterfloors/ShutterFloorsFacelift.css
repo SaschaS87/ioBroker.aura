@@ -199,3 +199,34 @@ body[data-fl-variant] .pp-page .rpp-scene-head .rpp-section-head {
 body[data-fl-variant] .pp-page .rpp-scene-head .rpp-label {
     white-space: nowrap;
 }
+
+/* Schalterzeile: Erklärtext unter der Überschrift, volle Breite (SwitchRow in editors.tsx) */
+body[data-fl-variant] .pp-page .rpp-switch-sub {
+    display: block;
+}
+body[data-fl-variant] .pp-page .rpp-quiet-line {
+    display: block;
+}
+body[data-fl-variant] .pp-page .rpp-quiet-line + .rpp-quiet-line {
+    margin-top: 2px;
+}
+body[data-fl-variant] .pp-page .rpp-quiet-line b {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Feder im Zeitplan: gefüllt = alle fahren leise, Umriss = ein Teil */
+body[data-fl-variant] .pp-page .pw-feder {
+    display: inline-flex;
+    flex-shrink: 0;
+    vertical-align: -2px;
+    margin-left: 6px;
+    color: var(--rpp-accent);
+}
+body[data-fl-variant] .pp-page .pw-title--mark .pw-feder {
+    margin-left: 0;
+}
+body[data-fl-variant] .pp-page .pw-feder.is-all svg {
+    fill: currentColor;
+    fill-opacity: 0.85;
+}

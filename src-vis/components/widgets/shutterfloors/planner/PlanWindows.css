@@ -166,3 +166,8 @@ html.dark .pp-page .rpp-seg-btn.is-active { background: color-mix(in srgb, var(-
 :root .pp-page .rpp-toggle.is-on { background: var(--accent-green, #34c759); }
 :root .pp-page .rpp-toggle-knob { top: 2px; left: 2px; width: 27px; height: 27px; box-shadow: 0 2px 4px rgb(0 0 0 / 0.2); }
 :root .pp-page .rpp-toggle.is-on .rpp-toggle-knob { transform: translateX(20px); }
+
+/* Feder „fährt leise" hinter dem Namen im Zeitplan. Bei „Ist" unsichtbar, sichtbar erst im
+   Facelift (ShutterFloorsFacelift.css). */
+.pw-feder { display: none; }
+.pw-title--mark { display: flex; align-items: center; gap: 6px; }

@@ -21,6 +21,7 @@ import {
     Check,
     ChevronDown,
     ChevronRight,
+    Feather,
     Layers,
     Pause,
     Pencil,
@@ -36,6 +37,7 @@ import {
     fmtDate,
     hhmm,
     nextHoliday,
+    quietSplit,
     triggerMinutes,
     WD_SHORT,
     type HolidayMode,
@@ -338,7 +340,10 @@ function Timeline({ m, setView }: W) {
                     {trigIcon(x.e, 13)}
                 </span>
                 <span className="pw-main">
-                    <span className="pw-title">{m.targetName(x.e.target)}</span>
+                    <span className="pw-title pw-title--mark">
+                        <span className="pw-ell">{m.targetName(x.e.target)}</span>
+                        <QuietMark m={m} e={x.e} />
+                    </span>
                     {isNext && <span className="pw-tl-when">{nextWhen}</span>}
                     <span className="pw-sub pw-inline">
                         {!paused && <DayLetters days={x.e.days} />}
@@ -384,6 +389,7 @@ function Timeline({ m, setView }: W) {
                                         {trig(e)}
                                         <span className="pw-dot">·</span>
                                         {m.targetName(e.target)}
+                                        <QuietMark m={m} e={e} />
                                     </>
                                 }
                                 sub={
@@ -401,6 +407,23 @@ function Timeline({ m, setView }: W) {
                 </>
             )}
         </>
+    );
+}
+/**
+ * Feder hinter dem Namen: gefüllt = alle Rollläden dieses Zeitpunkts fahren leise,
+ * nur Umriss = ein Teil fährt leise, keine Feder = keiner. Nur im Facelift sichtbar (CSS).
+ */
+function QuietMark({ m, e }: { m: PlanModel; e: PlanEntry }) {
+    const s = quietSplit(e, m.scenes, (k) => !!m.deviceOf(k)?.hasSlow);
+    if (s.quiet.length === 0) return null;
+    const all = s.normal.length === 0;
+    const label = all
+        ? 'fährt leise'
+        : `fährt teilweise leise (${s.quiet.length} von ${s.quiet.length + s.normal.length})`;
+    return (
+        <span className={`pw-feder${all ? ' is-all' : ''}`} role="img" aria-label={label} title={label}>
+            <Feather size={15} strokeWidth={1.9} />
+        </span>
     );
 }
 function NowMark({ t }: { t: string }) {

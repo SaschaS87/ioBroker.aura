@@ -321,6 +321,24 @@ export function sceneQuietKeys(t: PlanTarget, scenes: Scene[]): string[] {
     return s ? s.targets.filter((tg) => tg.quiet === true).map((tg) => tg.key) : [];
 }
 
+/**
+ * Wer fährt bei diesem Zeitpunkt leise, wer normal? Regel „leise gewinnt": leise, wenn der
+ * Zeitpunkt oder das Szenen-Ziel leise ist UND der Antrieb es kann (hasSlow).
+ */
+export function quietSplit(
+    e: Pick<PlanEntry, 'target' | 'quiet'>,
+    scenes: Scene[],
+    canSlow: (key: string) => boolean,
+): { quiet: string[]; normal: string[] } {
+    const byScene = new Set(sceneQuietKeys(e.target, scenes));
+    const quiet: string[] = [];
+    const normal: string[] = [];
+    for (const k of devicesOfTarget(e.target, scenes)) {
+        (canSlow(k) && (e.quiet === true || byScene.has(k)) ? quiet : normal).push(k);
+    }
+    return { quiet, normal };
+}
+
 /** Kurztext eines Szenen-Ziels für die Liste im Szenen-Editor. */
 export function sceneTargetText(
     t: { closed: number; slat?: number; quiet?: true } | undefined,
