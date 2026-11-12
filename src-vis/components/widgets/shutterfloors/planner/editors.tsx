@@ -617,6 +617,7 @@ export function EntryEditor({
     const [askLeave, setAskLeave] = useState(false);
     const [askDelete, setAskDelete] = useState(false);
 
+    const flv = useFaceliftVariant();
     const todaySun = model.sunFor(model.today);
     const todayRes = triggerMinutes(e.trigger, todaySun);
     const next = model.nextRunOf(e);
@@ -679,6 +680,34 @@ export function EntryEditor({
                 {e.target.kind === 'scene' ? (
                     model.scenes.length === 0 ? (
                         <span className="rpp-sub">Noch keine Szene angelegt.</span>
+                    ) : flv ? (
+                        // Facelift: Auswahlliste wie beim Rollladen (Saschas Wunsch 12.11.2026)
+                        <select
+                            className="rpp-input"
+                            aria-label="Szene"
+                            value={e.target.sceneId}
+                            onChange={(ev) => set({ target: { kind: 'scene', sceneId: ev.target.value } })}
+                        >
+                            {!model.scenes.some((s) => e.target.kind === 'scene' && s.id === e.target.sceneId) && (
+                                <option value={e.target.sceneId}>Szene wählen …</option>
+                            )}
+                            {(
+                                [
+                                    ['Favoriten', model.scenes.filter((s) => s.favorite)],
+                                    ['Weitere', model.scenes.filter((s) => !s.favorite)],
+                                ] as [string, Scene[]][]
+                            )
+                                .filter(([, list]) => list.length > 0)
+                                .map(([label, list]) => (
+                                    <optgroup key={label} label={label}>
+                                        {list.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                ))}
+                        </select>
                     ) : (
                         <div className="rpp-chips rpp-chips--wrap">
                             {model.scenes.map((s) => (
@@ -767,7 +796,13 @@ export function EntryEditor({
                     <span className="rpp-label">An welchen Tagen?</span>
                     <span className="rpp-presets">
                         {presets.map((p) => (
-                            <button key={p.label} type="button" className="rpp-textbtn" onClick={() => set({ days: p.days })}>
+                            <button
+                                key={p.label}
+                                type="button"
+                                aria-pressed={p.days.every((x, i) => x === e.days[i])}
+                                className={`rpp-textbtn rpp-preset${p.days.every((x, i) => x === e.days[i]) ? ' is-active' : ''}`}
+                                onClick={() => set({ days: p.days })}
+                            >
                                 {p.label}
                             </button>
                         ))}

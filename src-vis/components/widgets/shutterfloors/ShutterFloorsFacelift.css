@@ -210,9 +210,20 @@ body[data-fl-variant] .pp-page .rpp-quiet-line {
 body[data-fl-variant] .pp-page .rpp-quiet-line + .rpp-quiet-line {
     margin-top: 2px;
 }
-body[data-fl-variant] .pp-page .rpp-quiet-line b {
+/* Hervorhebungen in Hinweistexten: halbfett im selben Grau, nie Schwarz (Sascha 12.11.2026) */
+body[data-fl-variant] .pp-page .rpp-quiet-line b,
+body[data-fl-variant] .pp-page .rpp-hint b,
+body[data-fl-variant] .pp-page .rpp-sub b {
     font-weight: 600;
-    color: var(--text-primary);
+    color: inherit;
+}
+
+/* Schnellauswahl der Tage: grau, blau nur wenn die Auswahl genau passt */
+body[data-fl-variant] .pp-page .rpp-preset {
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .pp-page .rpp-preset.is-active {
+    color: var(--rpp-accent);
 }
 
 /* Feder im Zeitplan: gefüllt = alle fahren leise, Umriss = ein Teil */
@@ -221,7 +232,7 @@ body[data-fl-variant] .pp-page .pw-feder {
     flex-shrink: 0;
     vertical-align: -2px;
     margin-left: 6px;
-    color: var(--rpp-accent);
+    color: var(--text-secondary);
 }
 body[data-fl-variant] .pp-page .pw-title--mark .pw-feder {
     margin-left: 0;
