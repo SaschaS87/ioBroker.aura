@@ -178,6 +178,12 @@ html.dark .pp-page .rpp-seg-btn.is-active { background: color-mix(in srgb, var(-
 :root .pp-page .rpp-tlist-add { display: flex; gap: 8px; }
 :root .pp-page .rpp-tlist-pick { flex: 1; min-width: 0; color: var(--rpp-accent); font-weight: 500; }
 :root .pp-page .rpp-tlist-hint .rpp-quiet-line { display: block; }
+/* Widerspruch zwischen Zielen: Signalfarbe Gelb */
+:root .pp-page .rpp-tlist-hint { padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--rpp-yellow); background: color-mix(in srgb, var(--rpp-yellow) 16%, transparent); color: var(--text-primary); }
+:root .pp-page .rpp-name-wrap { position: relative; }
+:root .pp-page .rpp-name-wrap .rpp-input { width: 100%; box-sizing: border-box; padding-right: 44px; }
+:root .pp-page .rpp-name-clear { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; border-radius: 999px; color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:root .pp-page .rpp-name-clear:active { background: var(--rpp-fill); }
 
 /* Feder „fährt leise" hinter dem Namen im Zeitplan. Bei „Ist" unsichtbar, sichtbar erst im
    Facelift (ShutterFloorsFacelift.css). */

@@ -594,6 +594,11 @@ function TargetListEditor({
     return (
         <>
             <div className="rpp-card rpp-tlist">
+                {entry.targets.length === 0 && (
+                    <div className="rpp-tlist-row">
+                        <span className="rpp-sub">Noch nichts gewählt. Füge unten eine Szene oder einen Rollladen hinzu.</span>
+                    </div>
+                )}
                 {entry.targets.map((t, i) => {
                     const name = model.targetName(t);
                     const dev = t.kind === 'device' ? model.deviceOf(t.key) : undefined;
@@ -618,7 +623,6 @@ function TargetListEditor({
                                     type="button"
                                     className="rpp-tlist-del"
                                     aria-label={`${name} entfernen`}
-                                    disabled={entry.targets.length <= 1}
                                     onClick={() => onChange(entry.targets.filter((_, j) => j !== i))}
                                 >
                                     <X size={16} />
@@ -696,7 +700,7 @@ function TargetListEditor({
                 </div>
             </div>
             {conflicts.length > 0 && (
-                <div className="rpp-hint rpp-tlist-hint">
+                <div className="rpp-hint rpp-tlist-hint" role="status">
                     {conflicts.slice(0, 3).map((c) => (
                         <span key={c.key} className="rpp-quiet-line">
                             {conflictLine(model, entry, c)}
@@ -751,18 +755,22 @@ export function EntryEditor({
     preset?: Partial<PlanEntry>;
     onDone: () => void;
 } & EditorChrome) {
-    // Ausgangsstand einmal beim Oeffnen (bei einem neuen Zeitpunkt die Vorbelegung)
+    const flv = useFaceliftVariant();
+    // Ausgangsstand einmal beim Oeffnen (bei einem neuen Zeitpunkt die Vorbelegung).
+    // Neu: die Ziel-Liste startet leer. Ist: wie bisher mit der ersten Szene vorbelegt.
     const [base] = useState<PlanEntry>(
         () =>
             entry ?? {
                 id: newId('e'),
                 days: [true, true, true, true, true, false, false],
                 trigger: { kind: 'time', time: '07:00', offset: 0, earliest: null, latest: null },
-                targets: [
-                    model.scenes[0]
-                        ? { kind: 'scene', sceneId: model.scenes[0].id }
-                        : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
-                ],
+                targets: flv
+                    ? []
+                    : [
+                          model.scenes[0]
+                              ? { kind: 'scene', sceneId: model.scenes[0].id }
+                              : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
+                      ],
                 enabled: true,
                 ...preset,
             },
@@ -773,8 +781,7 @@ export function EntryEditor({
     const [askLeave, setAskLeave] = useState(false);
     const [askDelete, setAskDelete] = useState(false);
 
-    const flv = useFaceliftVariant();
-    const listMode = flv || base.targets.length > 1; // Ist mit einem Ziel: Oberfläche exakt wie heute
+    const listMode = flv || base.targets.length !== 1; // Ist mit einem Ziel: Oberfläche exakt wie heute
     const t0 = e.targets[0];
     const setT0 = (t: PlanTarget) => set({ targets: [t] });
     const todaySun = model.sunFor(model.today);
@@ -798,7 +805,7 @@ export function EntryEditor({
     const conflicts = useMemo(() => targetConflicts(e, model.scenes), [e, model.scenes]);
     const sceneTargetCount = e.targets.filter((t) => t.kind === 'scene').length;
     const onlyOneDevice = e.targets.length === 1 && e.targets[0].kind === 'device';
-    const allDevices = e.targets.every((t) => t.kind === 'device');
+    const allDevices = e.targets.length > 0 && e.targets.every((t) => t.kind === 'device');
     const deviceOf = model.deviceOf;
     // Wer fährt mit dem jetzigen Schalterstand leise, wer normal (Namen für den Hinweis)
     const split = useMemo(
@@ -822,7 +829,14 @@ export function EntryEditor({
     };
 
     return (
-        <div className="rpp-editor">
+        <div
+            className="rpp-editor"
+            // Tastatur einfahren, sobald woanders getippt oder gescrollt wird (sonst verdeckt sie am Handy Zurück/Sichern)
+            onPointerDown={(ev) => {
+                const a = document.activeElement;
+                if (a instanceof HTMLInputElement && a.id === 'rpp-entry-name' && ev.target !== a) a.blur();
+            }}
+        >
             <div className="rpp-section">
                 <span className="rpp-label">Was fährt?</span>
                 {listMode ? (
@@ -831,14 +845,25 @@ export function EntryEditor({
                         <label className="rpp-label" htmlFor="rpp-entry-name">
                             Name (freiwillig)
                         </label>
-                        <input
-                            id="rpp-entry-name"
-                            className="rpp-input"
-                            maxLength={60}
-                            value={e.name ?? ''}
-                            placeholder={entryNameOf({ targets: e.targets }, model.targetName)}
-                            onChange={(ev) => set({ name: ev.target.value })}
-                        />
+                        <div className="rpp-name-wrap">
+                            <input
+                                id="rpp-entry-name"
+                                className="rpp-input"
+                                maxLength={60}
+                                enterKeyHint="done"
+                                value={e.name ?? ''}
+                                placeholder={e.targets.length > 0 ? entryNameOf({ targets: e.targets }, model.targetName) : 'Name'}
+                                onChange={(ev) => set({ name: ev.target.value })}
+                                onKeyDown={(ev) => {
+                                    if (ev.key === 'Enter') ev.currentTarget.blur();
+                                }}
+                            />
+                            {!!e.name && (
+                                <button type="button" className="rpp-name-clear" aria-label="Name löschen" onClick={() => set({ name: '' })}>
+                                    <X size={16} />
+                                </button>
+                            )}
+                        </div>
                     </>
                 ) : (
                     <>
@@ -1013,7 +1038,7 @@ export function EntryEditor({
                                     </span>
                                     {split.normal.length > 0 && (
                                         <span className="rpp-quiet-line">
-                                            <b>Normal:</b> {names(split.normal)}
+                                            <b>{flv ? 'Nicht leise:' : 'Normal:'}</b> {names(split.normal)}
                                         </span>
                                     )}
                                 </>
