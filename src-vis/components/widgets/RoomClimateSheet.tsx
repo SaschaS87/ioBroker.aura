@@ -17,6 +17,8 @@ export interface RoomClimateSheetProps {
     unit?: string;
     showHeaderValue?: boolean;
     showLastChangeFooter?: boolean;
+    /** 'facelift': Pop-up der Wohnklima-Entwürfe (nur Dev-Vorschau), eigene Klassen wk-sheet*. */
+    look?: 'classic' | 'facelift';
 }
 
 export function RoomClimateSheet({
@@ -30,7 +32,9 @@ export function RoomClimateSheet({
     unit = '°C',
     showHeaderValue = false,
     showLastChangeFooter = false,
+    look = 'classic',
 }: RoomClimateSheetProps) {
+    const fl = look === 'facelift';
     // Prefer the frontend container so styles inherit per-layout scoped CSS vars.
     // Falls back to the portal target (admin context) or document.body.
     const adminTarget = usePortalTarget();
@@ -43,12 +47,12 @@ export function RoomClimateSheet({
 
     return createPortal(
         <div
-            className="rc-sheet-backdrop aura-scrim"
+            className={`rc-sheet-backdrop aura-scrim${fl ? ' wk-sheet-backdrop' : ''}`}
             data-scrim-closing={scrimClosing}
             style={backdropStyle}
             onClick={onBackdropClick}
         >
-            <div className="rc-sheet" style={sheetStyle} onClick={(e) => e.stopPropagation()}>
+            <div className={`rc-sheet${fl ? ' wk-sheet' : ''}`} style={sheetStyle} onClick={(e) => e.stopPropagation()}>
                 {/* Drag zone: grip + title. touch-action none so the browser does
                     not claim the vertical gesture for scrolling. */}
                 <div
@@ -87,6 +91,7 @@ export function RoomClimateSheet({
                         showCurrentHeader={false}
                         chartHeight={150}
                         showLastChangeFooter={showLastChangeFooter}
+                        look={look}
                     />
                 </div>
             </div>

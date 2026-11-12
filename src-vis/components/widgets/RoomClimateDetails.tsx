@@ -39,6 +39,8 @@ export interface RoomClimateDetailsProps {
     initialMode?: PeriodMode;
     chartHeight?: number;
     showLastChangeFooter?: boolean;
+    /** 'facelift': Aufbau aus den Facelift-Bausteinen (nur Dev-Vorschau, Wohnklima-Entwürfe). Gleiche Werte. */
+    look?: 'classic' | 'facelift';
 }
 
 export function RoomClimateDetails({
@@ -51,6 +53,7 @@ export function RoomClimateDetails({
     initialMode = 'day',
     chartHeight = 192,
     showLastChangeFooter = false,
+    look = 'classic',
 }: RoomClimateDetailsProps) {
     const { subscribe, getState, connected } = useIoBroker();
     const { defaultDecimals } = useGlobalSettingsStore();
@@ -200,6 +203,113 @@ export function RoomClimateDetails({
             },
         };
     }, [chartData, viewWindow, title, decimals, tempColor]);
+
+    const chartBox = (
+        <div className="relative w-full wk-detail-chart" style={{ height: chartHeight }}>
+            {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
+                    <Loader size={20} className="animate-spin" />
+                </div>
+            )}
+            {!isLoading && !hasData && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                    <BarChart2 size={28} strokeWidth={1.5} />
+                    <span className="text-xs">Keine Daten</span>
+                </div>
+            )}
+            {hasData && (
+                <ReactECharts
+                    key={`${mode}-${offset}`}
+                    option={echartsOption}
+                    style={{ width: '100%', height: '100%' }}
+                    opts={{ renderer: 'canvas' }}
+                />
+            )}
+        </div>
+    );
+
+    // ── Facelift (Dev-Vorschau, Wohnklima-Entwürfe): dieselben Werte, aus den Bausteinen gebaut ──
+    // Oben die zwei Momentanwerte groß, darunter der Verlauf in einer Karte mit Zeitraum-Wahl, darunter
+    // Tief/Hoch/Mittel des gewählten Zeitraums als Zeilen, ganz unten „zuletzt geändert" als Begleittext.
+    if (look === 'facelift') {
+        // Schreibweise wie die Balken der heutigen Seite (Wert und Einheit ohne Abstand)
+        const fmt = (v: number | null, u: string) => (v !== null ? `${formatNum(v, decimals)}${u}` : '–');
+        return (
+            <div className="wk-detail">
+                <div className="wk-detail-hero">
+                    <div className="wk-detail-hero-item">
+                        <span className="wk-detail-hero-label">Temperatur</span>
+                        <span className="wk-detail-hero-val wk-detail-hero-val--temp">{fmt(temp, '°C')}</span>
+                    </div>
+                    {humidityDp && (
+                        <div className="wk-detail-hero-item">
+                            <span className="wk-detail-hero-label">Luftfeuchte</span>
+                            <span className="wk-detail-hero-val wk-detail-hero-val--hum">{fmt(humidity, '%')}</span>
+                        </div>
+                    )}
+                </div>
+                <section className="aura-fl-section wk-detail-section">
+                    <div className="aura-fl-section-head">
+                        <h3 className="aura-fl-section-title">Verlauf</h3>
+                    </div>
+                    <div className="aura-fl-card wk-detail-chartcard">
+                        <div className="wk-period">
+                            <ChartPeriodNav
+                                mode={mode}
+                                offset={offset}
+                                onMode={(m) => {
+                                    setMode(m);
+                                    setOffset(0);
+                                }}
+                                onOffset={setOffset}
+                            />
+                        </div>
+                        {chartBox}
+                    </div>
+                </section>
+                <section className="aura-fl-section wk-detail-section">
+                    <div className="aura-fl-section-head">
+                        <h3 className="aura-fl-section-title">Im gewählten Zeitraum</h3>
+                    </div>
+                    <div className="aura-fl-card wk-detail-stats">
+                        <div className="aura-fl-row wk-detail-stat">
+                            <span className="aura-fl-row-icon wk-detail-stat-ico wk-detail-stat-ico--min">
+                                <TrendingDown size={18} />
+                            </span>
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title">Tiefstwert</span>
+                            </span>
+                            <span className="wk-detail-stat-val">{fmt(statsTemp.min, '°C')}</span>
+                        </div>
+                        <div className="aura-fl-row wk-detail-stat">
+                            <span className="aura-fl-row-icon wk-detail-stat-ico wk-detail-stat-ico--max">
+                                <TrendingUp size={18} />
+                            </span>
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title">Höchstwert</span>
+                            </span>
+                            <span className="wk-detail-stat-val">{fmt(statsTemp.max, '°C')}</span>
+                        </div>
+                        <div className="aura-fl-row wk-detail-stat">
+                            <span className="aura-fl-row-icon wk-detail-stat-ico wk-detail-stat-ico--avg">
+                                <span className="wk-detail-stat-avg">Ø</span>
+                            </span>
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title">Mittelwert</span>
+                            </span>
+                            <span className="wk-detail-stat-val">{fmt(statsTemp.avg, '°C')}</span>
+                        </div>
+                    </div>
+                    {showLastChangeFooter && lastChangedTs > 0 && (
+                        <p className="aura-fl-foot wk-detail-foot">
+                            Geändert{' '}
+                            {formatLastChange(t as (k: string, v?: Record<string, string | number>) => string, lastChangedTs)}
+                        </p>
+                    )}
+                </section>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col gap-2 w-full">

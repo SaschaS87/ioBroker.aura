@@ -1204,7 +1204,7 @@ export default function App() {
             <DpPopupTriggers layoutId={layout?.id} tabId={activeTabId} />
             <ToastLayer scope={messageScope} />
             {import.meta.env.DEV && effectiveSettings.showHeader && (
-                <FaceliftSwitch choice={flChoice} onChange={setFlChoice} />
+                <FaceliftSwitch choice={flChoice} onChange={setFlChoice} tabSlug={activeTabSlug} />
             )}
             {drawerFloating && (
                 <LayoutDrawer

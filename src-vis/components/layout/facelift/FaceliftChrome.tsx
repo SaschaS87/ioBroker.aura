@@ -22,6 +22,7 @@ import {
     type FaceliftChoice,
     type FaceliftVariant,
 } from './faceliftVariant';
+import { WOHNKLIMA_DRAFTS, useWohnklimaDraftStore } from '../../widgets/wohnklima/wohnklimaDraft';
 import './facelift.css';
 import './facelift-blocks.css';
 
@@ -59,10 +60,16 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
 export function FaceliftSwitch({
     choice,
     onChange,
+    tabSlug,
 }: {
     choice: FaceliftChoice;
     onChange: (c: FaceliftChoice) => void;
+    /** Aktive Seite: Auf Wohnklima stehen bei „Neu" zusätzlich die Entwürfe der Seite (Entwurfsphase). */
+    tabSlug?: string | null;
 }) {
+    const wkDraft = useWohnklimaDraftStore((s) => s.draft);
+    const setWkDraft = useWohnklimaDraftStore((s) => s.setDraft);
+    const showWk = tabSlug === 'wohnklima' && choice !== 'IST';
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             <button
@@ -73,6 +80,23 @@ export function FaceliftSwitch({
             >
                 {choice === 'IST' ? 'Ist' : 'Neu'}
             </button>
+            {showWk && (
+                <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Wohnklima-Seite">
+                    {WOHNKLIMA_DRAFTS.map((d) => (
+                        <button
+                            key={d.key}
+                            type="button"
+                            className="aura-fl-switch-draft"
+                            data-sel={d.key === wkDraft || undefined}
+                            aria-pressed={d.key === wkDraft}
+                            title={d.name}
+                            onClick={() => setWkDraft(d.key)}
+                        >
+                            {d.label}
+                        </button>
+                    ))}
+                </span>
+            )}
         </div>
     );
 }
