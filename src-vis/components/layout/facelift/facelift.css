@@ -291,12 +291,14 @@ html.dark .aura-fl-stage {
 .aura-fl-stage[data-sub] .aura-scroll.aura-scroll-touch {
     padding-top: 0;
 }
+/* Deckend, kein Milchglas (Sascha, 13.11.2026, gilt für alle Unterseiten): Inhalt, der unter dem Kopf
+   durchläuft (z. B. bunte Diagramm-Balken), soll nicht durchschimmern. */
 .aura-fl-stage .ios-bar.is-sticky {
     min-height: 44px;
     padding-top: env(safe-area-inset-top);
-    background: var(--fl-head-glass);
-    -webkit-backdrop-filter: var(--fl-blur);
-    backdrop-filter: var(--fl-blur);
+    background: var(--fl-head-bg, var(--app-bg));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 .aura-fl-stage .ios-bar-title {
     font-size: 17px;

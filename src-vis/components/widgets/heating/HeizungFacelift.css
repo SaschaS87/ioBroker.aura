@@ -11,16 +11,21 @@
  *   --fl-hz-gap          Abstand zwischen zwei Karten ohne Abschnittstitel
  *   --fl-hz-cell-val     Wert in einer Kachel (F)
  *   --fl-hz-cell-min-h   Mindesthöhe einer Kachel (F)
+ *   --fl-hz-hero         Schrift des großen Status (Kopf „Status groß")
+ *   --fl-hz-head-big     großer Vorlauf-Wert im Kopf (Kopf 15)
  *   --fl-hz-seg-h        Höhe des Segment-Schalters (Zeitraum)
  *   --fl-hz-nav-h        Höhe der Blättern-Zeile über einem Diagramm
  *   --fl-hz-detail-pad   Innenrand um eine Auswertung (Diagramme)
  * Eigene Farben (je Theme überschreibbar):
  *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen / Warmwasser (wie die Linien in den Diagrammen)
  *   --fl-hz-ico-bg / --fl-hz-ico-fg   Symbolfläche und Zeichen
+ *   --fl-hz-on-mode                   Schrift auf kräftig eingefärbter Kopf-Karte
  */
 body[data-fl-variant] {
     --fl-hz-val: 17px;
     --fl-hz-gap: 12px;
+    --fl-hz-hero: 22px;
+    --fl-hz-head-big: 24px;
     --fl-hz-cell-val: 20px;
     --fl-hz-cell-min-h: 72px;
     --fl-hz-seg-h: 30px;
@@ -31,6 +36,7 @@ body[data-fl-variant] {
     --hz-water: var(--fl-hz-water, #2f7fd6);
     --hz-ico-bg: var(--fl-hz-ico-bg, var(--text-secondary));
     --hz-ico-fg: var(--fl-hz-ico-fg, var(--widget-bg, #fff));
+    --hz-on-mode: var(--fl-hz-on-mode, #fff);
 }
 
 /* ── Seite ───────────────────────────────────────────────────────────── */
@@ -140,6 +146,184 @@ body[data-fl-variant] .hz-chiprow::before {
     height: 1px;
     background: var(--fl-line);
     transform: scaleY(0.6);
+}
+
+/* ── Kopf-Karte (Runde 3): Aufbau über hz-head--*, Einfärbung über data-fill ───────────── */
+/*
+ * Die Karte färbt sich nur bei Heizen und Warmwasser (data-mode), bei „Bereit" bleibt sie neutral.
+ * Jede Einfärbung setzt dieselben Größen, die Inhalte lesen nur diese:
+ *   --hz-h-fg  Schrift    --hz-h-sub  Nebenschrift    --hz-h-accent  großes Symbol im Hintergrund
+ * Trennlinien in der Karte folgen über --fl-line (nur innerhalb der Karte überschrieben).
+ */
+body[data-fl-variant] .hz-head {
+    position: relative;
+    --hz-h-fg: var(--text-primary);
+    --hz-h-sub: var(--text-secondary);
+    --hz-h-accent: var(--hz-mode, var(--text-primary));
+}
+body[data-fl-variant] .hz-head .hz-row-title {
+    color: var(--hz-h-fg);
+}
+body[data-fl-variant] .hz-head .aura-fl-row-sub,
+body[data-fl-variant] .hz-head .hz-hero-sub,
+body[data-fl-variant] .hz-head .hz-row-val--off,
+body[data-fl-variant] .hz-head .hz-chip:not([data-on]) {
+    color: var(--hz-h-sub);
+}
+body[data-fl-variant] .hz-head .hz-row-val:not(.hz-row-val--off) {
+    color: var(--hz-h-fg);
+}
+
+/* zart (Runde 1, Kopf B): leicht getönt, Titel in der Betriebsfarbe */
+body[data-fl-variant] .hz-head[data-fill='soft']:not([data-mode='idle']) {
+    background: color-mix(in srgb, var(--hz-mode) 16%, var(--fl-card-bg));
+    border-color: color-mix(in srgb, var(--hz-mode) 40%, var(--fl-card-border));
+}
+body[data-fl-variant] .hz-head[data-fill='soft']:not([data-mode='idle']) .hz-hero-title {
+    color: var(--hz-mode);
+}
+
+/* zart getönt: Fläche hell in der Betriebsfarbe, Schrift bleibt wie sonst */
+body[data-fl-variant] .hz-head[data-fill='tint']:not([data-mode='idle']) {
+    background: color-mix(in srgb, var(--hz-mode) 22%, var(--fl-card-bg));
+    border-color: transparent;
+    --fl-line: color-mix(in srgb, var(--hz-mode) 30%, transparent);
+}
+/* zart mit Rand */
+body[data-fl-variant] .hz-head[data-fill='edge']:not([data-mode='idle']) {
+    background: color-mix(in srgb, var(--hz-mode) 12%, var(--fl-card-bg));
+    border-color: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--hz-mode);
+    --fl-line: color-mix(in srgb, var(--hz-mode) 30%, transparent);
+}
+/* Schein aus der Ecke des Symbols */
+body[data-fl-variant] .hz-head[data-fill='glow']:not([data-mode='idle']) {
+    background: radial-gradient(
+        circle at 0 0,
+        color-mix(in srgb, var(--hz-mode) 55%, var(--fl-card-bg)) 0,
+        color-mix(in srgb, var(--hz-mode) 14%, var(--fl-card-bg)) 75%
+    );
+    border-color: transparent;
+    --fl-line: color-mix(in srgb, var(--hz-mode) 30%, transparent);
+}
+/* kräftig und Farbverlauf: ganze Karte in der Betriebsfarbe, Schrift hell */
+body[data-fl-variant] .hz-head[data-fill='solid']:not([data-mode='idle']),
+body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
+    background: var(--hz-mode);
+    border-color: transparent;
+    --hz-h-fg: var(--hz-on-mode);
+    --hz-h-sub: color-mix(in srgb, var(--hz-on-mode) 82%, transparent);
+    --hz-h-accent: var(--hz-on-mode);
+    --fl-line: color-mix(in srgb, var(--hz-on-mode) 30%, transparent);
+}
+body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--hz-mode) 82%, #fff) 0,
+        var(--hz-mode) 45%,
+        color-mix(in srgb, var(--hz-mode) 72%, #000) 100%
+    );
+}
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-ico {
+    background: color-mix(in srgb, var(--hz-on-mode) 24%, transparent);
+    color: var(--hz-on-mode);
+}
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-ico[data-on] {
+    background: var(--hz-on-mode);
+    color: var(--hz-mode);
+}
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-chip {
+    opacity: 0.75;
+}
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-chip[data-on] {
+    color: var(--hz-on-mode);
+    opacity: 1;
+    font-weight: 600;
+}
+
+/* Aufbau „Status groß" (aus B) und „großes Symbol im Hintergrund" */
+body[data-fl-variant] .hz-head--hero,
+body[data-fl-variant] .hz-head--mark {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 16px 16px;
+}
+body[data-fl-variant] .hz-head--hero {
+    align-items: center;
+    text-align: center;
+}
+body[data-fl-variant] .hz-hero-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fl-hz-hero);
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--hz-h-fg);
+}
+body[data-fl-variant] .hz-hero-sub {
+    font-size: var(--fl-font-meta);
+}
+body[data-fl-variant] .hz-head--hero > .hz-chips,
+body[data-fl-variant] .hz-head--mark > .hz-chips {
+    margin-top: 10px;
+}
+body[data-fl-variant] .hz-head--mark > .hz-chips {
+    justify-content: flex-start;
+}
+body[data-fl-variant] .hz-head--mark > :not(.hz-head-mark) {
+    position: relative;
+}
+body[data-fl-variant] .hz-head-mark {
+    position: absolute;
+    right: -14px;
+    bottom: -22px;
+    width: 128px;
+    height: 128px;
+    stroke-width: 1.4;
+    color: var(--hz-h-accent);
+    opacity: 0.2;
+    pointer-events: none;
+}
+
+/* Marken als Kapseln */
+body[data-fl-variant] .hz-head--pills .hz-chiprow > .hz-chips {
+    justify-content: flex-start;
+    gap: 8px;
+}
+body[data-fl-variant] .hz-head--pills .hz-chip {
+    padding: 5px 11px 5px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--hz-h-fg) 12%, transparent);
+    opacity: 1;
+}
+body[data-fl-variant] .hz-head.hz-head--pills[data-fill]:not([data-mode='idle']) .hz-chip {
+    opacity: 1;
+}
+body[data-fl-variant] .hz-head.hz-head--pills[data-fill]:not([data-mode='idle']) .hz-chip[data-on] {
+    background: var(--hz-h-fg);
+    color: var(--hz-mode);
+}
+
+/* Vorlauf groß neben dem Status */
+body[data-fl-variant] .hz-head-big {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    line-height: 1.15;
+}
+body[data-fl-variant] .hz-head-big-val {
+    font-size: var(--fl-hz-head-big);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--hz-h-fg);
+    white-space: nowrap;
+}
+body[data-fl-variant] .hz-head-big-label {
+    font-size: var(--fl-font-sub);
+    color: var(--hz-h-sub);
 }
 
 /* ── F: Kacheln ──────────────────────────────────────────────────────── */
@@ -322,6 +506,26 @@ body[data-fl-variant] .hz-sim {
     border-radius: 12px;
     font-size: 12px;
     color: var(--text-secondary);
+}
+/* Leiste „Kopf": Name oben, Knöpfe darunter in zwei Reihen */
+body[data-fl-variant] .hz-sim--wrap {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    margin-top: 6px;
+    padding: 6px 4px 3px 10px;
+}
+body[data-fl-variant] .hz-sim--wrap > .hz-sim-label {
+    flex: none;
+}
+body[data-fl-variant] .hz-sim-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-left: -6px;
+}
+body[data-fl-variant] .hz-sim-btns > .hz-sim-btn {
+    min-width: 30px;
 }
 body[data-fl-variant] .hz-sim-label {
     flex: 1;

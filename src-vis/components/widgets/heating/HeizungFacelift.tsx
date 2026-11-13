@@ -12,6 +12,10 @@
  *       E  Liste mit Symbolen (aus A)      F  Kacheln (aus B)      G  schlichte Zeilen (aus C)
  *   - Leiste „Betrieb zeigen": stellt Heizen, Warmwasser, Bereit und Abtauen nur in der Anzeige nach
  *
+ * Runde 3 (Sascha, 13.11.2026): Die Kopf-Karte soll sich im Betrieb ganz einfärben. Der Kopf ist deshalb
+ * getrennt wählbar (Leiste „Kopf"): A–D sind die Köpfe aus Runde 1, 1–15 die eingefärbten Varianten
+ * (HEIZUNG_HEADS in heizungDraft.ts). E/F/G bleiben die Form der aktuellen Werte.
+ *
  * Nur lesend: kein Schreibbefehl, kein Datenpunkt wird angelegt.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -35,7 +39,16 @@ import {
 } from 'lucide-react';
 import { formatNum } from '../../../utils/formatValue';
 import { IosNavBar, IosStack, useTabHidden } from '../../common/ios';
-import { HEIZUNG_SCENES, useHeizungSceneStore, type HeizungDraft, type HeizungScene } from './heizungDraft';
+import {
+    HEIZUNG_HEADS,
+    HEIZUNG_SCENES,
+    useHeizungHeadStore,
+    useHeizungSceneStore,
+    type HeizungDraft,
+    type HeizungHeadFill,
+    type HeizungHeadLay,
+    type HeizungScene,
+} from './heizungDraft';
 import './HeizungFacelift.css';
 
 export type HzBox = 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie';
@@ -170,6 +183,10 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
     const setScene = useHeizungSceneStore((s) => s.setScene);
     const m: HzModel = scene === 'ECHT' ? real : { ...real, ...SCENES[scene] };
 
+    const headKey = useHeizungHeadStore((s) => s.head);
+    const setHead = useHeizungHeadStore((s) => s.setHead);
+    const head = HEIZUNG_HEADS.find((h) => h.key === headKey) ?? HEIZUNG_HEADS[0];
+
     const [box, setBox] = useState<HzBox | null>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     const hidden = useTabHidden(rootRef);
@@ -197,13 +214,28 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
                     </button>
                 ))}
             </div>
-            <Section>
-                <div className="aura-fl-card">
-                    <StatusRow m={m} />
-                    <div className="hz-chiprow">
-                        <Chips m={m} />
-                    </div>
+            <div className="hz-sim hz-sim--wrap" role="group" aria-label="Kopf wählen, nur Vorschau">
+                <span className="hz-sim-label">
+                    Kopf {head.key} · {head.name}
+                </span>
+                <div className="hz-sim-btns">
+                    {HEIZUNG_HEADS.map((h) => (
+                        <button
+                            key={h.key}
+                            type="button"
+                            className="hz-sim-btn"
+                            data-sel={h.key === head.key || undefined}
+                            aria-pressed={h.key === head.key}
+                            title={h.name}
+                            onClick={() => setHead(h.key)}
+                        >
+                            {h.key}
+                        </button>
+                    ))}
                 </div>
+            </div>
+            <Section>
+                <Head m={m} lay={head.lay} fill={head.fill} />
             </Section>
             <Section title="Aktuelle Werte" foot={scene === 'ECHT' ? undefined : 'Beispielwerte zum Ansehen, nur die Außentemperatur ist echt.'}>
                 {draft === 'E' ? <ValuesList m={m} /> : draft === 'F' ? <ValuesTiles m={m} /> : <ValuesPlain m={m} />}
@@ -268,7 +300,7 @@ function Section({ title, children, foot }: { title?: string; children: ReactNod
 }
 
 /** Zeile „Was die Wärmepumpe gerade tut": Symbol in der Farbe des Betriebs, darunter der Verdichter. */
-function StatusRow({ m }: { m: HzModel }) {
+function StatusRow({ m, sub, right }: { m: HzModel; sub?: ReactNode; right?: ReactNode }) {
     const Icon = MODE_ICON[m.mode];
     return (
         <div className="aura-fl-row hz-status" data-mode={m.mode}>
@@ -277,8 +309,9 @@ function StatusRow({ m }: { m: HzModel }) {
             </span>
             <span className="aura-fl-row-main">
                 <span className="aura-fl-row-title hz-row-title">{m.modeLabel}</span>
-                <span className="aura-fl-row-sub">{m.sinceText}</span>
+                <span className="aura-fl-row-sub">{sub ?? m.sinceText}</span>
             </span>
+            {right}
         </div>
     );
 }
@@ -293,6 +326,70 @@ function Chips({ m }: { m: HzModel }) {
                     {label}
                 </span>
             ))}
+        </div>
+    );
+}
+
+/**
+ * Kopf-Karte. `lay` ist der Aufbau, `fill` die Einfärbung; die Farbe kommt allein aus data-mode und
+ * data-fill (HeizungFacelift.css), bei „Bereit" bleibt die Karte neutral.
+ */
+function Head({ m, lay, fill }: { m: HzModel; lay: HeizungHeadLay; fill: HeizungHeadFill }) {
+    const Icon = MODE_ICON[m.mode];
+    const on = PARTS.filter((p) => m[p.key]).map((p) => p.label);
+    const cls = `aura-fl-card hz-head hz-head--${lay}`;
+    const attrs = { 'data-mode': m.mode, 'data-fill': fill };
+    if (lay === 'hero' || lay === 'mark')
+        return (
+            <div className={cls} {...attrs}>
+                {lay === 'mark' && <Icon className="hz-head-mark" aria-hidden />}
+                <span className="hz-hero-title">
+                    {lay === 'hero' && <Icon size={24} />}
+                    {m.modeLabel}
+                </span>
+                <span className="hz-hero-sub">{m.sinceText}</span>
+                <Chips m={m} />
+            </div>
+        );
+    if (lay === 'line')
+        return (
+            <div className={cls} {...attrs}>
+                <StatusRow m={m} sub={`${m.sinceText}${on.length ? ` · ${on.join(', ')}` : ''}`} />
+            </div>
+        );
+    if (lay === 'list')
+        return (
+            <div className={cls} {...attrs}>
+                <StatusRow m={m} />
+                {PARTS.map(({ key, label, Icon: PIcon }) => (
+                    <div key={key} className="aura-fl-row hz-valrow">
+                        <span className="aura-fl-row-icon hz-ico" data-on={m[key] || undefined}>
+                            <PIcon size={20} />
+                        </span>
+                        <span className="aura-fl-row-main">
+                            <span className="aura-fl-row-title hz-row-title">{label}</span>
+                        </span>
+                        <span className={`hz-row-val${m[key] ? '' : ' hz-row-val--off'}`}>{m[key] ? 'Ein' : 'Aus'}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    return (
+        <div className={cls} {...attrs}>
+            <StatusRow
+                m={m}
+                right={
+                    lay === 'value' ? (
+                        <span className="hz-head-big">
+                            <span className="hz-head-big-val">{val(m.vorlauf, 1, '°C')}</span>
+                            <span className="hz-head-big-label">Vorlauf</span>
+                        </span>
+                    ) : undefined
+                }
+            />
+            <div className="hz-chiprow">
+                <Chips m={m} />
+            </div>
         </div>
     );
 }

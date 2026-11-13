@@ -68,3 +68,54 @@ export const useHeizungSceneStore = create<{ scene: HeizungScene; setScene: (s: 
     scene: 'ECHT',
     setScene: (scene) => set({ scene }),
 }));
+
+/**
+ * Runde 3 (13.11.2026): Kopf-Karte getrennt wählbar, unabhängig von der Form der Werte (E/F/G).
+ * A–D sind die Köpfe aus Runde 1 (nicht eingefärbt, B nur zart), 1–15 färben die ganze Karte in der
+ * Betriebsfarbe (Heizen grün, Warmwasser blau); bei „Bereit" bleibt die Karte neutral.
+ *   lay  = Aufbau,  fill = Art der Einfärbung
+ */
+export type HeizungHeadLay = 'row' | 'pills' | 'hero' | 'mark' | 'line' | 'list' | 'value';
+export type HeizungHeadFill = 'none' | 'soft' | 'solid' | 'tint' | 'grad' | 'edge' | 'glow';
+export const HEIZUNG_HEADS: { key: string; name: string; lay: HeizungHeadLay; fill: HeizungHeadFill }[] = [
+    { key: 'A', name: 'Runde 1: Liste mit Ein/Aus', lay: 'list', fill: 'none' },
+    { key: 'B', name: 'Runde 1: Status groß, zart getönt', lay: 'hero', fill: 'soft' },
+    { key: 'C', name: 'Runde 1: Zeile mit Marken', lay: 'row', fill: 'none' },
+    { key: 'D', name: 'Runde 1: eine Zeile', lay: 'line', fill: 'none' },
+    { key: '1', name: 'Zeile mit Marken, kräftig', lay: 'row', fill: 'solid' },
+    { key: '2', name: 'Zeile mit Marken, zart', lay: 'row', fill: 'tint' },
+    { key: '3', name: 'Zeile mit Marken, Farbverlauf', lay: 'row', fill: 'grad' },
+    { key: '4', name: 'Zeile mit Marken, zart mit Rand', lay: 'row', fill: 'edge' },
+    { key: '5', name: 'Zeile mit Marken, Schein aus der Ecke', lay: 'row', fill: 'glow' },
+    { key: '6', name: 'Marken als Kapseln, kräftig', lay: 'pills', fill: 'solid' },
+    { key: '7', name: 'Status groß, kräftig', lay: 'hero', fill: 'solid' },
+    { key: '8', name: 'Status groß, zart', lay: 'hero', fill: 'tint' },
+    { key: '9', name: 'Status groß, Farbverlauf', lay: 'hero', fill: 'grad' },
+    { key: '10', name: 'Großes Symbol im Hintergrund, kräftig', lay: 'mark', fill: 'solid' },
+    { key: '11', name: 'Großes Symbol im Hintergrund, Farbverlauf', lay: 'mark', fill: 'grad' },
+    { key: '12', name: 'Eine Zeile, kräftig', lay: 'line', fill: 'solid' },
+    { key: '13', name: 'Eine Zeile, zart', lay: 'line', fill: 'tint' },
+    { key: '14', name: 'Liste mit Ein/Aus, kräftig', lay: 'list', fill: 'solid' },
+    { key: '15', name: 'Vorlauf groß daneben, Farbverlauf', lay: 'value', fill: 'grad' },
+];
+
+const HEAD_KEY = 'aura.heizung.kopf';
+function readHead(): string {
+    try {
+        const v = localStorage.getItem(HEAD_KEY);
+        return HEIZUNG_HEADS.some((h) => h.key === v) ? (v as string) : '1';
+    } catch {
+        return '1';
+    }
+}
+export const useHeizungHeadStore = create<{ head: string; setHead: (h: string) => void }>((set) => ({
+    head: readHead(),
+    setHead: (head) => {
+        set({ head });
+        try {
+            localStorage.setItem(HEAD_KEY, head);
+        } catch {
+            /* privater Modus */
+        }
+    },
+}));
