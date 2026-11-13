@@ -17,7 +17,8 @@
  *   --fl-hz-nav-h        Höhe der Blättern-Zeile über einem Diagramm
  *   --fl-hz-detail-pad   Innenrand um eine Auswertung (Diagramme)
  * Eigene Farben (je Theme überschreibbar):
- *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen / Warmwasser (wie die Linien in den Diagrammen)
+ *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen (rötlich, Sascha 13.11.2026; die heutige Seite und die
+ *                                  Diagramme zeigen Heizen noch grün) / Warmwasser (blau)
  *   --fl-hz-ico-bg / --fl-hz-ico-fg   Symbolfläche und Zeichen
  *   --fl-hz-on-mode                   Schrift auf kräftig eingefärbter Kopf-Karte
  */
@@ -32,7 +33,7 @@ body[data-fl-variant] {
     --fl-hz-nav-h: 36px;
     --fl-hz-detail-pad: 12px;
 
-    --hz-heat: var(--fl-hz-heat, #4a9e2f);
+    --hz-heat: var(--fl-hz-heat, #d0492e);
     --hz-water: var(--fl-hz-water, #2f7fd6);
     --hz-ico-bg: var(--fl-hz-ico-bg, var(--text-secondary));
     --hz-ico-fg: var(--fl-hz-ico-fg, var(--widget-bg, #fff));
@@ -160,6 +161,13 @@ body[data-fl-variant] .hz-head {
     --hz-h-fg: var(--text-primary);
     --hz-h-sub: var(--text-secondary);
     --hz-h-accent: var(--hz-mode, var(--text-primary));
+    /* aktive Marke: Fläche und Zeichen darauf */
+    --hz-h-on-bg: var(--hz-mode, var(--fl-ok));
+    --hz-h-on-fg: var(--hz-on-mode);
+    --hz-h-off: color-mix(in srgb, var(--hz-h-fg) 28%, transparent);
+}
+body[data-fl-variant] .hz-head[data-mode='idle'] {
+    --hz-h-on-bg: var(--fl-ok);
 }
 body[data-fl-variant] .hz-head .hz-row-title {
     color: var(--hz-h-fg);
@@ -214,6 +222,8 @@ body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
     --hz-h-fg: var(--hz-on-mode);
     --hz-h-sub: color-mix(in srgb, var(--hz-on-mode) 82%, transparent);
     --hz-h-accent: var(--hz-on-mode);
+    --hz-h-on-bg: var(--hz-on-mode);
+    --hz-h-on-fg: var(--hz-mode);
     --fl-line: color-mix(in srgb, var(--hz-on-mode) 30%, transparent);
 }
 body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
@@ -324,6 +334,85 @@ body[data-fl-variant] .hz-head-big-val {
 body[data-fl-variant] .hz-head-big-label {
     font-size: var(--fl-font-sub);
     color: var(--hz-h-sub);
+}
+
+/* ── Marken: wie Pumpe · Abtauen · Heizstab „aktiv" zeigen (Runde 4, data-ind) ─────────── */
+/* nur für Vorlesen: „ein" / „aus" */
+body[data-fl-variant] .hz-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+/* b und c: Kapseln, aktiv gefüllt, sonst nur Umriss */
+body[data-fl-variant] .hz-head .hz-chips:is([data-ind='pill'], [data-ind='only']) {
+    justify-content: flex-start;
+    gap: 8px;
+}
+body[data-fl-variant] .hz-head .hz-chips:is([data-ind='pill'], [data-ind='only']) > .hz-chip {
+    padding: 4px 10px 4px 8px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--hz-h-off);
+    opacity: 1;
+}
+body[data-fl-variant] .hz-head .hz-chips:is([data-ind='pill'], [data-ind='only']) > .hz-chip[data-on] {
+    background: var(--hz-h-on-bg);
+    color: var(--hz-h-on-fg);
+    box-shadow: none;
+    font-weight: 600;
+}
+body[data-fl-variant] .hz-head .hz-chips > .hz-chip.hz-chip--none {
+    padding-left: 0;
+    box-shadow: none;
+    opacity: 1;
+}
+/* d: Lämpchen */
+body[data-fl-variant] .hz-chip-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px var(--hz-h-off);
+}
+body[data-fl-variant] .hz-head .hz-chips[data-ind='dot'] > .hz-chip {
+    opacity: 1;
+}
+body[data-fl-variant] .hz-head .hz-chips[data-ind='dot'] > .hz-chip[data-on] {
+    color: var(--hz-h-fg);
+    font-weight: 600;
+}
+body[data-fl-variant] .hz-chip[data-on] > .hz-chip-dot {
+    background: var(--hz-h-on-bg);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--hz-h-on-bg) 30%, transparent);
+}
+/* e: runde Symbole mit Namen darunter */
+body[data-fl-variant] .hz-head .hz-chips[data-ind='round'] {
+    justify-content: flex-start;
+    gap: 6px 20px;
+}
+body[data-fl-variant] .hz-head .hz-chips[data-ind='round'] > .hz-chip {
+    flex-direction: column;
+    gap: 4px;
+    opacity: 1;
+}
+body[data-fl-variant] .hz-chip-round {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--hz-h-off);
+}
+body[data-fl-variant] .hz-head .hz-chips[data-ind='round'] > .hz-chip[data-on] {
+    color: var(--hz-h-fg);
+    font-weight: 600;
+}
+body[data-fl-variant] .hz-chip[data-on] > .hz-chip-round {
+    background: var(--hz-h-on-bg);
+    color: var(--hz-h-on-fg);
+    box-shadow: none;
 }
 
 /* ── F: Kacheln ──────────────────────────────────────────────────────── */

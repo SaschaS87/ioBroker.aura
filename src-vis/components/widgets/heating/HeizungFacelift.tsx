@@ -16,6 +16,10 @@
  * getrennt wählbar (Leiste „Kopf"): A–D sind die Köpfe aus Runde 1, 1–15 die eingefärbten Varianten
  * (HEIZUNG_HEADS in heizungDraft.ts). E/F/G bleiben die Form der aktuellen Werte.
  *
+ * Runde 4 (Sascha, 13.11.2026): Abtauen ist kein Betrieb, sondern eine Ein/Aus-Angabe wie Pumpe und
+ * Heizstab: in der Leiste „Betrieb" deshalb drei eigene Schalter. Heizen rötlich statt grün. Leiste
+ * „Marken": fünf Arten, wie die drei Angaben im Kopf zeigen, ob sie aktiv sind (HEIZUNG_INDS).
+ *
  * Nur lesend: kein Schreibbefehl, kein Datenpunkt wird angelegt.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -41,8 +45,10 @@ import { formatNum } from '../../../utils/formatValue';
 import { IosNavBar, IosStack, useTabHidden } from '../../common/ios';
 import {
     HEIZUNG_HEADS,
+    HEIZUNG_INDS,
     HEIZUNG_SCENES,
     useHeizungHeadStore,
+    useHeizungIndStore,
     useHeizungSceneStore,
     type HeizungDraft,
     type HeizungHeadFill,
@@ -159,18 +165,6 @@ const SCENES: Record<Exclude<HeizungScene, 'ECHT'>, Partial<HzModel>> = {
         spreizung: 0.2,
         volumenstrom: 0,
     },
-    ABTAUEN: {
-        mode: 'heat',
-        modeLabel: 'Heizt · Fußboden',
-        sinceText: 'Verdichter ein · seit 1 h 4 min',
-        pumpe: true,
-        abtauen: true,
-        heizstab: true,
-        vorlauf: 22.5,
-        ruecklauf: 24.1,
-        spreizung: -1.6,
-        volumenstrom: 21,
-    },
 };
 
 interface Ctx {
@@ -181,7 +175,12 @@ interface Ctx {
 export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Exclude<HeizungDraft, 'ALT'> }) {
     const scene = useHeizungSceneStore((s) => s.scene);
     const setScene = useHeizungSceneStore((s) => s.setScene);
-    const m: HzModel = scene === 'ECHT' ? real : { ...real, ...SCENES[scene] };
+    const parts = useHeizungSceneStore((s) => s.parts);
+    const setPart = useHeizungSceneStore((s) => s.setPart);
+    const m: HzModel = { ...real, ...(scene === 'ECHT' ? {} : SCENES[scene]), ...parts };
+    const ind = useHeizungIndStore((s) => s.ind);
+    const setInd = useHeizungIndStore((s) => s.setInd);
+    const indDef = HEIZUNG_INDS.find((i) => i.key === ind) ?? HEIZUNG_INDS[0];
 
     const headKey = useHeizungHeadStore((s) => s.head);
     const setHead = useHeizungHeadStore((s) => s.setHead);
@@ -211,6 +210,37 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
                         onClick={() => setScene(s.key)}
                     >
                         {s.label}
+                    </button>
+                ))}
+            </div>
+            <div className="hz-sim" role="group" aria-label="Pumpe, Abtauen, Heizstab ein oder aus, nur Vorschau">
+                <span className="hz-sim-label">Aktiv</span>
+                {PARTS.map((p) => (
+                    <button
+                        key={p.key}
+                        type="button"
+                        className="hz-sim-btn"
+                        data-sel={m[p.key] || undefined}
+                        aria-pressed={m[p.key]}
+                        onClick={() => setPart(p.key, !m[p.key])}
+                    >
+                        {p.label}
+                    </button>
+                ))}
+            </div>
+            <div className="hz-sim" role="group" aria-label="Marken wählen, nur Vorschau">
+                <span className="hz-sim-label">Marken · {indDef.name}</span>
+                {HEIZUNG_INDS.map((i) => (
+                    <button
+                        key={i.key}
+                        type="button"
+                        className="hz-sim-btn"
+                        data-sel={i.key === ind || undefined}
+                        aria-pressed={i.key === ind}
+                        title={i.name}
+                        onClick={() => setInd(i.key)}
+                    >
+                        {i.label}
                     </button>
                 ))}
             </div>
@@ -318,14 +348,26 @@ function StatusRow({ m, sub, right }: { m: HzModel; sub?: ReactNode; right?: Rea
 
 /** Pumpe · Abtauen · Heizstab als kleine Marken (aktiv farbig, sonst blass) */
 function Chips({ m }: { m: HzModel }) {
+    const ind = useHeizungIndStore((s) => s.ind);
+    const shown = ind === 'only' ? PARTS.filter((p) => m[p.key]) : PARTS;
     return (
-        <div className="hz-chips" data-mode={m.mode}>
-            {PARTS.map(({ key, label, Icon }) => (
+        <div className="hz-chips" data-mode={m.mode} data-ind={ind}>
+            {shown.map(({ key, label, Icon }) => (
                 <span key={key} className="hz-chip" data-on={m[key] || undefined}>
-                    <Icon size={15} />
-                    {label}
+                    {ind === 'dot' ? (
+                        <span className="hz-chip-dot" aria-hidden />
+                    ) : ind === 'round' ? (
+                        <span className="hz-chip-round" aria-hidden>
+                            <Icon size={17} />
+                        </span>
+                    ) : (
+                        <Icon size={15} />
+                    )}
+                    <span className="hz-chip-label">{label}</span>
+                    {ind !== 'only' && <span className="hz-sr">{m[key] ? ' ein' : ' aus'}</span>}
                 </span>
             ))}
+            {shown.length === 0 && <span className="hz-chip hz-chip--none">Pumpe, Abtauen und Heizstab aus</span>}
         </div>
     );
 }

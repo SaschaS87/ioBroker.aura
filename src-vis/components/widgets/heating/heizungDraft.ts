@@ -54,19 +54,28 @@ export function useHeizungDraft(): Exclude<HeizungDraft, 'ALT'> | null {
 
 /**
  * Betrieb zum Ansehen nachstellen (nur Dev-Vorschau, nicht gespeichert): „Echt" zeigt die Werte vom Pi, die
- * anderen Szenen setzen Betrieb, Verdichter, Pumpe/Abtauen/Heizstab und Beispielwerte nur in der Anzeige.
+ * anderen Szenen setzen Betrieb, Verdichter und Beispielwerte nur in der Anzeige. Pumpe, Abtauen und
+ * Heizstab sind eigene Ein/Aus-Angaben und werden einzeln dazugeschaltet (`parts`; Sascha, 13.11.2026:
+ * Abtauen ist kein Betrieb). Ein Szenenwechsel setzt die drei wieder auf den Stand der Szene.
  */
-export type HeizungScene = 'ECHT' | 'HEIZEN' | 'WASSER' | 'BEREIT' | 'ABTAUEN';
+export type HeizungScene = 'ECHT' | 'HEIZEN' | 'WASSER' | 'BEREIT';
+export type HeizungPart = 'pumpe' | 'abtauen' | 'heizstab';
 export const HEIZUNG_SCENES: { key: HeizungScene; label: string }[] = [
     { key: 'ECHT', label: 'Echt' },
     { key: 'HEIZEN', label: 'Heizen' },
     { key: 'WASSER', label: 'Wasser' },
     { key: 'BEREIT', label: 'Bereit' },
-    { key: 'ABTAUEN', label: 'Abtauen' },
 ];
-export const useHeizungSceneStore = create<{ scene: HeizungScene; setScene: (s: HeizungScene) => void }>((set) => ({
+export const useHeizungSceneStore = create<{
+    scene: HeizungScene;
+    parts: Partial<Record<HeizungPart, boolean>>;
+    setScene: (s: HeizungScene) => void;
+    setPart: (p: HeizungPart, on: boolean) => void;
+}>((set) => ({
     scene: 'ECHT',
-    setScene: (scene) => set({ scene }),
+    parts: {},
+    setScene: (scene) => set({ scene, parts: {} }),
+    setPart: (p, on) => set((st) => ({ parts: { ...st.parts, [p]: on } })),
 }));
 
 /**
@@ -103,9 +112,9 @@ const HEAD_KEY = 'aura.heizung.kopf';
 function readHead(): string {
     try {
         const v = localStorage.getItem(HEAD_KEY);
-        return HEIZUNG_HEADS.some((h) => h.key === v) ? (v as string) : '1';
+        return HEIZUNG_HEADS.some((h) => h.key === v) ? (v as string) : '10';
     } catch {
-        return '1';
+        return '10';
     }
 }
 export const useHeizungHeadStore = create<{ head: string; setHead: (h: string) => void }>((set) => ({
@@ -114,6 +123,39 @@ export const useHeizungHeadStore = create<{ head: string; setHead: (h: string) =
         set({ head });
         try {
             localStorage.setItem(HEAD_KEY, head);
+        } catch {
+            /* privater Modus */
+        }
+    },
+}));
+
+/**
+ * Runde 4 (13.11.2026): Wie Pumpe, Abtauen und Heizstab im Kopf zeigen, ob sie aktiv sind. Gilt für alle
+ * Köpfe mit Marken (nicht für „Liste" und „eine Zeile").
+ */
+export type HeizungInd = 'text' | 'pill' | 'only' | 'dot' | 'round';
+export const HEIZUNG_INDS: { key: HeizungInd; label: string; name: string }[] = [
+    { key: 'text', label: 'a', name: 'Schrift hell oder blass (bisher)' },
+    { key: 'pill', label: 'b', name: 'Kapseln, aktiv gefüllt' },
+    { key: 'only', label: 'c', name: 'nur was aktiv ist' },
+    { key: 'dot', label: 'd', name: 'Lämpchen vor dem Namen' },
+    { key: 'round', label: 'e', name: 'runde Symbole, aktiv gefüllt' },
+];
+const IND_KEY = 'aura.heizung.marken';
+function readInd(): HeizungInd {
+    try {
+        const v = localStorage.getItem(IND_KEY);
+        return HEIZUNG_INDS.some((h) => h.key === v) ? (v as HeizungInd) : 'pill';
+    } catch {
+        return 'pill';
+    }
+}
+export const useHeizungIndStore = create<{ ind: HeizungInd; setInd: (i: HeizungInd) => void }>((set) => ({
+    ind: readInd(),
+    setInd: (ind) => {
+        set({ ind });
+        try {
+            localStorage.setItem(IND_KEY, ind);
         } catch {
             /* privater Modus */
         }
