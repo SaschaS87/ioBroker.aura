@@ -83,10 +83,12 @@ body[data-fl-variant] .pp-page .pw-title,
 body[data-fl-variant] .pp-page .rpp-title {
     font-size: var(--fl-font-title);
     font-weight: var(--fl-weight-title);
+    line-height: var(--fl-lh-title);
 }
 body[data-fl-variant] .pp-page .pw-sub,
 body[data-fl-variant] .pp-page .rpp-sub {
     font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
 }
 body[data-fl-variant] .pp-page .pw-gf {
     font-size: var(--fl-font-foot);
@@ -96,10 +98,10 @@ body[data-fl-variant] .pp-page .pw-gf {
 body[data-fl-variant] .pp-page .rpp-hint {
     font-size: var(--fl-font-foot);
 }
+/* gleiche Zeile wie .aura-fl-row: Höhe, Einzug und Rand oben/unten aus dem Raster */
 body[data-fl-variant] .pp-page .pw-row {
     min-height: var(--fl-row-min-h);
-    padding-left: 16px;
-    padding-right: 16px;
+    padding: 6px 16px;
 }
 body[data-fl-variant] .pp-page .pw-group,
 body[data-fl-variant] .pp-page .rpp-card,

@@ -15,6 +15,8 @@
  *              --fl-font-label / --fl-weight-label / --fl-case-label   Feldnamen in Editoren
  *   Zeile      --fl-row-min-h / --fl-row-pad / --fl-icon-size / --fl-icon-radius / --fl-icon-glyph
  *              --fl-sep-inset (Linie beginnt am Text) / --fl-sep-inset-r (Linie endet vor dem Kartenrand)
+ *   Seite      --fl-page-x  Abstand jeder Karte zum Bildschirmrand: Seiten, Unterseiten und Pop-ups
+ *              (Seiten: facelift.css am Scroll-Bereich, Pop-ups: Baustein .aura-fl-sheet-body)
  *   Abstände   --fl-gap-block (zwischen Blöcken) / --fl-head-top (über einem Abschnittstitel)
  *              --fl-gap-title (Titel bis Karte) / --fl-title-pad-x (Einzug von Titel und Begleittext)
  *   Karte      --fl-card-bg / --fl-card-border / --fl-card-border-w / --fl-card-radius / --fl-card-shadow
@@ -41,7 +43,14 @@ body[data-fl-variant] {
     --fl-weight-label: 600;
     --fl-case-label: none;
 
+    /* Sascha, 13.11.2026: überall gleich breit (Wohnklima maßgeblich) und jede Zeile gleich hoch
+       (wie „AT Haus"). Keine Seite und kein Pop-up setzt eigene Werte dafür. */
+    --fl-page-x: 16px;
+
     --fl-row-min-h: 56px;
+    /* feste Zeilenhöhen der Schrift, damit ein- und zweizeilige Zeilen in --fl-row-min-h passen */
+    --fl-lh-title: 22px;
+    --fl-lh-sub: 18px;
     --fl-row-pad: 6px 10px 6px 16px;
     --fl-icon-size: 28px;
     --fl-icon-radius: 7px;
@@ -126,6 +135,13 @@ body[data-fl-variant] .aura-fl-foot {
     color: var(--fl-color-foot);
 }
 
+/* ── Pop-up-Inhalt ────────────────────────────────────────────────────── */
+/* Inhalt eines Pop-ups von unten: Karten mit demselben Rand wie auf der Seite */
+body[data-fl-variant] .aura-fl-sheet-body {
+    padding-left: max(var(--fl-page-x), env(safe-area-inset-left));
+    padding-right: max(var(--fl-page-x), env(safe-area-inset-right));
+}
+
 /* ── Karte ────────────────────────────────────────────────────────────── */
 body[data-fl-variant] .aura-fl-card {
     background: var(--fl-card-bg);
@@ -186,6 +202,7 @@ body[data-fl-variant] .aura-fl-row-main {
 }
 body[data-fl-variant] .aura-fl-row-title {
     font-size: var(--fl-font-title);
+    line-height: var(--fl-lh-title);
     font-weight: var(--fl-weight-title);
     white-space: nowrap;
     overflow: hidden;
@@ -193,6 +210,7 @@ body[data-fl-variant] .aura-fl-row-title {
 }
 body[data-fl-variant] .aura-fl-row-sub {
     font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -296,9 +314,14 @@ body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbox-oldhint {
     display: none;
 }
 
-/* Inhalt der Status-Blöcke im Raster. Die alten Boxen setzen 11/12 px inline, daher !important. */
+/* Inhalt der Status-Blöcke im Raster. Die alten Boxen setzen 11/12 px inline, daher !important.
+   Auf der Unterseite sind Datenquelle und Signal normale Zeilen: Einzug links wie .aura-fl-row,
+   Höhe --fl-row-min-h, kein zusätzlicher Rand oben/unten in der Karte. */
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbox-body {
+    padding: 0 var(--fl-sep-inset-r) 0 16px;
+}
 body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow {
-    min-height: 44px;
+    min-height: var(--fl-row-min-h);
     font-size: var(--fl-font-meta) !important;
 }
 body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow-age,
@@ -309,6 +332,7 @@ body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbtn {
     padding: 8px 14px !important;
     border-radius: 10px !important;
     font-size: var(--fl-font-meta) !important;
+    margin-bottom: 12px;
 }
 /* Signal-Zeile: Name, darunter Urteil und Alter; rechts Balken und Zahl */
 body[data-fl-variant] .aura-fl-sigrow {
@@ -316,8 +340,8 @@ body[data-fl-variant] .aura-fl-sigrow {
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 50px;
-    padding: 5px 0;
+    min-height: var(--fl-row-min-h);
+    padding: 6px 0;
 }
 body[data-fl-variant] .aura-fl-sigrow + .aura-fl-sigrow::before {
     content: '';
@@ -331,6 +355,7 @@ body[data-fl-variant] .aura-fl-sigrow + .aura-fl-sigrow::before {
 }
 body[data-fl-variant] .aura-fl-sigrow-name {
     font-size: var(--fl-font-meta);
+    line-height: var(--fl-lh-title);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -338,6 +363,7 @@ body[data-fl-variant] .aura-fl-sigrow-name {
 }
 body[data-fl-variant] .aura-fl-sigrow-sub {
     font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;

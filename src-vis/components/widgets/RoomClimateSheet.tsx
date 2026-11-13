@@ -82,7 +82,7 @@ export function RoomClimateSheet({
                 </div>
 
                 {/* Body: room climate details */}
-                <div className="rc-sheet-body">
+                <div className={`rc-sheet-body${fl ? ' aura-fl-sheet-body' : ''}`}>
                     {fl ? (
                         <WohnklimaRoomDetails
                             temperatureDp={temperatureDp}

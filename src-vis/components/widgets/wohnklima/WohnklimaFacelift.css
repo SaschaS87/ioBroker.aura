@@ -6,7 +6,6 @@
  * Attribut greift nichts. Farben nur über Theme-Variablen mit Rückfallkette.
  *
  * Eigene Maße (Wohnklima):
- *   --fl-wk-page-x       seitlicher Innenabstand im Pop-up eines Raums
  *   --fl-wk-val          Temperatur rechts in der Zeile
  *   --fl-wk-cell-temp    große Temperatur im Raster (B)
  *   --fl-wk-cell-min-h   Mindesthöhe einer Rasterzelle (B)
@@ -22,7 +21,6 @@
  *   --fl-wk-col-stat     Spaltenbreite der Kennzahlen (Temperatur, Luftfeuchte)
  */
 body[data-fl-variant] {
-    --fl-wk-page-x: 8px;
     --fl-wk-val: 17px;
     --fl-wk-cell-temp: 26px;
     --fl-wk-cell-min-h: 92px;
@@ -35,7 +33,7 @@ body[data-fl-variant] {
     --fl-wk-chart-gap: 10px;
     --fl-wk-seg-h: 30px;
     --fl-wk-nav-h: 36px;
-    --fl-wk-col-stat: 72px;
+    --fl-wk-col-stat: 64px;
 
     --wk-ico-bg: var(--fl-wk-ico-bg, var(--text-secondary));
     --wk-ico-out-bg: var(--fl-wk-ico-out-bg, var(--accent, #0a84ff));
@@ -318,7 +316,8 @@ body[data-fl-variant] .wk-sheet {
 }
 body[data-fl-variant] .wk-sheet .rc-sheet-header {
     border-bottom: 0;
-    padding: 2px 20px 4px;
+    /* Titel bündig mit dem Seitentitel: gleicher Rand wie die Karten */
+    padding: 2px var(--fl-page-x) 4px;
 }
 body[data-fl-variant] .wk-sheet .rc-sheet-title {
     font-size: 20px;
@@ -331,7 +330,7 @@ body[data-fl-variant] .wk-sheet .rc-sheet-grip-handle {
     background: var(--fl-line-strong);
 }
 body[data-fl-variant] .wk-sheet .rc-sheet-body {
-    padding: 0 var(--fl-wk-page-x) 8px;
+    padding-bottom: 8px; /* seitlich: Baustein .aura-fl-sheet-body */
 }
 body[data-fl-variant] .wk-detail {
     display: flex;
@@ -541,7 +540,6 @@ body[data-fl-variant] .wk-statcol {
     text-align: right;
 }
 body[data-fl-variant] .aura-fl-row.wk-detail-stat {
-    min-height: 48px;
     padding-right: 22px;
 }
 body[data-fl-variant] .wk-detail-stat-ico {
