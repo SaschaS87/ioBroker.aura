@@ -718,13 +718,15 @@ html.dark {
     background: transparent;
 }
 /* das Fenster selbst: Kante oben, darunter der Schatten */
-.aura-scrim > :not(.ios-as) {
+.aura-scrim > :not(.ios-as):not(.aura-scrim-card) {
     box-shadow:
         0 -1px 0 var(--aura-sheet-edge),
         var(--aura-sheet-shadow);
 }
-/* Auswahlmenue (IosActionSheet): frei schwebende Karten, Kante rundum */
-.aura-scrim .ios-as-card {
+/* Auswahlmenue (IosActionSheet) und mittig schwebende Fenster (.aura-scrim-card, z. B. Datumsauswahl):
+   Kante rundum */
+.aura-scrim .ios-as-card,
+.aura-scrim .aura-scrim-card {
     box-shadow:
         0 0 0 1px var(--aura-sheet-edge),
         0 2px 10px rgba(0, 0, 0, 0.18);

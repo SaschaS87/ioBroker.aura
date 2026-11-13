@@ -6,7 +6,7 @@
  * Attribut greift nichts. Farben nur über Theme-Variablen mit Rückfallkette.
  *
  * Eigene Maße (Wohnklima):
- *   --fl-wk-page-x       seitlicher Abstand der Karten zum Bildschirmrand (zusätzlich zu .aura-scroll)
+ *   --fl-wk-page-x       seitlicher Innenabstand im Pop-up eines Raums
  *   --fl-wk-val          Temperatur rechts in der Zeile
  *   --fl-wk-cell-temp    große Temperatur im Raster (B)
  *   --fl-wk-cell-min-h   Mindesthöhe einer Rasterzelle (B)
@@ -44,9 +44,7 @@ body[data-fl-variant] {
 }
 
 /* ── Seite ───────────────────────────────────────────────────────────── */
-body[data-fl-variant] .wk-page {
-    padding: 0 var(--fl-wk-page-x);
-}
+/* kein eigener Seitenrand: den setzt --fl-page-x in facelift.css für alle Seiten gleich */
 /* erster Abschnitt: weniger Luft unter dem großen Seitentitel */
 body[data-fl-variant] .wk-page > .wk-section:first-child > .wk-section-head,
 body[data-fl-variant] .wk-d-home > .wk-section:first-child > .wk-section-head {

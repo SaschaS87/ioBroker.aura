@@ -162,13 +162,15 @@ export function ChartDatePicker({ mode, initialDate, minYear, onApply, onClose }
     const showDay = mode !== 'month';
 
     return createPortal(
+        // Kein eigener Schleier: wie alle Pop-ups über .aura-scrim (index.css), sonst bleibt die Notch
+        // hell über einer abgedunkelten Seite stehen (Sascha, 13.11.2026). Schatten/Kante: .aura-scrim-card.
         <div
+            className="chart-dp-backdrop aura-scrim"
             onClick={onClose}
             style={{
                 position: 'fixed',
                 inset: 0,
                 zIndex: 9999,
-                background: 'rgba(0,0,0,0.5)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -176,15 +178,14 @@ export function ChartDatePicker({ mode, initialDate, minYear, onApply, onClose }
             }}
         >
             <div
+                className="chart-dp-card aura-scrim-card"
                 onClick={(e) => e.stopPropagation()}
                 style={{
                     width: '100%',
                     maxWidth: 320,
                     background: 'var(--app-surface)',
-                    border: '1px solid var(--app-border)',
                     borderRadius: 14,
                     padding: 16,
-                    boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

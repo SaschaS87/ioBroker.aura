@@ -10,8 +10,13 @@
  *   --fl-tab           Farbe inaktiver Einträge     (sonst --text-secondary)
  *   --fl-tab-active    Farbe des aktiven Eintrags   (sonst --text-primary)
  *   --fl-tab-active-bg Fläche hinter dem aktiven Eintrag (sonst iOS-Füllgrau, hell/dunkel verschieden)
+ *
+ * Raster (nicht je Theme): --fl-page-x  seitlicher Abstand der Inhalte zum Bildschirmrand, für ALLE
+ * Seiten gleich (Tabs, Unterseiten, Einstellungen). Keine Seite rückt selbst noch einmal ein
+ * (Sascha, 13.11.2026: Rollläden war 8 px breiter als Wohnklima; Wohnklima ist maßgeblich).
  */
 .aura-fl-stage {
+    --fl-page-x: 16px;
     --fl-bar-h: 48px;
     --fl-bar-min: 38px;
     --fl-bar-cur: var(--fl-bar-h);
@@ -34,6 +39,8 @@
 .aura-fl-stage .aura-scroll.aura-scroll-touch {
     padding-top: calc(var(--fl-bar-h) + var(--fl-large-h) + env(safe-area-inset-top) + 4px);
     padding-bottom: calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom));
+    padding-left: max(var(--fl-page-x), env(safe-area-inset-left));
+    padding-right: max(var(--fl-page-x), env(safe-area-inset-right));
     bottom: 0;
 }
 .aura-fl-stage .tab-footer-bar {
@@ -327,7 +334,8 @@ html.dark .aura-fl-stage {
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 0 12px calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom));
+    padding: 0 max(var(--fl-page-x), env(safe-area-inset-right)) calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom))
+        max(var(--fl-page-x), env(safe-area-inset-left));
 }
 .aura-fl-page-inner {
     max-width: 720px;
