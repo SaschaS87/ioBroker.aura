@@ -9,14 +9,15 @@
 import { create } from 'zustand';
 import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 
-export type HeizungDraft = 'ALT' | 'A' | 'B' | 'C' | 'D';
+export type HeizungDraft = 'ALT' | 'E' | 'F' | 'G';
 
 export const HEIZUNG_DRAFTS: { key: HeizungDraft; label: string; name: string }[] = [
     { key: 'ALT', label: 'Alt', name: 'Heutige Seite' },
-    { key: 'A', label: 'A', name: 'Liste, Auswertungen als Pop-up' },
-    { key: 'B', label: 'B', name: 'Status groß, Kacheln, Unterseiten' },
-    { key: 'C', label: 'C', name: 'Aufklappen in der Karte' },
-    { key: 'D', label: 'D', name: 'Alles auf einer Seite' },
+    // Runde 2 (13.11.2026): Kopf aus C, Auswertungen als Unterseiten (aus B); offen ist nur die Form der
+    // aktuellen Werte. Runde 1 (A–D) steht in Commit 4673aa9de.
+    { key: 'E', label: 'E', name: 'Werte als Liste mit Symbolen' },
+    { key: 'F', label: 'F', name: 'Werte als Kacheln' },
+    { key: 'G', label: 'G', name: 'Werte als schlichte Zeilen' },
 ];
 
 const KEY = 'aura.heizung.facelift';
@@ -25,9 +26,9 @@ function read(): HeizungDraft {
     try {
         const v = localStorage.getItem(KEY);
         // Unbekannte Werte (spätere Runden) fallen auf den ersten Entwurf zurück
-        return HEIZUNG_DRAFTS.some((d) => d.key === v) ? (v as HeizungDraft) : 'A';
+        return HEIZUNG_DRAFTS.some((d) => d.key === v) ? (v as HeizungDraft) : 'E';
     } catch {
-        return 'A';
+        return 'E';
     }
 }
 
@@ -50,3 +51,20 @@ export function useHeizungDraft(): Exclude<HeizungDraft, 'ALT'> | null {
     if (!import.meta.env.DEV || !flv || draft === 'ALT') return null;
     return draft;
 }
+
+/**
+ * Betrieb zum Ansehen nachstellen (nur Dev-Vorschau, nicht gespeichert): „Echt" zeigt die Werte vom Pi, die
+ * anderen Szenen setzen Betrieb, Verdichter, Pumpe/Abtauen/Heizstab und Beispielwerte nur in der Anzeige.
+ */
+export type HeizungScene = 'ECHT' | 'HEIZEN' | 'WASSER' | 'BEREIT' | 'ABTAUEN';
+export const HEIZUNG_SCENES: { key: HeizungScene; label: string }[] = [
+    { key: 'ECHT', label: 'Echt' },
+    { key: 'HEIZEN', label: 'Heizen' },
+    { key: 'WASSER', label: 'Wasser' },
+    { key: 'BEREIT', label: 'Bereit' },
+    { key: 'ABTAUEN', label: 'Abtauen' },
+];
+export const useHeizungSceneStore = create<{ scene: HeizungScene; setScene: (s: HeizungScene) => void }>((set) => ({
+    scene: 'ECHT',
+    setScene: (scene) => set({ scene }),
+}));

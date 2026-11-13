@@ -3,13 +3,14 @@
  *
  * Die Seite ist ein einziges Widget (HeatingWidget). Es liest alle Datenpunkte wie bisher und übergibt hier
  * nur die fertigen Werte (HzModel) und eine Funktion, die den Inhalt einer Auswertung liefert (dieselbe
- * Komponente HeatingDetails wie in den heutigen Klappboxen). Die Entwürfe A bis D ordnen das aus den
- * Facelift-Bausteinen (aura-fl-*) neu an und unterscheiden sich vor allem darin, wie man zu den fünf
- * Auswertungen kommt:
- *   A  Liste wie in den iOS-Einstellungen, Auswertung als Pop-up von unten
- *   B  Status groß, Werte als Kacheln, Auswertung als Unterseite von rechts
- *   C  Auswertung klappt in der Karte auf (wie heute)
- *   D  alles auf einer Seite, Auswertung über einen Segment-Schalter
+ * Komponente HeatingDetails wie in den heutigen Klappboxen).
+ *
+ * Runde 2 (Saschas Rückmeldung vom 13.11.2026 zu A–D, Commit 4673aa9de):
+ *   - Kopf wie in C: eine Zeile „was die Wärmepumpe gerade tut", darunter Pumpe · Abtauen · Heizstab
+ *   - Auswertungen als Unterseiten von rechts (wie in B), mit Begleittext unter dem Diagramm
+ *   - offen ist die Form der aktuellen Werte, darin unterscheiden sich die Entwürfe:
+ *       E  Liste mit Symbolen (aus A)      F  Kacheln (aus B)      G  schlichte Zeilen (aus C)
+ *   - Leiste „Betrieb zeigen": stellt Heizen, Warmwasser, Bereit und Abtauen nur in der Anzeige nach
  *
  * Nur lesend: kein Schreibbefehl, kein Datenpunkt wird angelegt.
  */
@@ -18,7 +19,6 @@ import {
     Activity,
     ArrowDownToLine,
     ArrowUpFromLine,
-    ChevronDown,
     ChevronRight,
     Droplet,
     Flame,
@@ -35,8 +35,7 @@ import {
 } from 'lucide-react';
 import { formatNum } from '../../../utils/formatValue';
 import { IosNavBar, IosStack, useTabHidden } from '../../common/ios';
-import { HeizungSheet } from './HeizungSheet';
-import type { HeizungDraft } from './heizungDraft';
+import { HEIZUNG_SCENES, useHeizungSceneStore, type HeizungDraft, type HeizungScene } from './heizungDraft';
 import './HeizungFacelift.css';
 
 export type HzBox = 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie';
@@ -55,35 +54,48 @@ export interface HzModel {
     aussen: number | null;
 }
 
-const BOXES: { key: HzBox; title: string; short: string; sub: string; Icon: LucideIcon }[] = [
-    { key: 'heizkreis', title: 'Heizkreis', short: 'Heizkreis', sub: 'Vorlauf/Rücklauf · HK1-Soll', Icon: Activity },
-    { key: 'betrieb', title: 'Betrieb', short: 'Betrieb', sub: 'Was lief wann', Icon: History },
-    { key: 'warmwasser', title: 'Warmwasser', short: 'Wasser', sub: 'Ist · Soll · Hysterese', Icon: Droplet },
-    { key: 'aussen', title: 'Außenfühler-Check', short: 'Fühler', sub: 'Fühler · Netatmo · Sonne', Icon: SunMedium },
-    { key: 'energie', title: 'Energie', short: 'Energie', sub: 'Strom · Wärme · Arbeitszahl', Icon: Zap },
+const BOXES: { key: HzBox; title: string; sub: string; Icon: LucideIcon; foot: string }[] = [
+    {
+        key: 'heizkreis',
+        title: 'Heizkreis',
+        sub: 'Vorlauf/Rücklauf · HK1-Soll',
+        Icon: Activity,
+        foot: 'Vorlauf und Rücklauf des Heizkreises, die grüne Fläche dazwischen ist die Spreizung. Gestrichelt der Sollwert für Heizkreis 1.',
+    },
+    {
+        key: 'betrieb',
+        title: 'Betrieb',
+        sub: 'Was lief wann',
+        Icon: History,
+        foot: 'Oben Vorlauf und Rücklauf, darunter als Balken, wann Pumpe, Verdichter, Heizen und Warmwasser liefen.',
+    },
+    {
+        key: 'warmwasser',
+        title: 'Warmwasser',
+        sub: 'Ist · Soll · Hysterese',
+        Icon: Droplet,
+        foot: 'Temperatur im Warmwasserspeicher gegen den Sollwert. Das blaue Band ist die Hysterese.',
+    },
+    {
+        key: 'aussen',
+        title: 'Außenfühler-Check',
+        sub: 'Fühler · Netatmo · Sonne',
+        Icon: SunMedium,
+        foot: 'Vergleicht den Außenfühler der Wärmepumpe mit den Netatmo-Stationen. Die Balken zeigen die Abweichung, das Punktebild darunter die Abweichung je nach Helligkeit.',
+    },
+    {
+        key: 'energie',
+        title: 'Energie',
+        sub: 'Strom · Wärme · Arbeitszahl',
+        Icon: Zap,
+        foot: 'Strom, erzeugte Wärme und Arbeitszahl der letzten 30 Tage, darunter die Zähler seit Inbetriebnahme.',
+    },
 ];
 
 const MODE_ICON: Record<HzModel['mode'], LucideIcon> = { heat: Flame, water: Droplet, idle: Power };
 
 /** Wert mit Einheit wie auf der heutigen Seite (Leerzeichen vor der Einheit), sonst Gedankenstrich. */
 const val = (v: number | null, d: number, unit: string) => (v !== null ? `${formatNum(v, d)} ${unit}` : '–');
-
-interface ValueDef {
-    key: string;
-    label: string;
-    short: string;
-    text: string;
-    Icon: LucideIcon;
-}
-function values(m: HzModel): ValueDef[] {
-    return [
-        { key: 'vl', label: 'Vorlauf', short: 'Vorlauf', text: val(m.vorlauf, 1, '°C'), Icon: ArrowUpFromLine },
-        { key: 'rl', label: 'Rücklauf', short: 'Rücklauf', text: val(m.ruecklauf, 1, '°C'), Icon: ArrowDownToLine },
-        { key: 'sp', label: 'Spreizung', short: 'Spreizung', text: val(m.spreizung, 1, 'K'), Icon: Gauge },
-        { key: 'vs', label: 'Volumenstrom', short: 'Volumenstr.', text: val(m.volumenstrom, 0, 'l/min'), Icon: Waves },
-        { key: 'at', label: 'Außentemperatur', short: 'Außen', text: val(m.aussen, 1, '°C'), Icon: Thermometer },
-    ];
-}
 const vlrl = (m: HzModel) =>
     m.vorlauf !== null && m.ruecklauf !== null ? `${formatNum(m.vorlauf, 1)} / ${formatNum(m.ruecklauf, 1)} °C` : '–';
 
@@ -93,21 +105,148 @@ const PARTS: { key: 'pumpe' | 'abtauen' | 'heizstab'; label: string; Icon: Lucid
     { key: 'heizstab', label: 'Heizstab', Icon: Zap },
 ];
 
+/**
+ * Nachgestellter Betrieb: gleiche Texte wie HeatingWidget, dazu Beispielwerte. Die Außentemperatur bleibt
+ * echt. Nur Anzeige, die Auswertungen zeigen weiter die echten Verläufe.
+ */
+const SCENES: Record<Exclude<HeizungScene, 'ECHT'>, Partial<HzModel>> = {
+    HEIZEN: {
+        mode: 'heat',
+        modeLabel: 'Heizt · Fußboden',
+        sinceText: 'Verdichter ein · seit 12 min',
+        pumpe: true,
+        abtauen: false,
+        heizstab: false,
+        vorlauf: 29.4,
+        ruecklauf: 25.1,
+        spreizung: 4.3,
+        volumenstrom: 21,
+    },
+    WASSER: {
+        mode: 'water',
+        modeLabel: 'Bereitet Warmwasser',
+        sinceText: 'Verdichter ein · seit 25 min',
+        pumpe: true,
+        abtauen: false,
+        heizstab: false,
+        vorlauf: 54.8,
+        ruecklauf: 52.9,
+        spreizung: 1.9,
+        volumenstrom: 13,
+    },
+    BEREIT: {
+        mode: 'idle',
+        modeLabel: 'Bereit',
+        sinceText: 'Verdichter aus',
+        pumpe: false,
+        abtauen: false,
+        heizstab: false,
+        vorlauf: 24.0,
+        ruecklauf: 23.8,
+        spreizung: 0.2,
+        volumenstrom: 0,
+    },
+    ABTAUEN: {
+        mode: 'heat',
+        modeLabel: 'Heizt · Fußboden',
+        sinceText: 'Verdichter ein · seit 1 h 4 min',
+        pumpe: true,
+        abtauen: true,
+        heizstab: true,
+        vorlauf: 22.5,
+        ruecklauf: 24.1,
+        spreizung: -1.6,
+        volumenstrom: 21,
+    },
+};
+
 interface Ctx {
     m: HzModel;
     details: (b: HzBox) => ReactNode;
 }
 
-export function HeizungFacelift({ draft, m, details }: Ctx & { draft: Exclude<HeizungDraft, 'ALT'> }) {
-    const ctx: Ctx = { m, details };
-    let body: ReactNode;
-    if (draft === 'A') body = <DraftA {...ctx} />;
-    else if (draft === 'B') body = <DraftB {...ctx} />;
-    else if (draft === 'C') body = <DraftC {...ctx} />;
-    else body = <DraftD {...ctx} />;
+export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Exclude<HeizungDraft, 'ALT'> }) {
+    const scene = useHeizungSceneStore((s) => s.scene);
+    const setScene = useHeizungSceneStore((s) => s.setScene);
+    const m: HzModel = scene === 'ECHT' ? real : { ...real, ...SCENES[scene] };
+
+    const [box, setBox] = useState<HzBox | null>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const hidden = useTabHidden(rootRef);
+    // Seite verlassen: beim Zurückkommen wieder auf der Übersicht
+    useEffect(() => {
+        if (hidden) setBox(null);
+    }, [hidden]);
+    const sel = BOXES.find((b) => b.key === box) ?? null;
+
+    const home = (
+        <div className="hz-home">
+            {/* Nur Dev-Vorschau, kein Teil des Entwurfs: Betrieb nachstellen */}
+            <div className="hz-sim" role="group" aria-label="Betrieb zeigen, nur Vorschau">
+                <span className="hz-sim-label">Betrieb</span>
+                {HEIZUNG_SCENES.map((s) => (
+                    <button
+                        key={s.key}
+                        type="button"
+                        className="hz-sim-btn"
+                        data-sel={s.key === scene || undefined}
+                        aria-pressed={s.key === scene}
+                        onClick={() => setScene(s.key)}
+                    >
+                        {s.label}
+                    </button>
+                ))}
+            </div>
+            <Section>
+                <div className="aura-fl-card">
+                    <StatusRow m={m} />
+                    <div className="hz-chiprow">
+                        <Chips m={m} />
+                    </div>
+                </div>
+            </Section>
+            <Section title="Aktuelle Werte" foot={scene === 'ECHT' ? undefined : 'Beispielwerte zum Ansehen, nur die Außentemperatur ist echt.'}>
+                {draft === 'E' ? <ValuesList m={m} /> : draft === 'F' ? <ValuesTiles m={m} /> : <ValuesPlain m={m} />}
+            </Section>
+            <Section title="Auswertungen">
+                <div className="aura-fl-card">
+                    {BOXES.map((b) => (
+                        <button key={b.key} type="button" className="aura-fl-row aura-fl-row--nav hz-boxrow" onClick={() => setBox(b.key)}>
+                            <span className="aura-fl-row-icon hz-ico">
+                                <b.Icon size={20} />
+                            </span>
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title hz-row-title">{b.title}</span>
+                                <span className="aura-fl-row-sub">{b.sub}</span>
+                            </span>
+                            <ChevronRight size={18} className="aura-fl-chev" />
+                        </button>
+                    ))}
+                </div>
+            </Section>
+        </div>
+    );
+
+    const pages = [
+        { key: 'home', node: home },
+        ...(sel
+            ? [
+                  {
+                      key: `b-${sel.key}`,
+                      node: (
+                          <div className="ios-page hz-subpage">
+                              <IosNavBar sticky title={sel.title} backLabel="Heizung" backFallback="Zurück" onBack={() => setBox(null)} />
+                              <div className="aura-fl-card hz-detail">{details(sel.key)}</div>
+                              <p className="aura-fl-foot hz-foot">{sel.foot}</p>
+                          </div>
+                      ),
+                  },
+              ]
+            : []),
+    ];
     return (
         <div className={`aura-fl-scope hz-page hz-page--${draft.toLowerCase()}`} data-hz-draft={draft} data-widget-interactive>
-            {body}
+            <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />
         </div>
     );
 }
@@ -129,7 +268,7 @@ function Section({ title, children, foot }: { title?: string; children: ReactNod
 }
 
 /** Zeile „Was die Wärmepumpe gerade tut": Symbol in der Farbe des Betriebs, darunter der Verdichter. */
-function StatusRow({ m, sub }: { m: HzModel; sub?: ReactNode }) {
+function StatusRow({ m }: { m: HzModel }) {
     const Icon = MODE_ICON[m.mode];
     return (
         <div className="aura-fl-row hz-status" data-mode={m.mode}>
@@ -138,7 +277,7 @@ function StatusRow({ m, sub }: { m: HzModel; sub?: ReactNode }) {
             </span>
             <span className="aura-fl-row-main">
                 <span className="aura-fl-row-title hz-row-title">{m.modeLabel}</span>
-                <span className="aura-fl-row-sub">{sub ?? m.sinceText}</span>
+                <span className="aura-fl-row-sub">{m.sinceText}</span>
             </span>
         </div>
     );
@@ -158,265 +297,67 @@ function Chips({ m }: { m: HzModel }) {
     );
 }
 
-function ValueRow({ v }: { v: ValueDef }) {
-    return (
-        <div className="aura-fl-row hz-valrow">
-            <span className="aura-fl-row-icon hz-ico">
-                <v.Icon size={20} />
-            </span>
-            <span className="aura-fl-row-main">
-                <span className="aura-fl-row-title hz-row-title">{v.label}</span>
-            </span>
-            <span className="hz-row-val">{v.text}</span>
-        </div>
-    );
-}
+// ── Aktuelle Werte: drei Formen ──────────────────────────────────────────────
 
-function BoxRow({ box, onClick, chev }: { box: (typeof BOXES)[number]; onClick: () => void; chev: ReactNode }) {
-    return (
-        <button type="button" className="aura-fl-row aura-fl-row--nav hz-boxrow" onClick={onClick}>
-            <span className="aura-fl-row-icon hz-ico">
-                <box.Icon size={20} />
-            </span>
-            <span className="aura-fl-row-main">
-                <span className="aura-fl-row-title hz-row-title">{box.title}</span>
-                <span className="aura-fl-row-sub">{box.sub}</span>
-            </span>
-            {chev}
-        </button>
-    );
-}
-
-// ── A: Liste, Auswertungen als Pop-up ────────────────────────────────────────
-function DraftA({ m, details }: Ctx) {
-    const [sheet, setSheet] = useState<{ box: HzBox; seq: number } | null>(null);
-    const open = BOXES.find((b) => b.key === sheet?.box);
-    return (
-        <>
-            <Section title="Wärmepumpe">
-                <div className="aura-fl-card">
-                    <StatusRow m={m} />
-                    {PARTS.map(({ key, label, Icon }) => (
-                        <div key={key} className="aura-fl-row hz-valrow">
-                            <span className="aura-fl-row-icon hz-ico" data-on={m[key] || undefined}>
-                                <Icon size={20} />
-                            </span>
-                            <span className="aura-fl-row-main">
-                                <span className="aura-fl-row-title hz-row-title">{label}</span>
-                            </span>
-                            <span className={`hz-row-val${m[key] ? '' : ' hz-row-val--off'}`}>{m[key] ? 'Ein' : 'Aus'}</span>
-                        </div>
-                    ))}
-                </div>
-            </Section>
-            <Section title="Aktuelle Werte">
-                <div className="aura-fl-card">
-                    {values(m).map((v) => (
-                        <ValueRow key={v.key} v={v} />
-                    ))}
-                </div>
-            </Section>
-            <Section title="Auswertungen">
-                <div className="aura-fl-card">
-                    {BOXES.map((b) => (
-                        <BoxRow
-                            key={b.key}
-                            box={b}
-                            onClick={() => setSheet((s) => ({ box: b.key, seq: (s?.seq ?? 0) + 1 }))}
-                            chev={<ChevronRight size={18} className="aura-fl-chev" />}
-                        />
-                    ))}
-                </div>
-            </Section>
-            {sheet && open && (
-                <HeizungSheet key={sheet.seq} title={open.title} onClose={() => setSheet(null)}>
-                    <div className="aura-fl-card hz-detail">{details(open.key)}</div>
-                </HeizungSheet>
-            )}
-        </>
-    );
-}
-
-// ── B: Status groß, Kacheln, Unterseiten ─────────────────────────────────────
-function DraftB({ m, details }: Ctx) {
-    const [box, setBox] = useState<HzBox | null>(null);
-    const rootRef = useRef<HTMLDivElement>(null);
-    const hidden = useTabHidden(rootRef);
-    // Seite verlassen: beim Zurückkommen wieder auf der Übersicht
-    useEffect(() => {
-        if (hidden) setBox(null);
-    }, [hidden]);
-    const sel = BOXES.find((b) => b.key === box) ?? null;
-    const Icon = MODE_ICON[m.mode];
-    const tiles = [
-        { key: 'vlrl', label: 'Vorlauf / Rücklauf', text: vlrl(m) },
-        { key: 'sp', label: 'Spreizung', text: val(m.spreizung, 1, 'K') },
-        { key: 'vs', label: 'Volumenstrom', text: val(m.volumenstrom, 0, 'l/min') },
-        { key: 'at', label: 'Außentemperatur', text: val(m.aussen, 1, '°C') },
+/** E: Liste mit Symbolen, Vorlauf und Rücklauf je eine Zeile */
+function ValuesList({ m }: { m: HzModel }) {
+    const rows: { key: string; label: string; text: string; Icon: LucideIcon }[] = [
+        { key: 'vl', label: 'Vorlauf', text: val(m.vorlauf, 1, '°C'), Icon: ArrowUpFromLine },
+        { key: 'rl', label: 'Rücklauf', text: val(m.ruecklauf, 1, '°C'), Icon: ArrowDownToLine },
+        { key: 'sp', label: 'Spreizung', text: val(m.spreizung, 1, 'K'), Icon: Gauge },
+        { key: 'vs', label: 'Volumenstrom', text: val(m.volumenstrom, 0, 'l/min'), Icon: Waves },
+        { key: 'at', label: 'Außentemperatur', text: val(m.aussen, 1, '°C'), Icon: Thermometer },
     ];
-
-    const home = (
-        <div className="hz-b-home">
-            <Section>
-                <div className="aura-fl-card hz-hero" data-mode={m.mode}>
-                    <span className="hz-hero-title">
-                        <Icon size={24} />
-                        {m.modeLabel}
+    return (
+        <div className="aura-fl-card">
+            {rows.map((v) => (
+                <div key={v.key} className="aura-fl-row hz-valrow">
+                    <span className="aura-fl-row-icon hz-ico">
+                        <v.Icon size={20} />
                     </span>
-                    <span className="hz-hero-sub">{m.sinceText}</span>
-                    <Chips m={m} />
+                    <span className="aura-fl-row-main">
+                        <span className="aura-fl-row-title hz-row-title">{v.label}</span>
+                    </span>
+                    <span className="hz-row-val">{v.text}</span>
                 </div>
-            </Section>
-            <Section>
-                <div className="aura-fl-card hz-grid">
-                    {tiles.map((t) => (
-                        <div key={t.key} className="hz-cell">
-                            <span className="hz-cell-label">{t.label}</span>
-                            <span className="hz-cell-val">{t.text}</span>
-                        </div>
-                    ))}
-                </div>
-            </Section>
-            <Section title="Auswertungen">
-                <div className="aura-fl-card">
-                    {BOXES.map((b) => (
-                        <BoxRow
-                            key={b.key}
-                            box={b}
-                            onClick={() => setBox(b.key)}
-                            chev={<ChevronRight size={18} className="aura-fl-chev" />}
-                        />
-                    ))}
-                </div>
-            </Section>
+            ))}
         </div>
     );
-
-    const pages = [
-        { key: 'home', node: home },
-        ...(sel
-            ? [
-                  {
-                      key: `b-${sel.key}`,
-                      node: (
-                          <div className="ios-page hz-subpage">
-                              <IosNavBar
-                                  sticky
-                                  title={sel.title}
-                                  backLabel="Heizung"
-                                  backFallback="Zurück"
-                                  onBack={() => setBox(null)}
-                              />
-                              <div className="aura-fl-card hz-detail">{details(sel.key)}</div>
-                          </div>
-                      ),
-                  },
-              ]
-            : []),
-    ];
-    return <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />;
 }
 
-// ── C: Aufklappen in der Karte ───────────────────────────────────────────────
-function DraftC({ m, details }: Ctx) {
-    const [openBox, setOpenBox] = useState<HzBox | null>(null);
-    const vs = values(m);
+const four = (m: HzModel) => [
+    { key: 'vlrl', label: 'Vorlauf / Rücklauf', text: vlrl(m) },
+    { key: 'sp', label: 'Spreizung', text: val(m.spreizung, 1, 'K') },
+    { key: 'vs', label: 'Volumenstrom', text: val(m.volumenstrom, 0, 'l/min') },
+    { key: 'at', label: 'Außentemperatur', text: val(m.aussen, 1, '°C') },
+];
+
+/** F: vier Kacheln in einer Karte */
+function ValuesTiles({ m }: { m: HzModel }) {
     return (
-        <>
-            <Section>
-                <div className="aura-fl-card">
-                    <StatusRow m={m} />
-                    <div className="hz-chiprow">
-                        <Chips m={m} />
-                    </div>
+        <div className="aura-fl-card hz-grid">
+            {four(m).map((t) => (
+                <div key={t.key} className="hz-cell">
+                    <span className="hz-cell-label">{t.label}</span>
+                    <span className="hz-cell-val">{t.text}</span>
                 </div>
-            </Section>
-            <Section title="Aktuelle Werte">
-                <div className="aura-fl-card">
-                    <div className="aura-fl-row hz-valrow hz-valrow--plain">
-                        <span className="aura-fl-row-main">
-                            <span className="aura-fl-row-title hz-row-title">Vorlauf / Rücklauf</span>
-                        </span>
-                        <span className="hz-row-val">{vlrl(m)}</span>
-                    </div>
-                    {vs.slice(2).map((v) => (
-                        <div key={v.key} className="aura-fl-row hz-valrow hz-valrow--plain">
-                            <span className="aura-fl-row-main">
-                                <span className="aura-fl-row-title hz-row-title">{v.label}</span>
-                            </span>
-                            <span className="hz-row-val">{v.text}</span>
-                        </div>
-                    ))}
-                </div>
-            </Section>
-            <Section title="Auswertungen" foot="Zeile antippen, die Auswertung klappt darunter auf.">
-                <div className="aura-fl-card">
-                    {BOXES.map((b) => {
-                        const isOpen = openBox === b.key;
-                        return (
-                            <div key={b.key} className="hz-fold" data-open={isOpen || undefined}>
-                                <BoxRow
-                                    box={b}
-                                    onClick={() => setOpenBox(isOpen ? null : b.key)}
-                                    chev={<ChevronDown size={18} className={`aura-fl-chev hz-fold-chev${isOpen ? ' is-open' : ''}`} />}
-                                />
-                                {isOpen && <div className="hz-fold-body hz-detail">{details(b.key)}</div>}
-                            </div>
-                        );
-                    })}
-                </div>
-            </Section>
-        </>
+            ))}
+        </div>
     );
 }
 
-// ── D: Alles auf einer Seite ─────────────────────────────────────────────────
-function DraftD({ m, details }: Ctx) {
-    const [box, setBox] = useState<HzBox>('heizkreis');
-    const on = PARTS.filter((p) => m[p.key]).map((p) => p.label);
-    const strip = [
-        { key: 'vlrl', label: 'Vor- / Rücklauf', text: vlrl(m) },
-        { key: 'sp', label: 'Spreizung', text: val(m.spreizung, 1, 'K') },
-        { key: 'vs', label: 'Volumenstr.', text: val(m.volumenstrom, 0, 'l/min') },
-        { key: 'at', label: 'Außen', text: val(m.aussen, 1, '°C') },
-    ];
+/** G: vier schlichte Zeilen ohne Symbol */
+function ValuesPlain({ m }: { m: HzModel }) {
     return (
-        <>
-            <Section>
-                <div className="aura-fl-card">
-                    <StatusRow m={m} sub={`${m.sinceText}${on.length ? ` · ${on.join(', ')}` : ''}`} />
-                    <div className="hz-strip">
-                        {strip.map((s) => (
-                            <div key={s.key} className="hz-strip-item">
-                                <span className="hz-strip-val">{s.text}</span>
-                                <span className="hz-strip-label">{s.label}</span>
-                            </div>
-                        ))}
-                    </div>
+        <div className="aura-fl-card">
+            {four(m).map((v) => (
+                <div key={v.key} className="aura-fl-row hz-valrow hz-valrow--plain">
+                    <span className="aura-fl-row-main">
+                        <span className="aura-fl-row-title hz-row-title">{v.label}</span>
+                    </span>
+                    <span className="hz-row-val">{v.text}</span>
                 </div>
-            </Section>
-            <Section title="Auswertung">
-                <div className="aura-fl-card hz-inline">
-                    <div className="hz-tabs" role="tablist" aria-label="Auswertung">
-                        {BOXES.map((b) => (
-                            <button
-                                key={b.key}
-                                type="button"
-                                role="tab"
-                                aria-selected={box === b.key}
-                                className="hz-tab"
-                                data-on={box === b.key || undefined}
-                                onClick={() => setBox(b.key)}
-                            >
-                                {b.short}
-                            </button>
-                        ))}
-                    </div>
-                    <div key={box} className="hz-inline-body">
-                        {details(box)}
-                    </div>
-                </div>
-            </Section>
-        </>
+            ))}
+        </div>
     );
 }
