@@ -15,6 +15,11 @@
  *   --fl-wk-col-temp     Spaltenbreite Temperatur (C)
  *   --fl-wk-sum-big      große Außentemperatur im Überblick (C)
  *   --fl-wk-hero         Momentanwerte oben im Pop-up
+ *   --fl-wk-chart-h      Höhe des Diagramms im Pop-up
+ *   --fl-wk-chart-gap    Abstand zwischen Zeitraum, Blättern, Diagramm und Linien-Schaltern
+ *   --fl-wk-seg-h        Höhe des Segment-Schalters (Tag / 7 Tage / Monat)
+ *   --fl-wk-nav-h        Höhe der Blättern-Zeile
+ *   --fl-wk-col-stat     Spaltenbreite der Kennzahlen (Temperatur, Luftfeuchte)
  */
 body[data-fl-variant] {
     --fl-wk-page-x: 8px;
@@ -26,6 +31,11 @@ body[data-fl-variant] {
     --fl-wk-col-temp: 70px;
     --fl-wk-sum-big: 40px;
     --fl-wk-hero: 34px;
+    --fl-wk-chart-h: 180px;
+    --fl-wk-chart-gap: 10px;
+    --fl-wk-seg-h: 30px;
+    --fl-wk-nav-h: 36px;
+    --fl-wk-col-stat: 72px;
 
     --wk-ico-bg: var(--fl-wk-ico-bg, var(--text-secondary));
     --wk-ico-out-bg: var(--fl-wk-ico-out-bg, var(--accent, #0a84ff));
@@ -302,7 +312,7 @@ body[data-fl-variant] .wk-subpage > .wk-section > .aura-fl-card {
     margin-top: var(--fl-gap-title);
 }
 
-/* ── Pop-up eines Raums (RoomClimateSheet, look 'facelift') ─────────── */
+/* ── Pop-up eines Raums (RoomClimateSheet, look 'facelift' → WohnklimaRoomDetails) ─── */
 /* Fläche wie die Seite (graue Gruppierung), Kopf ohne Linie, Titel wie ein Seitentitel */
 body[data-fl-variant] .wk-sheet {
     background: var(--app-bg);
@@ -329,6 +339,8 @@ body[data-fl-variant] .wk-detail {
     display: flex;
     flex-direction: column;
 }
+/* Momentanwerte oben, in den Farben der Linien (--wk-temp/--wk-hum-line setzt die Komponente aus
+   denselben Theme-Variablen, die auch das Diagramm bekommt) */
 body[data-fl-variant] .wk-detail-hero {
     display: flex;
     gap: 24px;
@@ -351,30 +363,188 @@ body[data-fl-variant] .wk-detail-hero-val {
     color: var(--text-primary);
 }
 body[data-fl-variant] .wk-detail-hero-val--temp {
-    color: var(--temp-color, var(--text-primary));
+    color: var(--wk-temp, var(--temp-color, var(--text-primary)));
 }
 body[data-fl-variant] .wk-detail-hero-val--hum {
-    color: var(--wk-hum);
+    color: var(--wk-hum-line, var(--wk-hum));
 }
+
+/* Verlauf: Karte mit Zeitraum, Blättern, Diagramm und Linien-Schaltern, alles mit Abstand zueinander */
 body[data-fl-variant] .wk-detail-chartcard {
-    padding: 10px 12px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-wk-chart-gap);
+    padding: 12px;
 }
-/* Zeitraum-Wahl: Felder und Pfeile neutral (--control-soft), Auswahl bleibt in Akzentfarbe.
-   ChartPeriodNav setzt Farben inline, daher !important. */
-body[data-fl-variant] .wk-period button {
-    font-size: 12px !important;
-    padding: 4px 8px !important;
-    border-radius: 8px !important;
+/* Zeitraum: iOS-Segment-Schalter über die volle Breite */
+body[data-fl-variant] .wk-seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--fl-soft);
 }
-body[data-fl-variant] .wk-period button:not([style*='--accent']) {
-    background: var(--fl-soft) !important;
-    color: var(--control-soft, var(--text-secondary)) !important;
+body[data-fl-variant] .wk-seg-btn {
+    min-height: var(--fl-wk-seg-h);
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    font-weight: 500;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
 }
-body[data-fl-variant] .wk-period span {
-    font-size: 12px !important;
+body[data-fl-variant] .wk-seg-btn[data-on] {
+    background: var(--fl-wk-seg-on, var(--fl-line-strong));
+    font-weight: 600;
 }
-body[data-fl-variant] .wk-detail-stat {
+/* Blättern: Pfeil, Datum (öffnet die Auswahl), Pfeil, Heute */
+body[data-fl-variant] .wk-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+body[data-fl-variant] .wk-nav-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--fl-wk-nav-h);
+    height: var(--fl-wk-nav-h);
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-nav-arrow:active:not(:disabled),
+body[data-fl-variant] .wk-nav-date:active,
+body[data-fl-variant] .wk-nav-today:active:not(:disabled) {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wk-nav-arrow:disabled {
+    opacity: 0.3;
+}
+body[data-fl-variant] .wk-nav-date {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    height: var(--fl-wk-nav-h);
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-nav-date-ico,
+body[data-fl-variant] .wk-nav-date-chev {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-nav-date-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wk-nav-today {
+    flex-shrink: 0;
+    height: var(--fl-wk-nav-h);
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    color: var(--accent);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-nav-today:disabled {
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+body[data-fl-variant] .wk-chart {
+    position: relative;
+    height: var(--fl-wk-chart-h);
+    margin-top: 2px;
+}
+body[data-fl-variant] .wk-chart-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-chart-state-text {
+    font-size: var(--fl-font-sub);
+}
+/* Linien ein-/ausblenden: Punkt in Linienfarbe, ausgeblendet nur Umriss und blasser Text */
+body[data-fl-variant] .wk-legend {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+body[data-fl-variant] .wk-legend-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--fl-soft);
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-legend-btn[data-on] {
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--wk-legend-color);
+    background: transparent;
+}
+body[data-fl-variant] .wk-legend-btn[data-on] .wk-legend-dot {
+    background: var(--wk-legend-color);
+}
+body[data-fl-variant] .wk-legend-btn--temp {
+    --wk-legend-color: var(--wk-temp, var(--temp-color, var(--text-primary)));
+}
+body[data-fl-variant] .wk-legend-btn--hum {
+    --wk-legend-color: var(--wk-hum-line, var(--wk-hum));
+}
+
+/* Kennzahlen: Spalte Temperatur und Spalte Luftfeuchte, Köpfe rechts im Abschnittstitel */
+body[data-fl-variant] .wk-statcols {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: calc(16px + 6px - var(--fl-title-pad-x));
+    font-size: var(--fl-font-sub);
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-statcol {
+    width: var(--fl-wk-col-stat);
+    text-align: right;
+}
+body[data-fl-variant] .aura-fl-row.wk-detail-stat {
     min-height: 48px;
+    padding-right: 22px;
 }
 body[data-fl-variant] .wk-detail-stat-ico {
     display: inline-flex;
@@ -387,7 +557,7 @@ body[data-fl-variant] .wk-detail-stat-ico--min {
     background: var(--fl-wk-min, #7cbfa9);
 }
 body[data-fl-variant] .wk-detail-stat-ico--max {
-    background: var(--temp-color, var(--accent-red));
+    background: var(--wk-temp, var(--temp-color, var(--accent-red)));
 }
 body[data-fl-variant] .wk-detail-stat-avg {
     font-size: 16px;
@@ -396,10 +566,16 @@ body[data-fl-variant] .wk-detail-stat-avg {
 }
 body[data-fl-variant] .wk-detail-stat-val {
     flex-shrink: 0;
-    padding-right: 6px;
+    width: var(--fl-wk-col-stat);
+    text-align: right;
     font-size: var(--fl-wk-val);
     font-variant-numeric: tabular-nums;
-    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-detail-stat-val--temp {
+    color: var(--wk-temp, var(--temp-color, var(--text-primary)));
+}
+body[data-fl-variant] .wk-detail-stat-val--hum {
+    color: var(--wk-hum-line, var(--wk-hum));
 }
 
 /* ── Entwurfs-Umschalter: Buchstaben der Wohnklima-Entwürfe ─────────────── */

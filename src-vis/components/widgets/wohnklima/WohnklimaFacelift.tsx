@@ -208,8 +208,8 @@ function Section({ title, right, children, foot }: { title: string; right?: Reac
     );
 }
 
-/** Zeile wie in den iOS-Einstellungen: Symbol, Raum, darunter Luftfeuchte, rechts Temperatur. */
-function RoomRow({ room, t, h, open }: { room: Room; t: number | null; h: number | null; open: (r: Room) => void }) {
+/** Zeile wie in den iOS-Einstellungen: Symbol, Raum, rechts Temperatur. Luftfeuchte erst im Pop-up (Sascha, 13.11.). */
+function RoomRow({ room, t, open }: { room: Room; t: number | null; open: (r: Room) => void }) {
     const Icon = room.Icon;
     return (
         <button type="button" className="aura-fl-row aura-fl-row--nav wk-row" onClick={() => open(room)}>
@@ -218,9 +218,6 @@ function RoomRow({ room, t, h, open }: { room: Room; t: number | null; h: number
             </span>
             <span className="aura-fl-row-main">
                 <span className="aura-fl-row-title wk-row-title">{room.title}</span>
-                {room.humDp && (
-                    <span className="aura-fl-row-sub wk-row-sub">Luftfeuchte {fmt(h, room.decimals, '%')}</span>
-                )}
             </span>
             <span className="wk-row-val">{fmt(t, room.decimals, room.unit)}</span>
             <ChevronRight size={18} className="aura-fl-chev wk-chev" />
@@ -229,14 +226,14 @@ function RoomRow({ room, t, h, open }: { room: Room; t: number | null; h: number
 }
 
 // ── A: Liste je Etage ────────────────────────────────────────────────────────
-function DraftA({ groups, t, h, open }: DraftCtx) {
+function DraftA({ groups, t, open }: DraftCtx) {
     return (
         <>
             {groups.map((g) => (
                 <Section key={g.id} title={g.title}>
                     <div className="aura-fl-card wk-card">
                         {g.rooms.map((r) => (
-                            <RoomRow key={r.id} room={r} t={t(r)} h={h(r)} open={open} />
+                            <RoomRow key={r.id} room={r} t={t(r)} open={open} />
                         ))}
                     </div>
                 </Section>
@@ -365,7 +362,7 @@ function DraftD({ groups, t, h, open }: DraftCtx) {
                 <Section key={g.id} title={g.title}>
                     <div className="aura-fl-card wk-card">
                         {g.rooms.map((r) => (
-                            <RoomRow key={r.id} room={r} t={t(r)} h={h(r)} open={open} />
+                            <RoomRow key={r.id} room={r} t={t(r)} open={open} />
                         ))}
                     </div>
                 </Section>
@@ -414,7 +411,7 @@ function DraftD({ groups, t, h, open }: DraftCtx) {
                               <Section title="" foot="Raum antippen für Verlauf, Tiefst- und Höchstwert.">
                                   <div className="aura-fl-card wk-card">
                                       {sel.rooms.map((r) => (
-                                          <RoomRow key={r.id} room={r} t={t(r)} h={h(r)} open={open} />
+                                          <RoomRow key={r.id} room={r} t={t(r)} open={open} />
                                       ))}
                                   </div>
                               </Section>

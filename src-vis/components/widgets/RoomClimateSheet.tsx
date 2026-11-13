@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { usePortalTarget } from '../../contexts/PortalTargetContext';
 import { RoomClimateDetails } from './RoomClimateDetails';
+import { WohnklimaRoomDetails } from './wohnklima/WohnklimaRoomDetails';
 import { TEMP_COLOR_CSS } from '../../themes';
 import { useSheetDismiss } from './useSheetDismiss';
 import { formatNum } from '../../utils/formatValue';
@@ -82,17 +83,27 @@ export function RoomClimateSheet({
 
                 {/* Body: room climate details */}
                 <div className="rc-sheet-body">
-                    <RoomClimateDetails
-                        temperatureDp={temperatureDp}
-                        humidityDp={humidityDp}
-                        historyInstance={historyInstance}
-                        title={title}
-                        decimals={decimals}
-                        showCurrentHeader={false}
-                        chartHeight={150}
-                        showLastChangeFooter={showLastChangeFooter}
-                        look={look}
-                    />
+                    {fl ? (
+                        <WohnklimaRoomDetails
+                            temperatureDp={temperatureDp}
+                            humidityDp={humidityDp}
+                            historyInstance={historyInstance}
+                            title={title}
+                            decimals={decimals}
+                            showLastChangeFooter={showLastChangeFooter}
+                        />
+                    ) : (
+                        <RoomClimateDetails
+                            temperatureDp={temperatureDp}
+                            humidityDp={humidityDp}
+                            historyInstance={historyInstance}
+                            title={title}
+                            decimals={decimals}
+                            showCurrentHeader={false}
+                            chartHeight={150}
+                            showLastChangeFooter={showLastChangeFooter}
+                        />
+                    )}
                 </div>
             </div>
         </div>,
