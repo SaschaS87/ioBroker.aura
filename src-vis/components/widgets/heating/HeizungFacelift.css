@@ -1,0 +1,463 @@
+/*
+ * UI-Facelift, Brücken-Datei der Heizungs-Seite (Entwurfsphase, nur Dev-Vorschau).
+ *
+ * Nutzt die gemeinsamen Bausteine aus facelift-blocks.css (aura-fl-section, -card, -row, -foot …) und
+ * ergänzt nur, was die Heizung eigen hat (Klassen hz-*). Jede Regel hängt an body[data-fl-variant]; ohne
+ * das Attribut greift nichts. Farben nur über Theme-Variablen mit Rückfallkette. Seitenrand und Zeilenhöhe
+ * kommen aus dem Raster (--fl-page-x, --fl-row-min-h) und werden hier nicht gesetzt.
+ *
+ * Eigene Maße (Heizung):
+ *   --fl-hz-val          Wert rechts in der Zeile
+ *   --fl-hz-gap          Abstand zwischen zwei Karten ohne Abschnittstitel
+ *   --fl-hz-hero         Schrift des großen Status (B)
+ *   --fl-hz-cell-val     Wert in einer Kachel (B)
+ *   --fl-hz-cell-min-h   Mindesthöhe einer Kachel (B)
+ *   --fl-hz-strip-val    Wert im Werte-Streifen (D)
+ *   --fl-hz-seg-h        Höhe eines Segment-Schalters (Zeitraum, in D auch die Auswertung)
+ *   --fl-hz-nav-h        Höhe der Blättern-Zeile über einem Diagramm
+ *   --fl-hz-detail-pad   Innenrand um eine Auswertung (Diagramme)
+ * Eigene Farben (je Theme überschreibbar):
+ *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen / Warmwasser (wie die Linien in den Diagrammen)
+ *   --fl-hz-ico-bg / --fl-hz-ico-fg   Symbolfläche und Zeichen
+ */
+body[data-fl-variant] {
+    --fl-hz-val: 17px;
+    --fl-hz-gap: 12px;
+    --fl-hz-hero: 22px;
+    --fl-hz-cell-val: 20px;
+    --fl-hz-cell-min-h: 72px;
+    --fl-hz-strip-val: 15px;
+    --fl-hz-seg-h: 30px;
+    --fl-hz-nav-h: 36px;
+    --fl-hz-detail-pad: 12px;
+
+    --hz-heat: var(--fl-hz-heat, #4a9e2f);
+    --hz-water: var(--fl-hz-water, #2f7fd6);
+    --hz-ico-bg: var(--fl-hz-ico-bg, var(--text-secondary));
+    --hz-ico-fg: var(--fl-hz-ico-fg, var(--widget-bg, #fff));
+}
+
+/* ── Seite ───────────────────────────────────────────────────────────── */
+/* erster Abschnitt: weniger Luft unter dem großen Seitentitel (wie Wohnklima) */
+body[data-fl-variant] .hz-page > .hz-section:first-child > .hz-section-head,
+body[data-fl-variant] .hz-b-home > .hz-section:first-child > .hz-section-head {
+    padding-top: var(--fl-gap-title);
+}
+/* Karte ohne Abschnittstitel: eigener Abstand nach oben */
+body[data-fl-variant] .hz-section--plain {
+    margin-top: var(--fl-hz-gap);
+}
+body[data-fl-variant] .hz-page > .hz-section--plain:first-child,
+body[data-fl-variant] .hz-b-home > .hz-section--plain:first-child {
+    margin-top: var(--fl-gap-title);
+}
+
+/* Betriebsfarbe: an jedem Element mit data-mode verfügbar */
+body[data-fl-variant] [data-mode='heat'] {
+    --hz-mode: var(--hz-heat);
+}
+body[data-fl-variant] [data-mode='water'] {
+    --hz-mode: var(--hz-water);
+}
+body[data-fl-variant] [data-mode='idle'] {
+    --hz-mode: var(--hz-ico-bg);
+}
+
+/* ── Zeilen ──────────────────────────────────────────────────────────── */
+body[data-fl-variant] .hz-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--hz-ico-bg);
+    color: var(--hz-ico-fg);
+}
+body[data-fl-variant] .hz-ico > svg {
+    stroke-width: 1.7;
+}
+body[data-fl-variant] .hz-ico--mode {
+    background: var(--hz-mode, var(--hz-ico-bg));
+}
+/* Pumpe / Abtauen / Heizstab: aktiv in der Farbe „in Ordnung" */
+body[data-fl-variant] .hz-ico[data-on] {
+    background: var(--fl-ok);
+}
+body[data-fl-variant] .hz-row-title {
+    color: var(--text-primary);
+}
+body[data-fl-variant] .aura-fl-row.hz-valrow,
+body[data-fl-variant] .aura-fl-row.hz-status {
+    padding-right: 16px;
+}
+body[data-fl-variant] .hz-row-val {
+    flex-shrink: 0;
+    font-size: var(--fl-hz-val);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+body[data-fl-variant] .hz-row-val--off {
+    color: var(--text-secondary);
+}
+/* Zeilen ohne Symbol (C): Trennlinie beginnt am Text */
+body[data-fl-variant] .hz-valrow--plain + .hz-valrow--plain::before {
+    left: 16px;
+}
+
+/* ── Marken Pumpe · Abtauen · Heizstab (B, C) ────────────────────────── */
+body[data-fl-variant] .hz-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 18px;
+}
+body[data-fl-variant] .hz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+body[data-fl-variant] .hz-chip[data-on] {
+    color: var(--fl-ok);
+    opacity: 1;
+    font-weight: 500;
+}
+body[data-fl-variant] [data-mode='heat'] .hz-chip[data-on],
+body[data-fl-variant] [data-mode='water'] .hz-chip[data-on] {
+    color: var(--hz-mode);
+}
+body[data-fl-variant] .hz-chiprow {
+    position: relative;
+    padding: 12px 16px 14px;
+}
+body[data-fl-variant] .hz-chiprow > .hz-chips {
+    justify-content: space-between;
+}
+body[data-fl-variant] .hz-chiprow::before,
+body[data-fl-variant] .hz-strip::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: var(--fl-sep-inset-r);
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+
+/* ── B: großer Status und Kacheln ────────────────────────────────────── */
+body[data-fl-variant] .hz-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 18px 16px 16px;
+    text-align: center;
+}
+body[data-fl-variant] .hz-hero[data-mode='heat'],
+body[data-fl-variant] .hz-hero[data-mode='water'] {
+    background: color-mix(in srgb, var(--hz-mode) 16%, var(--fl-card-bg));
+    border-color: color-mix(in srgb, var(--hz-mode) 40%, var(--fl-card-border));
+}
+body[data-fl-variant] .hz-hero-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fl-hz-hero);
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .hz-hero[data-mode='heat'] .hz-hero-title,
+body[data-fl-variant] .hz-hero[data-mode='water'] .hz-hero-title {
+    color: var(--hz-mode);
+}
+body[data-fl-variant] .hz-hero-sub {
+    font-size: var(--fl-font-meta);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .hz-hero > .hz-chips {
+    margin-top: 10px;
+}
+body[data-fl-variant] .hz-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+body[data-fl-variant] .hz-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: var(--fl-hz-cell-min-h);
+    padding: 10px 14px 10px 16px;
+}
+/* Haarlinien: senkrecht zwischen den Spalten, waagerecht ab der zweiten Reihe */
+body[data-fl-variant] .hz-cell:nth-child(2n)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 1px;
+    background: var(--fl-line);
+    transform: scaleX(0.6);
+}
+body[data-fl-variant] .hz-cell:nth-child(n + 3)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 0;
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .hz-cell:nth-child(2n + 4)::before {
+    left: 0;
+    right: var(--fl-sep-inset-r);
+}
+body[data-fl-variant] .hz-cell-label {
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .hz-cell-val {
+    font-size: var(--fl-hz-cell-val);
+    font-weight: 500;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+/* ── C: Aufklappen in der Karte ──────────────────────────────────────── */
+body[data-fl-variant] .hz-fold + .hz-fold > .aura-fl-row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--fl-sep-inset);
+    right: var(--fl-sep-inset-r);
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .hz-fold-chev {
+    transition: transform 0.2s ease;
+}
+body[data-fl-variant] .hz-fold-chev.is-open {
+    transform: rotate(180deg);
+}
+body[data-fl-variant] .hz-fold-body {
+    border-top: 1px solid var(--fl-line);
+}
+
+/* ── D: Werte-Streifen und Segment-Schalter ──────────────────────────── */
+body[data-fl-variant] .hz-strip {
+    position: relative;
+    display: grid;
+    grid-template-columns: max-content auto auto auto;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 16px 12px;
+}
+body[data-fl-variant] .hz-strip-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+body[data-fl-variant] .hz-strip-val {
+    font-size: var(--fl-hz-strip-val);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+body[data-fl-variant] .hz-strip-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .hz-inline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: var(--fl-hz-detail-pad);
+}
+body[data-fl-variant] .hz-seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .hz-seg-btn {
+    min-width: 0;
+    min-height: var(--fl-hz-seg-h);
+    padding: 0 2px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .hz-seg-btn[data-on] {
+    background: var(--fl-hz-seg-on, var(--fl-line-strong));
+    font-weight: 600;
+}
+
+/* Auswahl der Auswertung (D): Reiter mit Strich, damit sie sich vom Zeitraum-Schalter darunter abhebt */
+body[data-fl-variant] .hz-tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    margin: -4px -4px 0;
+    border-bottom: 1px solid var(--fl-line);
+}
+body[data-fl-variant] .hz-tab {
+    position: relative;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .hz-tab[data-on] {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+body[data-fl-variant] .hz-tab[data-on]::after {
+    content: '';
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--text-primary);
+}
+
+/* ── Zeitraum über einem Diagramm (HeizungPeriodNav): zwei Zeilen wie im Wohnklima-Pop-up ─ */
+body[data-fl-variant] .hz-pnav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+body[data-fl-variant] .hz-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+body[data-fl-variant] .hz-nav-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--fl-hz-nav-h);
+    height: var(--fl-hz-nav-h);
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .hz-nav-arrow:active:not(:disabled),
+body[data-fl-variant] .hz-nav-date:active,
+body[data-fl-variant] .hz-nav-today:active:not(:disabled) {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .hz-nav-arrow:disabled {
+    opacity: 0.3;
+}
+body[data-fl-variant] .hz-nav-date {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    height: var(--fl-hz-nav-h);
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .hz-nav-date-ico {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .hz-nav-date-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .hz-nav-today {
+    flex-shrink: 0;
+    height: var(--fl-hz-nav-h);
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    color: var(--accent);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .hz-nav-today:disabled {
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+/* ── Auswertung (HeatingDetails) in Karte, Pop-up oder Unterseite ────── */
+body[data-fl-variant] .hz-detail {
+    padding: var(--fl-hz-detail-pad);
+}
+body[data-fl-variant] .hz-subpage > .hz-detail {
+    margin-top: var(--fl-gap-title);
+}
+
+/* ── Pop-up (HeizungSheet): Fläche wie die Seite, Kopf ohne Linie ────── */
+body[data-fl-variant] .hz-sheet {
+    background: var(--app-bg);
+    border-radius: var(--fl-card-radius) var(--fl-card-radius) 0 0;
+}
+body[data-fl-variant] .hz-sheet .rc-sheet-header {
+    border-bottom: 0;
+    padding: 2px var(--fl-page-x) 4px;
+}
+body[data-fl-variant] .hz-sheet .rc-sheet-title {
+    font-size: 20px;
+    font-weight: 600;
+}
+body[data-fl-variant] .hz-sheet .rc-sheet-grip-handle {
+    width: 36px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--fl-line-strong);
+}
+body[data-fl-variant] .hz-sheet .rc-sheet-body {
+    padding-top: 8px;
+    padding-bottom: 8px; /* seitlich: Baustein .aura-fl-sheet-body */
+}

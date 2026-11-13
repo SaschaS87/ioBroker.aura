@@ -5,6 +5,8 @@ import { useIoBroker } from '../../hooks/useIoBroker';
 import { useMultiSeriesData, type EChartSeriesConfig } from '../../hooks/useMultiSeriesData';
 import { formatNum } from '../../utils/formatValue';
 import { ChartPeriodNav } from './ChartPeriodNav';
+import { HeizungPeriodNav } from './heating/HeizungPeriodNav';
+import { useHeizungDraft } from './heating/heizungDraft';
 import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 import { SensorCheckDetails } from './heating/SensorCheckChart';
 import { EnergyDetails } from './heating/EnergyDetails';
@@ -172,6 +174,8 @@ function HeatingDetailsCharts({
     const { subscribe, getState, connected } = useIoBroker();
     const [mode, setMode] = useState<PeriodMode>(initialMode);
     const [offset, setOffset] = useState(0);
+    // UI-Facelift (nur Dev-Vorschau, sonst null): Zeitraum-Wahl in zwei Zeilen
+    const PeriodNav = useHeizungDraft() ? HeizungPeriodNav : ChartPeriodNav;
 
     const viewWindow = useMemo(() => periodWindow(mode, offset), [mode, offset]);
 
@@ -570,7 +574,7 @@ function HeatingDetailsCharts({
 
     return (
         <div className="flex flex-col gap-2 w-full">
-            <ChartPeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />
+            <PeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />
 
             <div className="relative w-full" style={{ height: chartHeight }}>
                 {anyLoading && !hasData && (

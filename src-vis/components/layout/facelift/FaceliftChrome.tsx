@@ -23,6 +23,7 @@ import {
     type FaceliftVariant,
 } from './faceliftVariant';
 import { WOHNKLIMA_DRAFTS, useWohnklimaDraftStore } from '../../widgets/wohnklima/wohnklimaDraft';
+import { HEIZUNG_DRAFTS, useHeizungDraftStore } from '../../widgets/heating/heizungDraft';
 import './facelift.css';
 import './facelift-blocks.css';
 
@@ -70,6 +71,9 @@ export function FaceliftSwitch({
     const wkDraft = useWohnklimaDraftStore((s) => s.draft);
     const setWkDraft = useWohnklimaDraftStore((s) => s.setDraft);
     const showWk = tabSlug === 'wohnklima' && choice !== 'IST';
+    const hzDraft = useHeizungDraftStore((s) => s.draft);
+    const setHzDraft = useHeizungDraftStore((s) => s.setDraft);
+    const showHz = tabSlug === 'heizung' && choice !== 'IST';
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             <button
@@ -91,6 +95,23 @@ export function FaceliftSwitch({
                             aria-pressed={d.key === wkDraft}
                             title={d.name}
                             onClick={() => setWkDraft(d.key)}
+                        >
+                            {d.label}
+                        </button>
+                    ))}
+                </span>
+            )}
+            {showHz && (
+                <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Heizungs-Seite">
+                    {HEIZUNG_DRAFTS.map((d) => (
+                        <button
+                            key={d.key}
+                            type="button"
+                            className="aura-fl-switch-draft"
+                            data-sel={d.key === hzDraft || undefined}
+                            aria-pressed={d.key === hzDraft}
+                            title={d.name}
+                            onClick={() => setHzDraft(d.key)}
                         >
                             {d.label}
                         </button>

@@ -9,6 +9,8 @@
 import { useState, type ReactNode } from 'react';
 import { BarChart2, Loader } from 'lucide-react';
 import { ChartPeriodNav } from '../ChartPeriodNav';
+import { HeizungPeriodNav } from './HeizungPeriodNav';
+import { useHeizungDraft } from './heizungDraft';
 import { formatNum } from '../../../utils/formatValue';
 import type { PeriodMode } from '../../../utils/chartPeriod';
 import { niceRange, type Grid } from '../../../utils/sensorCheck';
@@ -187,9 +189,11 @@ export function SensorFrame({
     const [offset, setOffset] = useState(0);
     const m = useSensorCheckData(mode, offset, props.historyInstance, props.dps);
     const body = m.hasData ? chart(m, mode, offset) : null;
+    // UI-Facelift (nur Dev-Vorschau, sonst null): Zeitraum-Wahl in zwei Zeilen
+    const PeriodNav = useHeizungDraft() ? HeizungPeriodNav : ChartPeriodNav;
     return (
         <div className="flex flex-col gap-2 w-full">
-            <ChartPeriodNav
+            <PeriodNav
                 mode={mode}
                 offset={offset}
                 onMode={(x) => {

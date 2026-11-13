@@ -4,6 +4,8 @@ import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
 import { HeatingDetails } from './HeatingDetails';
 import type { EnergyDps } from './heating/energyModel';
+import { HeizungFacelift, type HzBox } from './heating/HeizungFacelift';
+import { useHeizungDraft } from './heating/heizungDraft';
 import type { WidgetProps } from '../../types';
 
 /**
@@ -161,6 +163,7 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const dp = (k: DpKey) => (o[k] as string) || DEFAULT_DP[k];
     const historyInstance = (o.historyInstance as string) || 'influxdb.0';
+    const hzDraft = useHeizungDraft();
     const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie' | null>(null);
     const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie') => {
         if (editMode) return;
@@ -239,6 +242,72 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     const chipOn = mode === 'idle' ? '#4a9e2f' : style.color;
 
     const vlrl = vorlauf !== null && ruecklauf !== null ? `${formatNum(vorlauf, 1)} / ${formatNum(ruecklauf, 1)} °C` : '–';
+
+    // UI-Facelift, Entwurfsphase (nur Dev-Vorschau, sonst null): dieselben Werte und dieselben Auswertungen,
+    // neu angeordnet. Der bisherige Aufbau darunter bleibt unverändert.
+    if (hzDraft && !editMode) {
+        const chart = { historyInstance, vorlaufDp: dp('chartVorlaufDp'), ruecklaufDp: dp('chartRuecklaufDp') };
+        const details = (b: HzBox) => {
+            switch (b) {
+                case 'heizkreis':
+                    return <HeatingDetails variant="circuit" {...chart} sollDp={dp('sollHk1Dp')} />;
+                case 'betrieb':
+                    return (
+                        <HeatingDetails
+                            variant="operation"
+                            {...chart}
+                            verdichterDp={dp('verdichterDp')}
+                            pumpeDp={dp('pumpeDp')}
+                            heizenDp={dp('heizenDp')}
+                            warmwasserDp={dp('warmwasserDp')}
+                            chartHeight={300}
+                        />
+                    );
+                case 'warmwasser':
+                    return (
+                        <HeatingDetails
+                            variant="water"
+                            {...chart}
+                            wwIstDp={dp('wwIstDp')}
+                            wwSollDp={dp('wwSollDp')}
+                            wwHysObenDp={dp('wwHysObenDp')}
+                            wwHysUntenDp={dp('wwHysUntenDp')}
+                        />
+                    );
+                case 'aussen':
+                    return (
+                        <HeatingDetails
+                            variant="sensor"
+                            historyInstance={historyInstance}
+                            aussenDp={dp('aussenDp')}
+                            netatmoDps={[dp('netatmo1Dp'), dp('netatmo2Dp'), dp('netatmo3Dp')]}
+                            luxDp={dp('luxVorneDp')}
+                        />
+                    );
+                default:
+                    return <HeatingDetails variant="energy" historyInstance={historyInstance} energyDps={energyDps} />;
+            }
+        };
+        return (
+            <HeizungFacelift
+                draft={hzDraft}
+                details={details}
+                m={{
+                    mode,
+                    modeLabel,
+                    sinceText,
+                    pumpe: asBool(pumpeVal),
+                    abtauen: asBool(abtauenVal),
+                    heizstab: asBool(heizstabVal),
+                    vorlauf,
+                    ruecklauf,
+                    spreizung,
+                    volumenstrom,
+                    aussen,
+                }}
+            />
+        );
+    }
 
     return (
         // No outer frame (frame set transparent) and no frame padding: the inner
