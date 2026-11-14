@@ -658,3 +658,73 @@ body[data-fl-variant] .hz-sim-btn[data-sel] {
     background: color-mix(in srgb, var(--accent-yellow) 45%, transparent);
     color: var(--text-primary);
 }
+
+/* ── Unterseiten der Auswertungen (HzSubpage, 14.11.2026) ────────────── */
+/* Energie: Abschnitte stehen in einem Hülle-Element (liest die Theme-Farben fürs Diagramm) */
+body[data-fl-variant] .hz-energy {
+    display: contents;
+}
+/* zweite Karte direkt unter einer Karte im selben Abschnitt */
+body[data-fl-variant] .hz-section > .aura-fl-card + .aura-fl-card {
+    margin-top: var(--fl-hz-gap);
+}
+
+/* Kennzahlen als Raster in der Diagramm-Karte (Entwurf B) */
+body[data-fl-variant] .hz-kz {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+body[data-fl-variant] .hz-kz-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .hz-kz-label,
+body[data-fl-variant] .hz-kz-sub {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .hz-kz-val {
+    font-size: var(--fl-hz-val);
+    line-height: var(--fl-lh-title);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+/* Energie „Seit Inbetriebnahme": Kopfzeile Heizen | Warmwasser, darunter Zeilen mit zwei Werten */
+body[data-fl-variant] .hz-lt {
+    --hz-lt-col: 76px;
+}
+body[data-fl-variant] .hz-lt-head {
+    display: flex;
+    gap: 12px;
+    padding: 10px 16px 0;
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    font-weight: 600;
+}
+body[data-fl-variant] .hz-lt-head > span:first-child {
+    flex: 1;
+}
+body[data-fl-variant] .hz-lt-head > span:not(:first-child),
+body[data-fl-variant] .hz-lt-val {
+    flex-shrink: 0;
+    width: var(--hz-lt-col);
+    text-align: right;
+}
+body[data-fl-variant] .hz-lt-val {
+    font-size: var(--fl-hz-val);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}

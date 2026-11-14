@@ -4,8 +4,11 @@
  *
  * Reihenfolge: Zeitraum, Kennzahlen, Balken Strom/Tag, Linie Arbeitszahl/Tag, Heatmap Tag x Uhrzeit, Tabelle.
  * Feste 30 Tage, keine Zeitraum-Navigation. Der laufende Tag ist schwaecher gezeichnet.
+ *
+ * UI-Facelift (Unterseite, useHzSubpage): gleiche Zahlen und Diagramme, aber als Abschnitte mit Titel,
+ * Kennzahlen und Lebenszeit-Tabelle als Zeilen (aura-fl-row), jedes Diagramm in eigener Karte.
  */
-import { useMemo } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { Legend } from './sensorCheckParts';
@@ -17,27 +20,29 @@ import {
     PARTIAL_OPACITY,
     SectionTitle,
     Tile,
-    axisLabel,
-    axisLineStyle,
+    axisLabelOf,
+    axisLineOf,
     dm,
     dot,
     num,
-    splitLineStyle,
+    splitLineOf,
     tooltipBase,
 } from './energyParts';
 import { formatNum } from '../../../utils/formatValue';
+import { useChartInk, type ChartInk } from './chartInk';
+import { HzSection, HzStatRows, useHzSubpage, type HzStat } from './HzSubpage';
 
 type Opt = Record<string, unknown>;
 
 const GRID = { left: 38, right: 10, top: 10, bottom: 24 };
 
 /** X-Achse mit einem Tag je Kategorie; Beschriftung TT.MM. */
-function dayAxis(m: EnergyModel, show = true): Opt {
+function dayAxis(m: EnergyModel, ink: ChartInk, show = true): Opt {
     return {
         type: 'category',
         data: m.days.map((d) => d.key),
         axisLabel: {
-            ...axisLabel,
+            ...axisLabelOf(ink),
             show,
             interval: 4,
             formatter: (v: string) => {
@@ -45,7 +50,7 @@ function dayAxis(m: EnergyModel, show = true): Opt {
                 return d ? dm(d.start).slice(0, 5) : v;
             },
         },
-        axisLine: axisLineStyle,
+        axisLine: axisLineOf(ink),
         axisTick: { show: false },
         splitLine: { show: false },
     };
@@ -56,7 +61,7 @@ const dayHead = (m: EnergyModel, i: number): string => {
     return `${dm(d.start)}${d.partial ? ' · läuft noch' : ''}`;
 };
 
-function barOption(m: EnergyModel): EChartsOption {
+function barOption(m: EnergyModel, ink: ChartInk): EChartsOption {
     const item = (v: number, color: string, partial: boolean) => ({
         value: v,
         itemStyle: { color, opacity: partial ? PARTIAL_OPACITY : 1 },
@@ -64,12 +69,12 @@ function barOption(m: EnergyModel): EChartsOption {
     return {
         animation: false,
         grid: GRID,
-        xAxis: dayAxis(m),
+        xAxis: dayAxis(m, ink),
         yAxis: {
             type: 'value',
-            axisLabel: axisLabel,
-            axisLine: axisLineStyle,
-            splitLine: splitLineStyle,
+            axisLabel: axisLabelOf(ink),
+            axisLine: axisLineOf(ink),
+            splitLine: splitLineOf(ink),
         },
         tooltip: {
             trigger: 'axis',
@@ -107,20 +112,20 @@ function barOption(m: EnergyModel): EChartsOption {
     } as unknown as EChartsOption;
 }
 
-function azOption(m: EnergyModel): EChartsOption {
+function azOption(m: EnergyModel, ink: ChartInk): EChartsOption {
     return {
         animation: false,
         grid: GRID,
-        xAxis: dayAxis(m),
+        xAxis: dayAxis(m, ink),
         // Zweite, versteckte Achse 0..1 nur fuer die Heiztag-Hinterlegung (eine markArea auf einer
         // Kategorie-Achse wird 0 px breit).
         yAxis: [
             {
                 type: 'value',
                 min: 0,
-                axisLabel: axisLabel,
-                axisLine: axisLineStyle,
-                splitLine: splitLineStyle,
+                axisLabel: axisLabelOf(ink),
+                axisLine: axisLineOf(ink),
+                splitLine: splitLineOf(ink),
             },
             { type: 'value', show: false, min: 0, max: 1 },
         ],
@@ -171,19 +176,19 @@ function azOption(m: EnergyModel): EChartsOption {
     } as unknown as EChartsOption;
 }
 
-function heatOption(m: EnergyModel): EChartsOption {
+function heatOption(m: EnergyModel, ink: ChartInk): EChartsOption {
     const cells: [number, number, number, number][] = [];
     m.hourly.forEach((row, di) => row.forEach((v, h) => cells.push([di, h, Math.min(v, HEAT_MAX), v])));
     return {
         animation: false,
         grid: { left: 30, right: 10, top: 6, bottom: 52 },
-        xAxis: { ...dayAxis(m), splitArea: { show: false } },
+        xAxis: { ...dayAxis(m, ink), splitArea: { show: false } },
         yAxis: {
             type: 'category',
             data: Array.from({ length: 24 }, (_, h) => String(h)),
             inverse: true,
-            axisLabel: { ...axisLabel, interval: 2 },
-            axisLine: axisLineStyle,
+            axisLabel: { ...axisLabelOf(ink), interval: 2 },
+            axisLine: axisLineOf(ink),
             axisTick: { show: false },
             splitLine: { show: false },
         },
@@ -199,7 +204,7 @@ function heatOption(m: EnergyModel): EChartsOption {
             itemHeight: 110,
             calculable: false,
             text: [`${formatNum(HEAT_MAX, 1)} kWh`, '0'],
-            textStyle: { color: C.axis, fontSize: 10 },
+            textStyle: { color: ink.axis, fontSize: 10 },
             inRange: { color: ['rgba(136,136,136,0.12)', '#f2c879', '#e8873a', '#c0392b'] },
         },
         tooltip: {
@@ -220,7 +225,7 @@ function heatOption(m: EnergyModel): EChartsOption {
                 type: 'heatmap',
                 data: cells,
                 itemStyle: { borderColor: 'rgba(0,0,0,0)', borderWidth: 1 },
-                emphasis: { itemStyle: { borderColor: C.axis, borderWidth: 1 } },
+                emphasis: { itemStyle: { borderColor: ink.zero, borderWidth: 1 } },
             },
         ],
     } as unknown as EChartsOption;
@@ -270,18 +275,160 @@ function LifetimeTable({ m }: { m: EnergyModel }) {
     );
 }
 
+/** Lebenszeit-Werte als Facelift-Zeilen: Kopfzeile Heizen/Warmwasser, je Größe eine Zeile mit zwei Werten. */
+function LifetimeRows({ m }: { m: EnergyModel }) {
+    const l = m.lifetime;
+    const rows: { label: string; sub?: string; heizen: string; ww: string }[] = [
+        { label: 'Strom', sub: 'in MWh', heizen: num(l.pHeizen, 2), ww: num(l.pWw, 2) },
+        { label: 'Wärme', sub: 'erzeugt, in MWh', heizen: num(l.wmHeizen, 2), ww: num(l.wmWw, 2) },
+        { label: 'Arbeitszahl', heizen: num(l.table.azHeizen, 2), ww: num(l.table.azWw, 2) },
+        { label: 'Verdichter', sub: 'Laufzeit in h', heizen: num(l.lzVerdHeizen, 0), ww: num(l.lzVerdWw, 0) },
+        { label: 'Zusatzheizung', sub: 'Laufzeit in h', heizen: num(l.lzNeHeizen, 0), ww: num(l.lzNeWw, 0) },
+    ];
+    return (
+        <>
+            <div className="aura-fl-card hz-lt">
+                <div className="hz-lt-head" aria-hidden>
+                    <span />
+                    <span style={{ color: C.heizen }}>Heizen</span>
+                    <span style={{ color: C.warmwasser }}>Warmwasser</span>
+                </div>
+                {rows.map((r) => (
+                    <div key={r.label} className="aura-fl-row hz-valrow hz-valrow--plain hz-lt-row">
+                        <span className="aura-fl-row-main">
+                            <span className="aura-fl-row-title hz-row-title">{r.label}</span>
+                            {r.sub && <span className="aura-fl-row-sub">{r.sub}</span>}
+                        </span>
+                        <span className="hz-lt-val" aria-label={`Heizen ${r.heizen}`}>
+                            {r.heizen}
+                        </span>
+                        <span className="hz-lt-val" aria-label={`Warmwasser ${r.ww}`}>
+                            {r.ww}
+                        </span>
+                    </div>
+                ))}
+            </div>
+            <HzStatRows
+                stats={[
+                    { label: 'Arbeitszahl gesamt', value: num(l.table.azGesamt, 2), color: C.az },
+                    { label: 'Verdichterstarts', value: num(l.verdStarts, 0) },
+                ]}
+            />
+        </>
+    );
+}
+
+function ChartCard({ height, legend, option }: { height: number; legend?: ReactNode; option: EChartsOption }) {
+    return (
+        <div className="aura-fl-card hz-detail">
+            <div className="flex flex-col gap-2 w-full">
+                {legend}
+                <div style={{ height }}>
+                    <ReactECharts option={option} style={{ width: '100%', height: '100%' }} opts={{ renderer: 'canvas' }} notMerge />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function EnergyDetails({ historyInstance, dps }: { historyInstance: string; dps: EnergyDps }) {
     const m = useEnergyData(historyInstance, dps);
-    const barOpt = useMemo(() => barOption(m), [m]);
-    const azOpt = useMemo(() => azOption(m), [m]);
-    const heatOpt = useMemo(() => heatOption(m), [m]);
+    const inkRef = useRef<HTMLDivElement>(null);
+    const ink = useChartInk(inkRef);
+    const inkKey = `${ink.axis}|${ink.axisLine}|${ink.grid}|${ink.zero}`;
+    /* eslint-disable react-hooks/exhaustive-deps */
+    const barOpt = useMemo(() => barOption(m, ink), [m, inkKey]);
+    const azOpt = useMemo(() => azOption(m, ink), [m, inkKey]);
+    const heatOpt = useMemo(() => heatOption(m, ink), [m, inkKey]);
+    /* eslint-enable react-hooks/exhaustive-deps */
+    const sub = useHzSubpage();
     const t = m.totals;
     const first = m.days[0];
     const last = m.days[m.days.length - 1];
 
+    if (sub) {
+        if (!m.hasData)
+            return (
+                <div ref={inkRef} className="aura-fl-card hz-detail">
+                    <EnergyFrame loading={m.loading} hasData={false}>
+                        {null}
+                    </EnergyFrame>
+                </div>
+            );
+        const kz: HzStat[] = [
+            { label: 'Stromaufnahme', value: num(t.S, 1, ' kWh'), sub: `davon Heizen ${num(t.HS, 1, ' kWh')}` },
+            { label: 'Erzeugte Wärme', value: num(t.W, 1, ' kWh') },
+            { label: 'Arbeitszahl gesamt', value: num(t.azGesamt, 2), color: C.az },
+            {
+                label: 'Arbeitszahl Heizen',
+                value: num(t.azHeizen, 2),
+                sub: `${t.heatDays} ${t.heatDays === 1 ? 'Heiztag' : 'Heiztage'}`,
+                color: C.heizen,
+            },
+            { label: 'Arbeitszahl Warmwasser', value: num(t.azWw, 2), color: C.warmwasser },
+            { label: 'Warmwasser-Anteil am Strom', value: num(t.wwAnteil, 0, ' %'), color: C.warmwasser },
+        ];
+        return (
+            <div ref={inkRef} className="hz-energy">
+                <HzSection
+                    title="Letzte 30 Tage"
+                    foot={`${dm(first.start)}–${dm(last.start)}, der heutige Tag läuft noch und ist in den Diagrammen blasser.`}
+                >
+                    <HzStatRows stats={kz} />
+                </HzSection>
+                <HzSection title="Strom pro Tag" foot="Kilowattstunden je Tag, aufgeteilt auf Heizen und Warmwasser.">
+                    <ChartCard
+                        height={190}
+                        option={barOpt}
+                        legend={
+                            <Legend
+                                items={[
+                                    { label: 'Heizen', color: C.heizen, kind: 'area' },
+                                    { label: 'Warmwasser', color: C.warmwasser, kind: 'area' },
+                                ]}
+                            />
+                        }
+                    />
+                </HzSection>
+                <HzSection
+                    title="Arbeitszahl pro Tag"
+                    foot="Erzeugte Wärme geteilt durch Strom. Rötlich hinterlegt sind Heiztage."
+                >
+                    <ChartCard
+                        height={170}
+                        option={azOpt}
+                        legend={
+                            <Legend
+                                items={[
+                                    { label: 'Arbeitszahl', color: C.az, kind: 'thick' },
+                                    { label: 'Heiztag', color: C.heizen, kind: 'area' },
+                                ]}
+                            />
+                        }
+                    />
+                </HzSection>
+                <HzSection
+                    title="Wann wird Strom verbraucht"
+                    foot="Kilowattstunden je Stunde: eine Spalte je Tag, oben Mitternacht. Je kräftiger die Farbe, desto mehr."
+                >
+                    <ChartCard height={300} option={heatOpt} />
+                </HzSection>
+                <HzSection
+                    title="Seit Inbetriebnahme"
+                    foot={`Die Wärme der Zusatzheizung (Heizen ${num(m.lifetime.wmNeHeizen, 2)} MWh, Warmwasser ${num(
+                        m.lifetime.wmNeWw,
+                        2,
+                    )} MWh) ist in diesen Zahlen nicht enthalten.`}
+                >
+                    <LifetimeRows m={m} />
+                </HzSection>
+            </div>
+        );
+    }
+
     return (
         <EnergyFrame loading={m.loading} hasData={m.hasData}>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+            <div ref={inkRef} style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 {dm(first.start)}–{dm(last.start)} · heute läuft noch
             </div>
 

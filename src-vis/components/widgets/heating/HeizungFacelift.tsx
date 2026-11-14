@@ -61,6 +61,7 @@ import {
     type HeizungHeadLay,
     type HeizungScene,
 } from './heizungDraft';
+import { HZ_KZ, HZ_SOLL, HZ_SUB_PICK, HzSubpageProvider, useHzSubStore } from './HzSubpage';
 import './HeizungFacelift.css';
 
 export type HzBox = 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie';
@@ -200,6 +201,10 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
         if (hidden) setBox(null);
     }, [hidden]);
     const sel = BOXES.find((b) => b.key === box) ?? null;
+    const kz = useHzSubStore((s) => s.kz);
+    const soll = useHzSubStore((s) => s.soll);
+    const setKz = useHzSubStore((s) => s.setKz);
+    const setSoll = useHzSubStore((s) => s.setSoll);
 
     const home = (
         <div className="hz-home">
@@ -330,8 +335,24 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
                                   backFallback="Zurück"
                                   onBack={() => setBox(null)}
                               />
-                              <div className="aura-fl-card hz-detail">{details(sel.key)}</div>
-                              <p className="aura-fl-foot hz-foot">{sel.foot}</p>
+                              {/* Nur Dev-Vorschau: offene Gestaltungsfragen der Unterseiten (HZ_SUB_PICK) */}
+                              {HZ_SUB_PICK && (
+                                  <>
+                                      <PickBar
+                                          label="Kennzahlen"
+                                          items={HZ_KZ}
+                                          value={kz}
+                                          onPick={setKz}
+                                      />
+                                      {sel.key === 'heizkreis' && (
+                                          <PickBar label="Soll-Linie" items={HZ_SOLL} value={soll} onPick={setSoll} />
+                                      )}
+                                  </>
+                              )}
+                              {/* Karte, Begleittext und Abschnitte baut die Auswertung selbst (HzDetailFrame) */}
+                              <HzSubpageProvider value={{ foot: sel.foot, kz, soll }}>
+                                  {details(sel.key)}
+                              </HzSubpageProvider>
                           </div>
                       ),
                   },
@@ -350,6 +371,41 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
 }
 
 // ── gemeinsame Teile ─────────────────────────────────────────────────────────
+
+/** Gelbe Auswahl-Leiste (nur Dev-Vorschau, kein Teil des Entwurfs). */
+function PickBar<T extends string>({
+    label,
+    items,
+    value,
+    onPick,
+}: {
+    label: string;
+    items: { key: T; label: string; name: string }[];
+    value: T;
+    onPick: (v: T) => void;
+}) {
+    const cur = items.find((i) => i.key === value);
+    return (
+        <div className="hz-sim" role="group" aria-label={`${label} wählen, nur Vorschau`}>
+            <span className="hz-sim-label">
+                {label} · {cur?.name}
+            </span>
+            {items.map((i) => (
+                <button
+                    key={i.key}
+                    type="button"
+                    className="hz-sim-btn"
+                    data-sel={i.key === value || undefined}
+                    aria-pressed={i.key === value}
+                    title={i.name}
+                    onClick={() => onPick(i.key)}
+                >
+                    {i.label}
+                </button>
+            ))}
+        </div>
+    );
+}
 
 function Section({ title, children, foot }: { title?: string; children: ReactNode; foot?: ReactNode }) {
     return (

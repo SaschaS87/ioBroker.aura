@@ -250,7 +250,15 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
         const details = (b: HzBox) => {
             switch (b) {
                 case 'heizkreis':
-                    return <HeatingDetails variant="circuit" {...chart} sollDp={dp('sollHk1Dp')} />;
+                    // Warmwasser nur für die Kennzahlen: Zeiten der Warmwasser-Bereitung zählen nicht zum Heizkreis
+                    return (
+                        <HeatingDetails
+                            variant="circuit"
+                            {...chart}
+                            sollDp={dp('sollHk1Dp')}
+                            warmwasserDp={dp('warmwasserDp')}
+                        />
+                    );
                 case 'betrieb':
                     return (
                         <HeatingDetails

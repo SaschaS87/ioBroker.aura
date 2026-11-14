@@ -2,10 +2,12 @@
  * Gemeinsame Bausteine der Klappbox „Energie": Farben, Kachel, Abschnittsueberschrift, Zahlen- und
  * Datumshelfer sowie der Rahmen mit Lade- und Leerzustand.
  *
- * ECharts zeichnet in ein Canvas: Farben sind feste Hex-/rgba-Werte. Heizen roetlich und Warmwasser blau
- * entsprechen C.heizen / C.warmwasser in HeatingDetails; Achsen wie dort (#888 / #444 / #333).
+ * ECharts zeichnet in ein Canvas: Reihenfarben sind feste Hex-/rgba-Werte. Heizen roetlich und Warmwasser
+ * blau entsprechen C.heizen / C.warmwasser in HeatingDetails. Achsen, Gitter und Beschriftung folgen seit
+ * 14.11.2026 dem Theme (useChartInk, Rueckfall #888 / #444 / #333).
  */
 import type { ReactNode } from 'react';
+import type { ChartInk } from './chartInk';
 import { BarChart2, Loader } from 'lucide-react';
 import { formatNum } from '../../../utils/formatValue';
 
@@ -14,9 +16,6 @@ export const C = {
     warmwasser: '#2f7fd6',
     az: '#e8873a',
     heatDay: 'rgba(208,73,46,0.12)',
-    axis: '#888',
-    axisLine: '#444',
-    grid: '#333',
 } as const;
 
 /** Der laufende Tag wird schwaecher gezeichnet. */
@@ -25,9 +24,9 @@ export const PARTIAL_OPACITY = 0.55;
 /** Obergrenze der Heatmap-Farbskala (kWh je Stunde). */
 export const HEAT_MAX = 2.6;
 
-export const axisLabel = { color: C.axis, fontSize: 10 };
-export const axisLineStyle = { show: true, lineStyle: { color: C.axisLine } };
-export const splitLineStyle = { show: true, lineStyle: { color: C.grid } };
+export const axisLabelOf = (ink: ChartInk) => ({ color: ink.axis, fontSize: 10 });
+export const axisLineOf = (ink: ChartInk) => ({ show: true, lineStyle: { color: ink.axisLine } });
+export const splitLineOf = (ink: ChartInk) => ({ show: true, lineStyle: { color: ink.grid } });
 
 export const tooltipBase = {
     backgroundColor: 'var(--app-surface, #1e1e1e)',

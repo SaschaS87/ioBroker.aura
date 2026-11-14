@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { BarChart2, Loader } from 'lucide-react';
 import { useIoBroker } from '../../hooks/useIoBroker';
@@ -11,6 +11,9 @@ import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 import { SensorCheckDetails } from './heating/SensorCheckChart';
 import { EnergyDetails } from './heating/EnergyDetails';
 import type { EnergyDps } from './heating/energyModel';
+import { useChartInk } from './heating/chartInk';
+import { HzDetailFrame, useHzSubpage, type HzStat } from './heating/HzSubpage';
+import { circuitStats, operationStats, waterStats } from './heating/heatingStats';
 
 /**
  * Collapsible-box charts for the heating widget (STIEBEL LWZ 304 Trend).
@@ -27,8 +30,12 @@ import type { EnergyDps } from './heating/energyModel';
  * ~1×/min and are 0 whenever the pump is off — so they are fetched RAW (no
  * bucket averaging, which flattened the sharp ramps into a staircase).
  *
- * ECharts renders to canvas → colours must be literal hex (CSS vars don't
- * resolve there); axis colours match EChartWidget (#888 / #444 / #333).
+ * ECharts renders to canvas → series colours are literal hex (CSS vars don't
+ * resolve there). Axis, grid and label colours follow the theme (useChartInk,
+ * since 14.11.2026; before that fixed #888/#444/#333, nearly black in light mode).
+ *
+ * The flow/return helpers write 0 while the circuit pump is off (checked against
+ * InfluxDB, 14.11.2026). 0 is no temperature, so it is drawn as a gap.
  */
 
 const C = {
@@ -45,12 +52,15 @@ const C = {
     wwSoll: '#2f7fd6', // blue (hot-water target)
     wwBand: 'rgba(47,127,214,0.16)', // light-blue hysteresis fill
     wwHys: '#5aa0e0', // light-blue dashed band edges
-    axis: '#888',
-    axisLine: '#444',
-    grid: '#333',
 };
 
-type Pt = [number, number];
+/** Soll-Linie im Heizkreis: Varianten für Saschas Wahl (UI-Facelift, nur Dev-Vorschau). */
+export const SOLL_COLORS = { a: C.soll, b: '', c: '#2a9d8f' } as const;
+
+type Pt = [number, number | null];
+
+/** 0 from the flow/return helper means "pump off, nothing measured" → gap. */
+const pumpGaps = (pts: Pt[]): Pt[] => pts.map(([t, v]) => [t, v === 0 ? null : v]);
 
 /** Step value of a sorted series at time t (last point with ts ≤ t). */
 function valueAt(sorted: Pt[], t: number): number | null {
@@ -81,7 +91,7 @@ function buildBand(vl: Pt[], rl: Pt[]): { base: Pt[]; delta: Pt[] } {
     const delta: Pt[] = [];
     for (const [t, r] of rl) {
         const v = valueAt(vl, t);
-        if (v === null) continue;
+        if (v === null || r === null) continue;
         base.push([t, r]);
         delta.push([t, Math.max(0, v - r)]);
     }
@@ -91,7 +101,7 @@ function buildBand(vl: Pt[], rl: Pt[]): { base: Pt[]; delta: Pt[] } {
 /** Fixed temperature-axis max: `base` by default, grown to the next 10° step only if data exceeds it. */
 function scaleMax(base: number, ...series: Pt[][]): number {
     let m = 0;
-    for (const s of series) for (const p of s) if (p[1] > m) m = p[1];
+    for (const s of series) for (const p of s) if (p[1] !== null && p[1] > m) m = p[1];
     return m > base ? Math.ceil(m / 10) * 10 : base;
 }
 
@@ -100,7 +110,7 @@ function onIntervals(pts: Pt[], windowEnd: number): [number, number, number][] {
     const iv: [number, number, number][] = [];
     let start: number | null = null;
     for (const [t, v] of pts) {
-        const on = v >= 0.5;
+        const on = v !== null && v >= 0.5;
         if (on && start === null) start = t;
         else if (!on && start !== null) {
             iv.push([start, t, 0]);
@@ -155,6 +165,14 @@ export function HeatingDetails(props: HeatingDetailsProps) {
     return <HeatingDetailsCharts {...props} />;
 }
 
+/** Höchstzahl Rohpunkte für ein Fenster: bis zu einem Eintrag je Minute, mit Reserve. */
+const rawCap = (start: number, end: number) => Math.ceil(((end - start) / 60_000) * 1.5) + 500;
+
+/** Betrieb: linker Rand beider Raster, Höhe der Balkenzeilen, Platz für Zeitachse und Legende (px). */
+const OP_LEFT = 62;
+const OP_ROWS_H = 84;
+const OP_BOTTOM = 40;
+
 function HeatingDetailsCharts({
     variant,
     historyInstance,
@@ -177,6 +195,11 @@ function HeatingDetailsCharts({
     const [offset, setOffset] = useState(0);
     // UI-Facelift (nur Dev-Vorschau, sonst null): Zeitraum-Wahl in zwei Zeilen
     const PeriodNav = useHeizungDraft() ? HeizungPeriodNav : ChartPeriodNav;
+    // Unterseite im Facelift (sonst null): Begleittext, Kennzahlen, Variante der Soll-Linie
+    const sub = useHzSubpage();
+    const inkRef = useRef<HTMLDivElement>(null);
+    const ink = useChartInk(inkRef);
+    const sollColor = sub?.soll === 'b' ? ink.axis : sub?.soll === 'c' ? SOLL_COLORS.c : C.soll;
 
     const viewWindow = useMemo(() => periodWindow(mode, offset), [mode, offset]);
 
@@ -196,7 +219,9 @@ function HeatingDetailsCharts({
         color,
         historyInstance,
         aggregate: opts.aggregate ?? 'average',
-        ...(opts.raw ? { historyStepMs: 0, historyMaxCount: 6000 } : {}),
+        // Obergrenze nach Fensterlänge: Der Adapter liefert die ÄLTESTEN Punkte zuerst. Mit fest 6000 brach der
+        // Monat am 9. Tag ab (Vorlauf ~17.600 Punkte im November, im Winter bis 1/min). 1,5 je Minute + Reserve.
+        ...(opts.raw ? { historyStepMs: 0, historyMaxCount: rawCap(viewWindow.start, viewWindow.end) } : {}),
         historyStart: viewWindow.start,
         historyEnd: viewWindow.end,
     });
@@ -218,6 +243,8 @@ function HeatingDetailsCharts({
         ];
         if (variant === 'circuit') {
             if (sollDp) list.push(win('soll', sollDp, C.soll));
+            // nur für die Kennzahlen der Facelift-Unterseite (Warmwasser-Zeiten ausnehmen)
+            if (sub && warmwasserDp) list.push(win('ww', warmwasserDp, C.warmwasser, { raw: true }));
         } else {
             if (verdichterDp) list.push(win('verd', verdichterDp, C.verdichter, { raw: true }));
             if (pumpeDp) list.push(win('pump', pumpeDp, C.pumpe, { raw: true }));
@@ -226,14 +253,16 @@ function HeatingDetailsCharts({
         }
         return list;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [variant, vorlaufDp, ruecklaufDp, sollDp, verdichterDp, pumpeDp, heizenDp, warmwasserDp, wwIstDp, wwSollDp, wwHysObenDp, wwHysUntenDp, mode, historyInstance, viewWindow]);
+    }, [!!sub, variant, vorlaufDp, ruecklaufDp, sollDp, verdichterDp, pumpeDp, heizenDp, warmwasserDp, wwIstDp, wwSollDp, wwHysObenDp, wwHysUntenDp, mode, historyInstance, viewWindow]);
 
     const dataMap = useMultiSeriesData(echartSeries, connected, subscribe, getState);
     const get = (id: string): Pt[] => dataMap.get(id)?.data ?? [];
     const anyLoading = echartSeries.some((s) => dataMap.get(s.id)?.loading);
 
-    const vl = get('vl');
-    const rl = get('rl');
+    const rawVl = dataMap.get('vl')?.data;
+    const rawRl = dataMap.get('rl')?.data;
+    const vl = useMemo(() => pumpGaps(rawVl ?? []), [rawVl]);
+    const rl = useMemo(() => pumpGaps(rawRl ?? []), [rawRl]);
     const band = useMemo(() => buildBand(vl, rl), [vl, rl]);
     // Hot-water hysteresis band (reheat trigger zone): fill between UNTEN and OBEN.
     const hysBand = useMemo(() => buildBand(get('wwOben'), get('wwUnten')), [dataMap]);
@@ -245,7 +274,7 @@ function HeatingDetailsCharts({
     // Close an open run at "now" (current period) rather than at the future edge.
     const intervalEnd = Math.min(viewWindow.end, Date.now());
 
-    const commonAxisLabel = { color: C.axis, fontSize: 10 };
+    const commonAxisLabel = { color: ink.axis, fontSize: 10 };
     const tooltipBase = {
         backgroundColor: 'var(--app-surface, #1e1e1e)',
         borderColor: 'var(--app-border, #333)',
@@ -300,8 +329,8 @@ function HeatingDetailsCharts({
                 type: 'line',
                 step: 'end',
                 data: get('soll'),
-                itemStyle: { color: C.soll },
-                lineStyle: { color: C.soll, width: 1.5, type: 'dashed' },
+                itemStyle: { color: sollColor },
+                lineStyle: { color: sollColor, width: 1.5, type: 'dashed' },
                 showSymbol: false,
             });
             legend.push('HK1-Soll');
@@ -314,11 +343,11 @@ function HeatingDetailsCharts({
             backgroundColor: 'transparent',
             animation: false,
             grid: { left: 40, right: 12, top: 10, bottom: 40 },
-            legend: { data: legend, bottom: 0, textStyle: { color: C.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
+            legend: { data: legend, bottom: 0, textStyle: { color: ink.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
             xAxis: {
                 type: 'time' as const,
                 axisLabel: commonAxisLabel,
-                axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                 splitLine: { show: false },
                 min: xMin,
                 max: xMax,
@@ -328,8 +357,8 @@ function HeatingDetailsCharts({
                 min: 0,
                 max: yMax,
                 axisLabel: { ...commonAxisLabel, formatter: '{value}°' },
-                axisLine: { show: true, lineStyle: { color: C.axisLine } },
-                splitLine: { show: true, lineStyle: { color: C.grid } },
+                axisLine: { show: true, lineStyle: { color: ink.axisLine } },
+                splitLine: { show: true, lineStyle: { color: ink.grid } },
             },
             dataZoom: [{ type: 'inside' as const, zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
             tooltip: {
@@ -349,7 +378,7 @@ function HeatingDetailsCharts({
                     const lines = items
                         .map((p) => {
                             const v = p.value[1];
-                            return `${p.marker} ${p.seriesName}: <b>${typeof v === 'number' ? formatNum(v, 1) : v}°C</b>`;
+                            return `${p.marker} ${p.seriesName}: ${typeof v === 'number' ? `<b>${formatNum(v, 1)}°C</b>` : 'Pumpe aus'}`;
                         })
                         .join('<br/>');
                     return `${t}<br/>${lines}`;
@@ -358,7 +387,7 @@ function HeatingDetailsCharts({
             series,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vl, rl, band, dataMap, sollDp, xMin, xMax]);
+    }, [vl, rl, band, dataMap, sollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, sollColor]);
 
     const operationOption = useMemo(() => {
         const verd = onIntervals(get('verd'), intervalEnd).map((iv) => [iv[0], iv[1], 1]);
@@ -379,7 +408,7 @@ function HeatingDetailsCharts({
                 const cat = api.value(2);
                 const start = api.coord([api.value(0), cat]);
                 const end = api.coord([api.value(1), cat]);
-                const h = api.size([0, 1])[1] * 0.5;
+                const h = api.size([0, 1])[1] * 0.6;
                 const x = start[0];
                 const w = Math.max(1.5, end[0] - start[0]);
                 return {
@@ -401,23 +430,27 @@ function HeatingDetailsCharts({
         return {
             backgroundColor: 'transparent',
             animation: false,
+            // Die Balken sind an der Achse beschriftet; die Legende nennt nur die Linien und bleibt einzeilig
+            // (vorher sechs Einträge, zweizeilig und auf den Achsenbeschriftungen).
             legend: {
-                data: ['Vorlauf', 'Rücklauf', 'Verdichter', 'Pumpe', 'Heizen', 'Warmwasser'],
+                data: ['Vorlauf', 'Rücklauf'],
                 bottom: 0,
-                textStyle: { color: C.axis, fontSize: 10 },
+                textStyle: { color: ink.axis, fontSize: 10 },
                 itemWidth: 14,
                 itemHeight: 8,
             },
+            // Feste Pixel statt Prozent, beide Raster gleich weit links (Platz für „Warmwasser"), damit die
+            // Zeitachsen oben und unten bündig stehen. Unten: 4 Zeilen à 20 px, darunter Zeit und Legende.
             grid: [
-                { left: 40, right: 12, top: 10, height: '38%' },
-                { left: 40, right: 12, top: '52%', height: '32%' },
+                { left: OP_LEFT, right: 12, top: 8, bottom: OP_BOTTOM + OP_ROWS_H + 18 },
+                { left: OP_LEFT, right: 12, bottom: OP_BOTTOM, height: OP_ROWS_H },
             ],
             xAxis: [
                 {
                     type: 'time' as const,
                     gridIndex: 0,
                     axisLabel: { show: false },
-                    axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                    axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                     splitLine: { show: false },
                     min: xMin,
                     max: xMax,
@@ -426,7 +459,7 @@ function HeatingDetailsCharts({
                     type: 'time' as const,
                     gridIndex: 1,
                     axisLabel: commonAxisLabel,
-                    axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                    axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                     splitLine: { show: false },
                     min: xMin,
                     max: xMax,
@@ -439,16 +472,16 @@ function HeatingDetailsCharts({
                     min: 0,
                     max: yMax,
                     axisLabel: { ...commonAxisLabel, formatter: '{value}°' },
-                    axisLine: { show: true, lineStyle: { color: C.axisLine } },
-                    splitLine: { show: true, lineStyle: { color: C.grid } },
+                    axisLine: { show: true, lineStyle: { color: ink.axisLine } },
+                    splitLine: { show: true, lineStyle: { color: ink.grid } },
                 },
                 {
                     type: 'category' as const,
                     gridIndex: 1,
                     data: ['Pumpe', 'Verdichter', 'Heizen', 'Warmwasser'],
-                    axisLabel: { color: C.axis, fontSize: 9 },
+                    axisLabel: { color: ink.axis, fontSize: 9 },
                     axisTick: { show: false },
-                    axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                    axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                     splitLine: { show: false },
                 },
             ],
@@ -471,7 +504,7 @@ function HeatingDetailsCharts({
                     const lines = items
                         .map((p) => {
                             const v = (p.value as [number, number])[1];
-                            return `${p.marker} ${p.seriesName}: <b>${typeof v === 'number' ? formatNum(v, 1) : v}°C</b>`;
+                            return `${p.marker} ${p.seriesName}: ${typeof v === 'number' ? `<b>${formatNum(v, 1)}°C</b>` : 'Pumpe aus'}`;
                         })
                         .join('<br/>');
                     return `${t}<br/>${lines}`;
@@ -480,7 +513,7 @@ function HeatingDetailsCharts({
             series: [...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries],
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax]);
+    }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax, ink.axis, ink.axisLine, ink.grid, chartHeight]);
 
     const waterOption = useMemo(() => {
         const wwIst = get('wwIst');
@@ -514,11 +547,11 @@ function HeatingDetailsCharts({
             backgroundColor: 'transparent',
             animation: false,
             grid: { left: 40, right: 12, top: 10, bottom: 40 },
-            legend: { data: legend, bottom: 0, textStyle: { color: C.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
+            legend: { data: legend, bottom: 0, textStyle: { color: ink.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
             xAxis: {
                 type: 'time' as const,
                 axisLabel: commonAxisLabel,
-                axisLine: { show: true, lineStyle: { color: C.axisLine } },
+                axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                 splitLine: { show: false },
                 min: xMin,
                 max: xMax,
@@ -528,8 +561,8 @@ function HeatingDetailsCharts({
                 min: 0,
                 max: yMax,
                 axisLabel: { ...commonAxisLabel, formatter: '{value}°' },
-                axisLine: { show: true, lineStyle: { color: C.axisLine } },
-                splitLine: { show: true, lineStyle: { color: C.grid } },
+                axisLine: { show: true, lineStyle: { color: ink.axisLine } },
+                splitLine: { show: true, lineStyle: { color: ink.grid } },
             },
             dataZoom: [{ type: 'inside' as const, zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
             tooltip: {
@@ -569,13 +602,22 @@ function HeatingDetailsCharts({
             series,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dataMap, hysBand, wwSollDp, xMin, xMax]);
+    }, [dataMap, hysBand, wwSollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid]);
 
     const activeOption = variant === 'circuit' ? circuitOption : variant === 'operation' ? operationOption : waterOption;
 
+    // Kennzahlen des gewählten Zeitraums, aus den Rohwerten gerechnet (nur Facelift-Unterseite)
+    const stats: HzStat[] | null = useMemo(() => {
+        if (!sub || !hasData) return null;
+        const w = { start: viewWindow.start, end: intervalEnd };
+        if (variant === 'circuit') return circuitStats(vl, rl, get('soll'), get('ww'), w);
+        if (variant === 'operation') return operationStats({ verd: get('verd'), pump: get('pump'), heiz: get('heiz'), ww: get('ww') }, w, { heat: C.heizen, water: C.warmwasser });
+        return waterStats(get('wwIst'), get('wwSoll'), w);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sub, hasData, variant, vl, rl, dataMap, viewWindow.start, intervalEnd]);
+
     return (
-        <div className="flex flex-col gap-2 w-full">
-            <PeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />
+        <HzDetailFrame innerRef={inkRef} stats={stats} nav={<PeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />}>
 
             <div className="relative w-full" style={{ height: chartHeight }}>
                 {anyLoading && !hasData && (
@@ -599,6 +641,6 @@ function HeatingDetailsCharts({
                     />
                 )}
             </div>
-        </div>
+        </HzDetailFrame>
     );
 }
