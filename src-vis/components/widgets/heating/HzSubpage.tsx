@@ -6,14 +6,14 @@
  * Facelift-Bausteinen (Karte, Begleittext, Abschnitt mit Zeilen); ohne ihn bleibt alles wie auf der
  * heutigen Seite („Ist", „Alt", Pi-Build).
  *
- *   Karte      Zeitraum, (Kennzahlen als Raster), Diagramm
+ *   Karte      Zeitraum, Diagramm
  *   Text       Begleittext (aura-fl-foot)
  *   Abschnitt  „Im gewählten Zeitraum": Kennzahlen als Zeilen
  *   danach     weitere Abschnitte der Auswertung (z. B. Streudiagramm)
  *
- * Offene Gestaltungsfragen an Sascha (14.11.2026) als gelbe Auswahl über der Unterseite (HZ_SUB_PICK):
- *   Kennzahlen  A Zeilen unter dem Text · B Raster in der Karte · C ohne
- *   Soll-Linie  a orange (bisher) · b grau · c türkis   (nur Heizkreis)
+ * Entschieden (Sascha, 14.11.2026): Kennzahlen als Zeilen unter dem Text (Variante A), Soll-Linie im
+ * Heizkreis türkis. Offen als gelbe Auswahl über der Unterseite (HZ_SUB_PICK):
+ *   Zoom  A Antippen (Ausschnitt um den Punkt) · B Schieber unter dem Diagramm · C Zeitabschnitte
  */
 import { createContext, useContext, type ReactNode, type Ref } from 'react';
 import { create } from 'zustand';
@@ -21,55 +21,41 @@ import { create } from 'zustand';
 /** Gelbe Auswahl auf den Unterseiten zeigen (bis Sascha entschieden hat). */
 export const HZ_SUB_PICK = true;
 
-export type HzKz = 'rows' | 'card' | 'none';
-export type HzSoll = 'a' | 'b' | 'c';
-export const HZ_KZ: { key: HzKz; label: string; name: string }[] = [
-    { key: 'rows', label: 'A', name: 'Zeilen unter dem Text' },
-    { key: 'card', label: 'B', name: 'Raster in der Karte' },
-    { key: 'none', label: 'C', name: 'ohne Kennzahlen' },
+/** Wie man in ein Zeitdiagramm hineinzoomt (zwei Finger gehen bei allen). */
+export type HzZoom = 'tap' | 'slider' | 'slices';
+export const HZ_ZOOM: { key: HzZoom; label: string; name: string }[] = [
+    { key: 'tap', label: 'A', name: 'Antippen' },
+    { key: 'slider', label: 'B', name: 'Schieber' },
+    { key: 'slices', label: 'C', name: 'Zeitabschnitte' },
 ];
-export const HZ_SOLL: { key: HzSoll; label: string; name: string }[] = [
-    { key: 'a', label: 'a', name: 'orange (bisher)' },
-    { key: 'b', label: 'b', name: 'grau' },
-    { key: 'c', label: 'c', name: 'türkis' },
-];
-const KZ_KEY = 'aura.heizung.kennzahlen';
-const SOLL_KEY = 'aura.heizung.soll';
-function readKey<T extends string>(key: string, all: { key: T }[], fb: T): T {
+const ZOOM_KEY = 'aura.heizung.zoom';
+function readZoom(): HzZoom {
     try {
-        const v = localStorage.getItem(key);
-        return all.some((x) => x.key === v) ? (v as T) : fb;
+        const v = localStorage.getItem(ZOOM_KEY);
+        return HZ_ZOOM.some((x) => x.key === v) ? (v as HzZoom) : 'tap';
     } catch {
-        return fb;
+        return 'tap';
     }
 }
-function writeKey(key: string, v: string) {
-    try {
-        localStorage.setItem(key, v);
-    } catch {
-        /* privater Modus */
-    }
-}
-export const useHzSubStore = create<{ kz: HzKz; soll: HzSoll; setKz: (k: HzKz) => void; setSoll: (s: HzSoll) => void }>(
-    (set) => ({
-        kz: readKey(KZ_KEY, HZ_KZ, 'rows'),
-        soll: readKey(SOLL_KEY, HZ_SOLL, 'a'),
-        setKz: (kz) => {
-            set({ kz });
-            writeKey(KZ_KEY, kz);
-        },
-        setSoll: (soll) => {
-            set({ soll });
-            writeKey(SOLL_KEY, soll);
-        },
-    }),
-);
+export const useHzSubStore = create<{ zoom: HzZoom; setZoom: (z: HzZoom) => void }>((set) => ({
+    zoom: readZoom(),
+    setZoom: (zoom) => {
+        set({ zoom });
+        try {
+            localStorage.setItem(ZOOM_KEY, zoom);
+        } catch {
+            /* privater Modus */
+        }
+    },
+}));
+
+/** Soll-Linie im Heizkreis auf der Facelift-Unterseite (Sascha, 14.11.2026: türkis statt orange). */
+export const HZ_SOLL_COLOR = '#2a9d8f';
 
 export interface HzSubpage {
     /** Begleittext unter der Diagramm-Karte */
     foot: string;
-    kz: HzKz;
-    soll: HzSoll;
+    zoom: HzZoom;
 }
 const Ctx = createContext<HzSubpage | null>(null);
 export const HzSubpageProvider = Ctx.Provider;
@@ -121,26 +107,9 @@ export function HzStatRows({ stats }: { stats: HzStat[] }) {
     );
 }
 
-/** Kennzahlen als Raster in der Diagramm-Karte (zwei Spalten). */
-function HzStatGrid({ stats }: { stats: HzStat[] }) {
-    return (
-        <div className="hz-kz">
-            {stats.map((s) => (
-                <div key={s.label} className="hz-kz-cell">
-                    <span className="hz-kz-label">{s.label}</span>
-                    <span className="hz-kz-val" style={s.color ? { color: s.color } : undefined}>
-                        {s.value}
-                    </span>
-                    {s.sub && <span className="hz-kz-sub">{s.sub}</span>}
-                </div>
-            ))}
-        </div>
-    );
-}
-
 /**
  * Rahmen einer Auswertung. Ohne Unterseiten-Kontext genau der bisherige Aufbau (Spalte mit Abstand 8 px).
- * Im Facelift: Karte (Zeitraum, ggf. Kennzahlen-Raster, Diagramm) → Begleittext → Kennzahlen-Zeilen → after.
+ * Im Facelift: Karte (Zeitraum, Diagramm) → Begleittext → Kennzahlen-Zeilen → after.
  */
 export function HzDetailFrame({
     innerRef,
@@ -172,12 +141,11 @@ export function HzDetailFrame({
             <div ref={innerRef} className="aura-fl-card hz-detail">
                 <div className="flex flex-col gap-2 w-full">
                     {nav}
-                    {sub.kz === 'card' && has && <HzStatGrid stats={stats} />}
                     {children}
                 </div>
             </div>
             {sub.foot && <p className="aura-fl-foot hz-foot">{sub.foot}</p>}
-            {sub.kz === 'rows' && has && (
+            {has && (
                 <HzSection title={statsTitle}>
                     <HzStatRows stats={stats} />
                 </HzSection>

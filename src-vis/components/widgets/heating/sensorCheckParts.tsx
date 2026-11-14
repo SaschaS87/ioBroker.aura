@@ -133,10 +133,10 @@ export function axisTooltip(m: SensorCheckModel, mode: PeriodMode) {
 
 export type LegendItem = { label: string; color: string; kind?: 'line' | 'thick' | 'dash' | 'area' | 'dot' };
 
-export function Legend({ items }: { items: LegendItem[] }) {
+export function Legend({ items, center }: { items: LegendItem[]; center?: boolean }) {
     return (
         <div
-            className="flex flex-wrap items-center"
+            className={`flex flex-wrap items-center${center ? ' justify-center' : ''}`}
             style={{ gap: '3px 10px', fontSize: 10, color: 'var(--text-secondary)' }}
         >
             {items.map((it) => (
@@ -214,7 +214,8 @@ export function SensorFrame({
             />
             }
         >
-            <Legend items={legend} />
+            {/* Facelift: Legende unter dem Diagramm wie bei den anderen Auswertungen (Sascha, 14.11.2026) */}
+            {!sub && <Legend items={legend} />}
             <div className="relative w-full" style={{ height }}>
                 {m.loading && !m.hasData && (
                     <div
@@ -235,6 +236,7 @@ export function SensorFrame({
                 )}
                 {body}
             </div>
+            {sub && <Legend items={legend} center />}
         </HzDetailFrame>
     );
 }

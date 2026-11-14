@@ -45,6 +45,9 @@ const DEFAULT_DP = {
     // Warmwasser chart
     wwIstDp: 'stiebel-isg.0.Info.ANLAGE.WARMWASSER.WW_ISTTEMP',
     wwSollDp: 'stiebel-isg.0.Info.ANLAGE.WARMWASSER.WW_SOLLTEMP',
+    // Sollwerte der Schaltprogramme (ISG „WW SOLL TAG" / „WW SOLL NACHT"), für die Kennzahlen der Unterseite
+    wwSollTagDp: 'stiebel-isg.0.Einstellungen.WARMWASSER.WW-TEMPERATUREN.val17',
+    wwSollNachtDp: 'stiebel-isg.0.Einstellungen.WARMWASSER.WW-TEMPERATUREN.val161',
     wwHysObenDp: 'javascript.0.LWZ.WW_HYSTEMP_OBEN',
     wwHysUntenDp: 'javascript.0.LWZ.WW_HYSTEMP_UNTEN',
     wmHeizenDp: 'stiebel-isg.0.Info.WÄRMEPUMPE.WÄRMEMENGE.WM_HEIZEN_SUMME',
@@ -278,6 +281,8 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
                             {...chart}
                             wwIstDp={dp('wwIstDp')}
                             wwSollDp={dp('wwSollDp')}
+                            wwSollTagDp={dp('wwSollTagDp')}
+                            wwSollNachtDp={dp('wwSollNachtDp')}
                             wwHysObenDp={dp('wwHysObenDp')}
                             wwHysUntenDp={dp('wwHysUntenDp')}
                         />

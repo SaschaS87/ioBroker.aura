@@ -182,16 +182,79 @@ export function operationStats(
     ];
 }
 
-/** Warmwasser: Speicher zuletzt, tiefster und höchster Wert, Sollwert. */
-export function waterStats(ist: Pt[], soll: Pt[], w: StatWindow): HzStat[] {
+/** Sollwerte der Schaltprogramme (ISG: WW SOLL TAG / WW SOLL NACHT), null wenn unbekannt. */
+export interface WaterPrograms {
+    tag: number | null;
+    nacht: number | null;
+}
+
+/**
+ * WW-Soll nach Programm: Der Soll springt mit dem Schaltprogramm zwischen Tag- und Nachtwert (14.11.2026 in
+ * InfluxDB: 48 °C ab etwa 06:55, 35 °C ab etwa 20:55 bzw. 21:55 Uhr). Jeder Wert gilt bis zum nächsten
+ * Eintrag. Zugeordnet wird über den heute eingestellten Tag- bzw. Nachtwert; alles andere (Bereitschaft,
+ * Handbetrieb, früherer Wert) ist „anderer Sollwert".
+ */
+function sollByProgram(soll: Pt[], w: StatWindow, prog: WaterPrograms): HzStat[] | null {
+    if (prog.tag === null || prog.nacht === null || Math.abs(prog.tag - prog.nacht) < 0.25) return null;
+    type Cls = 'tag' | 'nacht' | 'sonst';
+    const cls = (v: number): Cls =>
+        Math.abs(v - prog.tag!) < 0.25 ? 'tag' : Math.abs(v - prog.nacht!) < 0.25 ? 'nacht' : 'sonst';
+    // zusammenhängende Abschnitte je Programm, auf das Fenster geschnitten
+    const spans: { c: Cls; a: number; b: number; v: number }[] = [];
+    for (let i = 0; i < soll.length; i++) {
+        const [t, v] = soll[i];
+        if (v === null) continue;
+        // Der Adapter schreibt den Soll etwa alle 15 min auch ohne Änderung: Der erste Wert im Fenster galt
+        // schon zu Fensterbeginn, wenn er höchstens 30 min danach kommt (sonst begann der Tag bei 00:10).
+        const a = !spans.length && t - w.start <= 30 * 60_000 ? w.start : Math.max(t, w.start);
+        const b = Math.min(i + 1 < soll.length ? soll[i + 1][0] : w.end, w.end);
+        if (b <= a) continue;
+        const c = cls(v);
+        const last = spans[spans.length - 1];
+        if (last && last.c === c && last.b >= a - 1000) last.b = b;
+        else spans.push({ c, a, b, v });
+    }
+    if (!spans.length) return null;
+    const oneDay = w.end - w.start <= 86_400_000 + 3_600_000;
+    const hm = (t: number) => new Date(t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    // Ende am Fensterrand: ganzer Tag „bis 24:00", laufender Tag „seit 06:55 Uhr"
+    const running = w.end - w.start < 86_400_000 - 60_000;
+    const span = (s: { a: number; b: number }) =>
+        s.b >= w.end ? (running ? `seit ${hm(s.a)} Uhr` : `${hm(s.a)} – 24:00 Uhr`) : `${hm(s.a)} – ${hm(s.b)} Uhr`;
+    const sub = (c: Cls) => {
+        const mine = spans.filter((s) => s.c === c);
+        if (oneDay) return mine.map(span).join(' und ');
+        return `zusammen ${duration(mine.reduce((n, s) => n + (s.b - s.a), 0))}`;
+    };
+    const out: HzStat[] = [];
+    if (spans.some((s) => s.c === 'tag')) out.push({ label: 'WW-Soll Tagprogramm', value: deg(prog.tag), sub: sub('tag') });
+    if (spans.some((s) => s.c === 'nacht')) out.push({ label: 'WW-Soll Nachtprogramm', value: deg(prog.nacht), sub: sub('nacht') });
+    const other = spans.filter((s) => s.c === 'sonst');
+    if (other.length) {
+        const lo = Math.min(...other.map((s) => s.v));
+        const hi = Math.max(...other.map((s) => s.v));
+        out.push({
+            label: 'Anderer WW-Soll',
+            value: hi - lo >= 0.1 ? `${formatNum(lo, 0)}–${formatNum(hi, 0)} °C` : deg(lo),
+            sub: sub('sonst'),
+        });
+    }
+    return out;
+}
+
+/** Warmwasser: zuletzt, tiefster und höchster Wert, Sollwert (nach Programm, wenn bekannt). */
+export function waterStats(ist: Pt[], soll: Pt[], w: StatWindow, prog?: WaterPrograms): HzStat[] {
     const i = summarize(ist, w);
     const so = summarize(soll, w);
     const out: HzStat[] = [
-        { label: 'Speicher zuletzt', value: deg(i.last), sub: i.last !== null ? when(i.lastT, w) : undefined },
+        // „Speicher zuletzt" war missverständlich (Sascha, 14.11.2026)
+        { label: 'Warmwasser zuletzt', value: deg(i.last), sub: i.last !== null ? when(i.lastT, w) : undefined },
         { label: 'Tiefster Wert', value: deg(i.min), sub: i.min !== null ? when(i.minT, w) : undefined },
         { label: 'Höchster Wert', value: deg(i.max), sub: i.max !== null ? when(i.maxT, w) : undefined },
     ];
-    if (soll.length)
+    const byProg = prog ? sollByProgram(soll, w, prog) : null;
+    if (byProg) out.push(...byProg);
+    else if (soll.length)
         out.push({
             label: 'WW-Soll',
             value:

@@ -594,6 +594,26 @@ body[data-fl-variant] .hz-nav-today:disabled {
     opacity: 0.5;
 }
 
+/* Zoom in die Zeitdiagramme (chartZoom.tsx): Leiste mit dem Ausschnitt, Hinweis, Zeitabschnitte */
+body[data-fl-variant] .hz-zoom-range {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: var(--fl-font-meta);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .hz-zoom-hint {
+    margin: 0;
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+    text-align: center;
+}
+
 /* ── Auswertung (HeatingDetails) in Karte, Pop-up oder Unterseite ────── */
 body[data-fl-variant] .hz-detail {
     padding: var(--fl-hz-detail-pad);
@@ -667,38 +687,6 @@ body[data-fl-variant] .hz-energy {
 /* zweite Karte direkt unter einer Karte im selben Abschnitt */
 body[data-fl-variant] .hz-section > .aura-fl-card + .aura-fl-card {
     margin-top: var(--fl-hz-gap);
-}
-
-/* Kennzahlen als Raster in der Diagramm-Karte (Entwurf B) */
-body[data-fl-variant] .hz-kz {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-}
-body[data-fl-variant] .hz-kz-cell {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: 8px 10px;
-    border-radius: 12px;
-    background: var(--fl-soft);
-}
-body[data-fl-variant] .hz-kz-label,
-body[data-fl-variant] .hz-kz-sub {
-    font-size: var(--fl-font-sub);
-    line-height: var(--fl-lh-sub);
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-body[data-fl-variant] .hz-kz-val {
-    font-size: var(--fl-hz-val);
-    line-height: var(--fl-lh-title);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--text-primary);
-    white-space: nowrap;
 }
 
 /* Energie „Seit Inbetriebnahme": Kopfzeile Heizen | Warmwasser, darunter Zeilen mit zwei Werten */

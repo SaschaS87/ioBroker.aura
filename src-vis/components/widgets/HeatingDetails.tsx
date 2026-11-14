@@ -2,6 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { BarChart2, Loader } from 'lucide-react';
 import { useIoBroker } from '../../hooks/useIoBroker';
+import { useDatapoint } from '../../hooks/useDatapoint';
 import { useMultiSeriesData, type EChartSeriesConfig } from '../../hooks/useMultiSeriesData';
 import { formatNum } from '../../utils/formatValue';
 import { ChartPeriodNav } from './ChartPeriodNav';
@@ -12,7 +13,8 @@ import { SensorCheckDetails } from './heating/SensorCheckChart';
 import { EnergyDetails } from './heating/EnergyDetails';
 import type { EnergyDps } from './heating/energyModel';
 import { useChartInk } from './heating/chartInk';
-import { HzDetailFrame, useHzSubpage, type HzStat } from './heating/HzSubpage';
+import { HZ_SOLL_COLOR, HzDetailFrame, useHzSubpage, type HzStat } from './heating/HzSubpage';
+import { useChartZoom } from './heating/chartZoom';
 import { circuitStats, operationStats, waterStats } from './heating/heatingStats';
 
 /**
@@ -54,8 +56,10 @@ const C = {
     wwHys: '#5aa0e0', // light-blue dashed band edges
 };
 
-/** Soll-Linie im Heizkreis: Varianten für Saschas Wahl (UI-Facelift, nur Dev-Vorschau). */
-export const SOLL_COLORS = { a: C.soll, b: '', c: '#2a9d8f' } as const;
+/** Spreizung in der Legende und im Tooltip: kräftiger als die Fläche, sonst kaum zu sehen. */
+const SPREAD_KEY = 'rgba(208,73,46,0.45)';
+/** Legenden-Eintrag der Spreizung (Fläche, kein Strich: die Reihe selbst hat Linienbreite 0). */
+const SPREAD_LEGEND = { name: 'Spreizung', icon: 'rect', itemStyle: { color: SPREAD_KEY } };
 
 type Pt = [number, number | null];
 
@@ -135,6 +139,9 @@ export interface HeatingDetailsProps {
     // Hot-water ('water') variant:
     wwIstDp?: string;
     wwSollDp?: string;
+    /** Sollwerte Tag- und Nachtprogramm (nur Kennzahlen der Facelift-Unterseite) */
+    wwSollTagDp?: string;
+    wwSollNachtDp?: string;
     wwHysObenDp?: string;
     wwHysUntenDp?: string;
     // Außenfühler-Check ('sensor') variant: Fühler, Netatmo-Stationen, Sonnensensor.
@@ -185,6 +192,8 @@ function HeatingDetailsCharts({
     warmwasserDp = '',
     wwIstDp = '',
     wwSollDp = '',
+    wwSollTagDp = '',
+    wwSollNachtDp = '',
     wwHysObenDp = '',
     wwHysUntenDp = '',
     initialMode = 'day',
@@ -199,9 +208,15 @@ function HeatingDetailsCharts({
     const sub = useHzSubpage();
     const inkRef = useRef<HTMLDivElement>(null);
     const ink = useChartInk(inkRef);
-    const sollColor = sub?.soll === 'b' ? ink.axis : sub?.soll === 'c' ? SOLL_COLORS.c : C.soll;
+    // Facelift-Unterseite: Soll türkis, damit sie sich vom hellroten Rücklauf abhebt (Sascha, 14.11.2026)
+    const sollColor = sub ? HZ_SOLL_COLOR : C.soll;
 
     const viewWindow = useMemo(() => periodWindow(mode, offset), [mode, offset]);
+    const tagSoll = useDatapoint(sub ? wwSollTagDp : '').value;
+    const nachtSoll = useDatapoint(sub ? wwSollNachtDp : '').value;
+    // Hineinzoomen (Facelift-Unterseite: Antippen, Schieber oder Zeitabschnitte; sonst nur zwei Finger)
+    const zoom = useChartZoom(viewWindow, mode, sub?.zoom ?? null, ink, variant === 'operation' ? [0, 1] : [0]);
+    const bottom = 40 + zoom.extraBottom;
 
     // `raw` fetches every logged point (no bucketing) — the flow/return/pump/
     // compressor helpers are only ~1/min, so the default averaging flattened
@@ -232,7 +247,8 @@ function HeatingDetailsCharts({
             // WW actual temp is dense (~1/2 min); raw keeps the sawtooth on day/week,
             // month falls back to bucketing (overview) to stay under the point cap.
             if (wwIstDp) list.push(win('wwIst', wwIstDp, C.wwIst, { raw: mode !== 'month' }));
-            if (wwSollDp) list.push(win('wwSoll', wwSollDp, C.wwSoll));
+            // roh (~100 Werte/Tag): gemittelt entstanden an den Umschaltzeiten Zwischenwerte zwischen Tag und Nacht
+            if (wwSollDp) list.push(win('wwSoll', wwSollDp, C.wwSoll, { raw: true }));
             if (wwHysObenDp) list.push(win('wwOben', wwHysObenDp, C.wwHys));
             if (wwHysUntenDp) list.push(win('wwUnten', wwHysUntenDp, C.wwHys));
             return list;
@@ -293,10 +309,12 @@ function HeatingDetailsCharts({
             silent: true,
         },
         {
-            name: '_band',
+            // in der Legende ein- und ausschaltbar (Sascha, 14.11.2026); die Basis darunter bleibt unsichtbar
+            name: 'Spreizung',
             type: 'line',
             stack: 'band',
             data: band.delta,
+            itemStyle: { color: SPREAD_KEY },
             lineStyle: { width: 0 },
             areaStyle: { color: C.band },
             showSymbol: false,
@@ -322,7 +340,7 @@ function HeatingDetailsCharts({
 
     const circuitOption = useMemo(() => {
         const series: Record<string, unknown>[] = [...bandSeries];
-        const legend = ['Vorlauf', 'Rücklauf'];
+        const legend: (string | typeof SPREAD_LEGEND)[] = ['Vorlauf', 'Rücklauf', SPREAD_LEGEND];
         if (sollDp) {
             series.push({
                 name: 'HK1-Soll',
@@ -342,8 +360,8 @@ function HeatingDetailsCharts({
         return {
             backgroundColor: 'transparent',
             animation: false,
-            grid: { left: 40, right: 12, top: 10, bottom: 40 },
-            legend: { data: legend, bottom: 0, textStyle: { color: ink.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
+            grid: { left: 40, right: 12, top: 10, bottom },
+            legend: { data: legend, selected: zoom.legendSelected, inactiveColor: ink.axisLine, bottom: 0, textStyle: { color: ink.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
             xAxis: {
                 type: 'time' as const,
                 axisLabel: commonAxisLabel,
@@ -360,7 +378,7 @@ function HeatingDetailsCharts({
                 axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                 splitLine: { show: true, lineStyle: { color: ink.grid } },
             },
-            dataZoom: [{ type: 'inside' as const, zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
+            dataZoom: zoom.dataZoom,
             tooltip: {
                 trigger: 'axis' as const,
                 ...tooltipBase,
@@ -378,6 +396,7 @@ function HeatingDetailsCharts({
                     const lines = items
                         .map((p) => {
                             const v = p.value[1];
+                            if (p.seriesName === 'Spreizung') return `${p.marker} Spreizung: <b>${formatNum(v, 1)} K</b>`;
                             return `${p.marker} ${p.seriesName}: ${typeof v === 'number' ? `<b>${formatNum(v, 1)}°C</b>` : 'Pumpe aus'}`;
                         })
                         .join('<br/>');
@@ -387,7 +406,7 @@ function HeatingDetailsCharts({
             series,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vl, rl, band, dataMap, sollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, sollColor]);
+    }, [vl, rl, band, dataMap, sollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, sollColor, zoom.dataZoom, zoom.legendSelected, bottom]);
 
     const operationOption = useMemo(() => {
         const verd = onIntervals(get('verd'), intervalEnd).map((iv) => [iv[0], iv[1], 1]);
@@ -399,6 +418,8 @@ function HeatingDetailsCharts({
 
         const rowRect = (color: string) => ({
             type: 'custom' as const,
+            // im Zoom ragten die Balken sonst über den linken Rand auf die Beschriftung
+            clip: true,
             xAxisIndex: 1,
             yAxisIndex: 1,
             renderItem: (
@@ -433,7 +454,9 @@ function HeatingDetailsCharts({
             // Die Balken sind an der Achse beschriftet; die Legende nennt nur die Linien und bleibt einzeilig
             // (vorher sechs Einträge, zweizeilig und auf den Achsenbeschriftungen).
             legend: {
-                data: ['Vorlauf', 'Rücklauf'],
+                data: ['Vorlauf', 'Rücklauf', SPREAD_LEGEND],
+                selected: zoom.legendSelected,
+                inactiveColor: ink.axisLine,
                 bottom: 0,
                 textStyle: { color: ink.axis, fontSize: 10 },
                 itemWidth: 14,
@@ -442,8 +465,8 @@ function HeatingDetailsCharts({
             // Feste Pixel statt Prozent, beide Raster gleich weit links (Platz für „Warmwasser"), damit die
             // Zeitachsen oben und unten bündig stehen. Unten: 4 Zeilen à 20 px, darunter Zeit und Legende.
             grid: [
-                { left: OP_LEFT, right: 12, top: 8, bottom: OP_BOTTOM + OP_ROWS_H + 18 },
-                { left: OP_LEFT, right: 12, bottom: OP_BOTTOM, height: OP_ROWS_H },
+                { left: OP_LEFT, right: 12, top: 8, bottom: OP_BOTTOM + zoom.extraBottom + OP_ROWS_H + 18 },
+                { left: OP_LEFT, right: 12, bottom: OP_BOTTOM + zoom.extraBottom, height: OP_ROWS_H },
             ],
             xAxis: [
                 {
@@ -485,7 +508,7 @@ function HeatingDetailsCharts({
                     splitLine: { show: false },
                 },
             ],
-            dataZoom: [{ type: 'inside' as const, xAxisIndex: [0, 1], zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
+            dataZoom: zoom.dataZoom,
             tooltip: {
                 trigger: 'axis' as const,
                 ...tooltipBase,
@@ -504,6 +527,7 @@ function HeatingDetailsCharts({
                     const lines = items
                         .map((p) => {
                             const v = (p.value as [number, number])[1];
+                            if (p.seriesName === 'Spreizung') return `${p.marker} Spreizung: <b>${formatNum(v, 1)} K</b>`;
                             return `${p.marker} ${p.seriesName}: ${typeof v === 'number' ? `<b>${formatNum(v, 1)}°C</b>` : 'Pumpe aus'}`;
                         })
                         .join('<br/>');
@@ -513,7 +537,7 @@ function HeatingDetailsCharts({
             series: [...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries],
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax, ink.axis, ink.axisLine, ink.grid, chartHeight]);
+    }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax, ink.axis, ink.axisLine, ink.grid, chartHeight, zoom.dataZoom, zoom.extraBottom, zoom.legendSelected]);
 
     const waterOption = useMemo(() => {
         const wwIst = get('wwIst');
@@ -546,8 +570,8 @@ function HeatingDetailsCharts({
         return {
             backgroundColor: 'transparent',
             animation: false,
-            grid: { left: 40, right: 12, top: 10, bottom: 40 },
-            legend: { data: legend, bottom: 0, textStyle: { color: ink.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
+            grid: { left: 40, right: 12, top: 10, bottom },
+            legend: { data: legend, selected: zoom.legendSelected, inactiveColor: ink.axisLine, bottom: 0, textStyle: { color: ink.axis, fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
             xAxis: {
                 type: 'time' as const,
                 axisLabel: commonAxisLabel,
@@ -564,7 +588,7 @@ function HeatingDetailsCharts({
                 axisLine: { show: true, lineStyle: { color: ink.axisLine } },
                 splitLine: { show: true, lineStyle: { color: ink.grid } },
             },
-            dataZoom: [{ type: 'inside' as const, zoomOnMouseWheel: false, moveOnMouseMove: false, moveOnMouseWheel: false }],
+            dataZoom: zoom.dataZoom,
             tooltip: {
                 trigger: 'axis' as const,
                 ...tooltipBase,
@@ -602,7 +626,7 @@ function HeatingDetailsCharts({
             series,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dataMap, hysBand, wwSollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid]);
+    }, [dataMap, hysBand, wwSollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, zoom.dataZoom, zoom.legendSelected, bottom]);
 
     const activeOption = variant === 'circuit' ? circuitOption : variant === 'operation' ? operationOption : waterOption;
 
@@ -612,14 +636,16 @@ function HeatingDetailsCharts({
         const w = { start: viewWindow.start, end: intervalEnd };
         if (variant === 'circuit') return circuitStats(vl, rl, get('soll'), get('ww'), w);
         if (variant === 'operation') return operationStats({ verd: get('verd'), pump: get('pump'), heiz: get('heiz'), ww: get('ww') }, w, { heat: C.heizen, water: C.warmwasser });
-        return waterStats(get('wwIst'), get('wwSoll'), w);
+        const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        return waterStats(get('wwIst'), get('wwSoll'), w, { tag: num(tagSoll), nacht: num(nachtSoll) });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sub, hasData, variant, vl, rl, dataMap, viewWindow.start, intervalEnd]);
+    }, [sub, hasData, variant, vl, rl, dataMap, viewWindow.start, intervalEnd, tagSoll, nachtSoll]);
 
     return (
         <HzDetailFrame innerRef={inkRef} stats={stats} nav={<PeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />}>
 
-            <div className="relative w-full" style={{ height: chartHeight }}>
+            {zoom.controls}
+            <div className="relative w-full" style={{ height: chartHeight + zoom.extraBottom }}>
                 {anyLoading && !hasData && (
                     <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
                         <Loader size={20} className="animate-spin" />
@@ -638,6 +664,8 @@ function HeatingDetailsCharts({
                         style={{ width: '100%', height: '100%' }}
                         opts={{ renderer: 'canvas' }}
                         notMerge
+                        onEvents={zoom.onEvents}
+                        onChartReady={zoom.onChartReady}
                     />
                 )}
             </div>

@@ -61,7 +61,10 @@ import {
     type HeizungHeadLay,
     type HeizungScene,
 } from './heizungDraft';
-import { HZ_KZ, HZ_SOLL, HZ_SUB_PICK, HzSubpageProvider, useHzSubStore } from './HzSubpage';
+import { HZ_SUB_PICK, HZ_ZOOM, HzSubpageProvider, useHzSubStore } from './HzSubpage';
+
+/** Unterseiten mit Zeitdiagramm, auf denen die Zoom-Auswahl gilt. */
+const ZOOM_BOXES = new Set<string>(['heizkreis', 'betrieb', 'warmwasser']);
 import './HeizungFacelift.css';
 
 export type HzBox = 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie';
@@ -201,10 +204,8 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
         if (hidden) setBox(null);
     }, [hidden]);
     const sel = BOXES.find((b) => b.key === box) ?? null;
-    const kz = useHzSubStore((s) => s.kz);
-    const soll = useHzSubStore((s) => s.soll);
-    const setKz = useHzSubStore((s) => s.setKz);
-    const setSoll = useHzSubStore((s) => s.setSoll);
+    const zoom = useHzSubStore((s) => s.zoom);
+    const setZoom = useHzSubStore((s) => s.setZoom);
 
     const home = (
         <div className="hz-home">
@@ -336,21 +337,11 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
                                   onBack={() => setBox(null)}
                               />
                               {/* Nur Dev-Vorschau: offene Gestaltungsfragen der Unterseiten (HZ_SUB_PICK) */}
-                              {HZ_SUB_PICK && (
-                                  <>
-                                      <PickBar
-                                          label="Kennzahlen"
-                                          items={HZ_KZ}
-                                          value={kz}
-                                          onPick={setKz}
-                                      />
-                                      {sel.key === 'heizkreis' && (
-                                          <PickBar label="Soll-Linie" items={HZ_SOLL} value={soll} onPick={setSoll} />
-                                      )}
-                                  </>
+                              {HZ_SUB_PICK && ZOOM_BOXES.has(sel.key) && (
+                                  <PickBar label="Zoom" items={HZ_ZOOM} value={zoom} onPick={setZoom} />
                               )}
                               {/* Karte, Begleittext und Abschnitte baut die Auswertung selbst (HzDetailFrame) */}
-                              <HzSubpageProvider value={{ foot: sel.foot, kz, soll }}>
+                              <HzSubpageProvider value={{ foot: sel.foot, zoom }}>
                                   {details(sel.key)}
                               </HzSubpageProvider>
                           </div>
