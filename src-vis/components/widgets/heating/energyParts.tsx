@@ -2,7 +2,7 @@
  * Gemeinsame Bausteine der Klappbox „Energie": Farben, Kachel, Abschnittsueberschrift, Zahlen- und
  * Datumshelfer sowie der Rahmen mit Lade- und Leerzustand.
  *
- * ECharts zeichnet in ein Canvas: Farben sind feste Hex-/rgba-Werte. Heizen gruen und Warmwasser blau
+ * ECharts zeichnet in ein Canvas: Farben sind feste Hex-/rgba-Werte. Heizen roetlich und Warmwasser blau
  * entsprechen C.heizen / C.warmwasser in HeatingDetails; Achsen wie dort (#888 / #444 / #333).
  */
 import type { ReactNode } from 'react';
@@ -10,10 +10,10 @@ import { BarChart2, Loader } from 'lucide-react';
 import { formatNum } from '../../../utils/formatValue';
 
 export const C = {
-    heizen: '#4a9e2f',
+    heizen: '#d0492e', // roetlich seit 14.11.2026 (vorher gruen #4a9e2f)
     warmwasser: '#2f7fd6',
     az: '#e8873a',
-    heatDay: 'rgba(74,158,47,0.14)',
+    heatDay: 'rgba(208,73,46,0.12)',
     axis: '#888',
     axisLine: '#444',
     grid: '#333',

@@ -20,6 +20,9 @@
  * Heizstab: in der Leiste „Betrieb" deshalb drei eigene Schalter. Heizen rötlich statt grün. Leiste
  * „Marken": fünf Arten, wie die drei Angaben im Kopf zeigen, ob sie aktiv sind (HEIZUNG_INDS).
  *
+ * Entschieden (Sascha, 14.11.2026): Kopf 11, Marken b, Werte G. Die gelben Leisten sind über HZ_PICK
+ * abgeschaltet (Code bleibt, falls er es sich anders überlegt); die Seite zeigt dann immer die echten Werte.
+ *
  * Nur lesend: kein Schreibbefehl, kein Datenpunkt wird angelegt.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -47,7 +50,10 @@ import {
     HEIZUNG_HEADS,
     HEIZUNG_INDS,
     HEIZUNG_SCENES,
+    HZ_PICK,
+    useHeizungHead,
     useHeizungHeadStore,
+    useHeizungInd,
     useHeizungIndStore,
     useHeizungSceneStore,
     type HeizungDraft,
@@ -79,7 +85,7 @@ const BOXES: { key: HzBox; title: string; sub: string; Icon: LucideIcon; foot: s
         title: 'Heizkreis',
         sub: 'Vorlauf/Rücklauf · HK1-Soll',
         Icon: Activity,
-        foot: 'Vorlauf und Rücklauf des Heizkreises, die grüne Fläche dazwischen ist die Spreizung. Gestrichelt der Sollwert für Heizkreis 1.',
+        foot: 'Vorlauf und Rücklauf des Heizkreises, die rötliche Fläche dazwischen ist die Spreizung. Gestrichelt der Sollwert für Heizkreis 1.',
     },
     {
         key: 'betrieb',
@@ -177,12 +183,12 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
     const setScene = useHeizungSceneStore((s) => s.setScene);
     const parts = useHeizungSceneStore((s) => s.parts);
     const setPart = useHeizungSceneStore((s) => s.setPart);
-    const m: HzModel = { ...real, ...(scene === 'ECHT' ? {} : SCENES[scene]), ...parts };
-    const ind = useHeizungIndStore((s) => s.ind);
+    const m: HzModel = !HZ_PICK ? real : { ...real, ...(scene === 'ECHT' ? {} : SCENES[scene]), ...parts };
+    const ind = useHeizungInd();
     const setInd = useHeizungIndStore((s) => s.setInd);
     const indDef = HEIZUNG_INDS.find((i) => i.key === ind) ?? HEIZUNG_INDS[0];
 
-    const headKey = useHeizungHeadStore((s) => s.head);
+    const headKey = useHeizungHead();
     const setHead = useHeizungHeadStore((s) => s.setHead);
     const head = HEIZUNG_HEADS.find((h) => h.key === headKey) ?? HEIZUNG_HEADS[0];
 
@@ -197,83 +203,103 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
 
     const home = (
         <div className="hz-home">
-            {/* Nur Dev-Vorschau, kein Teil des Entwurfs: Betrieb nachstellen */}
-            <div className="hz-sim" role="group" aria-label="Betrieb zeigen, nur Vorschau">
-                <span className="hz-sim-label">Betrieb</span>
-                {HEIZUNG_SCENES.map((s) => (
-                    <button
-                        key={s.key}
-                        type="button"
-                        className="hz-sim-btn"
-                        data-sel={s.key === scene || undefined}
-                        aria-pressed={s.key === scene}
-                        onClick={() => setScene(s.key)}
+            {/* Nur Dev-Vorschau, kein Teil des Entwurfs: Auswahl-Leisten, abgeschaltet über HZ_PICK */}
+            {HZ_PICK && (
+                <>
+                    <div className="hz-sim" role="group" aria-label="Betrieb zeigen, nur Vorschau">
+                        <span className="hz-sim-label">Betrieb</span>
+                        {HEIZUNG_SCENES.map((s) => (
+                            <button
+                                key={s.key}
+                                type="button"
+                                className="hz-sim-btn"
+                                data-sel={s.key === scene || undefined}
+                                aria-pressed={s.key === scene}
+                                onClick={() => setScene(s.key)}
+                            >
+                                {s.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div
+                        className="hz-sim"
+                        role="group"
+                        aria-label="Pumpe, Abtauen, Heizstab ein oder aus, nur Vorschau"
                     >
-                        {s.label}
-                    </button>
-                ))}
-            </div>
-            <div className="hz-sim" role="group" aria-label="Pumpe, Abtauen, Heizstab ein oder aus, nur Vorschau">
-                <span className="hz-sim-label">Aktiv</span>
-                {PARTS.map((p) => (
-                    <button
-                        key={p.key}
-                        type="button"
-                        className="hz-sim-btn"
-                        data-sel={m[p.key] || undefined}
-                        aria-pressed={m[p.key]}
-                        onClick={() => setPart(p.key, !m[p.key])}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-            <div className="hz-sim" role="group" aria-label="Marken wählen, nur Vorschau">
-                <span className="hz-sim-label">Marken · {indDef.name}</span>
-                {HEIZUNG_INDS.map((i) => (
-                    <button
-                        key={i.key}
-                        type="button"
-                        className="hz-sim-btn"
-                        data-sel={i.key === ind || undefined}
-                        aria-pressed={i.key === ind}
-                        title={i.name}
-                        onClick={() => setInd(i.key)}
-                    >
-                        {i.label}
-                    </button>
-                ))}
-            </div>
-            <div className="hz-sim hz-sim--wrap" role="group" aria-label="Kopf wählen, nur Vorschau">
-                <span className="hz-sim-label">
-                    Kopf {head.key} · {head.name}
-                </span>
-                <div className="hz-sim-btns">
-                    {HEIZUNG_HEADS.map((h) => (
-                        <button
-                            key={h.key}
-                            type="button"
-                            className="hz-sim-btn"
-                            data-sel={h.key === head.key || undefined}
-                            aria-pressed={h.key === head.key}
-                            title={h.name}
-                            onClick={() => setHead(h.key)}
-                        >
-                            {h.key}
-                        </button>
-                    ))}
-                </div>
-            </div>
+                        <span className="hz-sim-label">Aktiv</span>
+                        {PARTS.map((p) => (
+                            <button
+                                key={p.key}
+                                type="button"
+                                className="hz-sim-btn"
+                                data-sel={m[p.key] || undefined}
+                                aria-pressed={m[p.key]}
+                                onClick={() => setPart(p.key, !m[p.key])}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="hz-sim" role="group" aria-label="Marken wählen, nur Vorschau">
+                        <span className="hz-sim-label">Marken · {indDef.name}</span>
+                        {HEIZUNG_INDS.map((i) => (
+                            <button
+                                key={i.key}
+                                type="button"
+                                className="hz-sim-btn"
+                                data-sel={i.key === ind || undefined}
+                                aria-pressed={i.key === ind}
+                                title={i.name}
+                                onClick={() => setInd(i.key)}
+                            >
+                                {i.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="hz-sim hz-sim--wrap" role="group" aria-label="Kopf wählen, nur Vorschau">
+                        <span className="hz-sim-label">
+                            Kopf {head.key} · {head.name}
+                        </span>
+                        <div className="hz-sim-btns">
+                            {HEIZUNG_HEADS.map((h) => (
+                                <button
+                                    key={h.key}
+                                    type="button"
+                                    className="hz-sim-btn"
+                                    data-sel={h.key === head.key || undefined}
+                                    aria-pressed={h.key === head.key}
+                                    title={h.name}
+                                    onClick={() => setHead(h.key)}
+                                >
+                                    {h.key}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
             <Section>
                 <Head m={m} lay={head.lay} fill={head.fill} />
             </Section>
-            <Section title="Aktuelle Werte" foot={scene === 'ECHT' ? undefined : 'Beispielwerte zum Ansehen, nur die Außentemperatur ist echt.'}>
+            <Section
+                title="Aktuelle Werte"
+                foot={
+                    !HZ_PICK || scene === 'ECHT'
+                        ? undefined
+                        : 'Beispielwerte zum Ansehen, nur die Außentemperatur ist echt.'
+                }
+            >
                 {draft === 'E' ? <ValuesList m={m} /> : draft === 'F' ? <ValuesTiles m={m} /> : <ValuesPlain m={m} />}
             </Section>
             <Section title="Auswertungen">
                 <div className="aura-fl-card">
                     {BOXES.map((b) => (
-                        <button key={b.key} type="button" className="aura-fl-row aura-fl-row--nav hz-boxrow" onClick={() => setBox(b.key)}>
+                        <button
+                            key={b.key}
+                            type="button"
+                            className="aura-fl-row aura-fl-row--nav hz-boxrow"
+                            onClick={() => setBox(b.key)}
+                        >
                             <span className="aura-fl-row-icon hz-ico">
                                 <b.Icon size={20} />
                             </span>
@@ -297,7 +323,13 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
                       key: `b-${sel.key}`,
                       node: (
                           <div className="ios-page hz-subpage">
-                              <IosNavBar sticky title={sel.title} backLabel="Heizung" backFallback="Zurück" onBack={() => setBox(null)} />
+                              <IosNavBar
+                                  sticky
+                                  title={sel.title}
+                                  backLabel="Heizung"
+                                  backFallback="Zurück"
+                                  onBack={() => setBox(null)}
+                              />
                               <div className="aura-fl-card hz-detail">{details(sel.key)}</div>
                               <p className="aura-fl-foot hz-foot">{sel.foot}</p>
                           </div>
@@ -307,7 +339,11 @@ export function HeizungFacelift({ draft, m: real, details }: Ctx & { draft: Excl
             : []),
     ];
     return (
-        <div className={`aura-fl-scope hz-page hz-page--${draft.toLowerCase()}`} data-hz-draft={draft} data-widget-interactive>
+        <div
+            className={`aura-fl-scope hz-page hz-page--${draft.toLowerCase()}`}
+            data-hz-draft={draft}
+            data-widget-interactive
+        >
             <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />
         </div>
     );
@@ -348,7 +384,7 @@ function StatusRow({ m, sub, right }: { m: HzModel; sub?: ReactNode; right?: Rea
 
 /** Pumpe · Abtauen · Heizstab als kleine Marken (aktiv farbig, sonst blass) */
 function Chips({ m }: { m: HzModel }) {
-    const ind = useHeizungIndStore((s) => s.ind);
+    const ind = useHeizungInd();
     const shown = ind === 'only' ? PARTS.filter((p) => m[p.key]) : PARTS;
     return (
         <div className="hz-chips" data-mode={m.mode} data-ind={ind}>
@@ -363,7 +399,9 @@ function Chips({ m }: { m: HzModel }) {
                     ) : (
                         <Icon size={15} />
                     )}
-                    <span className="hz-chip-label">{label}</span>
+                    <span className="hz-chip-label" data-label={label}>
+                        {label}
+                    </span>
                     {ind !== 'only' && <span className="hz-sr">{m[key] ? ' ein' : ' aus'}</span>}
                 </span>
             ))}
@@ -411,7 +449,9 @@ function Head({ m, lay, fill }: { m: HzModel; lay: HeizungHeadLay; fill: Heizung
                         <span className="aura-fl-row-main">
                             <span className="aura-fl-row-title hz-row-title">{label}</span>
                         </span>
-                        <span className={`hz-row-val${m[key] ? '' : ' hz-row-val--off'}`}>{m[key] ? 'Ein' : 'Aus'}</span>
+                        <span className={`hz-row-val${m[key] ? '' : ' hz-row-val--off'}`}>
+                            {m[key] ? 'Ein' : 'Aus'}
+                        </span>
                     </div>
                 ))}
             </div>

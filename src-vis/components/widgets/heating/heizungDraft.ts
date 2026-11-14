@@ -11,6 +11,14 @@ import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 
 export type HeizungDraft = 'ALT' | 'E' | 'F' | 'G';
 
+/**
+ * Saschas Wahl (14.11.2026): Kopf 11, Marken b (Kapseln), aktuelle Werte G. Die gelben Auswahlen
+ * (Buchstaben im Umschalter, Leisten Betrieb/Aktiv/Marken/Kopf) sind abgeschaltet, ihr Code bleibt.
+ * Wieder einschalten: HZ_PICK auf true setzen. Alle Varianten stehen im Vault, Feature 31 „Heizung".
+ */
+export const HZ_PICK = false;
+export const HZ_FIXED = { draft: 'G', head: '11', ind: 'pill' } as const;
+
 export const HEIZUNG_DRAFTS: { key: HeizungDraft; label: string; name: string }[] = [
     { key: 'ALT', label: 'Alt', name: 'Heutige Seite' },
     // Runde 2 (13.11.2026): Kopf aus C, Auswertungen als Unterseiten (aus B); offen ist nur die Form der
@@ -47,7 +55,8 @@ export const useHeizungDraftStore = create<{ draft: HeizungDraft; setDraft: (d: 
 /** Aktiver Heizungs-Entwurf; null bei „Ist", bei „Alt" und im Pi-Build. */
 export function useHeizungDraft(): Exclude<HeizungDraft, 'ALT'> | null {
     const flv = useFaceliftVariant();
-    const draft = useHeizungDraftStore((s) => s.draft);
+    const stored = useHeizungDraftStore((s) => s.draft);
+    const draft = HZ_PICK ? stored : HZ_FIXED.draft;
     if (!import.meta.env.DEV || !flv || draft === 'ALT') return null;
     return draft;
 }
@@ -81,7 +90,7 @@ export const useHeizungSceneStore = create<{
 /**
  * Runde 3 (13.11.2026): Kopf-Karte getrennt wählbar, unabhängig von der Form der Werte (E/F/G).
  * A–D sind die Köpfe aus Runde 1 (nicht eingefärbt, B nur zart), 1–15 färben die ganze Karte in der
- * Betriebsfarbe (Heizen grün, Warmwasser blau); bei „Bereit" bleibt die Karte neutral.
+ * Betriebsfarbe (Heizen rötlich, Warmwasser blau); bei „Bereit" bleibt die Karte neutral.
  *   lay  = Aufbau,  fill = Art der Einfärbung
  */
 export type HeizungHeadLay = 'row' | 'pills' | 'hero' | 'mark' | 'line' | 'list' | 'value';
@@ -161,3 +170,14 @@ export const useHeizungIndStore = create<{ ind: HeizungInd; setInd: (i: HeizungI
         }
     },
 }));
+
+/** Gewählte Marken-Art (bei abgeschalteter Auswahl fest b). */
+export function useHeizungInd(): HeizungInd {
+    const stored = useHeizungIndStore((s) => s.ind);
+    return HZ_PICK ? stored : HZ_FIXED.ind;
+}
+/** Gewählter Kopf (bei abgeschalteter Auswahl fest 11). */
+export function useHeizungHead(): string {
+    const stored = useHeizungHeadStore((s) => s.head);
+    return HZ_PICK ? stored : HZ_FIXED.head;
+}

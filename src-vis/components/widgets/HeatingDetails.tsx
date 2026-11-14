@@ -18,7 +18,7 @@ import type { EnergyDps } from './heating/energyModel';
  * Two variants, both fed by useMultiSeriesData (raw history) and sharing the
  * ChartPeriodNav pager (Tag / 7 Tage / Monat + wheel date-jump):
  *
- *  • 'circuit'  – "Heizkreis": the green flow/return SPREAD BAND plus the HK1
+ *  • 'circuit'  – "Heizkreis": the red flow/return SPREAD BAND plus the HK1
  *                 target (Soll). One temperature axis.
  *  • 'operation'– "Betrieb": the same spread band on top, and a compact on/off
  *                 timeline strip below it (compressor + circuit pump).
@@ -32,13 +32,14 @@ import type { EnergyDps } from './heating/energyModel';
  */
 
 const C = {
-    vorlauf: '#2f8f3e', // dark green (flow, band top)
-    ruecklauf: '#7cc47f', // light green (return, band bottom)
-    band: 'rgba(74,158,47,0.22)', // spread fill between flow and return
+    // Heizen rötlich statt grün (Sascha, 14.11.2026), passend zum Kopf der Heizungs-Seite
+    vorlauf: '#b8321f', // dark red (flow, band top)
+    ruecklauf: '#ee8b73', // light red (return, band bottom)
+    band: 'rgba(208,73,46,0.2)', // spread fill between flow and return
     soll: '#e0922f', // orange (HK1 target flow)
     verdichter: '#eab308', // yellow (compressor)
     pumpe: '#9ca3af', // grey (circuit pump)
-    heizen: '#4a9e2f', // green (space-heating run — matches the widget's "Heizen" chip)
+    heizen: '#d0492e', // red (space-heating run — matches the Heizung page head)
     warmwasser: '#2f7fd6', // blue (hot-water run — matches the widget's "Warmwasser" chip)
     wwIst: '#e8873a', // orange (hot-water actual temp — the hero line)
     wwSoll: '#2f7fd6', // blue (hot-water target)
@@ -71,7 +72,7 @@ function valueAt(sorted: Pt[], t: number): number | null {
 /**
  * Build the spread band as a stacked pair sampled at the return timestamps:
  *   base  = return value      (invisible baseline)
- *   delta = max(0, flow-ret)  (the green band on top)
+ *   delta = max(0, flow-ret)  (the red band on top)
  * The flow is step-interpolated onto each return timestamp; the crisp flow and
  * return lines are drawn separately on top.
  */

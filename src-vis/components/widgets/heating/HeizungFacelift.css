@@ -17,8 +17,9 @@
  *   --fl-hz-nav-h        Höhe der Blättern-Zeile über einem Diagramm
  *   --fl-hz-detail-pad   Innenrand um eine Auswertung (Diagramme)
  * Eigene Farben (je Theme überschreibbar):
- *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen (rötlich, Sascha 13.11.2026; die heutige Seite und die
- *                                  Diagramme zeigen Heizen noch grün) / Warmwasser (blau)
+ *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen (rötlich, Sascha 13.11.2026, wie C.heizen in den
+ *                                  Diagrammen) / Warmwasser (blau)
+ *   --fl-hz-on-white                Schrift auf weißer Marke (Betrieb „Bereit")
  *   --fl-hz-ico-bg / --fl-hz-ico-fg   Symbolfläche und Zeichen
  *   --fl-hz-on-mode                   Schrift auf kräftig eingefärbter Kopf-Karte
  */
@@ -166,8 +167,15 @@ body[data-fl-variant] .hz-head {
     --hz-h-on-fg: var(--hz-on-mode);
     --hz-h-off: color-mix(in srgb, var(--hz-h-fg) 28%, transparent);
 }
+/* Bereit: aktive Marke weiß wie im Betrieb (Sascha, 14.11.2026), mit Schatten, damit sie sich von der
+   neutralen Karte abhebt */
 body[data-fl-variant] .hz-head[data-mode='idle'] {
-    --hz-h-on-bg: var(--fl-ok);
+    --hz-h-on-bg: #fff;
+    --hz-h-on-fg: var(--fl-hz-on-white, #1c1c1e);
+}
+body[data-fl-variant] .hz-head[data-mode='idle'] .hz-chips:is([data-ind='pill'], [data-ind='only']) > .hz-chip[data-on],
+body[data-fl-variant] .hz-head[data-mode='idle'] .hz-chip[data-on] > :is(.hz-chip-dot, .hz-chip-round) {
+    box-shadow: 0 0 0 1px var(--fl-line-strong), 0 1px 3px rgba(0, 0, 0, 0.16);
 }
 body[data-fl-variant] .hz-head .hz-row-title {
     color: var(--hz-h-fg);
@@ -368,6 +376,22 @@ body[data-fl-variant] .hz-head .hz-chips > .hz-chip.hz-chip--none {
     box-shadow: none;
     opacity: 1;
 }
+/* Gleiche Breite aktiv und inaktiv: unsichtbare fette Zeile reserviert die Breite der fetten Schrift */
+body[data-fl-variant] .hz-chip-label {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+}
+body[data-fl-variant] .hz-chip-label::after {
+    content: attr(data-label);
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: 600;
+    user-select: none;
+    pointer-events: none;
+}
+
 /* d: Lämpchen */
 body[data-fl-variant] .hz-chip-dot {
     width: 9px;

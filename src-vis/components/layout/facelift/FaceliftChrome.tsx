@@ -23,7 +23,7 @@ import {
     type FaceliftVariant,
 } from './faceliftVariant';
 import { WOHNKLIMA_DRAFTS, useWohnklimaDraftStore } from '../../widgets/wohnklima/wohnklimaDraft';
-import { HEIZUNG_DRAFTS, useHeizungDraftStore } from '../../widgets/heating/heizungDraft';
+import { HEIZUNG_DRAFTS, HZ_PICK, useHeizungDraftStore } from '../../widgets/heating/heizungDraft';
 import './facelift.css';
 import './facelift-blocks.css';
 
@@ -73,7 +73,8 @@ export function FaceliftSwitch({
     const showWk = tabSlug === 'wohnklima' && choice !== 'IST';
     const hzDraft = useHeizungDraftStore((s) => s.draft);
     const setHzDraft = useHeizungDraftStore((s) => s.setDraft);
-    const showHz = tabSlug === 'heizung' && choice !== 'IST';
+    // Heizung entschieden (14.11.2026): Buchstaben abgeschaltet, mit HZ_PICK wieder sichtbar
+    const showHz = HZ_PICK && tabSlug === 'heizung' && choice !== 'IST';
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             <button
