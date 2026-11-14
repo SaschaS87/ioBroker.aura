@@ -19,7 +19,7 @@
  * Eigene Farben (je Theme überschreibbar):
  *   --fl-hz-heat / --fl-hz-water   Betrieb Heizen (rötlich, Sascha 13.11.2026, wie C.heizen in den
  *                                  Diagrammen) / Warmwasser (blau)
- *   --fl-hz-on-white                Schrift auf weißer Marke (Betrieb „Bereit")
+ *   --fl-hz-idle                    Kopf bei „Bereit" (grau)
  *   --fl-hz-ico-bg / --fl-hz-ico-fg   Symbolfläche und Zeichen
  *   --fl-hz-on-mode                   Schrift auf kräftig eingefärbter Kopf-Karte
  */
@@ -152,7 +152,7 @@ body[data-fl-variant] .hz-chiprow::before {
 
 /* ── Kopf-Karte (Runde 3): Aufbau über hz-head--*, Einfärbung über data-fill ───────────── */
 /*
- * Die Karte färbt sich nur bei Heizen und Warmwasser (data-mode), bei „Bereit" bleibt sie neutral.
+ * Die Karte färbt sich bei Heizen (rötlich), Warmwasser (blau) und, bei kräftig/Verlauf, „Bereit" (grau).
  * Jede Einfärbung setzt dieselben Größen, die Inhalte lesen nur diese:
  *   --hz-h-fg  Schrift    --hz-h-sub  Nebenschrift    --hz-h-accent  großes Symbol im Hintergrund
  * Trennlinien in der Karte folgen über --fl-line (nur innerhalb der Karte überschrieben).
@@ -167,15 +167,10 @@ body[data-fl-variant] .hz-head {
     --hz-h-on-fg: var(--hz-on-mode);
     --hz-h-off: color-mix(in srgb, var(--hz-h-fg) 28%, transparent);
 }
-/* Bereit: aktive Marke weiß wie im Betrieb (Sascha, 14.11.2026), mit Schatten, damit sie sich von der
-   neutralen Karte abhebt */
+/* Bereit: kräftige und Verlauf-Köpfe färben sich grau (Sascha, 14.11.2026), die aktive Marke ist dann wie
+   im Betrieb weiß. Zarte Köpfe bleiben bei „Bereit" neutral. */
 body[data-fl-variant] .hz-head[data-mode='idle'] {
-    --hz-h-on-bg: #fff;
-    --hz-h-on-fg: var(--fl-hz-on-white, #1c1c1e);
-}
-body[data-fl-variant] .hz-head[data-mode='idle'] .hz-chips:is([data-ind='pill'], [data-ind='only']) > .hz-chip[data-on],
-body[data-fl-variant] .hz-head[data-mode='idle'] .hz-chip[data-on] > :is(.hz-chip-dot, .hz-chip-round) {
-    box-shadow: 0 0 0 1px var(--fl-line-strong), 0 1px 3px rgba(0, 0, 0, 0.16);
+    --hz-mode: var(--fl-hz-idle, #7c7c82);
 }
 body[data-fl-variant] .hz-head .hz-row-title {
     color: var(--hz-h-fg);
@@ -223,8 +218,8 @@ body[data-fl-variant] .hz-head[data-fill='glow']:not([data-mode='idle']) {
     --fl-line: color-mix(in srgb, var(--hz-mode) 30%, transparent);
 }
 /* kräftig und Farbverlauf: ganze Karte in der Betriebsfarbe, Schrift hell */
-body[data-fl-variant] .hz-head[data-fill='solid']:not([data-mode='idle']),
-body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
+body[data-fl-variant] .hz-head[data-fill='solid'],
+body[data-fl-variant] .hz-head[data-fill='grad'] {
     background: var(--hz-mode);
     border-color: transparent;
     --hz-h-fg: var(--hz-on-mode);
@@ -234,7 +229,7 @@ body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
     --hz-h-on-fg: var(--hz-mode);
     --fl-line: color-mix(in srgb, var(--hz-on-mode) 30%, transparent);
 }
-body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
+body[data-fl-variant] .hz-head[data-fill='grad'] {
     background: linear-gradient(
         135deg,
         color-mix(in srgb, var(--hz-mode) 82%, #fff) 0,
@@ -242,18 +237,18 @@ body[data-fl-variant] .hz-head[data-fill='grad']:not([data-mode='idle']) {
         color-mix(in srgb, var(--hz-mode) 72%, #000) 100%
     );
 }
-body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-ico {
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']) .hz-ico {
     background: color-mix(in srgb, var(--hz-on-mode) 24%, transparent);
     color: var(--hz-on-mode);
 }
-body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-ico[data-on] {
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']) .hz-ico[data-on] {
     background: var(--hz-on-mode);
     color: var(--hz-mode);
 }
-body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-chip {
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']) .hz-chip {
     opacity: 0.75;
 }
-body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']):not([data-mode='idle']) .hz-chip[data-on] {
+body[data-fl-variant] .hz-head:is([data-fill='solid'], [data-fill='grad']) .hz-chip[data-on] {
     color: var(--hz-on-mode);
     opacity: 1;
     font-weight: 600;
@@ -316,10 +311,10 @@ body[data-fl-variant] .hz-head--pills .hz-chip {
     background: color-mix(in srgb, var(--hz-h-fg) 12%, transparent);
     opacity: 1;
 }
-body[data-fl-variant] .hz-head.hz-head--pills[data-fill]:not([data-mode='idle']) .hz-chip {
+body[data-fl-variant] .hz-head.hz-head--pills[data-fill] .hz-chip {
     opacity: 1;
 }
-body[data-fl-variant] .hz-head.hz-head--pills[data-fill]:not([data-mode='idle']) .hz-chip[data-on] {
+body[data-fl-variant] .hz-head.hz-head--pills[data-fill] .hz-chip[data-on] {
     background: var(--hz-h-fg);
     color: var(--hz-mode);
 }
