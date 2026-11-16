@@ -56,6 +56,9 @@ const C = {
     wwHys: '#5aa0e0', // light-blue dashed band edges
 };
 
+/** Legenden-Name der grauen Streifen (Facelift-Unterseite) */
+const PUMP_OFF = 'Pumpe aus';
+
 /** Spreizung in der Legende und im Tooltip: kräftiger als die Fläche, sonst kaum zu sehen. */
 const SPREAD_KEY = 'rgba(208,73,46,0.45)';
 /** Legenden-Eintrag der Spreizung (Fläche, kein Strich: die Reihe selbst hat Linienbreite 0). */
@@ -215,7 +218,7 @@ function HeatingDetailsCharts({
     const tagSoll = useDatapoint(sub ? wwSollTagDp : '').value;
     const nachtSoll = useDatapoint(sub ? wwSollNachtDp : '').value;
     // Hineinzoomen (Facelift-Unterseite: Antippen, Schieber oder Zeitabschnitte; sonst nur zwei Finger)
-    const zoom = useChartZoom(viewWindow, mode, !!sub, ink, variant === 'operation' ? [0, 1] : [0]);
+    const zoom = useChartZoom(viewWindow, !!sub, ink, variant === 'operation' ? [0, 1] : [0], variant === 'circuit' && sub?.pumpOff === 'stripes' ? 2 : 1);
     const bottom = 40 + zoom.extraBottom;
 
     // `raw` fetches every logged point (no bucketing) — the flow/return/pump/
@@ -261,6 +264,8 @@ function HeatingDetailsCharts({
             if (sollDp) list.push(win('soll', sollDp, C.soll));
             // nur für die Kennzahlen der Facelift-Unterseite (Warmwasser-Zeiten ausnehmen)
             if (sub && warmwasserDp) list.push(win('ww', warmwasserDp, C.warmwasser, { raw: true }));
+            // nur für die Streifen „Pumpe aus" der Facelift-Unterseite
+            if (sub && pumpeDp) list.push(win('pump', pumpeDp, C.pumpe, { raw: true }));
         } else {
             if (verdichterDp) list.push(win('verd', verdichterDp, C.verdichter, { raw: true }));
             if (pumpeDp) list.push(win('pump', pumpeDp, C.pumpe, { raw: true }));
@@ -296,6 +301,42 @@ function HeatingDetailsCharts({
         borderColor: 'var(--app-border, #333)',
         textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },
     };
+
+    // Facelift-Unterseite: Zeiten mit Pumpe aus als graue Streifen hinter den Linien (Entwurf, HZ_SUB_PICK).
+    // Vorlauf/Rücklauf haben dort Lücken (Hilfswert 0); die Streifen zeigen, warum. Erst ab dem ersten
+    // Pumpen-Eintrag im Fenster, davor ist der Zustand unbekannt.
+    const pumpOffSeries = useMemo(() => {
+        if (sub?.pumpOff !== 'stripes') return [];
+        const pts = get('pump');
+        if (!pts.length) return [];
+        const off: [number, number][] = [];
+        let since: number | null = null;
+        for (const [t, v] of pts) {
+            const isOff = v !== null && v < 0.5;
+            if (isOff && since === null) since = t;
+            else if (!isOff && since !== null) {
+                off.push([since, t]);
+                since = null;
+            }
+        }
+        if (since !== null) off.push([since, intervalEnd]);
+        return [
+            {
+                name: PUMP_OFF,
+                type: 'line',
+                data: [],
+                itemStyle: { color: ink.shade },
+                silent: true,
+                markArea: {
+                    silent: true,
+                    itemStyle: { color: ink.shade },
+                    data: off.map(([a, b]) => [{ xAxis: a }, { xAxis: b }]),
+                },
+            },
+        ];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sub?.pumpOff, dataMap, intervalEnd, ink.shade]);
+    const pumpLegend = pumpOffSeries.length ? [{ name: PUMP_OFF, icon: 'rect', itemStyle: { color: ink.axisLine } }] : [];
 
     const bandSeries = [
         {
@@ -339,8 +380,8 @@ function HeatingDetailsCharts({
     ];
 
     const circuitOption = useMemo(() => {
-        const series: Record<string, unknown>[] = [...bandSeries];
-        const legend: (string | typeof SPREAD_LEGEND)[] = ['Vorlauf', 'Rücklauf', SPREAD_LEGEND];
+        const series: Record<string, unknown>[] = [...pumpOffSeries, ...bandSeries];
+        const legend: (string | typeof SPREAD_LEGEND)[] = ['Vorlauf', 'Rücklauf', SPREAD_LEGEND, ...pumpLegend];
         if (sollDp) {
             series.push({
                 name: 'HK1-Soll',
@@ -406,7 +447,7 @@ function HeatingDetailsCharts({
             series: zoom.frame(series, vl),
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vl, rl, band, dataMap, sollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, sollColor, zoom.dataZoom, zoom.legendSelected, bottom]);
+    }, [vl, rl, band, dataMap, sollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, sollColor, pumpOffSeries, zoom.dataZoom, zoom.legendSelected, bottom]);
 
     const operationOption = useMemo(() => {
         const verd = onIntervals(get('verd'), intervalEnd).map((iv) => [iv[0], iv[1], 1]);
@@ -454,7 +495,7 @@ function HeatingDetailsCharts({
             // Die Balken sind an der Achse beschriftet; die Legende nennt nur die Linien und bleibt einzeilig
             // (vorher sechs Einträge, zweizeilig und auf den Achsenbeschriftungen).
             legend: {
-                data: ['Vorlauf', 'Rücklauf', SPREAD_LEGEND],
+                data: ['Vorlauf', 'Rücklauf', SPREAD_LEGEND, ...pumpLegend],
                 selected: zoom.legendSelected,
                 inactiveColor: ink.axisLine,
                 bottom: 0,
@@ -534,10 +575,10 @@ function HeatingDetailsCharts({
                     return `${t}<br/>${lines}`;
                 },
             },
-            series: zoom.frame([...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries], vl),
+            series: zoom.frame([...pumpOffSeries, ...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries], vl),
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax, ink.axis, ink.axisLine, ink.grid, chartHeight, zoom.dataZoom, zoom.extraBottom, zoom.legendSelected]);
+    }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax, ink.axis, ink.axisLine, ink.grid, chartHeight, pumpOffSeries, zoom.dataZoom, zoom.extraBottom, zoom.legendSelected]);
 
     const waterOption = useMemo(() => {
         const wwIst = get('wwIst');
@@ -644,7 +685,6 @@ function HeatingDetailsCharts({
     return (
         <HzDetailFrame innerRef={inkRef} stats={stats} nav={<PeriodNav mode={mode} offset={offset} onMode={(m) => { setMode(m); setOffset(0); }} onOffset={setOffset} />}>
 
-            {zoom.controls}
             <div className="relative w-full" style={{ height: chartHeight + zoom.extraBottom }}>
                 {anyLoading && !hasData && (
                     <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'var(--text-secondary)' }}>
@@ -665,6 +705,7 @@ function HeatingDetailsCharts({
                         opts={{ renderer: 'canvas' }}
                         notMerge
                         onEvents={zoom.onEvents}
+                        onChartReady={zoom.onChartReady}
                     />
                 )}
             </div>

@@ -594,23 +594,6 @@ body[data-fl-variant] .hz-nav-today:disabled {
     opacity: 0.5;
 }
 
-/* Zoom in die Zeitdiagramme (chartZoom.tsx): Leiste mit dem Ausschnitt über dem Diagramm */
-body[data-fl-variant] .hz-zoom-range {
-    flex: 1;
-    min-width: 0;
-    text-align: center;
-    font-size: var(--fl-font-meta);
-    font-variant-numeric: tabular-nums;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-body[data-fl-variant] .hz-zoom-range[data-all] {
-    font-size: var(--fl-font-sub);
-    color: var(--text-secondary);
-}
-
 /* ── Auswertung (HeatingDetails) in Karte, Pop-up oder Unterseite ────── */
 body[data-fl-variant] .hz-detail {
     padding: var(--fl-hz-detail-pad);

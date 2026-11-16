@@ -4,8 +4,10 @@
  * Sascha (14.11.2026): Mit zwei Fingern geht es zu schnell, man landet nie auf dem Zeitpunkt, den man sucht
  * (z. B. 6:30 Uhr). Zur Wahl standen Antippen, Schieber und Zeitabschnitte; Sascha hat am 16.11.2026 den
  * Schieber gewählt. Unter dem Diagramm liegt ein Schieber (ECharts dataZoom „slider"), Anfang und Ende zieht
- * man mit dem Finger. Darüber zeigt eine Leiste den Ausschnitt, ‹ › verschiebt ihn, „Alles" geht zurück.
- * Zwei Finger gehen weiter, mit kleinstem Ausschnitt 20 Minuten.
+ * man mit dem Finger, ein Tipp daneben verschiebt den Ausschnitt dorthin, ein Doppeltipp in den Schieber
+ * zeigt wieder alles. Auswahl gelb durchscheinend, Griffe kräftig gelb (Sascha, 16.11.2026). Die Leiste mit
+ * dem Ausschnitt über dem Diagramm ist auf Saschas Wunsch wieder weg (16.11.2026), die Zeitachse zeigt den
+ * Bereich. Zwei Finger gehen weiter, mit kleinstem Ausschnitt 20 Minuten.
  *
  * Vorschau-Kurve im Schieber: ECharts streckt sie über die Zeitspanne der ersten Reihe, die Griffe rechnen
  * aber mit der ganzen Achse. Am laufenden Tag (Werte nur bis jetzt) lag der Anstieg von 8 Uhr deshalb bei
@@ -18,9 +20,7 @@
  * der Legende abgeschaltet ist (legendSelected).
  * Ohne Unterseiten-Kontext (enabled = false) bleibt alles wie bisher: nur zwei Finger, kein Schieber.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { PeriodMode } from '../../../utils/chartPeriod';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChartInk } from './chartInk';
 import type { EChartsType } from 'echarts';
 
@@ -50,15 +50,11 @@ const clamp = (r: Range, w: Win): Range => {
 };
 const isAll = (r: Range, w: Win) => r[0] <= w.start + 60_000 && r[1] >= w.end - 60_000;
 
-const hm = (t: number) => new Date(t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-const dm = (t: number) => new Date(t).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
-function rangeLabel([a, b]: Range, mode: PeriodMode): string {
-    const sameDay = new Date(a).toDateString() === new Date(b - 1).toDateString();
-    // Tagesende als 24:00, nicht 00:00
-    if (mode === 'day') return `${hm(a)} – ${hm(b) === '00:00' && b > a ? '24:00' : hm(b)} Uhr`;
-    if (sameDay) return `${dm(a)} ${hm(a)} – ${hm(b)}`;
-    return `${dm(a)} ${hm(a)} – ${dm(b)} ${hm(b)}`;
-}
+/** Höchster Abstand zweier Tipps für einen Doppeltipp (ms) und Lage des Schiebers (px vom unteren Rand). */
+const DOUBLE_TAP_MS = 400;
+const SLIDER_BOTTOM = 24;
+const LEGEND_LINE = 16;
+const SLIDER_HEIGHT = 26;
 
 export interface ChartZoom {
     /** in die Option: dataZoom-Liste */
@@ -68,20 +64,22 @@ export interface ChartZoom {
     /** Reihen für die Option: Vorschau-Reihe `_shadow` (Kurve im Schieber) vorn dazu */
     frame: (series: Series[], shadow: [number, number | null][]) => Series[];
     onEvents: Record<string, (params: unknown, chart: Chart) => void>;
-    /** Leiste mit dem Ausschnitt über dem Diagramm, solange gezoomt ist */
-    controls: ReactNode;
+    /** Doppeltipp in den Schieber: wieder alles zeigen */
+    onChartReady: (chart: Chart) => void;
     /** in die Option: legend.selected (abgeschaltete Linien bleiben beim nächsten Live-Wert aus) */
     legendSelected: Record<string, boolean>;
 }
 
-export function useChartZoom(win: Win, mode: PeriodMode, enabled: boolean, ink: ChartInk, xAxisIndex: number[] = [0]): ChartZoom {
+export function useChartZoom(win: Win, enabled: boolean, ink: ChartInk, xAxisIndex: number[] = [0], legendLines = 1): ChartZoom {
+    // zweizeilige Legende (Heizkreis mit „Pumpe aus"): Schieber eine Zeile höher
+    const sliderBottom = SLIDER_BOTTOM + (legendLines - 1) * LEGEND_LINE;
     const [zoom, setZoom] = useState<Range | null>(null);
     const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
     // neues Fenster (anderer Tag, Zeitraum): wieder alles zeigen
     useEffect(() => setZoom(null), [win.start, win.end]);
 
-    const live = useRef({ zoom, win, enabled });
-    live.current = { zoom, win, enabled };
+    const live = useRef({ zoom, win, enabled, sliderBottom });
+    live.current = { zoom, win, enabled, sliderBottom };
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(
         () => () => {
@@ -116,24 +114,25 @@ export function useChartZoom(win: Win, mode: PeriodMode, enabled: boolean, ink: 
                 type: 'slider',
                 xAxisIndex,
                 filterMode: 'none',
-                bottom: 24,
-                height: 26,
+                bottom: sliderBottom,
+                height: SLIDER_HEIGHT,
                 minValueSpan: MIN_SPAN,
                 brushSelect: false,
                 borderColor: ink.axisLine,
                 backgroundColor: 'transparent',
-                fillerColor: 'rgba(120,120,120,0.18)',
+                fillerColor: ink.zoomFill,
                 handleSize: '110%',
-                handleStyle: { color: ink.axis, borderColor: ink.axis },
+                handleStyle: { color: ink.zoomHandle, borderColor: ink.zoomHandle },
+                emphasis: { handleStyle: { color: ink.zoomHandle, borderColor: ink.zoomHandle } },
                 moveHandleSize: 0,
                 dataBackground: { lineStyle: { color: ink.axisLine }, areaStyle: { color: ink.grid } },
                 selectedDataBackground: { lineStyle: { color: ink.axis }, areaStyle: { color: ink.axisLine } },
-                showDetail: false, // Anfang und Ende stehen in der Leiste über dem Diagramm
+                showDetail: false, // die Zeitachse darüber zeigt den Bereich
                 ...range,
             });
         return list;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [zoom, enabled, ink.axis, ink.axisLine, ink.grid, xAxisIndex.join()]);
+    }, [zoom, enabled, ink.axis, ink.axisLine, ink.grid, ink.zoomFill, ink.zoomHandle, xAxisIndex.join(), sliderBottom]);
 
     const frame = (series: Series[], shadow: [number, number | null][]): Series[] => {
         if (!enabled) return series;
@@ -172,28 +171,25 @@ export function useChartZoom(win: Win, mode: PeriodMode, enabled: boolean, ink: 
         [],
     );
 
-    // Die Leiste steht immer da: Erschien sie erst beim Zoomen, rutschte der Schieber mitten im Ziehen nach unten.
-    let controls: ReactNode = null;
-    if (enabled) {
-        const r: Range = zoom ?? [win.start, win.end];
-        const step = (dir: -1 | 1) => apply([r[0] + (dir * (r[1] - r[0])) / 2, r[1] + (dir * (r[1] - r[0])) / 2]);
-        controls = (
-            <div className="hz-nav hz-zoom">
-                <button type="button" className="hz-nav-arrow" aria-label="Ausschnitt früher" disabled={!zoom || r[0] <= win.start} onClick={() => step(-1)}>
-                    <ChevronLeft size={20} />
-                </button>
-                <span className="hz-zoom-range" data-all={!zoom || undefined}>
-                    {zoom ? rangeLabel(zoom, mode) : mode === 'day' ? 'Ganzer Tag' : mode === 'week' ? 'Ganze Woche' : 'Ganzer Monat'}
-                </span>
-                <button type="button" className="hz-nav-arrow" aria-label="Ausschnitt später" disabled={!zoom || r[1] >= win.end} onClick={() => step(1)}>
-                    <ChevronRight size={20} />
-                </button>
-                <button type="button" className="hz-nav-today" disabled={!zoom} onClick={() => apply(null)}>
-                    Alles
-                </button>
-            </div>
-        );
-    }
+    // Doppeltipp in den Schieber: wieder alles. Eigene Erkennung aus zwei Tipps, weil iOS beim Tippen kein
+    // dblclick zuverlässig meldet. Der erste Tipp kann den Ausschnitt schon verschoben haben; dessen
+    // verzögerte Übernahme (timer) wird verworfen.
+    const lastTap = useRef(0);
+    const onChartReady = (chart: Chart) => {
+        chart.getZr().on('click', (e: { offsetY: number }) => {
+            if (!live.current.enabled) return;
+            const h = chart.getHeight();
+            const inSlider = e.offsetY >= h - live.current.sliderBottom - SLIDER_HEIGHT - 4 && e.offsetY <= h - live.current.sliderBottom + 4;
+            if (!inSlider) return;
+            const now = Date.now();
+            if (now - lastTap.current < DOUBLE_TAP_MS) {
+                lastTap.current = 0;
+                if (timer.current) clearTimeout(timer.current);
+                chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+                setZoom(null);
+            } else lastTap.current = now;
+        });
+    };
 
-    return { dataZoom, extraBottom: enabled ? SLIDER_SPACE : 0, frame, onEvents, controls, legendSelected };
+    return { dataZoom, extraBottom: enabled ? SLIDER_SPACE + (legendLines - 1) * LEGEND_LINE : 0, frame, onEvents, onChartReady, legendSelected };
 }

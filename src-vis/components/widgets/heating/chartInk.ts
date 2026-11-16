@@ -19,9 +19,22 @@ export interface ChartInk {
     grid: string;
     /** Nulllinie / Hervorhebung (etwas kräftiger als das Gitter) */
     zero: string;
+    /** Zoom-Schieber: Auswahl gelb durchscheinend, Griffe kräftig gelb (Sascha, 16.11.2026; --accent-yellow) */
+    zoomFill: string;
+    zoomHandle: string;
+    /** Hintergrundstreifen (Pumpe aus): Schriftfarbe mit wenig Deckkraft */
+    shade: string;
 }
 
-export const INK_FALLBACK: ChartInk = { axis: '#888', axisLine: '#444', grid: '#333', zero: '#888' };
+export const INK_FALLBACK: ChartInk = {
+    axis: '#888',
+    axisLine: '#444',
+    grid: '#333',
+    zero: '#888',
+    zoomFill: 'rgba(234,179,8,0.22)',
+    zoomHandle: '#eab308',
+    shade: 'rgba(136,136,136,0.12)',
+};
 
 /** #rgb, #rrggbb oder rgb()/rgba() → [r, g, b]; sonst null. */
 function rgbOf(c: string | undefined): [number, number, number] | null {
@@ -41,12 +54,20 @@ const mix = (rgb: [number, number, number] | null, a: number, fb: string) =>
 
 /** Theme-Farben für ein Diagramm, gelesen am Element `ref` (folgt dem Theme-Wechsel). */
 export function useChartInk(ref: RefObject<HTMLElement | null>): ChartInk {
-    const [primary, secondary] = useResolvedColors(ref, ['var(--text-primary)', 'var(--text-secondary)']);
+    const [primary, secondary, yellow] = useResolvedColors(ref, [
+        'var(--text-primary)',
+        'var(--text-secondary)',
+        'var(--accent-yellow, #eab308)',
+    ]);
     const p = rgbOf(primary);
+    const y = rgbOf(yellow);
     return {
         axis: rgbOf(secondary) ? (secondary as string) : INK_FALLBACK.axis,
         axisLine: mix(p, 0.24, INK_FALLBACK.axisLine),
         grid: mix(p, 0.1, INK_FALLBACK.grid),
         zero: mix(p, 0.4, INK_FALLBACK.zero),
+        zoomFill: mix(y, 0.22, INK_FALLBACK.zoomFill),
+        zoomHandle: y ? (yellow as string) : INK_FALLBACK.zoomHandle,
+        shade: mix(p, 0.08, INK_FALLBACK.shade),
     };
 }

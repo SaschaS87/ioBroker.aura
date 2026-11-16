@@ -260,6 +260,7 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
                             {...chart}
                             sollDp={dp('sollHk1Dp')}
                             warmwasserDp={dp('warmwasserDp')}
+                            pumpeDp={dp('pumpeDp')}
                         />
                     );
                 case 'betrieb':
