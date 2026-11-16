@@ -11,43 +11,10 @@
  *   Abschnitt  „Im gewählten Zeitraum": Kennzahlen als Zeilen
  *   danach     weitere Abschnitte der Auswertung (z. B. Streudiagramm)
  *
- * Entschieden (Sascha, 14.11.2026): Kennzahlen als Zeilen unter dem Text (Variante A), Soll-Linie im
- * Heizkreis türkis. Offen als gelbe Auswahl über der Unterseite (HZ_SUB_PICK):
- *   Zoom  A Antippen (Ausschnitt um den Punkt) · B Schieber unter dem Diagramm · C Zeitabschnitte
+ * Entschieden (Sascha): Kennzahlen als Zeilen unter dem Text, Soll-Linie im Heizkreis türkis (14.11.2026),
+ * Zoom mit Schieber unter dem Diagramm (16.11.2026, chartZoom.tsx).
  */
 import { createContext, useContext, type ReactNode, type Ref } from 'react';
-import { create } from 'zustand';
-
-/** Gelbe Auswahl auf den Unterseiten zeigen (bis Sascha entschieden hat). */
-export const HZ_SUB_PICK = true;
-
-/** Wie man in ein Zeitdiagramm hineinzoomt (zwei Finger gehen bei allen). */
-export type HzZoom = 'tap' | 'slider' | 'slices';
-export const HZ_ZOOM: { key: HzZoom; label: string; name: string }[] = [
-    { key: 'tap', label: 'A', name: 'Antippen' },
-    { key: 'slider', label: 'B', name: 'Schieber' },
-    { key: 'slices', label: 'C', name: 'Zeitabschnitte' },
-];
-const ZOOM_KEY = 'aura.heizung.zoom';
-function readZoom(): HzZoom {
-    try {
-        const v = localStorage.getItem(ZOOM_KEY);
-        return HZ_ZOOM.some((x) => x.key === v) ? (v as HzZoom) : 'tap';
-    } catch {
-        return 'tap';
-    }
-}
-export const useHzSubStore = create<{ zoom: HzZoom; setZoom: (z: HzZoom) => void }>((set) => ({
-    zoom: readZoom(),
-    setZoom: (zoom) => {
-        set({ zoom });
-        try {
-            localStorage.setItem(ZOOM_KEY, zoom);
-        } catch {
-            /* privater Modus */
-        }
-    },
-}));
 
 /** Soll-Linie im Heizkreis auf der Facelift-Unterseite (Sascha, 14.11.2026: türkis statt orange). */
 export const HZ_SOLL_COLOR = '#2a9d8f';
@@ -55,7 +22,6 @@ export const HZ_SOLL_COLOR = '#2a9d8f';
 export interface HzSubpage {
     /** Begleittext unter der Diagramm-Karte */
     foot: string;
-    zoom: HzZoom;
 }
 const Ctx = createContext<HzSubpage | null>(null);
 export const HzSubpageProvider = Ctx.Provider;

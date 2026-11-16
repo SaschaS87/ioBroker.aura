@@ -594,7 +594,7 @@ body[data-fl-variant] .hz-nav-today:disabled {
     opacity: 0.5;
 }
 
-/* Zoom in die Zeitdiagramme (chartZoom.tsx): Leiste mit dem Ausschnitt, Hinweis, Zeitabschnitte */
+/* Zoom in die Zeitdiagramme (chartZoom.tsx): Leiste mit dem Ausschnitt über dem Diagramm */
 body[data-fl-variant] .hz-zoom-range {
     flex: 1;
     min-width: 0;
@@ -606,12 +606,9 @@ body[data-fl-variant] .hz-zoom-range {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-body[data-fl-variant] .hz-zoom-hint {
-    margin: 0;
+body[data-fl-variant] .hz-zoom-range[data-all] {
     font-size: var(--fl-font-sub);
-    line-height: var(--fl-lh-sub);
     color: var(--text-secondary);
-    text-align: center;
 }
 
 /* ── Auswertung (HeatingDetails) in Karte, Pop-up oder Unterseite ────── */

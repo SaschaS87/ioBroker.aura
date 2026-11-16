@@ -215,7 +215,7 @@ function HeatingDetailsCharts({
     const tagSoll = useDatapoint(sub ? wwSollTagDp : '').value;
     const nachtSoll = useDatapoint(sub ? wwSollNachtDp : '').value;
     // Hineinzoomen (Facelift-Unterseite: Antippen, Schieber oder Zeitabschnitte; sonst nur zwei Finger)
-    const zoom = useChartZoom(viewWindow, mode, sub?.zoom ?? null, ink, variant === 'operation' ? [0, 1] : [0]);
+    const zoom = useChartZoom(viewWindow, mode, !!sub, ink, variant === 'operation' ? [0, 1] : [0]);
     const bottom = 40 + zoom.extraBottom;
 
     // `raw` fetches every logged point (no bucketing) — the flow/return/pump/
@@ -403,7 +403,7 @@ function HeatingDetailsCharts({
                     return `${t}<br/>${lines}`;
                 },
             },
-            series,
+            series: zoom.frame(series, vl),
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [vl, rl, band, dataMap, sollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, sollColor, zoom.dataZoom, zoom.legendSelected, bottom]);
@@ -534,7 +534,7 @@ function HeatingDetailsCharts({
                     return `${t}<br/>${lines}`;
                 },
             },
-            series: [...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries],
+            series: zoom.frame([...bandSeries, verdSeries, pumpSeries, heizSeries, wwSeries], vl),
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [vl, rl, band, dataMap, intervalEnd, xMin, xMax, ink.axis, ink.axisLine, ink.grid, chartHeight, zoom.dataZoom, zoom.extraBottom, zoom.legendSelected]);
@@ -594,7 +594,7 @@ function HeatingDetailsCharts({
                 ...tooltipBase,
                 formatter: (params: unknown) => {
                     const all = (params as { seriesName: string; value: [number, number]; marker: string }[]).filter(
-                        (p) => p.seriesName && Array.isArray(p.value),
+                        (p) => p.seriesName && !p.seriesName.startsWith('_') && Array.isArray(p.value),
                     );
                     if (!all.length) return '';
                     const t = new Date(all[0].value[0]).toLocaleString('de-DE', {
@@ -623,7 +623,7 @@ function HeatingDetailsCharts({
                     return `${t}<br/>${lines.join('<br/>')}`;
                 },
             },
-            series,
+            series: zoom.frame(series, wwIst),
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dataMap, hysBand, wwSollDp, xMin, xMax, ink.axis, ink.axisLine, ink.grid, zoom.dataZoom, zoom.legendSelected, bottom]);
@@ -665,7 +665,6 @@ function HeatingDetailsCharts({
                         opts={{ renderer: 'canvas' }}
                         notMerge
                         onEvents={zoom.onEvents}
-                        onChartReady={zoom.onChartReady}
                     />
                 )}
             </div>
