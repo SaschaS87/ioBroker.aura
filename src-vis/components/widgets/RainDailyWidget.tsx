@@ -7,8 +7,23 @@ import { formatNum } from '../../utils/formatValue';
 import type { RainStationDef } from './RainStationWidget';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import type { PeriodMode } from '../../utils/chartPeriod';
+import { HeizungPeriodNav } from './heating/HeizungPeriodNav';
+import { useWetterDraft } from './wetter/wetterDraft';
 
 type RangeKey = '7d' | 'month' | 'day';
+
+/**
+ * Kennzahlen des sichtbaren Zeitraums für die Facelift-Seite (Zeilen unter dem Diagramm). Aus denselben
+ * Rohwerten wie die Balken: Tagessumme = letzter Zählerstand des Tages, Stunden aus den Zählersprüngen.
+ */
+export interface RainDailyStats {
+    range: RangeKey;
+    sum: number | null;
+    /** Regentage, im Tagesmodus Regenstunden */
+    rainUnits: number;
+    /** nassester Tag bzw. nasseste Stunde; null, wenn es nicht geregnet hat */
+    peak: { value: number; label: string } | null;
+}
 
 // Map this widget's internal range keys to the shared period model and back, so
 // it shares the Tag / 7 Tage / Monat pager (incl. the wheel date-jump).
@@ -87,7 +102,12 @@ const chipStyle = (active: boolean): CSSProperties => ({
     color: active ? '#fff' : 'var(--text-secondary)',
 });
 
-export function RainDailyWidget({ config }: WidgetProps) {
+export function RainDailyWidget({
+    config,
+    onStats,
+}: WidgetProps & { onStats?: (s: RainDailyStats | null) => void }) {
+    // UI-Facelift (nur Dev-Vorschau): Zeitraum-Wahl zweizeilig wie auf den Heizungs-Unterseiten
+    const PeriodNav = useWetterDraft() ? HeizungPeriodNav : ChartPeriodNav;
     const o = config.options ?? {};
     const stations = (o.stations as RainStationDef[] | undefined) ?? [];
     const instance = (o.historyInstance as string) ?? 'influxdb.0';
@@ -267,6 +287,28 @@ export function RainDailyWidget({ config }: WidgetProps) {
         return { sum: sum as number | null, rainUnits: rainDays };
     }, [viewDays, range, hourCells]);
 
+    // Facelift: Kennzahlen des Zeitraums nach außen melden (Zeilen unter dem Diagramm)
+    useEffect(() => {
+        if (!onStats) return;
+        if (!stats) {
+            onStats(null);
+            return;
+        }
+        const cells = (range === 'day' ? hourCells : viewDays) ?? [];
+        let best: DayCell | null = null;
+        for (const c of cells) if (c.total !== null && c.total > 0 && (!best || c.total > (best.total as number))) best = c;
+        const peak = best
+            ? {
+                  value: best.total as number,
+                  label:
+                      range === 'day'
+                          ? `${String(best.date.getHours()).padStart(2, '0')}–${String(best.date.getHours() + 1).padStart(2, '0')} Uhr`
+                          : best.date.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+              }
+            : null;
+        onStats({ range, sum: stats.sum, rainUnits: stats.rainUnits, peak });
+    }, [onStats, stats, range, hourCells, viewDays]);
+
     // Drill-down: a tap on a day (bar or month cell) jumps into that day's hourly view.
     const gotoDay = (cell: DayCell) => {
         const today0 = startOfDay(new Date()).getTime();
@@ -300,7 +342,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
     return (
         <div className="flex flex-col h-full min-h-0" data-widget-interactive>
             {/* Header: icon + title left, period stats right */}
-            <div className="flex items-center gap-1.5 shrink-0 mb-1 min-w-0">
+            <div className="rd-head flex items-center gap-1.5 shrink-0 mb-1 min-w-0">
                 <CloudRain size={16} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
                 <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                     {config.title || 'Regenmenge pro Tag'}
@@ -330,7 +372,7 @@ export function RainDailyWidget({ config }: WidgetProps) {
 
             {/* Range chips + period pager (shared across all dashboard charts) */}
             <div className="shrink-0 mb-1 min-w-0">
-                <ChartPeriodNav
+                <PeriodNav
                     mode={R2M[range]}
                     offset={offset}
                     onMode={(m) => {
