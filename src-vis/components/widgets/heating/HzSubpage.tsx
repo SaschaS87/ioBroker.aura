@@ -13,40 +13,9 @@
  *
  * Entschieden (Sascha): Kennzahlen als Zeilen unter dem Text, Soll-Linie im Heizkreis türkis (14.11.2026),
  * Zoom mit Schieber unter dem Diagramm (16.11.2026, chartZoom.tsx).
- * Offen als gelbe Auswahl (HZ_SUB_PICK), Heizkreis und Betrieb: Zeiten mit Pumpe aus als graue Streifen
- * hinter den Linien, oder nur die Lücke wie bisher (Sascha, 16.11.2026: „zum Vergleich").
+ * Zeiten mit Pumpe aus als graue Streifen hinter den Linien, Heizkreis und Betrieb (16.11.2026).
  */
 import { createContext, useContext, type ReactNode, type Ref } from 'react';
-import { create } from 'zustand';
-
-/** Gelbe Auswahl auf den Unterseiten zeigen (bis Sascha entschieden hat). */
-export const HZ_SUB_PICK = true;
-
-export type HzPumpOff = 'stripes' | 'gap';
-export const HZ_PUMP_OFF: { key: HzPumpOff; label: string; name: string }[] = [
-    { key: 'stripes', label: 'A', name: 'graue Streifen' },
-    { key: 'gap', label: 'B', name: 'nur Lücke' },
-];
-const PUMP_KEY = 'aura.heizung.pumpeAus';
-function readPump(): HzPumpOff {
-    try {
-        const v = localStorage.getItem(PUMP_KEY);
-        return HZ_PUMP_OFF.some((x) => x.key === v) ? (v as HzPumpOff) : 'stripes';
-    } catch {
-        return 'stripes';
-    }
-}
-export const useHzSubStore = create<{ pumpOff: HzPumpOff; setPumpOff: (v: HzPumpOff) => void }>((set) => ({
-    pumpOff: readPump(),
-    setPumpOff: (pumpOff) => {
-        set({ pumpOff });
-        try {
-            localStorage.setItem(PUMP_KEY, pumpOff);
-        } catch {
-            /* privater Modus */
-        }
-    },
-}));
 
 /** Soll-Linie im Heizkreis auf der Facelift-Unterseite (Sascha, 14.11.2026: türkis statt orange). */
 export const HZ_SOLL_COLOR = '#2a9d8f';
@@ -54,8 +23,6 @@ export const HZ_SOLL_COLOR = '#2a9d8f';
 export interface HzSubpage {
     /** Begleittext unter der Diagramm-Karte */
     foot: string;
-    /** Zeiten mit Pumpe aus: graue Streifen oder nur Lücke */
-    pumpOff: HzPumpOff;
 }
 const Ctx = createContext<HzSubpage | null>(null);
 export const HzSubpageProvider = Ctx.Provider;

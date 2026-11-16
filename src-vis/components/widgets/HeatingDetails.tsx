@@ -218,7 +218,7 @@ function HeatingDetailsCharts({
     const tagSoll = useDatapoint(sub ? wwSollTagDp : '').value;
     const nachtSoll = useDatapoint(sub ? wwSollNachtDp : '').value;
     // Hineinzoomen (Facelift-Unterseite: Antippen, Schieber oder Zeitabschnitte; sonst nur zwei Finger)
-    const zoom = useChartZoom(viewWindow, !!sub, ink, variant === 'operation' ? [0, 1] : [0], variant === 'circuit' && sub?.pumpOff === 'stripes' ? 2 : 1);
+    const zoom = useChartZoom(viewWindow, !!sub, ink, variant === 'operation' ? [0, 1] : [0], variant === 'circuit' && sub ? 2 : 1);
     const bottom = 40 + zoom.extraBottom;
 
     // `raw` fetches every logged point (no bucketing) — the flow/return/pump/
@@ -252,8 +252,11 @@ function HeatingDetailsCharts({
             if (wwIstDp) list.push(win('wwIst', wwIstDp, C.wwIst, { raw: mode !== 'month' }));
             // roh (~100 Werte/Tag): gemittelt entstanden an den Umschaltzeiten Zwischenwerte zwischen Tag und Nacht
             if (wwSollDp) list.push(win('wwSoll', wwSollDp, C.wwSoll, { raw: true }));
-            if (wwHysObenDp) list.push(win('wwOben', wwHysObenDp, C.wwHys));
-            if (wwHysUntenDp) list.push(win('wwUnten', wwHysUntenDp, C.wwHys));
+            // Facelift: roh (~100 Werte/Tag). Gemittelt wurde der Sprung Tag/Nacht (z. B. 50 → 37 in einer
+            // Sekunde) zu einer Rampe über den ganzen Bucket.
+            const hysOpts = sub ? { raw: true } : {};
+            if (wwHysObenDp) list.push(win('wwOben', wwHysObenDp, C.wwHys, hysOpts));
+            if (wwHysUntenDp) list.push(win('wwUnten', wwHysUntenDp, C.wwHys, hysOpts));
             return list;
         }
         const list: EChartSeriesConfig[] = [
@@ -302,11 +305,11 @@ function HeatingDetailsCharts({
         textStyle: { color: 'var(--text-primary, #ccc)', fontSize: 11 },
     };
 
-    // Facelift-Unterseite: Zeiten mit Pumpe aus als graue Streifen hinter den Linien (Entwurf, HZ_SUB_PICK).
+    // Facelift-Unterseite: Zeiten mit Pumpe aus als graue Streifen hinter den Linien (Sascha, 16.11.2026).
     // Vorlauf/Rücklauf haben dort Lücken (Hilfswert 0); die Streifen zeigen, warum. Erst ab dem ersten
     // Pumpen-Eintrag im Fenster, davor ist der Zustand unbekannt.
     const pumpOffSeries = useMemo(() => {
-        if (sub?.pumpOff !== 'stripes') return [];
+        if (!sub) return [];
         const pts = get('pump');
         if (!pts.length) return [];
         const off: [number, number][] = [];
@@ -335,7 +338,7 @@ function HeatingDetailsCharts({
             },
         ];
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sub?.pumpOff, dataMap, intervalEnd, ink.shade]);
+    }, [!!sub, dataMap, intervalEnd, ink.shade]);
     const pumpLegend = pumpOffSeries.length ? [{ name: PUMP_OFF, icon: 'rect', itemStyle: { color: ink.axisLine } }] : [];
 
     const bandSeries = [
@@ -594,9 +597,11 @@ function HeatingDetailsCharts({
         // UNTEN..OBEN, BOTH named 'Hysterese' so the single legend entry toggles
         // the whole band (fill + both dashed edges) on and off together.
         if (oben.length || unten.length) {
+            // Facelift: als Stufe, damit das Band beim Wechsel Tag/Nacht springt wie WW-Soll
+            const hysStep = sub ? { step: 'end' } : {};
             series.push(
-                { name: 'Hysterese', type: 'line', stack: 'hys', data: hysBand.base, itemStyle: { color: C.wwHys }, areaStyle: { color: 'transparent' }, lineStyle: { color: C.wwHys, width: 1, type: 'dashed' }, showSymbol: false },
-                { name: 'Hysterese', type: 'line', stack: 'hys', data: hysBand.delta, itemStyle: { color: C.wwHys }, areaStyle: { color: C.wwBand }, lineStyle: { color: C.wwHys, width: 1, type: 'dashed' }, showSymbol: false },
+                { name: 'Hysterese', type: 'line', stack: 'hys', ...hysStep, data: hysBand.base, itemStyle: { color: C.wwHys }, areaStyle: { color: 'transparent' }, lineStyle: { color: C.wwHys, width: 1, type: 'dashed' }, showSymbol: false },
+                { name: 'Hysterese', type: 'line', stack: 'hys', ...hysStep, data: hysBand.delta, itemStyle: { color: C.wwHys }, areaStyle: { color: C.wwBand }, lineStyle: { color: C.wwHys, width: 1, type: 'dashed' }, showSymbol: false },
             );
             legend.push('Hysterese');
         }
