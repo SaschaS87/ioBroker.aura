@@ -131,7 +131,7 @@ export function GartenEventModal({ initial, circleLabel, onSave, onCancel, onDel
                     </div>
                 </div>
 
-                <div className="garten-sheet-body">
+                <div className="garten-sheet-body aura-fl-sheet-body">
                     {/* Aktiv */}
                     <div className="garten-sheet-row">
                         <span className="garten-sheet-label is-inline">Termin aktiv</span>

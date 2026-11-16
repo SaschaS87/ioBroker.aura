@@ -15,10 +15,10 @@ import { clampMinutes } from '../garten/gartenConstants';
 import type { CircleProbeData } from './Garten2Widget';
 
 /** Platzhalter-Wassermenge — bewusst nicht aus pipeFlow berechnet, siehe Kopf. */
-const PLACEHOLDER_WATER_AMOUNT = '999 l';
+export const PLACEHOLDER_WATER_AMOUNT = '999 l';
 
 /** "09:45" -> 585. Unbekanntes/leeres Format liefert null. */
-function countdownToSeconds(countdown: string): number | null {
+export function countdownToSeconds(countdown: string): number | null {
     const m = /^(\d+):(\d{2})$/.exec(countdown.trim());
     if (!m) return null;
     return Number(m[1]) * 60 + Number(m[2]);

@@ -30,6 +30,8 @@ import { Garten2Hero } from './Garten2Hero';
 import { Garten2WeatherSoil } from './Garten2WeatherSoil';
 import { Garten2WeekPlan } from './Garten2WeekPlan';
 import { Garten2SettingsSheet } from './Garten2SettingsSheet';
+import { GartenFacelift } from './GartenFacelift';
+import { useGartenDraft } from './gartenDraft';
 import '../garten/GartenWidget.css';
 import '../garten/GartenCircleCard.css';
 import './Garten2Widget.css';
@@ -136,6 +138,38 @@ export function Garten2Widget({ config, editMode }: WidgetProps) {
     const plan = useGartenPlanData(planRoot);
 
     const [settingsOpen, setSettingsOpen] = useState(false);
+
+    // UI-Facelift, Entwurfsphase (nur Dev-Vorschau bei „Neu"): gleiche Daten und Schreibwege, neuer Aufbau.
+    // Bei „Ist", bei „Alt" und im Pi-Build ist gfDraft null und es läuft der Aufbau darunter unverändert.
+    const gfDraft = useGartenDraft();
+    if (gfDraft && circles.length > 0) {
+        return (
+            <>
+                {circles.map((c) => (
+                    <Garten2CircleProbe
+                        key={c.sprinkleName}
+                        instance={instance}
+                        sprinkleName={c.sprinkleName}
+                        label={c.label}
+                        onUpdate={onUpdate}
+                    />
+                ))}
+                <GartenFacelift
+                    draft={gfDraft}
+                    instance={instance}
+                    circles={orderedProbes}
+                    weather={weather}
+                    plan={plan}
+                    interactive={interactive}
+                    plantInteractive={plantInteractive}
+                    confirmManualStart={confirmManualStart}
+                    manualDefaultMinutes={manualDefaultMinutes}
+                    showSoilMoisture={showSoilMoisture}
+                    devBlocked={DEV_WRITES_BLOCKED}
+                />
+            </>
+        );
+    }
 
     return (
         <div className="garten2-widget">

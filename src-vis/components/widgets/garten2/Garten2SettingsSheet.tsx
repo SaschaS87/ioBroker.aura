@@ -135,7 +135,7 @@ export function Garten2SettingsSheet({ instance, anyRunning, plantInteractive, o
                     </div>
                 </div>
 
-                <div className="garten2-sheet-body">
+                <div className="garten2-sheet-body aura-fl-sheet-body">
                     <div className="garten2-sheet-row">
                         <div className="garten2-sheet-row-text">
                             <span className="garten2-sheet-row-title">Regensperre</span>

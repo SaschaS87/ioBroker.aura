@@ -24,6 +24,7 @@ import {
 } from './faceliftVariant';
 import { WOHNKLIMA_DRAFTS, useWohnklimaDraftStore } from '../../widgets/wohnklima/wohnklimaDraft';
 import { HEIZUNG_DRAFTS, HZ_PICK, useHeizungDraftStore } from '../../widgets/heating/heizungDraft';
+import { GARTEN_DRAFTS, useGartenDraftStore } from '../../widgets/garten2/gartenDraft';
 import { WETTER_DRAFTS, useWetterDraftStore } from '../../widgets/wetter/wetterDraft';
 import './facelift.css';
 import './facelift-blocks.css';
@@ -76,6 +77,10 @@ export function FaceliftSwitch({
     const setHzDraft = useHeizungDraftStore((s) => s.setDraft);
     // Heizung entschieden (14.11.2026): Buchstaben abgeschaltet, mit HZ_PICK wieder sichtbar
     const showHz = HZ_PICK && tabSlug === 'heizung' && choice !== 'IST';
+    // Garten, Entwurfsphase: Buchstaben nur auf dem Garten-Tab
+    const gfDraft = useGartenDraftStore((s) => s.draft);
+    const setGfDraft = useGartenDraftStore((s) => s.setDraft);
+    const showGf = tabSlug === 'garten' && choice !== 'IST';
     // Wetter, Entwurfsphase: Buchstaben nur auf dem Wetter-Tab
     const wxDraft = useWetterDraftStore((s) => s.draft);
     const setWxDraft = useWetterDraftStore((s) => s.setDraft);
@@ -101,6 +106,23 @@ export function FaceliftSwitch({
                             aria-pressed={d.key === wkDraft}
                             title={d.name}
                             onClick={() => setWkDraft(d.key)}
+                        >
+                            {d.label}
+                        </button>
+                    ))}
+                </span>
+            )}
+            {showGf && (
+                <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Garten-Seite">
+                    {GARTEN_DRAFTS.map((d) => (
+                        <button
+                            key={d.key}
+                            type="button"
+                            className="aura-fl-switch-draft"
+                            data-sel={d.key === gfDraft || undefined}
+                            aria-pressed={d.key === gfDraft}
+                            title={d.name}
+                            onClick={() => setGfDraft(d.key)}
                         >
                             {d.label}
                         </button>
