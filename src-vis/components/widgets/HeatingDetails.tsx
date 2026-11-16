@@ -105,6 +105,33 @@ function buildBand(vl: Pt[], rl: Pt[]): { base: Pt[]; delta: Pt[] } {
     return { base, delta };
 }
 
+/**
+ * Wertwechsel in `pts`, die höchstens `maxLagMs` nach einem Wertwechsel in `ref` kommen, auf dessen Zeit
+ * vorziehen. Punkte mit dem alten Wert dazwischen fallen weg. Ohne `ref` unverändert.
+ */
+function snapToSteps(pts: Pt[], ref: Pt[], maxLagMs = 5 * 60_000): Pt[] {
+    if (!ref.length || !pts.length) return pts;
+    const steps: number[] = [];
+    for (let i = 1; i < ref.length; i++) {
+        if (ref[i][1] !== null && ref[i - 1][1] !== null && ref[i][1] !== ref[i - 1][1]) steps.push(ref[i][0]);
+    }
+    if (!steps.length) return pts;
+    const out: Pt[] = [];
+    for (let i = 0; i < pts.length; i++) {
+        const [t, v] = pts[i];
+        const prev = out.length ? out[out.length - 1][1] : null;
+        if (i > 0 && v !== null && prev !== null && v !== prev) {
+            const ts = [...steps].reverse().find((s) => s <= t && t - s <= maxLagMs);
+            if (ts !== undefined) {
+                while (out.length > 1 && out[out.length - 1][0] >= ts) out.pop();
+                if (out[out.length - 1][0] < ts) out.push([ts, v]);
+            }
+        }
+        if (!out.length || out[out.length - 1][0] < t) out.push([t, v]);
+    }
+    return out;
+}
+
 /** Fixed temperature-axis max: `base` by default, grown to the next 10° step only if data exceeds it. */
 function scaleMax(base: number, ...series: Pt[][]): number {
     let m = 0;
@@ -289,7 +316,13 @@ function HeatingDetailsCharts({
     const rl = useMemo(() => pumpGaps(rawRl ?? []), [rawRl]);
     const band = useMemo(() => buildBand(vl, rl), [vl, rl]);
     // Hot-water hysteresis band (reheat trigger zone): fill between UNTEN and OBEN.
-    const hysBand = useMemo(() => buildBand(get('wwOben'), get('wwUnten')), [dataMap]);
+    // Facelift: Das Skript schreibt die Grenzen eine Minute nach dem Sollwert-Wechsel (16.11.2026 in InfluxDB:
+    // Soll 05:54:38, Grenzen 05:55:38 UTC). Den Sprung des Bands an den Soll-Sprung heften.
+    const hysBand = useMemo(() => {
+        const soll = sub ? get('wwSoll') : [];
+        return buildBand(snapToSteps(get('wwOben'), soll), snapToSteps(get('wwUnten'), soll));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataMap, !!sub]);
     const hasData =
         variant === 'water' ? get('wwIst').length > 0 || get('wwOben').length > 0 : vl.length > 0 || rl.length > 0;
 
