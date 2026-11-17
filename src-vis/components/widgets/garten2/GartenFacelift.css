@@ -190,6 +190,10 @@ body[data-fl-variant] .gf-head-title {
     font-size: var(--fl-gf-hero);
     font-weight: 600;
     line-height: 1.2;
+    /* eine Zeile, damit beide Zustände gleich hoch bleiben */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 body[data-fl-variant] .gf-head-sub {
     font-size: var(--fl-font-meta);
@@ -208,8 +212,16 @@ body[data-fl-variant] .gf-head-time-val {
     font-variant-numeric: tabular-nums;
 }
 body[data-fl-variant] .gf-head-time-label {
+    min-width: 0;
     font-size: var(--fl-font-meta);
     color: color-mix(in srgb, var(--gf-on-mode) 82%, transparent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Ruhezustand: Balken unsichtbar, sein Platz bleibt (gleiche Höhe wie bei laufendem Kreis) */
+body[data-fl-variant] .gf-head-bar--idle {
+    visibility: hidden;
 }
 body[data-fl-variant] .gf-head-bar {
     display: block;
@@ -231,14 +243,20 @@ body[data-fl-variant] .gf-head-foot {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    /* Höhe der Stopp-Taste, auch wenn sie fehlt (Ruhezustand) */
+    min-height: 36px;
     margin-top: 14px;
 }
 body[data-fl-variant] .gf-head-fact {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     font-size: var(--fl-font-meta);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 body[data-fl-variant] .gf-head-stop {
     display: inline-flex;
@@ -561,6 +579,99 @@ body[data-fl-variant] .gf-subpage > .gf-detail > .gf-section:first-child > .gf-s
 body[data-fl-variant] .gf-subpage > .ios-bar + .gf-section > .gf-section-head,
 body[data-fl-variant] .gf-sheet-body > .gf-detail > .gf-section:first-child > .gf-section-head {
     padding-top: var(--fl-gap-title);
+}
+
+/* ── Unterseiten zum Bearbeiten (E): Termin und Einstellungen ────────── */
+/* Uhrzeit rechts in der Zeile, Schrift wie ein Wert */
+body[data-fl-variant] .gf-time-input {
+    flex-shrink: 0;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--fl-soft);
+    font: inherit;
+    /* 16 px und mehr: iOS zoomt beim Antippen sonst hinein */
+    font-size: var(--fl-gf-val);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+/* Schnellwahl der Tage rechts im Abschnittstitel */
+body[data-fl-variant] .gf-presets {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 2px;
+}
+body[data-fl-variant] .gf-preset {
+    min-height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    color: var(--gf-accent);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-preset[data-on] {
+    background: color-mix(in srgb, var(--gf-accent) 14%, transparent);
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-daycard {
+    padding: 12px;
+}
+body[data-fl-variant] .gf-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+}
+body[data-fl-variant] .gf-day {
+    min-height: var(--fl-gf-btn-h);
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: var(--fl-soft);
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    font-weight: 500;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-day[data-on] {
+    background: var(--gf-accent);
+    color: var(--gf-on-mode);
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-text-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    /* 16 px und mehr: iOS zoomt beim Antippen sonst hinein */
+    font-size: max(16px, var(--fl-font-title));
+    color: var(--text-primary);
+    outline: none;
+}
+body[data-fl-variant] .gf-text-input::placeholder {
+    color: var(--text-secondary);
+}
+/* Wert im Stepper ohne Eingabefeld (Regensperre) */
+body[data-fl-variant] .gf-step-val {
+    min-width: 28px;
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .gf-foot--crit {
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .gf-btnrow-wrap {
+    margin-top: var(--fl-gf-gap);
 }
 
 /* ── Pop-up eines Kreises (C) ────────────────────────────────────────── */

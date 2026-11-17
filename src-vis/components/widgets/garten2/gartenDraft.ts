@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 
-export type GartenDraft = 'ALT' | 'A' | 'B' | 'C' | 'D';
+export type GartenDraft = 'ALT' | 'A' | 'B' | 'C' | 'D' | 'E';
 
 export const GARTEN_DRAFTS: { key: GartenDraft; label: string; name: string }[] = [
     { key: 'ALT', label: 'Alt', name: 'Heutige Seite' },
@@ -16,17 +16,19 @@ export const GARTEN_DRAFTS: { key: GartenDraft; label: string; name: string }[] 
     { key: 'B', label: 'B', name: 'Alles auf einer Seite' },
     { key: 'C', label: 'C', name: 'Übersicht, Kreis als Pop-up' },
     { key: 'D', label: 'D', name: 'Nach Aufgabe sortiert' },
+    { key: 'E', label: 'E', name: 'Runde 2: Übersicht wie C, alles als Unterseiten' },
 ];
 
-const KEY = 'aura.garten.facelift';
+// Runde 2 (17.11.2026): neuer Schlüssel, damit die Vorschau mit E startet statt mit der alten Wahl
+const KEY = 'aura.garten.facelift.r2';
 
 function read(): GartenDraft {
     try {
         const v = localStorage.getItem(KEY);
-        // Unbekannte Werte (spätere Runden) fallen auf den ersten Entwurf zurück
-        return GARTEN_DRAFTS.some((d) => d.key === v) ? (v as GartenDraft) : 'A';
+        // Unbekannte Werte (spätere Runden) fallen auf den aktuellen Entwurf zurück
+        return GARTEN_DRAFTS.some((d) => d.key === v) ? (v as GartenDraft) : 'E';
     } catch {
-        return 'A';
+        return 'E';
     }
 }
 

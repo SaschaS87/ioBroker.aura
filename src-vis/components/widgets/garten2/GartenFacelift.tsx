@@ -6,6 +6,11 @@
  *   B  Alles auf einer Seite         je Kreis eine Karte mit Modus, Terminen und Handbetrieb
  *   C  Übersicht, Kreis als Pop-up   Kreise mit Bodenfeuchte rechts, ein Tipp öffnet ein Pop-up von unten
  *   D  Nach Aufgabe sortiert         „Von Hand gießen", „Automatik", „Zeitplan" (Unterseite), „Wetter und Boden"
+ *   E  Runde 2 (Rückmeldung Sascha vom 17.11.2026): Kreise und Wetter wie C, aber Kreis, Termin und
+ *      Einstellungen als Unterseiten wie bei den Rollläden („Sichern" im Kopf, Zurück fragt nach)
+ *
+ * Für alle gilt seit Runde 2: Die Kopf-Karte ist in Ruhe und bei laufendem Kreis gleich hoch, und auf der
+ * Seite eines Kreises steht „Von Hand gießen" vor „Automatik".
  *
  * Daten und Schreibwege sind die der heutigen Seite (Garten2Widget reicht sie herein): Kreise über
  * useSprinkleCircle, Wetter über useSprinkleWeather, Termine über useGartenPlanData. Termin-Pop-up
@@ -15,7 +20,7 @@
  * Die gelbe Leiste „Zustand" (Echt / Beispiel / Läuft) gehört nicht zum Entwurf: Bei „Beispiel" und „Läuft"
  * werden Termine, Modus, Gießen und Stoppen nur in der Anzeige nachgespielt, nichts geht an den Pi.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
     AlertTriangle,
@@ -36,8 +41,9 @@ import {
 } from 'lucide-react';
 import type { TimerEvent, TimerWeekday } from '../../../types';
 import { usePortalTarget } from '../../../contexts/PortalTargetContext';
-import { getObjectDirect } from '../../../hooks/useIoBroker';
-import { IosActionSheet, IosNavBar, IosStack, useTabHidden } from '../../common/ios';
+import { extendObjectDirect, getObjectDirect } from '../../../hooks/useIoBroker';
+import { DateTimeInput } from '../../common/DateTimeInput';
+import { IosActionSheet, IosButtonRow, IosNavBar, IosStack, useTabHidden } from '../../common/ios';
 import { useSheetDismiss } from '../useSheetDismiss';
 import { GartenEventModal } from '../garten/GartenEventModal';
 import { eventTime } from '../garten/GartenScheduleList';
@@ -46,6 +52,7 @@ import {
     clampMinutes,
     DEFAULT_MANUAL_MINUTES,
     MAX_MINUTES,
+    MAX_MINUTES_HINT,
     MIN_MINUTES,
     PARALLEL_HINT,
     TIMER_MODE_MOISTURE_HINT,
@@ -53,7 +60,13 @@ import {
 import type { CircleMode, CircleStatus } from '../garten/useSprinkleCircle';
 import type { CircleProbeData } from './Garten2Widget';
 import { countdownToSeconds, PLACEHOLDER_WATER_AMOUNT } from './Garten2Hero';
-import { Garten2SettingsSheet } from './Garten2SettingsSheet';
+import {
+    clampThreshold,
+    Garten2SettingsSheet,
+    MAX_THRESHOLD,
+    MIN_THRESHOLD,
+    STEP as THRESHOLD_STEP,
+} from './Garten2SettingsSheet';
 import { slotKeys, type GartenPlanEntry } from './gartenPlanModel';
 import type { GartenPlanData } from './useGartenPlanData';
 import type { SprinkleWeather } from './useSprinkleWeather';
@@ -367,7 +380,12 @@ const PLAN_FOOT =
 
 // ── Seite ────────────────────────────────────────────────────────────────────
 
-type Sub = { kind: 'circle'; name: string } | { kind: 'plan' } | null;
+/** Unterseiten im Stapel. „event" und „settings" gibt es nur in E (dort statt der Pop-ups von unten). */
+type Route =
+    | { kind: 'circle'; name: string }
+    | { kind: 'plan' }
+    | { kind: 'event'; circle: string; id: string | null }
+    | { kind: 'settings' };
 
 export function GartenFacelift(p: GartenFaceliftProps) {
     const { draft } = p;
@@ -375,22 +393,31 @@ export function GartenFacelift(p: GartenFaceliftProps) {
     const scene = useGartenSceneStore((s) => s.scene);
     const setScene = useGartenSceneStore((s) => s.setScene);
 
-    const [sub, setSub] = useState<Sub>(null);
+    const [stack, setStack] = useState<Route[]>([]);
+    const setSub = (r: Route | null) => setStack(r ? [r] : []);
+    const push = (r: Route) => setStack((s) => [...s, r]);
+    const pop = () => setStack((s) => s.slice(0, -1));
     const [sheet, setSheet] = useState<string | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsSeen, setSettingsSeen] = useState(0);
     const [editing, setEditing] = useState<{ c: GfCircle; entry: GartenPlanEntry | 'new' } | null>(null);
     const [saveError, setSaveError] = useState<string | null>(null);
     const threshold = useThresholdRain(p.instance, settingsSeen);
+    // Ungesicherte Änderungen in einem Editor (Termin, Regensperre): dann bleibt die Seite beim Tab-Wechsel stehen
+    const dirty = useRef(false);
+    const onDirty = useCallback((d: boolean) => {
+        dirty.current = d;
+    }, []);
 
     const rootRef = useRef<HTMLDivElement>(null);
     const hidden = useTabHidden(rootRef);
-    // Seite verlassen oder Entwurf gewechselt: wieder auf der Übersicht
+    // Seite verlassen oder Entwurf gewechselt: wieder auf der Übersicht (wie bei den Rollläden: außer ein
+    // Editor hält ungesicherte Änderungen)
     useEffect(() => {
-        if (hidden) setSub(null);
+        if (hidden && !dirty.current) setStack([]);
     }, [hidden]);
     useEffect(() => {
-        setSub(null);
+        setStack([]);
         setSheet(null);
     }, [draft]);
 
@@ -436,11 +463,14 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                 setSaveError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen'),
             );
         },
-        edit: (c, entry) => setEditing({ c, entry }),
+        // E: Termin als Unterseite wie bei den Rollläden; sonst das Pop-up von unten
+        edit: (c, entry) =>
+            draft === 'E'
+                ? push({ kind: 'event', circle: c.name, id: entry === 'new' ? null : entry.id })
+                : setEditing({ c, entry }),
     };
 
     const running = circles.find((c) => c.status === 'running') ?? null;
-    const subCircle = sub?.kind === 'circle' ? (circles.find((c) => c.name === sub.name) ?? null) : null;
     const sheetCircle = sheet ? (circles.find((c) => c.name === sheet) ?? null) : null;
 
     const settingsSection = (
@@ -449,7 +479,7 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                 <button
                     type="button"
                     className="aura-fl-row aura-fl-row--nav gf-navrow"
-                    onClick={() => setSettingsOpen(true)}
+                    onClick={() => (draft === 'E' ? push({ kind: 'settings' }) : setSettingsOpen(true))}
                 >
                     <span className="aura-fl-row-icon gf-ico">
                         <SlidersHorizontal size={20} />
@@ -556,6 +586,31 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                 {devNote}
             </div>
         );
+    } else if (draft === 'E') {
+        // Runde 2: Kreise und Wetter wie C, aber jeder Kreis, jeder Termin und die Einstellungen als Unterseite
+        home = (
+            <div className="gf-home">
+                {top}
+                <Section title="Bewässerungskreise" foot={soilFoot(x)}>
+                    <div className="aura-fl-card">
+                        {circles.map((c) => (
+                            <CircleNavRow
+                                key={c.name}
+                                c={c}
+                                x={x}
+                                soilRight
+                                onOpen={() => setSub({ kind: 'circle', name: c.name })}
+                            />
+                        ))}
+                    </div>
+                </Section>
+                <Section title="Wetter">
+                    <WeatherCompact x={x} />
+                </Section>
+                {settingsSection}
+                {devNote}
+            </div>
+        );
     } else {
         const total = plan.entries.filter((e) => circles.some((c) => c.name === e.kreis)).length;
         const nexts = circles
@@ -629,27 +684,61 @@ export function GartenFacelift(p: GartenFaceliftProps) {
         );
     }
 
-    const subNode =
-        subCircle !== null ? (
-            <div className="ios-page gf-subpage">
-                <IosNavBar
-                    sticky
-                    title={subCircle.label}
-                    backLabel="Garten"
-                    backFallback="Zurück"
-                    onBack={() => setSub(null)}
+    const titleOf = (r: Route | undefined): string => {
+        if (!r) return 'Garten';
+        if (r.kind === 'circle') return circles.find((c) => c.name === r.name)?.label ?? 'Kreis';
+        if (r.kind === 'plan') return 'Zeitplan';
+        if (r.kind === 'settings') return 'Einstellungen';
+        return r.id ? 'Termin' : 'Neuer Termin';
+    };
+
+    const pageOf = (r: Route, parent: Route | undefined): ReactNode => {
+        const back = titleOf(parent);
+        if (r.kind === 'circle') {
+            const c = circles.find((k) => k.name === r.name);
+            if (!c) return null;
+            return (
+                <div className="ios-page gf-subpage">
+                    <IosNavBar sticky title={c.label} backLabel={back} backFallback="Zurück" onBack={pop} />
+                    <CircleDetail c={c} x={x} />
+                </div>
+            );
+        }
+        if (r.kind === 'event') {
+            const c = circles.find((k) => k.name === r.circle);
+            if (!c) return null;
+            const entry = r.id ? plan.entries.find((e) => e.id === r.id) : undefined;
+            return (
+                <EventPage
+                    c={c}
+                    x={x}
+                    entry={entry}
+                    title={titleOf(r)}
+                    backLabel={back}
+                    onDone={pop}
+                    onDirtyChange={onDirty}
                 />
-                <CircleDetail c={subCircle} x={x} />
-            </div>
-        ) : sub?.kind === 'plan' ? (
-            <div className="ios-page gf-subpage">
-                <IosNavBar
-                    sticky
-                    title="Zeitplan"
-                    backLabel="Garten"
-                    backFallback="Zurück"
-                    onBack={() => setSub(null)}
+            );
+        }
+        if (r.kind === 'settings') {
+            return (
+                <SettingsPage
+                    instance={p.instance}
+                    anyRunning={p.circles.some((c) => c.state.valveOn === true)}
+                    // immer die echte Sperre: Die Regensperre wird nie nachgespielt
+                    plantInteractive={p.plantInteractive}
+                    backLabel={back}
+                    onDone={() => {
+                        setSettingsSeen((n) => n + 1);
+                        pop();
+                    }}
+                    onDirtyChange={onDirty}
                 />
+            );
+        }
+        return (
+            <div className="ios-page gf-subpage">
+                <IosNavBar sticky title="Zeitplan" backLabel={back} backFallback="Zurück" onBack={pop} />
                 <Warnings plan={plan} saveError={saveError} />
                 {circles.map((c, i) => {
                     const next = nextLabel(c, x);
@@ -674,11 +763,15 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                     );
                 })}
             </div>
-        ) : null;
+        );
+    };
 
     const pages = [
         { key: 'home', node: home },
-        ...(subNode ? [{ key: `s-${sub?.kind}-${subCircle?.name ?? ''}`, node: subNode }] : []),
+        ...stack.map((r, i) => ({
+            key: `s${i}-${r.kind}-${r.kind === 'circle' ? r.name : r.kind === 'event' ? `${r.circle}-${r.id ?? 'neu'}` : ''}`,
+            node: pageOf(r, stack[i - 1]),
+        })),
     ];
 
     return (
@@ -687,7 +780,7 @@ export function GartenFacelift(p: GartenFaceliftProps) {
             data-gf-draft={draft}
             data-widget-interactive
         >
-            <IosStack rootRef={rootRef} pages={pages} depth={subNode ? 1 : 0} sizing="current" manageScroll bleed={6} />
+            <IosStack rootRef={rootRef} pages={pages} depth={stack.length} sizing="current" manageScroll bleed={6} />
 
             {sheetCircle && (
                 <Sheet title={sheetCircle.label} sub={circleSub(sheetCircle, x)} onClose={() => setSheet(null)}>
@@ -777,7 +870,21 @@ function soilFoot(x: Ctx): string | undefined {
         : undefined;
 }
 
-/** Kopf-Karte: laufender Kreis (blau, Restzeit groß, Stoppen) oder Ruhezustand mit dem nächsten Lauf. */
+/** „30.09 06:20" (Format des Adapters, ohne Jahr) als Zeitpunkt; liegt er in der Zukunft, ist es das Vorjahr. */
+function lastOnMs(s: string, now: Date): number | null {
+    const m = /^(\d{1,2})\.(\d{1,2})\.?\s+(\d{1,2}):(\d{2})/.exec(s.trim());
+    if (!m) return null;
+    const d = new Date(now.getFullYear(), Number(m[2]) - 1, Number(m[1]), Number(m[3]), Number(m[4]));
+    if (d.getTime() > now.getTime()) d.setFullYear(d.getFullYear() - 1);
+    return d.getTime();
+}
+
+/**
+ * Kopf-Karte: laufender Kreis (blau, Restzeit groß, Stoppen) oder Ruhezustand (grau, nächster Lauf groß).
+ * Beide Zustände haben denselben Aufbau (Titel, große Zeile, Balken, Fußzeile), damit die Karte beim
+ * Start und Ende eines Laufs nicht springt (Rückmeldung Sascha, Runde 2). Im Ruhezustand ist der Balken
+ * unsichtbar, hält aber seinen Platz.
+ */
 function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
     if (!running) {
         const nexts = x.circles
@@ -786,16 +893,34 @@ function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
             .filter((v): v is { c: GfCircle; n: { at: number; text: string } } => v.n !== null)
             .sort((a, b) => a.n.at - b.n.at);
         const waiting = x.circles.find((c) => c.status === 'waiting');
+        const next = nexts[0];
+        // „Mi 06:00" → Tag und Uhrzeit getrennt: die Uhrzeit groß, der Rest klein daneben
+        const [nextDay, nextTime] = next ? next.n.text.split(' ') : ['', ''];
+        const last = x.circles
+            .map((c) => ({ c, at: c.lastOn ? lastOnMs(c.lastOn, x.now) : null }))
+            .filter((v): v is { c: GfCircle; at: number } => v.at !== null)
+            .sort((a, b) => b.at - a.at)[0];
         return (
             <div className="aura-fl-card gf-head" data-state="idle">
                 <Droplets className="gf-head-mark" aria-hidden />
                 <span className="gf-head-title">Es läuft gerade kein Kreis</span>
-                <span className="gf-head-sub">
-                    {waiting
-                        ? `${waiting.label} wartet auf den Start`
-                        : nexts[0]
-                          ? `Nächster Lauf: ${nexts[0].c.label}, ${nexts[0].n.text}`
-                          : 'Kein Termin geplant'}
+                <span className="gf-head-time">
+                    <span className="gf-head-time-val">{waiting ? 'Wartet' : next ? nextTime : '–'}</span>
+                    <span className="gf-head-time-label">
+                        {waiting
+                            ? `${waiting.label} startet gleich`
+                            : next
+                              ? `nächster Lauf · ${next.c.label}, ${nextDay}`
+                              : 'kein Termin geplant'}
+                    </span>
+                </span>
+                <span className="gf-head-bar gf-head-bar--idle" aria-hidden>
+                    <span className="gf-head-bar-fill" style={{ width: 0 }} />
+                </span>
+                <span className="gf-head-foot">
+                    <span className="gf-head-fact">
+                        {last ? `Zuletzt gegossen: ${last.c.label}, ${last.c.lastOn}` : 'Noch nicht gegossen'}
+                    </span>
                 </span>
             </div>
         );
@@ -1308,18 +1433,19 @@ function PlanBlock({ c, x }: { c: GfCircle; x: Ctx }) {
     );
 }
 
-/** Alles zu einem Kreis: Unterseite in A, Inhalt des Pop-ups in C. */
+/** Alles zu einem Kreis: Unterseite in A und E, Inhalt des Pop-ups in C. Von Hand gießen steht immer
+ *  zuerst, Automatik an zweiter Stelle (Rückmeldung Sascha, Runde 2). */
 function CircleDetail({ c, x }: { c: GfCircle; x: Ctx }) {
     return (
         <div className="gf-detail">
-            <Section title="Automatik">
-                <div className="aura-fl-card gf-segcard">
-                    <ModeSeg c={c} x={x} />
-                </div>
-            </Section>
             <Section title="Von Hand gießen" foot={c.status === 'waiting' ? PARALLEL_HINT : undefined}>
                 <div className="aura-fl-card">
                     <Manual c={c} x={x} />
+                </div>
+            </Section>
+            <Section title="Automatik">
+                <div className="aura-fl-card gf-segcard">
+                    <ModeSeg c={c} x={x} />
                 </div>
             </Section>
             <PlanBlock c={c} x={x} />
@@ -1416,6 +1542,541 @@ function CircleInline({ c, x }: { c: GfCircle; x: Ctx }) {
                 </div>
             </div>
         </Section>
+    );
+}
+
+// ── Unterseiten zum Bearbeiten (E), Muster der Rollläden-Editoren ────────────
+// „Sichern" rechts im Kopf (fett, grau, solange nichts zu sichern ist, mit data-ios-editing),
+// Zurück mit Änderungen fragt nach, Löschen als rote Knopfzeile ganz unten mit Rückfrage.
+
+/** „Sichern" per Portal in den Kopf der Seite. */
+function SaveInHead({
+    slot,
+    canSave,
+    label = 'Sichern',
+    onSave,
+}: {
+    slot: HTMLElement | null;
+    canSave: boolean;
+    label?: string;
+    onSave: () => void;
+}) {
+    if (!slot) return null;
+    return createPortal(
+        // data-ios-editing: Hier wird gerade bearbeitet, die Leiste unten tritt zurück (facelift.css)
+        <button
+            type="button"
+            className="ios-bar-text is-strong"
+            data-ios-editing=""
+            onClick={onSave}
+            disabled={!canSave}
+        >
+            {label}
+        </button>,
+        slot,
+    );
+}
+
+function LeaveSheet({
+    open,
+    canSave,
+    onDiscard,
+    onSave,
+    onStay,
+}: {
+    open: boolean;
+    canSave: boolean;
+    onDiscard: () => void;
+    onSave: () => void;
+    onStay: () => void;
+}) {
+    return (
+        <IosActionSheet
+            open={open}
+            actions={[
+                { key: 'discard', label: 'Änderungen verwerfen', tone: 'destructive', onSelect: onDiscard },
+                { key: 'save', label: 'Sichern', disabled: !canSave, onSelect: onSave },
+            ]}
+            cancelLabel="Weiter bearbeiten"
+            onCancel={onStay}
+        />
+    );
+}
+
+/** Meldet „ungesicherte Änderungen" nach oben (die Seite bleibt dann beim Tab-Wechsel stehen). */
+function useReportDirty(onDirtyChange: (d: boolean) => void, d: boolean) {
+    useEffect(() => onDirtyChange(d), [onDirtyChange, d]);
+    useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+}
+
+const DAY_LONG: Record<TimerWeekday, string> = {
+    mon: 'Montag',
+    tue: 'Dienstag',
+    wed: 'Mittwoch',
+    thu: 'Donnerstag',
+    fri: 'Freitag',
+    sat: 'Samstag',
+    sun: 'Sonntag',
+};
+const DAY_PRESETS: { label: string; days: TimerWeekday[] }[] = [
+    { label: 'Mo–Fr', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
+    { label: 'Sa, So', days: ['sat', 'sun'] },
+    { label: 'Täglich', days: WEEKDAY_ORDER },
+];
+
+const hhmmOf = (ev: TimerEvent) =>
+    ev.trigger.kind === 'time'
+        ? `${String(ev.trigger.hour).padStart(2, '0')}:${String(ev.trigger.minute).padStart(2, '0')}`
+        : '08:00';
+/** Vergleichsschlüssel: Was der Editor ändern kann, in fester Form. */
+const eventKey = (ev: TimerEvent) =>
+    JSON.stringify([
+        ev.enabled,
+        WEEKDAY_ORDER.filter((d) => ev.weekdays.includes(d)),
+        hhmmOf(ev),
+        String(ev.value ?? ''),
+        (ev.label ?? '').trim(),
+    ]);
+
+/** Termin eines Kreises als Unterseite (ersetzt in E das Termin-Pop-up). Felder wie im Pop-up. */
+function EventPage({
+    c,
+    x,
+    entry,
+    title,
+    backLabel,
+    onDone,
+    onDirtyChange,
+}: {
+    c: GfCircle;
+    x: Ctx;
+    entry: GartenPlanEntry | undefined;
+    title: string;
+    backLabel: string;
+    onDone: () => void;
+    onDirtyChange: (d: boolean) => void;
+}) {
+    // Ausgangsstand einmal beim Öffnen; gegen ihn wird „geändert" gemessen
+    const [base] = useState<GartenPlanEntry>(
+        () =>
+            entry ?? {
+                id: `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                kreis: c.name,
+                enabled: true,
+                label: '',
+                weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+                trigger: { kind: 'time', hour: 8, minute: 0 },
+                filter: 'all-days',
+                value: String(clampMinutes(x.minutes)),
+            },
+    );
+    const [ev, setEv] = useState<GartenPlanEntry>(base);
+    const [minutesText, setMinutesText] = useState(String(base.value ?? DEFAULT_MANUAL_MINUTES));
+    const [slot, setSlot] = useState<HTMLElement | null>(null);
+    const [askLeave, setAskLeave] = useState(false);
+    const [askDelete, setAskDelete] = useState(false);
+
+    const minutes = clampMinutes(minutesText);
+    const current: GartenPlanEntry = {
+        ...ev,
+        kreis: c.name,
+        trigger: ev.trigger.kind === 'time' ? ev.trigger : { kind: 'time', hour: 8, minute: 0 },
+        filter: 'all-days',
+        value: String(minutes),
+    };
+    const changed = eventKey(current) !== eventKey(base);
+    // Ein neuer Termin lässt sich auch unverändert sichern
+    const canSave = changed || !entry;
+    useReportDirty(onDirtyChange, changed);
+
+    const save = () => {
+        x.run(x.plan.saveEntry(current));
+        setAskLeave(false);
+        onDone();
+    };
+    const back = () => (changed ? setAskLeave(true) : onDone());
+    const toggleDay = (d: TimerWeekday) =>
+        setEv((p) => ({
+            ...p,
+            weekdays: WEEKDAY_ORDER.filter((w) => (w === d ? !p.weekdays.includes(w) : p.weekdays.includes(w))),
+        }));
+    const next = current.enabled ? nextRun([current], x.now) : null;
+    const sameDays = (days: TimerWeekday[]) =>
+        days.length === ev.weekdays.length && days.every((d) => ev.weekdays.includes(d));
+
+    return (
+        <div className="ios-page gf-subpage">
+            <IosNavBar
+                sticky
+                title={title}
+                backLabel={backLabel}
+                backFallback="Zurück"
+                onBack={back}
+                rightRef={setSlot}
+            />
+            <div className="gf-detail">
+                <Section title="Wann?">
+                    <div className="aura-fl-card">
+                        <div className="aura-fl-row gf-valrow gf-valrow--plain">
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title gf-row-title">Uhrzeit</span>
+                            </span>
+                            <DateTimeInput
+                                kind="time"
+                                value={hhmmOf(ev)}
+                                onValue={(v) => {
+                                    const [h, m] = v.split(':').map((n) => Number(n) || 0);
+                                    setEv((p) => ({ ...p, trigger: { kind: 'time', hour: h, minute: m } }));
+                                }}
+                                className="gf-time-input"
+                                aria-label="Uhrzeit"
+                            />
+                        </div>
+                    </div>
+                </Section>
+                <Section
+                    title="An welchen Tagen?"
+                    right={
+                        <span className="gf-presets">
+                            {DAY_PRESETS.map((pr) => (
+                                <button
+                                    key={pr.label}
+                                    type="button"
+                                    className="gf-preset"
+                                    data-on={sameDays(pr.days) || undefined}
+                                    aria-pressed={sameDays(pr.days)}
+                                    onClick={() => setEv((p) => ({ ...p, weekdays: pr.days }))}
+                                >
+                                    {pr.label}
+                                </button>
+                            ))}
+                        </span>
+                    }
+                    foot={
+                        ev.weekdays.length === 0
+                            ? 'Kein Wochentag gewählt: Der Termin wird nicht ausgeführt.'
+                            : undefined
+                    }
+                >
+                    <div className="aura-fl-card gf-daycard">
+                        <div className="gf-days">
+                            {WEEKDAY_ORDER.map((d) => (
+                                <button
+                                    key={d}
+                                    type="button"
+                                    className="gf-day"
+                                    data-on={ev.weekdays.includes(d) || undefined}
+                                    aria-pressed={ev.weekdays.includes(d)}
+                                    title={DAY_LONG[d]}
+                                    onClick={() => toggleDay(d)}
+                                >
+                                    {WEEKDAY_SHORT[d]}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </Section>
+                <Section title="Wie lange?" foot={MAX_MINUTES_HINT}>
+                    <div className="aura-fl-card">
+                        <div className="aura-fl-row gf-valrow gf-valrow--plain">
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title gf-row-title">Dauer</span>
+                            </span>
+                            <span className="gf-step">
+                                <button
+                                    type="button"
+                                    className="gf-step-btn"
+                                    onClick={() => setMinutesText(String(clampMinutes(minutes - 1)))}
+                                    disabled={minutes <= MIN_MINUTES}
+                                    aria-label="Eine Minute weniger"
+                                >
+                                    <Minus size={16} />
+                                </button>
+                                <input
+                                    type="number"
+                                    className="gf-step-input"
+                                    min={MIN_MINUTES}
+                                    max={MAX_MINUTES}
+                                    step={1}
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={minutesText}
+                                    onChange={(e) => setMinutesText(e.target.value)}
+                                    onBlur={() => setMinutesText(String(clampMinutes(minutesText)))}
+                                    aria-label="Dauer in Minuten"
+                                />
+                                <span className="gf-step-unit">Min</span>
+                                <button
+                                    type="button"
+                                    className="gf-step-btn"
+                                    onClick={() => setMinutesText(String(clampMinutes(minutes + 1)))}
+                                    disabled={minutes >= MAX_MINUTES}
+                                    aria-label="Eine Minute mehr"
+                                >
+                                    <Plus size={16} />
+                                </button>
+                            </span>
+                        </div>
+                    </div>
+                </Section>
+                <Section title="Bezeichnung" foot="Freiwillig, erscheint in der Terminliste.">
+                    <div className="aura-fl-card">
+                        <div className="aura-fl-row gf-valrow gf-valrow--plain">
+                            <input
+                                type="text"
+                                className="gf-text-input"
+                                value={ev.label ?? ''}
+                                maxLength={40}
+                                enterKeyHint="done"
+                                placeholder="z. B. Nachguss"
+                                onChange={(e) => setEv((p) => ({ ...p, label: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.currentTarget.blur();
+                                }}
+                                aria-label="Bezeichnung"
+                            />
+                        </div>
+                    </div>
+                </Section>
+                <Section
+                    foot={
+                        !current.enabled
+                            ? 'Läuft nicht, solange ausgeschaltet.'
+                            : !x.termineLaufen(c)
+                              ? 'Verdunstungsmodus: Die Termine laufen erst im Zeitplan-Modus oder bei Neuansaat.'
+                              : next
+                                ? `Nächster Lauf: ${next.text}${entry && x.collisions.has(entry.id) ? '. Ein anderer Kreis ist zur selben Zeit geplant, die Kreise starten nacheinander.' : ''}`
+                                : undefined
+                    }
+                >
+                    <div className="aura-fl-card">
+                        <div className="aura-fl-row gf-valrow gf-valrow--plain gf-switchrow">
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title gf-row-title">Aktiv</span>
+                            </span>
+                            <GartenSwitch
+                                on={ev.enabled}
+                                onToggle={() => setEv((p) => ({ ...p, enabled: !p.enabled }))}
+                                label="Termin aktiv"
+                            />
+                        </div>
+                    </div>
+                </Section>
+                {entry && (
+                    <div className="gf-btnrow-wrap">
+                        <IosButtonRow label="Termin löschen" tone="danger" onClick={() => setAskDelete(true)} />
+                    </div>
+                )}
+            </div>
+
+            <SaveInHead slot={slot} canSave={canSave} onSave={save} />
+            <LeaveSheet
+                open={askLeave}
+                canSave={canSave}
+                onDiscard={() => {
+                    setAskLeave(false);
+                    onDone();
+                }}
+                onSave={save}
+                onStay={() => setAskLeave(false)}
+            />
+            <IosActionSheet
+                open={askDelete}
+                title={`Termin ${hhmmOf(base)} löschen?`}
+                actions={[
+                    {
+                        key: 'delete',
+                        label: 'Termin löschen',
+                        tone: 'destructive',
+                        onSelect: () => {
+                            setAskDelete(false);
+                            if (entry) x.run(x.plan.deleteEntry(entry.id));
+                            onDone();
+                        },
+                    },
+                ]}
+                cancelLabel="Abbrechen"
+                onCancel={() => setAskDelete(false)}
+            />
+        </div>
+    );
+}
+
+/**
+ * Einstellungen als Unterseite (E), bisher nur die Regensperre. Regeln wie im Pop-up Garten2SettingsSheet:
+ * Wert der Adapter-Instanz (native.thresholdRain), vor dem Schreiben immer die Rückfrage „startet die
+ * Bewässerungssteuerung neu", gesperrt, solange ein Kreis läuft, und in der Dev-Vorschau.
+ */
+function SettingsPage({
+    instance,
+    anyRunning,
+    plantInteractive,
+    backLabel,
+    onDone,
+    onDirtyChange,
+}: {
+    instance: string;
+    anyRunning: boolean;
+    plantInteractive: boolean;
+    backLabel: string;
+    onDone: () => void;
+    onDirtyChange: (d: boolean) => void;
+}) {
+    const [loaded, setLoaded] = useState(false);
+    const [saved, setSaved] = useState<number | null>(null);
+    const [draftVal, setDraftVal] = useState<number | null>(null);
+    const [confirming, setConfirming] = useState(false);
+    const [askLeave, setAskLeave] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [slot, setSlot] = useState<HTMLElement | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            const obj = (await getObjectDirect(`system.adapter.${instance}`)) as {
+                native?: { thresholdRain?: unknown };
+            } | null;
+            if (cancelled) return;
+            const raw = obj?.native?.thresholdRain;
+            setSaved(typeof raw === 'number' ? raw : null);
+            setLoaded(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [instance]);
+
+    const value = draftVal ?? saved ?? 0;
+    const locked = !plantInteractive || anyRunning || !loaded;
+    const changed = draftVal !== null && draftVal !== saved;
+    const canSave = changed && !locked && !saving;
+    useReportDirty(onDirtyChange, changed);
+
+    const write = async (v: number) => {
+        setSaving(true);
+        setError(null);
+        try {
+            await extendObjectDirect(`system.adapter.${instance}`, { native: { thresholdRain: v } });
+            const obj = (await getObjectDirect(`system.adapter.${instance}`, { skipCache: true })) as {
+                native?: { thresholdRain?: unknown };
+            } | null;
+            if (obj?.native?.thresholdRain !== v) throw new Error('Wert wurde nicht übernommen');
+            setSaved(v);
+            setDraftVal(null);
+            onDone();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setSaving(false);
+        }
+    };
+    const step = (delta: number) => {
+        if (!locked) setDraftVal(clampThreshold(value + delta));
+    };
+
+    return (
+        <div className="ios-page gf-subpage">
+            <IosNavBar
+                sticky
+                title="Einstellungen"
+                backLabel={backLabel}
+                backFallback="Zurück"
+                onBack={() => (changed ? setAskLeave(true) : onDone())}
+                rightRef={setSlot}
+            />
+            <div className="gf-detail">
+                <Section
+                    title="Regensperre"
+                    foot={
+                        anyRunning
+                            ? 'Ein Kreis läuft gerade: Die Regensperre ist gesperrt, solange gegossen wird.'
+                            : 'Ab dieser Regenmenge setzt die Anlage automatisch aus. Sichern startet die Bewässerungssteuerung neu.'
+                    }
+                >
+                    <div className="aura-fl-card">
+                        <div className="aura-fl-row gf-valrow gf-valrow--plain">
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title gf-row-title">Aussetzen ab</span>
+                            </span>
+                            <span className="gf-step">
+                                <button
+                                    type="button"
+                                    className="gf-step-btn"
+                                    onClick={() => step(-THRESHOLD_STEP)}
+                                    disabled={locked || value <= MIN_THRESHOLD}
+                                    aria-label="Regensperre verringern"
+                                >
+                                    <Minus size={16} />
+                                </button>
+                                <span className="gf-step-val">
+                                    {loaded
+                                        ? value.toLocaleString('de-DE', {
+                                              minimumFractionDigits: 1,
+                                              maximumFractionDigits: 1,
+                                          })
+                                        : '–'}
+                                </span>
+                                <span className="gf-step-unit">mm</span>
+                                <button
+                                    type="button"
+                                    className="gf-step-btn"
+                                    onClick={() => step(THRESHOLD_STEP)}
+                                    disabled={locked || value >= MAX_THRESHOLD}
+                                    aria-label="Regensperre erhöhen"
+                                >
+                                    <Plus size={16} />
+                                </button>
+                            </span>
+                        </div>
+                    </div>
+                    {error && <p className="aura-fl-foot gf-foot gf-foot--crit">Fehler beim Sichern: {error}</p>}
+                </Section>
+                {!plantInteractive && (
+                    <p className="aura-fl-foot gf-foot gf-devnote">
+                        Lokale Vorschau: Die Regensperre ist hier ausgegraut, sie lässt sich erst auf dem Pi ändern.
+                    </p>
+                )}
+            </div>
+
+            <SaveInHead
+                slot={slot}
+                canSave={canSave}
+                label={saving ? 'Sichert …' : 'Sichern'}
+                onSave={() => setConfirming(true)}
+            />
+            <IosActionSheet
+                open={confirming}
+                title="Das startet die Bewässerungssteuerung neu."
+                actions={[
+                    {
+                        key: 'ok',
+                        label: 'Trotzdem sichern',
+                        tone: 'strong',
+                        onSelect: () => {
+                            setConfirming(false);
+                            setAskLeave(false);
+                            if (draftVal !== null) void write(draftVal);
+                        },
+                    },
+                ]}
+                cancelLabel="Abbrechen"
+                onCancel={() => setConfirming(false)}
+            />
+            <LeaveSheet
+                open={askLeave}
+                canSave={canSave}
+                onDiscard={() => {
+                    setAskLeave(false);
+                    onDone();
+                }}
+                onSave={() => {
+                    setAskLeave(false);
+                    setConfirming(true);
+                }}
+                onStay={() => setAskLeave(false)}
+            />
+        </div>
     );
 }
 

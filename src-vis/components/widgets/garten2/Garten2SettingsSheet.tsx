@@ -22,11 +22,12 @@ import { ConfirmOverlay } from '../ConfirmOverlay';
 import { useSheetDismiss } from '../useSheetDismiss';
 import './Garten2Widget.css';
 
-const MIN_THRESHOLD = 0;
-const MAX_THRESHOLD = 20;
-const STEP = 0.1;
+// Auch von der Unterseite „Einstellungen" des Facelift-Entwurfs genutzt (GartenFacelift.tsx)
+export const MIN_THRESHOLD = 0;
+export const MAX_THRESHOLD = 20;
+export const STEP = 0.1;
 
-function clampThreshold(n: number): number {
+export function clampThreshold(n: number): number {
     if (!Number.isFinite(n)) return 0;
     const rounded = Math.round(n * 10) / 10;
     if (rounded < MIN_THRESHOLD) return MIN_THRESHOLD;
