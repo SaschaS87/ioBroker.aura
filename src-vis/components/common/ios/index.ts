@@ -8,3 +8,5 @@ export { IosButtonRow, IosFootnote, IosGroup, IosIcon, IosNavRow, IosPickRow, Io
 export { IosActionSheet } from './IosActionSheet';
 export type { IosAction, IosActionSheetProps } from './IosActionSheet';
 export { useTabHidden } from './useTabHidden';
+export { IosLeaveSheet, IosSaveButton, useLeaveGuard, useReportDirty } from './IosEditor';
+export type { LeaveGuardRegister } from './IosEditor';

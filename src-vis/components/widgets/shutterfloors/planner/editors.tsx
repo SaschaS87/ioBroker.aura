@@ -10,10 +10,17 @@
  *   - Loeschen steht als rote Knopfzeile ganz unten und fragt nach
  * parts.tsx importiert von hier nur den Typ SheetView.
  */
-import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { ChevronRight, Minus, Plus, X } from 'lucide-react';
-import { IosActionSheet, IosButtonRow } from '../../../common/ios';
+import {
+    IosActionSheet,
+    IosButtonRow,
+    IosLeaveSheet as LeaveSheet,
+    IosSaveButton as SaveButton,
+    useLeaveGuard,
+    useReportDirty,
+    type LeaveGuardRegister,
+} from '../../../common/ios';
 import {
     daysText,
     entryNameOf,
@@ -51,77 +58,15 @@ export type SheetView =
     | { v: 'scene'; id: string | null }
     | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> };
 
-/** Anmeldung des Zurueck-Waechters bei der Seite: true = darf sofort zurueck, false = Editor fragt nach. */
-export type LeaveGuardRegister = (guard: (() => boolean) | null) => void;
-
-/** Meldet den Waechter an und aktuell, ohne bei jedem Rendern neu anzumelden. */
-function useLeaveGuard(register: LeaveGuardRegister | undefined, guard: () => boolean) {
-    const ref = useRef(guard);
-    ref.current = guard;
-    useEffect(() => {
-        register?.(() => ref.current());
-        return () => register?.(null);
-    }, [register]);
-}
-
-/** Meldet "ungesicherte Aenderungen" nach oben (der Stapel haelt dann den Entwurf beim Tab-Wechsel). */
-function useReportDirty(onDirtyChange: ((dirty: boolean) => void) | undefined, dirty: boolean) {
-    useEffect(() => {
-        onDirtyChange?.(dirty);
-    }, [onDirtyChange, dirty]);
-    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
-}
+// Zurück-Wächter, „ungesichert"-Meldung, „Sichern" im Kopf und die Rückfrage beim Zurück sind seit
+// 17.11.2026 gemeinsame Bausteine (common/ios/IosEditor.tsx), damit Rollläden und Garten dasselbe Muster teilen.
+export type { LeaveGuardRegister };
 
 interface EditorChrome {
     /** Platz rechts im Seitenkopf fuer "Sichern" (per Portal) */
     headSlot?: HTMLElement | null;
     registerLeaveGuard?: LeaveGuardRegister;
     onDirtyChange?: (dirty: boolean) => void;
-}
-
-/** "Sichern" im Kopf: fett, blau, grau solange nichts zu sichern ist. */
-function SaveButton({ slot, canSave, onSave }: { slot?: HTMLElement | null; canSave: boolean; onSave: () => void }) {
-    if (!slot) return null;
-    return createPortal(
-        // data-ios-editing: Hier wird gerade bearbeitet, die Leiste unten tritt zurück (facelift.css)
-        <button
-            type="button"
-            className="ios-bar-text is-strong"
-            data-ios-editing=""
-            onClick={onSave}
-            disabled={!canSave}
-        >
-            Sichern
-        </button>,
-        slot,
-    );
-}
-
-/** Rueckfrage beim Zurueck mit ungesicherten Aenderungen. */
-function LeaveSheet({
-    open,
-    canSave,
-    onDiscard,
-    onSave,
-    onStay,
-}: {
-    open: boolean;
-    canSave: boolean;
-    onDiscard: () => void;
-    onSave: () => void;
-    onStay: () => void;
-}) {
-    return (
-        <IosActionSheet
-            open={open}
-            actions={[
-                { key: 'discard', label: 'Änderungen verwerfen', tone: 'destructive', onSelect: onDiscard },
-                { key: 'save', label: 'Sichern', disabled: !canSave, onSelect: onSave },
-            ]}
-            cancelLabel="Weiter bearbeiten"
-            onCancel={onStay}
-        />
-    );
 }
 
 // ── Szenen-Editor ──────────────────────────────────────────────────────

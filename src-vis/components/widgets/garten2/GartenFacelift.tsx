@@ -43,7 +43,16 @@ import type { TimerEvent, TimerWeekday } from '../../../types';
 import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import { extendObjectDirect, getObjectDirect } from '../../../hooks/useIoBroker';
 import { DateTimeInput } from '../../common/DateTimeInput';
-import { IosActionSheet, IosButtonRow, IosNavBar, IosStack, useTabHidden } from '../../common/ios';
+import {
+    IosActionSheet,
+    IosButtonRow,
+    IosLeaveSheet,
+    IosNavBar,
+    IosSaveButton,
+    IosStack,
+    useReportDirty,
+    useTabHidden,
+} from '../../common/ios';
 import { useSheetDismiss } from '../useSheetDismiss';
 import { GartenEventModal } from '../garten/GartenEventModal';
 import { eventTime } from '../garten/GartenScheduleList';
@@ -1549,65 +1558,8 @@ function CircleInline({ c, x }: { c: GfCircle; x: Ctx }) {
 // „Sichern" rechts im Kopf (fett, grau, solange nichts zu sichern ist, mit data-ios-editing),
 // Zurück mit Änderungen fragt nach, Löschen als rote Knopfzeile ganz unten mit Rückfrage.
 
-/** „Sichern" per Portal in den Kopf der Seite. */
-function SaveInHead({
-    slot,
-    canSave,
-    label = 'Sichern',
-    onSave,
-}: {
-    slot: HTMLElement | null;
-    canSave: boolean;
-    label?: string;
-    onSave: () => void;
-}) {
-    if (!slot) return null;
-    return createPortal(
-        // data-ios-editing: Hier wird gerade bearbeitet, die Leiste unten tritt zurück (facelift.css)
-        <button
-            type="button"
-            className="ios-bar-text is-strong"
-            data-ios-editing=""
-            onClick={onSave}
-            disabled={!canSave}
-        >
-            {label}
-        </button>,
-        slot,
-    );
-}
-
-function LeaveSheet({
-    open,
-    canSave,
-    onDiscard,
-    onSave,
-    onStay,
-}: {
-    open: boolean;
-    canSave: boolean;
-    onDiscard: () => void;
-    onSave: () => void;
-    onStay: () => void;
-}) {
-    return (
-        <IosActionSheet
-            open={open}
-            actions={[
-                { key: 'discard', label: 'Änderungen verwerfen', tone: 'destructive', onSelect: onDiscard },
-                { key: 'save', label: 'Sichern', disabled: !canSave, onSelect: onSave },
-            ]}
-            cancelLabel="Weiter bearbeiten"
-            onCancel={onStay}
-        />
-    );
-}
-
-/** Meldet „ungesicherte Änderungen" nach oben (die Seite bleibt dann beim Tab-Wechsel stehen). */
-function useReportDirty(onDirtyChange: (d: boolean) => void, d: boolean) {
-    useEffect(() => onDirtyChange(d), [onDirtyChange, d]);
-    useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-}
+// „Sichern" im Kopf, Rückfrage beim Zurück und die „ungesichert"-Meldung kommen aus dem gemeinsamen
+// Baustein common/ios/IosEditor.tsx, denselben wie bei den Rollläden.
 
 const DAY_LONG: Record<TimerWeekday, string> = {
     mon: 'Montag',
@@ -1869,8 +1821,8 @@ function EventPage({
                 )}
             </div>
 
-            <SaveInHead slot={slot} canSave={canSave} onSave={save} />
-            <LeaveSheet
+            <IosSaveButton slot={slot} canSave={canSave} onSave={save} />
+            <IosLeaveSheet
                 open={askLeave}
                 canSave={canSave}
                 onDiscard={() => {
@@ -2039,7 +1991,7 @@ function SettingsPage({
                 )}
             </div>
 
-            <SaveInHead
+            <IosSaveButton
                 slot={slot}
                 canSave={canSave}
                 label={saving ? 'Sichert …' : 'Sichern'}
@@ -2063,7 +2015,7 @@ function SettingsPage({
                 cancelLabel="Abbrechen"
                 onCancel={() => setConfirming(false)}
             />
-            <LeaveSheet
+            <IosLeaveSheet
                 open={askLeave}
                 canSave={canSave}
                 onDiscard={() => {
