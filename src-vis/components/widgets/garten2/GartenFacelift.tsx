@@ -80,6 +80,8 @@ import { slotKeys, type GartenPlanEntry } from './gartenPlanModel';
 import type { GartenPlanData } from './useGartenPlanData';
 import type { SprinkleWeather } from './useSprinkleWeather';
 import { GARTEN_SCENES, useGartenSceneStore, type GartenDraft, type GartenScene } from './gartenDraft';
+import { HzSubpageProvider } from '../heating/HzSubpage';
+import { GartenSoilChart, GartenWeatherChart } from './GartenCharts';
 import './GartenFacelift.css';
 
 type Draft = Exclude<GartenDraft, 'ALT'>;
@@ -362,6 +364,9 @@ interface Ctx {
     termineLaufen: (c: GfCircle) => boolean;
     run: (job: Promise<void>) => void;
     edit: (c: GfCircle, entry: GartenPlanEntry | 'new') => void;
+    /** Nur E: Auswertungen auf eigenen Unterseiten (Verdunstung und Regen, Bodenfeuchte eines Kreises) */
+    openWeather?: () => void;
+    openSoil?: (c: GfCircle) => void;
 }
 
 /** Kurzstand eines Kreises für die Unterzeile. */
@@ -384,6 +389,13 @@ function nextLabel(c: GfCircle, x: Ctx): string | null {
     return nextRun(x.eventsOf(c.name), x.now)?.text ?? 'Kein Termin';
 }
 
+/** Begleittexte der Auswertungs-Unterseiten (wie BOXES[].foot bei der Heizung) */
+const WEATHER_FOOT =
+    'Die Verdunstung rechnet der Bewässerungs-Adapter aus Temperatur, Luftfeuchte, Wind und Sonne. Den Regen misst die Netatmo-Station. Die Bilanz zeigt, wie viel Wasser dem Boden ohne Gießen fehlt (minus) oder zugeflossen ist (plus).';
+function soilChartFoot(c: GfCircle): string {
+    return `Die Bodenfeuchte ist die Wasserbilanz des Adapters für ${c.label}: Sie sinkt mit der Verdunstung und steigt mit Regen und Gießen, höchstens bis 120 %. Unter dem Schaltpunkt gießt der Kreis im Verdunstungsmodus. Gießen ist erst ab dem 17.11.2026 aufgezeichnet.`;
+}
+
 const PLAN_FOOT =
     'Aus pausiert alle Termine dieses Kreises. Bei Neuansaat laufen die Termine auch im Verdunstungsmodus, z. B. 4× 5 Min. täglich.';
 
@@ -394,7 +406,9 @@ type Route =
     | { kind: 'circle'; name: string }
     | { kind: 'plan' }
     | { kind: 'event'; circle: string; id: string | null }
-    | { kind: 'settings' };
+    | { kind: 'settings' }
+    | { kind: 'weather' }
+    | { kind: 'soil'; name: string };
 
 export function GartenFacelift(p: GartenFaceliftProps) {
     const { draft } = p;
@@ -477,6 +491,8 @@ export function GartenFacelift(p: GartenFaceliftProps) {
             draft === 'E'
                 ? push({ kind: 'event', circle: c.name, id: entry === 'new' ? null : entry.id })
                 : setEditing({ c, entry }),
+        openWeather: draft === 'E' ? () => push({ kind: 'weather' }) : undefined,
+        openSoil: draft === 'E' ? (c) => push({ kind: 'soil', name: c.name }) : undefined,
     };
 
     const running = circles.find((c) => c.status === 'running') ?? null;
@@ -698,6 +714,8 @@ export function GartenFacelift(p: GartenFaceliftProps) {
         if (r.kind === 'circle') return circles.find((c) => c.name === r.name)?.label ?? 'Kreis';
         if (r.kind === 'plan') return 'Zeitplan';
         if (r.kind === 'settings') return 'Einstellungen';
+        if (r.kind === 'weather') return 'Verdunstung und Regen';
+        if (r.kind === 'soil') return 'Bodenfeuchte';
         return r.id ? 'Termin' : 'Neuer Termin';
     };
 
@@ -727,6 +745,22 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                     onDone={pop}
                     onDirtyChange={onDirty}
                 />
+            );
+        }
+        if (r.kind === 'weather' || r.kind === 'soil') {
+            const c = r.kind === 'soil' ? circles.find((k) => k.name === r.name) : undefined;
+            if (r.kind === 'soil' && !c) return null;
+            return (
+                <div className="ios-page gf-subpage hz-subpage">
+                    <IosNavBar sticky title={titleOf(r)} backLabel={back} backFallback="Zurück" onBack={pop} />
+                    <HzSubpageProvider value={{ foot: c ? soilChartFoot(c) : WEATHER_FOOT }}>
+                        {c ? (
+                            <GartenSoilChart instance={p.instance} circle={c.name} />
+                        ) : (
+                            <GartenWeatherChart instance={p.instance} />
+                        )}
+                    </HzSubpageProvider>
+                </div>
             );
         }
         if (r.kind === 'settings') {
@@ -778,7 +812,7 @@ export function GartenFacelift(p: GartenFaceliftProps) {
     const pages = [
         { key: 'home', node: home },
         ...stack.map((r, i) => ({
-            key: `s${i}-${r.kind}-${r.kind === 'circle' ? r.name : r.kind === 'event' ? `${r.circle}-${r.id ?? 'neu'}` : ''}`,
+            key: `s${i}-${r.kind}-${r.kind === 'circle' || r.kind === 'soil' ? r.name : r.kind === 'event' ? `${r.circle}-${r.id ?? 'neu'}` : ''}`,
             node: pageOf(r, stack[i - 1]),
         })),
     ];
@@ -889,10 +923,10 @@ function lastOnMs(s: string, now: Date): number | null {
 }
 
 /**
- * Kopf-Karte: laufender Kreis (blau, Restzeit groß, Stoppen) oder Ruhezustand (grau, nächster Lauf groß).
- * Beide Zustände haben denselben Aufbau (Titel, große Zeile, Balken, Fußzeile), damit die Karte beim
- * Start und Ende eines Laufs nicht springt (Rückmeldung Sascha, Runde 2). Im Ruhezustand ist der Balken
- * unsichtbar, hält aber seinen Platz.
+ * Kopf-Karte im Aufbau des Heizungs-Kopfs (Titel, Unterzeile, Zeile in Höhe der Marken), damit beide Seiten
+ * gleich hoch sind und die Karte beim Start und Ende eines Laufs nicht springt (Sascha, 17.11.2026).
+ * Läuft ein Kreis: blau, Restzeit in der Unterzeile, unten Balken und Stoppen. In Ruhe: grau, nächster Lauf
+ * in der Unterzeile, unten „Zuletzt gegossen".
  */
 function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
     if (!running) {
@@ -903,8 +937,6 @@ function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
             .sort((a, b) => a.n.at - b.n.at);
         const waiting = x.circles.find((c) => c.status === 'waiting');
         const next = nexts[0];
-        // „Mi 06:00" → Tag und Uhrzeit getrennt: die Uhrzeit groß, der Rest klein daneben
-        const [nextDay, nextTime] = next ? next.n.text.split(' ') : ['', ''];
         const last = x.circles
             .map((c) => ({ c, at: c.lastOn ? lastOnMs(c.lastOn, x.now) : null }))
             .filter((v): v is { c: GfCircle; at: number } => v.at !== null)
@@ -913,20 +945,14 @@ function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
             <div className="aura-fl-card gf-head" data-state="idle">
                 <Droplets className="gf-head-mark" aria-hidden />
                 <span className="gf-head-title">Es läuft gerade kein Kreis</span>
-                <span className="gf-head-time">
-                    <span className="gf-head-time-val">{waiting ? 'Wartet' : next ? nextTime : '–'}</span>
-                    <span className="gf-head-time-label">
-                        {waiting
-                            ? `${waiting.label} startet gleich`
-                            : next
-                              ? `nächster Lauf · ${next.c.label}, ${nextDay}`
-                              : 'kein Termin geplant'}
-                    </span>
+                <span className="gf-head-sub">
+                    {waiting
+                        ? `${waiting.label} wartet auf den Start`
+                        : next
+                          ? `Nächster Lauf: ${next.c.label}, ${next.n.text}`
+                          : 'Kein Termin geplant'}
                 </span>
-                <span className="gf-head-bar gf-head-bar--idle" aria-hidden>
-                    <span className="gf-head-bar-fill" style={{ width: 0 }} />
-                </span>
-                <span className="gf-head-foot">
+                <span className="gf-head-row">
                     <span className="gf-head-fact">
                         {last ? `Zuletzt gegossen: ${last.c.label}, ${last.c.lastOn}` : 'Noch nicht gegossen'}
                     </span>
@@ -941,20 +967,16 @@ function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
         <div className="aura-fl-card gf-head" data-state="run">
             <Droplets className="gf-head-mark" aria-hidden />
             <span className="gf-head-title">{running.label} wird gegossen</span>
-            <span className="gf-head-time">
-                <span className="gf-head-time-val">{running.countdown || '–'}</span>
-                <span className="gf-head-time-label">verbleibend</span>
+            <span className="gf-head-sub">
+                noch {running.countdown || '–'} · {PLACEHOLDER_WATER_AMOUNT}
             </span>
-            <span
-                className="gf-head-bar"
-                role="img"
-                aria-label={`${running.label}, ${running.countdown || '–'} verbleibend`}
-            >
-                <span className="gf-head-bar-fill" style={{ width: `${Math.round((1 - fraction) * 100)}%` }} />
-            </span>
-            <span className="gf-head-foot">
-                <span className="gf-head-fact">
-                    <Droplets size={14} /> {PLACEHOLDER_WATER_AMOUNT}
+            <span className="gf-head-row">
+                <span
+                    className="gf-head-bar"
+                    role="img"
+                    aria-label={`${running.label}, ${running.countdown || '–'} verbleibend`}
+                >
+                    <span className="gf-head-bar-fill" style={{ width: `${Math.round((1 - fraction) * 100)}%` }} />
                 </span>
                 <button
                     type="button"
@@ -962,7 +984,7 @@ function Head({ running, x }: { running: GfCircle | null; x: Ctx }) {
                     onClick={x.plantInteractive ? running.stop : undefined}
                     disabled={!x.plantInteractive}
                 >
-                    <Square size={13} /> Stoppen
+                    <Square size={12} /> Stoppen
                 </button>
             </span>
         </div>
@@ -1112,12 +1134,19 @@ function WeatherTiles({ x }: { x: Ctx }) {
     );
 }
 
-/** Zwei Zeilen mit Symbol: der heutige Wert rechts, gestern und morgen in der Unterzeile. */
+/** Zwei Zeilen mit Symbol: der heutige Wert rechts, gestern und morgen in der Unterzeile. In E führen beide
+ *  Zeilen auf die Unterseite „Verdunstung und Regen". */
 function WeatherCompact({ x }: { x: Ctx }) {
     const w = x.weather;
+    const open = x.openWeather;
+    const Row = open ? 'button' : 'div';
+    const rowProps = open
+        ? { type: 'button' as const, className: 'aura-fl-row aura-fl-row--nav gf-valrow gf-navval', onClick: open }
+        : { className: 'aura-fl-row gf-valrow' };
+    const chev = open ? <ChevronRight size={18} className="aura-fl-chev" /> : null;
     return (
         <div className="aura-fl-card">
-            <div className="aura-fl-row gf-valrow">
+            <Row {...rowProps}>
                 <span className="aura-fl-row-icon gf-ico">
                     <SunMedium size={20} />
                 </span>
@@ -1128,8 +1157,9 @@ function WeatherCompact({ x }: { x: Ctx }) {
                 <span className="gf-row-val">
                     {mm(w.etpToday, 2)} <Trend w={w} />
                 </span>
-            </div>
-            <div className="aura-fl-row gf-valrow">
+                {chev}
+            </Row>
+            <Row {...rowProps}>
                 <span className="aura-fl-row-icon gf-ico">
                     <CloudRain size={20} />
                 </span>
@@ -1140,7 +1170,8 @@ function WeatherCompact({ x }: { x: Ctx }) {
                     </span>
                 </span>
                 <span className="gf-row-val">{mm(w.rainToday)}</span>
-            </div>
+                {chev}
+            </Row>
         </div>
     );
 }
@@ -1460,7 +1491,23 @@ function CircleDetail({ c, x }: { c: GfCircle; x: Ctx }) {
             <PlanBlock c={c} x={x} />
             <Section title="Boden" foot={x.showSoil && c.mode === 'schedule' ? TIMER_MODE_MOISTURE_HINT : undefined}>
                 <div className="aura-fl-card">
-                    {x.showSoil && (
+                    {x.showSoil && x.openSoil && (
+                        <button
+                            type="button"
+                            className="aura-fl-row aura-fl-row--nav gf-valrow gf-valrow--plain gf-navval"
+                            onClick={() => x.openSoil?.(c)}
+                        >
+                            <span className="aura-fl-row-main">
+                                <span className="aura-fl-row-title gf-row-title">Bodenfeuchte</span>
+                                <span className="aura-fl-row-sub">Verlauf mit Gießen</span>
+                            </span>
+                            <span className={`gf-row-val${c.mode === 'schedule' ? ' gf-row-val--soft' : ''}`}>
+                                {pct(c.soil)}
+                            </span>
+                            <ChevronRight size={18} className="aura-fl-chev" />
+                        </button>
+                    )}
+                    {x.showSoil && !x.openSoil && (
                         <div className="aura-fl-row gf-valrow gf-valrow--plain">
                             <span className="aura-fl-row-main">
                                 <span className="aura-fl-row-title gf-row-title">Bodenfeuchte</span>

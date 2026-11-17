@@ -198,35 +198,27 @@ body[data-fl-variant] .gf-head-title {
 body[data-fl-variant] .gf-head-sub {
     font-size: var(--fl-font-meta);
     color: color-mix(in srgb, var(--gf-on-mode) 82%, transparent);
-}
-body[data-fl-variant] .gf-head-time {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-top: 4px;
-}
-body[data-fl-variant] .gf-head-time-val {
-    font-size: var(--fl-gf-time);
-    font-weight: 600;
-    line-height: 1.1;
     font-variant-numeric: tabular-nums;
-}
-body[data-fl-variant] .gf-head-time-label {
-    min-width: 0;
-    font-size: var(--fl-font-meta);
-    color: color-mix(in srgb, var(--gf-on-mode) 82%, transparent);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Ruhezustand: Balken unsichtbar, sein Platz bleibt (gleiche Höhe wie bei laufendem Kreis) */
-body[data-fl-variant] .gf-head-bar--idle {
-    visibility: hidden;
+/* Untere Zeile: gleiche Höhe wie die Marken im Heizungs-Kopf (.hz-chips: 10 px Abstand, 13 px Schrift,
+   Zeilenhöhe 1,5, 4 px innen oben und unten), damit beide Köpfe gleich hoch sind */
+body[data-fl-variant] .gf-head-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 4px 0;
+    font-size: 13px;
+    line-height: 1.5;
 }
 body[data-fl-variant] .gf-head-bar {
     display: block;
+    flex: 1;
+    min-width: 0;
     height: 6px;
-    margin-top: 8px;
     border-radius: 3px;
     background: color-mix(in srgb, var(--gf-on-mode) 28%, transparent);
     overflow: hidden;
@@ -238,40 +230,34 @@ body[data-fl-variant] .gf-head-bar-fill {
     background: var(--gf-on-mode);
     transition: width 0.6s linear;
 }
-body[data-fl-variant] .gf-head-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    /* Höhe der Stopp-Taste, auch wenn sie fehlt (Ruhezustand) */
-    min-height: 36px;
-    margin-top: 14px;
-}
 body[data-fl-variant] .gf-head-fact {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
     min-width: 0;
-    font-size: var(--fl-font-meta);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Stoppen als Marke in derselben Höhe; die Fläche reicht für den Finger über den Rand hinaus */
 body[data-fl-variant] .gf-head-stop {
+    position: relative;
     display: inline-flex;
+    flex-shrink: 0;
     align-items: center;
-    gap: 6px;
-    min-height: 36px;
-    padding: 0 16px;
+    gap: 5px;
+    margin: -4px 0;
+    padding: 4px 12px;
     border: 0;
-    border-radius: 18px;
+    border-radius: 999px;
     background: var(--gf-on-mode);
     color: var(--gf-mode);
     font: inherit;
-    font-size: var(--fl-font-meta);
     font-weight: 600;
     -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-head-stop::after {
+    content: '';
+    position: absolute;
+    inset: -8px -4px;
 }
 body[data-fl-variant] .gf-head-stop:disabled {
     opacity: 0.6;
