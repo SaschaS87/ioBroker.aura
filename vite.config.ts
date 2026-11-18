@@ -147,6 +147,17 @@ function ioBrokerDevPlugin(): Plugin {
         }
       });
 
+      // Ereignisprotokoll der Glas-Leiste vom iPhone (src-vis/devtools/scrollTrace.ts), nur Dev
+      server.middlewares.use('/api/dev/scrolltrace', (req, res) => {
+        if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+        let body = '';
+        req.on('data', (d) => (body += d));
+        req.on('end', () => {
+          fs.appendFileSync(path.resolve('.vite-scrolltrace.log'), body.replace(/\n/g, ' ') + '\n', 'utf-8');
+          res.writeHead(204); res.end();
+        });
+      });
+
       // Endpoint to update the proxy target at runtime
       server.middlewares.use('/api/dev/set-iobroker-url', (req, res) => {
         if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }

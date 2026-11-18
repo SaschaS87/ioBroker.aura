@@ -1,0 +1,882 @@
+/*
+ * UI-Facelift, Brücken-Datei der Garten-Seite (Entwurf E).
+ *
+ * Nutzt die gemeinsamen Bausteine aus facelift-blocks.css (aura-fl-section, -card, -row, -foot …) und
+ * ergänzt nur, was der Garten eigen hat (Klassen gf-*). Dazu bildet sie die vorhandenen Pop-ups (Termin:
+ * garten-sheet*, Regensperre: garten2-sheet*, früheres Pop-up, entfallen) und den Schalter (garten-sw) auf das Raster ab. Jede Regel
+ * hängt an body[data-fl-variant]; das Attribut setzt main.tsx immer. Farben nur über Theme-Variablen mit
+ * Rückfallkette. Seitenrand und Zeilenhöhe kommen aus dem Raster (--fl-page-x, --fl-row-min-h) und werden
+ * hier nicht gesetzt.
+ *
+ * Eigene Maße (Garten):
+ *   --fl-gf-val          Wert rechts in der Zeile
+ *   --fl-gf-gap          Abstand zwischen zwei Karten ohne Abschnittstitel
+ *   --fl-gf-hero         Schrift des Status in der Kopf-Karte
+ *   --fl-gf-time         Restzeit in der Kopf-Karte
+ *   --fl-gf-tile-val     Wert in einer Wetter-Kachel (B)
+ *   --fl-gf-tile-min-h   Mindesthöhe einer Wetter-Kachel (B)
+ *   --fl-gf-seg-h        Höhe des Segment-Schalters (Verdunstung / Zeitplan)
+ *   --fl-gf-btn-h        Höhe von Tasten und der Dauer-Wahl
+ *   --fl-gf-sw-w / -h    Schalter (wie in den Rollläden-Unterseiten)
+ * Eigene Farben (je Theme überschreibbar):
+ *   --fl-gf-water        laufender Kreis (blau, wie Warmwasser der Heizung)
+ *   --fl-gf-idle         Kopf-Karte im Ruhezustand (grau)
+ *   --fl-gf-on-mode      Schrift auf der eingefärbten Kopf-Karte und auf der Haupttaste
+ *   --fl-gf-ico-bg / --fl-gf-ico-fg   Symbolfläche und Zeichen
+ */
+body[data-fl-variant] {
+    --fl-gf-val: 17px;
+    --fl-gf-gap: 12px;
+    --fl-gf-hero: 22px;
+    --fl-gf-time: 40px;
+    --fl-gf-tile-val: 20px;
+    --fl-gf-tile-min-h: 72px;
+    --fl-gf-seg-h: 32px;
+    --fl-gf-btn-h: 44px;
+    --fl-gf-sw-w: 51px;
+    --fl-gf-sw-h: 31px;
+
+    --gf-water: var(--fl-gf-water, #2f7fd6);
+    --gf-idle: var(--fl-gf-idle, #7c7c82);
+    --gf-on-mode: var(--fl-gf-on-mode, #fff);
+    --gf-ico-bg: var(--fl-gf-ico-bg, var(--text-secondary));
+    --gf-ico-fg: var(--fl-gf-ico-fg, var(--widget-bg, #fff));
+    --gf-accent: var(--accent, #0a84ff);
+}
+
+/* ── Seite ───────────────────────────────────────────────────────────── */
+body[data-fl-variant] .gf-home {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+/* Karte ohne Abschnittstitel: eigener Abstand nach oben */
+body[data-fl-variant] .gf-section--plain {
+    margin-top: var(--fl-gf-gap);
+}
+body[data-fl-variant] .gf-row-title {
+    color: var(--text-primary);
+}
+/* Kurzstand rechts im Abschnittstitel („Mi 06:00", „Pausiert", „Läuft · 07:30") */
+body[data-fl-variant] .gf-headbit {
+    flex-shrink: 0;
+    font-size: var(--fl-font-sub);
+    font-weight: 400;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+body[data-fl-variant] .gf-headbit--run {
+    color: var(--gf-water);
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-devnote:empty {
+    display: none;
+}
+body[data-fl-variant] .gf-devnote {
+    padding-top: 18px;
+}
+
+/* ── Zeilen ──────────────────────────────────────────────────────────── */
+body[data-fl-variant] .gf-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--gf-ico-bg);
+    color: var(--gf-ico-fg);
+}
+body[data-fl-variant] .gf-ico > svg {
+    stroke-width: 1.7;
+}
+body[data-fl-variant] .gf-ico[data-status='running'] {
+    background: var(--gf-water);
+}
+body[data-fl-variant] .gf-ico--warn {
+    background: var(--fl-warn);
+}
+body[data-fl-variant] .aura-fl-row.gf-valrow,
+body[data-fl-variant] .aura-fl-row.gf-evrow,
+body[data-fl-variant] .aura-fl-row.gf-manualrow,
+body[data-fl-variant] .aura-fl-row.gf-moderow,
+body[data-fl-variant] .aura-fl-row.gf-warnrow {
+    padding-right: 16px;
+}
+body[data-fl-variant] .gf-row-val {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: var(--fl-gf-val);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+/* Wert, der gerade nicht nachgeführt wird oder nur Beiwerk ist */
+body[data-fl-variant] .gf-row-val--soft {
+    color: var(--text-secondary);
+}
+/* Zeilen ohne Symbol: Trennlinie beginnt am Text */
+body[data-fl-variant] .aura-fl-card .aura-fl-row.gf-valrow--plain::before,
+body[data-fl-variant] .aura-fl-card .aura-fl-row.gf-evrow::before,
+body[data-fl-variant] .aura-fl-card .aura-fl-row.gf-addrow::before,
+body[data-fl-variant] .aura-fl-card .aura-fl-row.gf-manualrow::before,
+body[data-fl-variant] .aura-fl-card .aura-fl-row.gf-moderow::before {
+    left: 16px;
+}
+/* Taste unter der Dauer gehört zur selben Angabe: keine Linie dazwischen */
+body[data-fl-variant] .aura-fl-card .aura-fl-row.gf-btnrow::before {
+    display: none;
+}
+body[data-fl-variant] .gf-trend--up {
+    color: var(--fl-warn);
+}
+body[data-fl-variant] .gf-trend--down {
+    color: var(--fl-ok);
+}
+
+/* Warnungen: Text darf umbrechen */
+body[data-fl-variant] .gf-warnrow {
+    align-items: flex-start;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+body[data-fl-variant] .gf-warn-title {
+    font-size: var(--fl-font-title);
+    line-height: var(--fl-lh-title);
+    color: var(--text-primary);
+}
+body[data-fl-variant] .gf-warn-text {
+    margin-top: 2px;
+    font-size: var(--fl-font-sub);
+    line-height: 1.35;
+    color: var(--text-secondary);
+}
+
+/* ── Kopf-Karte ──────────────────────────────────────────────────────── */
+/* Wie der Kopf der Heizung (Kopf 11): großes Symbol im Hintergrund, Farbverlauf. Ruhe grau, Lauf blau. */
+body[data-fl-variant] .gf-head {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 16px 16px;
+    border-color: transparent;
+    --gf-mode: var(--gf-idle);
+    color: var(--gf-on-mode);
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--gf-mode) 82%, #fff) 0,
+        var(--gf-mode) 45%,
+        color-mix(in srgb, var(--gf-mode) 72%, #000) 100%
+    );
+}
+body[data-fl-variant] .gf-head[data-state='run'] {
+    --gf-mode: var(--gf-water);
+}
+body[data-fl-variant] .gf-head > :not(.gf-head-mark) {
+    position: relative;
+}
+body[data-fl-variant] .gf-head-mark {
+    position: absolute;
+    right: -14px;
+    bottom: -22px;
+    width: 128px;
+    height: 128px;
+    stroke-width: 1.4;
+    opacity: 0.2;
+    pointer-events: none;
+}
+body[data-fl-variant] .gf-head-title {
+    font-size: var(--fl-gf-hero);
+    font-weight: 600;
+    line-height: 1.2;
+    /* eine Zeile, damit beide Zustände gleich hoch bleiben */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .gf-head-sub {
+    font-size: var(--fl-font-meta);
+    color: color-mix(in srgb, var(--gf-on-mode) 82%, transparent);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Untere Zeile: gleiche Höhe wie die Marken im Heizungs-Kopf (.hz-chips: 10 px Abstand, 13 px Schrift,
+   Zeilenhöhe 1,5, 4 px innen oben und unten), damit beide Köpfe gleich hoch sind */
+body[data-fl-variant] .gf-head-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 4px 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+body[data-fl-variant] .gf-head-bar {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    height: 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--gf-on-mode) 28%, transparent);
+    overflow: hidden;
+}
+body[data-fl-variant] .gf-head-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--gf-on-mode);
+    transition: width 0.6s linear;
+}
+body[data-fl-variant] .gf-head-fact {
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Stoppen als Marke in derselben Höhe; die Fläche reicht für den Finger über den Rand hinaus */
+body[data-fl-variant] .gf-head-stop {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 5px;
+    margin: -4px 0;
+    padding: 4px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--gf-on-mode);
+    color: var(--gf-mode);
+    font: inherit;
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-head-stop::after {
+    content: '';
+    position: absolute;
+    inset: -8px -4px;
+}
+body[data-fl-variant] .gf-head-stop:disabled {
+    opacity: 0.6;
+}
+
+/* ── Wetter-Kacheln (B) ──────────────────────────────────────────────── */
+body[data-fl-variant] .gf-tiles {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: var(--fl-line);
+}
+body[data-fl-variant] .gf-tile {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    min-height: var(--fl-gf-tile-min-h);
+    padding: 12px 8px 12px 16px;
+    background: var(--fl-card-bg);
+}
+body[data-fl-variant] .gf-tile--half {
+    grid-column: span 3;
+}
+body[data-fl-variant] .gf-tile-label,
+body[data-fl-variant] .gf-tile-note {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .gf-tile-val {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fl-gf-tile-val);
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+/* ── Segment-Schalter Verdunstung / Zeitplan ─────────────────────────── */
+body[data-fl-variant] .gf-segcard {
+    padding: 12px 16px;
+}
+body[data-fl-variant] .gf-seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .gf-seg--small {
+    flex-shrink: 0;
+    width: 196px;
+}
+body[data-fl-variant] .gf-seg-btn {
+    min-height: var(--fl-gf-seg-h);
+    padding: 0 6px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    font-weight: 500;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-seg-btn[data-on] {
+    background: var(--fl-gf-seg-on, var(--fl-line-strong));
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-seg-btn:disabled {
+    color: var(--text-secondary);
+}
+/* Zeile direkt unter dem Segment-Schalter in derselben Karte (B): Linie über die ganze Textbreite */
+body[data-fl-variant] .gf-afterseg::before,
+body[data-fl-variant] .gf-segcard + .aura-fl-row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: var(--fl-sep-inset-r);
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+
+/* ── Dauer-Wahl und Tasten ───────────────────────────────────────────── */
+body[data-fl-variant] .gf-step {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: 36px;
+    border-radius: 9px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .gf-step-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--control, var(--text-primary));
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-step-btn:disabled {
+    opacity: 0.35;
+}
+body[data-fl-variant] .gf-step-input {
+    width: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    /* 16 px: iOS zoomt beim Antippen sonst hinein */
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--text-primary);
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+body[data-fl-variant] .gf-step-input::-webkit-outer-spin-button,
+body[data-fl-variant] .gf-step-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+body[data-fl-variant] .gf-step-input:disabled {
+    color: var(--text-secondary);
+    -webkit-text-fill-color: var(--text-secondary);
+    opacity: 1;
+}
+body[data-fl-variant] .gf-step-unit {
+    padding: 0 2px 0 4px;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .gf-btnrow {
+    padding: 8px 16px 12px;
+}
+body[data-fl-variant] .gf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: var(--fl-gf-btn-h);
+    border: 0;
+    border-radius: 12px;
+    font: inherit;
+    font-size: var(--fl-font-title);
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-btn--go {
+    background: var(--gf-accent);
+    color: var(--gf-on-mode);
+}
+body[data-fl-variant] .gf-btn--stop {
+    background: color-mix(in srgb, var(--fl-crit) 14%, transparent);
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .gf-btn:disabled {
+    background: var(--fl-soft);
+    color: var(--text-secondary);
+}
+/* Handbetrieb in einer Zeile (B, D): Dauer-Wahl und runde Taste */
+body[data-fl-variant] .gf-manual--compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+body[data-fl-variant] .gf-round {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--gf-accent);
+    color: var(--gf-on-mode);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-round > svg {
+    fill: currentColor;
+}
+body[data-fl-variant] .gf-round--stop {
+    background: var(--fl-crit);
+}
+body[data-fl-variant] .gf-round:disabled {
+    background: var(--fl-soft);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .gf-manualrow[data-status='running'] .aura-fl-row-sub {
+    color: var(--gf-water);
+}
+
+/* ── Termine ─────────────────────────────────────────────────────────── */
+body[data-fl-variant] .gf-ev-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-ev-title {
+    display: flex;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .gf-ev-dur {
+    white-space: pre;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .gf-ev-warn {
+    display: inline-flex;
+    margin-left: 8px;
+    color: var(--fl-warn);
+}
+body[data-fl-variant] .gf-evrow.is-off .gf-ev-title,
+body[data-fl-variant] .gf-evrow.is-off .gf-ev-dur {
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .gf-addrow {
+    gap: 8px;
+    font-size: var(--fl-font-title);
+    color: var(--gf-accent);
+}
+body[data-fl-variant] .gf-addrow:disabled {
+    color: var(--text-secondary);
+}
+/* B: aufgeklappter Bereich in der Karte, leicht abgesetzt */
+body[data-fl-variant] .gf-fold {
+    position: relative;
+    background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+body[data-fl-variant] .gf-fold > .aura-fl-row:first-child::before,
+body[data-fl-variant] .gf-fold + .aura-fl-row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: var(--fl-sep-inset-r);
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .gf-fold-chev {
+    transition: transform 0.2s ease;
+}
+body[data-fl-variant] .gf-fold-chev.is-open {
+    transform: rotate(180deg);
+}
+
+/* ── Schalter (GartenSwitch) im Raster: Größe und Grün wie in den Rollläden-Unterseiten ───── */
+body[data-fl-variant] :is(.gf-page, .gf-sheet, .garten-sheet) .garten-sw {
+    width: var(--fl-gf-sw-w);
+    height: var(--fl-gf-sw-h);
+    background: color-mix(in srgb, var(--text-secondary) 35%, transparent);
+}
+body[data-fl-variant] :is(.gf-page, .gf-sheet, .garten-sheet) .garten-sw.is-on {
+    background: var(--accent-green, #34c759);
+}
+body[data-fl-variant] :is(.gf-page, .gf-sheet, .garten-sheet) .garten-sw-knob {
+    top: 2px;
+    left: 2px;
+    width: 27px;
+    height: 27px;
+    background: var(--fl-gf-sw-knob, #fff);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 0.2);
+    transition: transform 0.15s ease;
+}
+body[data-fl-variant] :is(.gf-page, .gf-sheet, .garten-sheet) .garten-sw.is-on .garten-sw-knob {
+    left: 2px;
+    transform: translateX(20px);
+}
+
+/* ── Unterseiten (A: Kreis, D: Zeitplan) und Inhalt des Pop-ups (C) ──── */
+body[data-fl-variant] .gf-detail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+body[data-fl-variant] .gf-subpage > .gf-detail > .gf-section:first-child > .gf-section-head,
+body[data-fl-variant] .gf-subpage > .ios-bar + .gf-section > .gf-section-head,
+body[data-fl-variant] .gf-sheet-body > .gf-detail > .gf-section:first-child > .gf-section-head {
+    padding-top: var(--fl-gap-title);
+}
+
+/* ── Unterseiten zum Bearbeiten (E): Termin und Einstellungen ────────── */
+/* Uhrzeit rechts in der Zeile, Schrift wie ein Wert */
+body[data-fl-variant] .gf-time-input {
+    flex-shrink: 0;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--fl-soft);
+    font: inherit;
+    /* 16 px und mehr: iOS zoomt beim Antippen sonst hinein */
+    font-size: var(--fl-gf-val);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+/* Schnellwahl der Tage rechts im Abschnittstitel */
+body[data-fl-variant] .gf-presets {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 2px;
+}
+body[data-fl-variant] .gf-preset {
+    min-height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    color: var(--gf-accent);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-preset[data-on] {
+    background: color-mix(in srgb, var(--gf-accent) 14%, transparent);
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-daycard {
+    padding: 12px;
+}
+body[data-fl-variant] .gf-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+}
+body[data-fl-variant] .gf-day {
+    min-height: var(--fl-gf-btn-h);
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: var(--fl-soft);
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    font-weight: 500;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .gf-day[data-on] {
+    background: var(--gf-accent);
+    color: var(--gf-on-mode);
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-text-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    /* 16 px und mehr: iOS zoomt beim Antippen sonst hinein */
+    font-size: max(16px, var(--fl-font-title));
+    color: var(--text-primary);
+    outline: none;
+}
+body[data-fl-variant] .gf-text-input::placeholder {
+    color: var(--text-secondary);
+}
+/* Wert im Stepper ohne Eingabefeld (Regensperre) */
+body[data-fl-variant] .gf-step-val {
+    min-width: 28px;
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .gf-foot--crit {
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .gf-btnrow-wrap {
+    margin-top: var(--fl-gf-gap);
+}
+
+/* ── Pop-up eines Kreises (C) ────────────────────────────────────────── */
+body[data-fl-variant] .gf-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    /* Hintergrund: .aura-scrim in index.css */
+}
+body[data-fl-variant] .gf-sheet {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 600px;
+    max-height: 92%;
+    box-sizing: border-box;
+    background: var(--app-bg);
+    color: var(--text-primary);
+    border-radius: var(--fl-card-radius) var(--fl-card-radius) 0 0;
+    animation: gf-sheet-in 280ms ease-out;
+}
+@keyframes gf-sheet-in {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+body[data-fl-variant] .gf-sheet-drag {
+    flex-shrink: 0;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+}
+body[data-fl-variant] .gf-sheet-grip {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0;
+}
+body[data-fl-variant] .gf-sheet-grip-handle,
+body[data-fl-variant] .garten-sheet .garten-sheet-grip-handle,
+body[data-fl-variant] .garten2-sheet .garten2-sheet-grip-handle {
+    width: 36px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--fl-line-strong);
+}
+body[data-fl-variant] .gf-sheet-header {
+    padding: 2px var(--fl-page-x) 4px;
+}
+body[data-fl-variant] .gf-sheet-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+}
+body[data-fl-variant] .gf-sheet-sub {
+    margin: 2px 0 0;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .gf-sheet-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
+    /* seitlich: Baustein .aura-fl-sheet-body */
+}
+@media (prefers-reduced-motion: reduce) {
+    body[data-fl-variant] .gf-sheet {
+        animation: none;
+    }
+}
+
+/* ── Vorhandene Pop-ups im neuen Aussehen: Termin (garten-sheet) und Regensperre (garten2-sheet) ───── */
+/* Fläche wie die Seite, Kopf ohne Linie, Titel wie im Pop-up von Wohnklima. Seitlicher Rand des Inhalts:
+   Baustein .aura-fl-sheet-body (steht an beiden Pop-ups). */
+body[data-fl-variant] .garten-sheet,
+body[data-fl-variant] .garten2-sheet {
+    background: var(--app-bg);
+    border-radius: var(--fl-card-radius) var(--fl-card-radius) 0 0;
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-header,
+body[data-fl-variant] .garten2-sheet .garten2-sheet-header {
+    border-bottom: 0;
+    padding: 2px var(--fl-page-x) 4px;
+}
+/* Kreisname unter dem Titel statt rechts daneben (wie im Pop-up des Kreises) */
+body[data-fl-variant] .garten-sheet .garten-sheet-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-title,
+body[data-fl-variant] .garten2-sheet .garten2-sheet-title {
+    font-size: 20px;
+    font-weight: 600;
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-sub,
+body[data-fl-variant] .garten2-sheet .garten2-sheet-subtitle {
+    font-size: var(--fl-font-sub);
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-body {
+    gap: 0;
+    padding-top: 4px;
+}
+/* Felder des Termins: Feldname wie ein Abschnittstitel, darunter das Feld als Karte */
+body[data-fl-variant] .garten-sheet .garten-sheet-row {
+    min-height: var(--fl-row-min-h);
+    margin-top: var(--fl-gap-title);
+    padding: 0 16px;
+    background: var(--fl-card-bg);
+    border: var(--fl-card-border-w) solid var(--fl-card-border);
+    border-radius: var(--fl-card-radius);
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-label.is-inline {
+    font-size: var(--fl-font-title);
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-label:not(.is-inline) {
+    margin: 0;
+    padding: 20px var(--fl-title-pad-x) var(--fl-gap-title);
+    font-size: var(--fl-font-section);
+    font-weight: var(--fl-weight-section);
+    color: var(--fl-color-section);
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-input {
+    min-height: var(--fl-row-min-h);
+    padding: 8px 16px;
+    border: var(--fl-card-border-w) solid var(--fl-card-border);
+    border-radius: var(--fl-card-radius);
+    background: var(--fl-card-bg);
+    font-size: var(--fl-font-title);
+}
+body[data-fl-variant] .garten-sheet .garten-day.garten-sheet-day {
+    border-radius: 12px;
+    border-color: var(--fl-card-border);
+    background: var(--fl-card-bg);
+    font-size: var(--fl-font-meta);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .garten-sheet .garten-day.garten-sheet-day.is-on {
+    border-color: transparent;
+    background: var(--gf-accent);
+    color: var(--gf-on-mode);
+    font-weight: 600;
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-dur-edit {
+    padding: 0 4px;
+    border: var(--fl-card-border-w) solid var(--fl-card-border);
+    border-radius: 12px;
+    background: var(--fl-card-bg);
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-chip-btn {
+    width: 40px;
+    min-height: var(--fl-gf-btn-h);
+    color: var(--control, var(--text-primary));
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-dur-input,
+body[data-fl-variant] .garten2-sheet .garten2-threshold-value {
+    min-width: 40px;
+    font-size: var(--fl-font-title);
+    font-weight: 600;
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-dur-unit {
+    padding-right: 6px;
+    font-size: var(--fl-font-sub);
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-hint,
+body[data-fl-variant] .garten-sheet .garten-sheet-error {
+    padding: 0 var(--fl-title-pad-x);
+    font-size: var(--fl-font-foot);
+    line-height: 1.35;
+}
+body[data-fl-variant] .garten-sheet .garten-sheet-foot {
+    border-top: 0;
+    padding: 12px var(--fl-page-x) 0;
+}
+/* Tasten der Pop-ups: Hauptaktion in Akzentfarbe, der Rest neutral, Löschen rot */
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-btn {
+    min-height: var(--fl-gf-btn-h);
+    border: 0;
+    border-radius: 12px;
+    background: var(--fl-soft);
+    font-size: var(--fl-font-meta);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-btn.is-pri {
+    background: var(--gf-accent);
+    color: var(--gf-on-mode);
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-btn.is-pri:disabled {
+    background: var(--fl-soft);
+    color: var(--text-secondary);
+    opacity: 1;
+}
+body[data-fl-variant] :is(.garten-sheet, .garten2-sheet) .garten-btn.is-dan {
+    background: color-mix(in srgb, var(--fl-crit) 14%, transparent);
+    color: var(--fl-crit);
+}
+/* Regensperre */
+body[data-fl-variant] .garten2-sheet .garten2-sheet-body {
+    gap: 14px;
+    padding-top: 10px;
+    padding-bottom: 8px;
+}
+body[data-fl-variant] .garten2-sheet .garten2-sheet-row-title {
+    font-size: var(--fl-font-title);
+    font-weight: 400;
+}
+body[data-fl-variant] .garten2-sheet .garten-note {
+    font-size: var(--fl-font-foot);
+    line-height: 1.35;
+    opacity: 1;
+}

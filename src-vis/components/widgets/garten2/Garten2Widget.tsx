@@ -26,10 +26,7 @@ import { useSprinkleCircle, type SprinkleCircleState } from '../garten/useSprink
 import { useSprinkleCircles } from '../garten/useSprinkleCircles';
 import { useGartenPlanData } from './useGartenPlanData';
 import { useSprinkleWeather } from './useSprinkleWeather';
-import { Garten2Hero } from './Garten2Hero';
-import { Garten2WeatherSoil } from './Garten2WeatherSoil';
-import { Garten2WeekPlan } from './Garten2WeekPlan';
-import { Garten2SettingsSheet } from './Garten2SettingsSheet';
+import { GartenFacelift } from './GartenFacelift';
 import '../garten/GartenWidget.css';
 import '../garten/GartenCircleCard.css';
 import './Garten2Widget.css';
@@ -129,67 +126,49 @@ export function Garten2Widget({ config, editMode }: WidgetProps) {
     }, [circles]);
 
     const orderedProbes = circles.map((c) => probes[c.sprinkleName]).filter((p): p is CircleProbeData => Boolean(p));
-    const running = orderedProbes.find((p) => p.state.valveOn === true) ?? null;
-    const anyRunning = orderedProbes.some((p) => p.state.valveOn === true);
 
     const weather = useSprinkleWeather(instance);
     const plan = useGartenPlanData(planRoot);
 
-    const [settingsOpen, setSettingsOpen] = useState(false);
+    // UI-Facelift: die Seite zeichnet GartenFacelift. Davor (Kreise werden noch gesucht oder es gibt keine) bleibt
+    // nur der Hinweis.
+    if (circles.length > 0) {
+        return (
+            <>
+                {circles.map((c) => (
+                    <Garten2CircleProbe
+                        key={c.sprinkleName}
+                        instance={instance}
+                        sprinkleName={c.sprinkleName}
+                        label={c.label}
+                        onUpdate={onUpdate}
+                    />
+                ))}
+                <GartenFacelift
+                    instance={instance}
+                    circles={orderedProbes}
+                    weather={weather}
+                    plan={plan}
+                    interactive={interactive}
+                    plantInteractive={plantInteractive}
+                    confirmManualStart={confirmManualStart}
+                    manualDefaultMinutes={manualDefaultMinutes}
+                    showSoilMoisture={showSoilMoisture}
+                    devBlocked={DEV_WRITES_BLOCKED}
+                />
+            </>
+        );
+    }
 
     return (
         <div className="garten2-widget">
-            {circles.map((c) => (
-                <Garten2CircleProbe
-                    key={c.sprinkleName}
-                    instance={instance}
-                    sprinkleName={c.sprinkleName}
-                    label={c.label}
-                    onUpdate={onUpdate}
-                />
-            ))}
-
-            {loading && circles.length === 0 && <div className="garten-empty">Kreise werden gesucht …</div>}
-            {!loading && circles.length === 0 && (
+            {loading && <div className="garten-empty">Kreise werden gesucht …</div>}
+            {!loading && (
                 <div className="garten-empty">
                     {source === 'none'
                         ? 'Keine Kreise gefunden – bitte Adapter-Instanz prüfen.'
                         : 'Keine Bewässerungskreise gefunden'}
                 </div>
-            )}
-
-            {circles.length > 0 && (
-                <>
-                    <Garten2Hero running={running} plantInteractive={plantInteractive} />
-
-                    <Garten2WeatherSoil weather={weather} circles={orderedProbes} showSoilMoisture={showSoilMoisture} />
-
-                    <Garten2WeekPlan
-                        circles={orderedProbes}
-                        plan={plan}
-                        interactive={interactive}
-                        plantInteractive={plantInteractive}
-                        confirmManualStart={confirmManualStart}
-                        manualDefaultMinutes={manualDefaultMinutes}
-                        onOpenSettings={() => setSettingsOpen(true)}
-                    />
-                </>
-            )}
-
-            {DEV_WRITES_BLOCKED && (
-                <p className="garten-note garten-dev-note">
-                    Lokale Vorschau: Modus, Handbetrieb und die Regensperre sind hier ausgegraut – sie schalten erst auf
-                    dem Pi. Termine gehen nur in die Testdatenpunkte (Garten_Dev) und laufen dort im Trockenlauf.
-                </p>
-            )}
-
-            {settingsOpen && (
-                <Garten2SettingsSheet
-                    instance={instance}
-                    anyRunning={anyRunning}
-                    plantInteractive={plantInteractive}
-                    onClose={() => setSettingsOpen(false)}
-                />
             )}
         </div>
     );

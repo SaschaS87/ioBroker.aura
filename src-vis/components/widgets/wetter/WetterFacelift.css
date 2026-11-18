@@ -1,0 +1,624 @@
+/*
+ * UI-Facelift, Entwurfsphase Wetter – Brücken-Datei (Entwürfe A–D, siehe WetterFacelift.tsx).
+ *
+ * Alles hängt an body[data-fl-variant] (nur Dev-Vorschau, „Neu"). Karten, Zeilen, Abschnittstitel und
+ * Begleittexte kommen aus den Bausteinen (facelift-blocks.css); hier steht nur, was die Wetter-Seite
+ * zusätzlich braucht. Seitenrand und Zeilenhöhe setzt diese Datei nicht (Raster: --fl-page-x, --fl-row-min-h).
+ *
+ * Eigene Maße:
+ *   --fl-wx-val          Wert rechts in der Zeile
+ *   --fl-wx-gap          Abstand zwischen zwei Karten ohne Abschnittstitel
+ *   --fl-wx-temp         große Temperatur im Kopf
+ *   --fl-wx-tile-val     Wert in einer Kachel
+ *   --fl-wx-tile-min-h   Mindesthöhe einer Kachel
+ *   --fl-wx-cell-w       Breite eines Tages in der Tagesleiste
+ *   --fl-wx-seg-h        Höhe des Reiter-Schalters (D)
+ *   --fl-wx-pad          Innenrand um Diagramm und Regen-Vorschau
+ *   --fl-wx-daily-h      Höhe der Karte „Regenmenge je Tag"
+ * Eigene Farben (je Theme überschreibbar):
+ *   --fl-wx-rain / --fl-wx-temp-line     Regen (blau) / Temperatur (orange), wie in den Diagrammen
+ *   --fl-wx-clear / -cloud / -snow / -storm / -night   Kopf-Karte je Wetterlage
+ *   --fl-wx-ico-bg / --fl-wx-ico-fg     Symbolfläche und Zeichen
+ *   --fl-wx-on-mood                      Schrift auf der eingefärbten Kopf-Karte
+ */
+body[data-fl-variant] {
+    --fl-wx-val: 17px;
+    --fl-wx-gap: 12px;
+    --fl-wx-temp: 46px;
+    --fl-wx-tile-val: 20px;
+    --fl-wx-tile-min-h: 78px;
+    --fl-wx-cell-w: 68px;
+    --fl-wx-seg-h: 32px;
+    --fl-wx-pad: 12px;
+    --fl-wx-daily-h: 372px;
+
+    --wx-rain: var(--fl-wx-rain, #2f7fd6);
+    --wx-temp: var(--fl-wx-temp-line, #e0922f);
+    --wx-ico-bg: var(--fl-wx-ico-bg, var(--text-secondary));
+    --wx-ico-fg: var(--fl-wx-ico-fg, var(--widget-bg, #fff));
+    --wx-on-mood: var(--fl-wx-on-mood, #fff);
+}
+
+/* Die drei anderen Widgets des Tabs (Regen-Stationskarte, Regenmenge, Datenquellen) stecken in der neuen
+   Seite; ihre alten Karten treten zurück, solange ein Entwurf gezeigt wird. */
+body[data-fl-variant] .aura-tab:has(.wx-page) [data-aura-widget-type='rainstation'],
+body[data-fl-variant] .aura-tab:has(.wx-page) [data-aura-widget-type='raindaily'],
+body[data-fl-variant] .aura-tab:has(.wx-page) [data-aura-widget-type='datasourcehealth'] {
+    display: none;
+}
+
+/* ── Seite ───────────────────────────────────────────────────────────── */
+/* erster Abschnitt: weniger Luft unter dem großen Seitentitel (wie Wohnklima und Heizung) */
+body[data-fl-variant] .wx-home > .wx-section:first-child > .wx-section-head,
+body[data-fl-variant] .wx-section--first > .wx-section-head {
+    padding-top: var(--fl-gap-title);
+}
+body[data-fl-variant] .wx-section--plain {
+    margin-top: var(--fl-wx-gap);
+}
+body[data-fl-variant] .wx-home > .wx-section--plain:first-child,
+body[data-fl-variant] .wx-subpage > .wx-first {
+    margin-top: var(--fl-gap-title);
+}
+body[data-fl-variant] .wx-section-head {
+    align-items: baseline;
+}
+
+/* ── Zeilen ──────────────────────────────────────────────────────────── */
+body[data-fl-variant] .wx-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--wx-ico-bg);
+    color: var(--wx-ico-fg);
+}
+body[data-fl-variant] .wx-ico > svg {
+    stroke-width: 1.7;
+}
+/* Datenquellen: grün, bei Warnung gelb, bei Störung rot (unsichtbarer Fühler in der Zeile) */
+body[data-fl-variant] .wx-ico--status {
+    background: var(--fl-ok);
+}
+body[data-fl-variant] .wx-status-row:has(.aura-fl-statusprobe[data-level='loading']) .wx-ico--status {
+    background: var(--wx-ico-bg);
+}
+body[data-fl-variant] .wx-status-row:has(.aura-fl-statusprobe[data-level='warn']) .wx-ico--status {
+    background: var(--fl-warn);
+}
+body[data-fl-variant] .wx-status-row:has(.aura-fl-statusprobe[data-level='crit']) .wx-ico--status {
+    background: var(--fl-crit);
+}
+body[data-fl-variant] .wx-row-title {
+    color: var(--text-primary);
+}
+body[data-fl-variant] .aura-fl-row.wx-valrow {
+    padding-right: 16px;
+}
+body[data-fl-variant] .wx-row-val {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    font-size: var(--fl-wx-val);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+/* Zeilen ohne Symbol: Trennlinie beginnt am Text */
+body[data-fl-variant] .aura-fl-row + .wx-row--plain::before {
+    left: 16px;
+}
+body[data-fl-variant] .wx-min {
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-rain,
+body[data-fl-variant] .wx-rainval {
+    color: var(--wx-rain);
+}
+/* Tageszeile (A): rechts Höchst/Tiefst, darunter Regen */
+body[data-fl-variant] .wx-dayval {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+}
+body[data-fl-variant] .wx-dayval > .wx-row-val {
+    line-height: var(--fl-lh-title);
+}
+body[data-fl-variant] .wx-dayval-rain {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    font-variant-numeric: tabular-nums;
+    color: var(--wx-rain);
+    white-space: nowrap;
+}
+body[data-fl-variant] .wx-windarrow {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-fold {
+    cursor: pointer;
+    padding: 0;
+}
+
+/* ── Kopf-Karte ──────────────────────────────────────────────────────── */
+/* Aufbau wie der Heizungs-Kopf (großes Symbol im Hintergrund, Farbverlauf); Farbe je Wetterlage */
+body[data-fl-variant] .wx-head {
+    --wx-mood: var(--fl-wx-cloud, #7c7c82);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 16px 16px 16px;
+    border-color: transparent;
+    color: var(--wx-on-mood);
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--wx-mood) 82%, #fff) 0,
+        var(--wx-mood) 45%,
+        color-mix(in srgb, var(--wx-mood) 72%, #000) 100%
+    );
+}
+body[data-fl-variant] .wx-head[data-mood='clear'] {
+    --wx-mood: var(--fl-wx-clear, #d98a1c);
+}
+body[data-fl-variant] .wx-head[data-mood='rain'] {
+    --wx-mood: var(--wx-rain);
+}
+body[data-fl-variant] .wx-head[data-mood='snow'] {
+    --wx-mood: var(--fl-wx-snow, #4a8fcf);
+}
+body[data-fl-variant] .wx-head[data-mood='storm'] {
+    --wx-mood: var(--fl-wx-storm, #7a55d6);
+}
+body[data-fl-variant] .wx-head[data-mood='night'] {
+    --wx-mood: var(--fl-wx-night, #4b5568);
+}
+body[data-fl-variant] .wx-head > :not(.wx-head-mark) {
+    position: relative;
+}
+body[data-fl-variant] .wx-head-mark {
+    position: absolute;
+    right: -10px;
+    bottom: -24px;
+    width: 132px;
+    height: 132px;
+    stroke-width: 1.4;
+    opacity: 0.22;
+    pointer-events: none;
+}
+body[data-fl-variant] .wx-head-label {
+    font-size: var(--fl-font-title);
+    font-weight: 600;
+    line-height: var(--fl-lh-title);
+}
+body[data-fl-variant] .wx-head-temp {
+    font-size: var(--fl-wx-temp);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wx-head-sub {
+    font-size: var(--fl-font-meta);
+    color: color-mix(in srgb, var(--wx-on-mood) 84%, transparent);
+}
+
+/* ── Kacheln (C) ─────────────────────────────────────────────────────── */
+body[data-fl-variant] .wx-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+body[data-fl-variant] .wx-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: var(--fl-wx-tile-min-h);
+    padding: 10px 14px 10px 16px;
+}
+body[data-fl-variant] .wx-tile:nth-child(2n)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 1px;
+    background: var(--fl-line);
+    transform: scaleX(0.6);
+}
+body[data-fl-variant] .wx-tile:nth-child(n + 3)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 0;
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .wx-tile:nth-child(2n + 4)::before {
+    left: 0;
+    right: var(--fl-sep-inset-r);
+}
+body[data-fl-variant] .wx-tile-label,
+body[data-fl-variant] .wx-tile-sub {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .wx-tile-val {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fl-wx-tile-val);
+    font-weight: 500;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+body[data-fl-variant] .wx-tiles-foot {
+    position: relative;
+    padding: 9px 16px 11px;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-tiles-foot::before,
+body[data-fl-variant] .wx-tiles--inner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: var(--fl-sep-inset-r);
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .wx-tiles--inner {
+    position: relative;
+}
+/* Station wählen: Name mittig, links und rechts blättern */
+body[data-fl-variant] .wx-stnav {
+    display: flex;
+    align-items: center;
+    min-height: var(--fl-row-min-h);
+    padding: 0 6px;
+}
+body[data-fl-variant] .wx-stnav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wx-stnav-btn:disabled {
+    opacity: 0.3;
+}
+body[data-fl-variant] .wx-stnav-name {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: var(--fl-font-title);
+    line-height: var(--fl-lh-title);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .wx-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding-top: 10px;
+}
+body[data-fl-variant] .wx-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--fl-line-strong);
+}
+body[data-fl-variant] .wx-dot[data-on] {
+    background: var(--text-primary);
+}
+
+/* ── Tagesleiste ─────────────────────────────────────────────────────── */
+body[data-fl-variant] .wx-strip {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    /* seitenweite Sperre (index.html, Swipe-Back-Fix) lokal aufheben: die Leiste scrollt bewusst seitlich */
+    touch-action: pan-x pan-y;
+}
+body[data-fl-variant] .wx-strip::-webkit-scrollbar {
+    display: none;
+}
+body[data-fl-variant] .wx-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    flex: 0 0 var(--fl-wx-cell-w);
+    padding: 12px 4px 10px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: var(--text-primary);
+    scroll-snap-align: start;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wx-cell[data-on] {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wx-cell:active {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wx-cell-day {
+    font-size: var(--fl-font-sub);
+    font-weight: 600;
+    line-height: var(--fl-lh-sub);
+}
+body[data-fl-variant] .wx-cell-date {
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-cell-icon {
+    margin: 5px 0 3px;
+    stroke-width: 1.7;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-cell-temp {
+    font-size: var(--fl-font-meta);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+body[data-fl-variant] .wx-cell-rain {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 28px;
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--wx-rain);
+    white-space: nowrap;
+}
+
+/* ── Diagramm eines Tages ────────────────────────────────────────────── */
+body[data-fl-variant] .wx-chart {
+    position: relative;
+    padding: var(--fl-wx-pad) var(--fl-wx-pad) 6px;
+}
+/* Haarlinie zwischen Tagesleiste und Diagramm, zwischen Diagramm und Zeile */
+body[data-fl-variant] .wx-strip + .wx-chart::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .wx-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: 22px;
+    padding: 0 4px;
+}
+body[data-fl-variant] .wx-chart-title {
+    font-size: var(--fl-font-meta);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wx-legend,
+body[data-fl-variant] .wx-legend-item,
+body[data-fl-variant] .wx-scrub,
+body[data-fl-variant] .wx-scrub > span {
+    display: inline-flex;
+    align-items: center;
+}
+body[data-fl-variant] .wx-legend {
+    gap: 10px;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-legend-item {
+    gap: 5px;
+}
+body[data-fl-variant] .wx-legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+body[data-fl-variant] .wx-legend-band {
+    width: 12px;
+    height: 7px;
+    border-radius: 2px;
+}
+body[data-fl-variant] .wx-scrub {
+    gap: 12px;
+    font-size: var(--fl-font-meta);
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wx-scrub > span {
+    gap: 4px;
+    font-weight: 600;
+}
+body[data-fl-variant] .wx-scrub-time {
+    font-weight: 400 !important;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-scrub-temp {
+    color: var(--wx-temp);
+}
+body[data-fl-variant] .wx-scrub-rain {
+    color: var(--wx-rain);
+}
+body[data-fl-variant] .wx-chart-body {
+    position: relative;
+    margin-top: 6px;
+}
+body[data-fl-variant] .wx-crosshair {
+    position: absolute;
+    bottom: 20px;
+    width: 0;
+    border-left: 1px dashed var(--text-secondary);
+    opacity: 0.45;
+    pointer-events: none;
+}
+body[data-fl-variant] .wx-chart-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+
+/* ── Regen-Vorschau (15 Minuten) ─────────────────────────────────────── */
+body[data-fl-variant] .wx-nowcast {
+    padding: var(--fl-wx-pad) 0 var(--fl-wx-pad);
+}
+body[data-fl-variant] .wx-nowcast-head {
+    display: flex;
+    gap: 28px;
+    padding: 2px 16px 8px;
+}
+body[data-fl-variant] .wx-nowcast-stat {
+    display: flex;
+    flex-direction: column;
+}
+body[data-fl-variant] .wx-nowcast-num {
+    font-size: var(--fl-wx-tile-val);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wx-nowcast-stat:first-child .wx-nowcast-num {
+    color: var(--wx-rain);
+}
+body[data-fl-variant] .wx-nowcast-label,
+body[data-fl-variant] .wx-nowcast-foot,
+body[data-fl-variant] .wx-nowcast-empty {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-nowcast-empty {
+    padding: 0 16px;
+}
+body[data-fl-variant] .wx-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 0 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    touch-action: pan-x pan-y;
+}
+body[data-fl-variant] .wx-bars::-webkit-scrollbar {
+    display: none;
+}
+body[data-fl-variant] .wx-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    flex: 0 0 34px;
+    height: 72px;
+    padding: 0 0 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font: inherit;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wx-bar[data-on] {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wx-bar-fill {
+    display: block;
+    width: 14px;
+    border-radius: 3px;
+    background: var(--wx-rain);
+}
+body[data-fl-variant] .wx-bar[data-dry] .wx-bar-fill {
+    opacity: 0.25;
+}
+body[data-fl-variant] .wx-bar-time {
+    font-size: 10px;
+    line-height: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wx-nowcast-foot {
+    padding: 8px 16px 0;
+}
+body[data-fl-variant] .wx-nowcast-foot b {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Reiter (D) ──────────────────────────────────────────────────────── */
+body[data-fl-variant] .wx-seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wx-tabs {
+    margin-top: var(--fl-gap-title);
+}
+body[data-fl-variant] .wx-seg-btn {
+    min-width: 0;
+    min-height: var(--fl-wx-seg-h);
+    padding: 0 2px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wx-seg-btn[data-on] {
+    background: var(--fl-wx-seg-on, var(--fl-line-strong));
+    font-weight: 600;
+}
+body[data-fl-variant] .wx-tabs + .wx-section > .wx-section-head {
+    padding-top: calc(var(--fl-gap-title) + 8px);
+}
+
+/* ── Regenmenge je Tag (bestehendes Diagramm in der Karte) ───────────── */
+body[data-fl-variant] .wx-raindaily {
+    height: var(--fl-wx-daily-h);
+    padding: var(--fl-wx-pad);
+    /* Balken und Stationswahl in Regen-Blau statt in der Akzentfarbe */
+    --accent: var(--wx-rain);
+}
+/* Titel, Summe und Regentage stehen als Zeilen unter der Karte */
+body[data-fl-variant] .wx-raindaily .rd-head {
+    display: none;
+}

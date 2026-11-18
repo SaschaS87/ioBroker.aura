@@ -1,0 +1,552 @@
+/*
+ * UI-Facelift, Brücken-Datei der Wohnklima-Seite.
+ *
+ * Nutzt die gemeinsamen Bausteine aus facelift-blocks.css (aura-fl-section, -card, -row, -foot …) und
+ * ergänzt nur, was Wohnklima eigen ist (Klassen wk-*). Jede Regel hängt an body[data-fl-variant]; das Attribut
+ * setzt main.tsx immer. Farben nur über Theme-Variablen mit Rückfallkette.
+ *
+ * Eigene Maße (Wohnklima):
+ *   --fl-wk-val          Temperatur rechts in der Zeile
+ *   --fl-wk-cell-temp    große Temperatur im Raster (B)
+ *   --fl-wk-cell-min-h   Mindesthöhe einer Rasterzelle (B)
+ *   --fl-wk-trow-min-h   Zeilenhöhe der Tabelle (C)
+ *   --fl-wk-col-hum      Spaltenbreite Luftfeuchte (C)
+ *   --fl-wk-col-temp     Spaltenbreite Temperatur (C)
+ *   --fl-wk-sum-big      große Außentemperatur im Überblick (C)
+ *   --fl-wk-hero         Momentanwerte oben im Pop-up
+ *   --fl-wk-chart-h      Höhe des Diagramms im Pop-up
+ *   --fl-wk-chart-gap    Abstand zwischen Zeitraum, Blättern, Diagramm und Linien-Schaltern
+ *   --fl-wk-seg-h        Höhe des Segment-Schalters (Tag / 7 Tage / Monat)
+ *   --fl-wk-nav-h        Höhe der Blättern-Zeile
+ *   --fl-wk-col-stat     Spaltenbreite der Kennzahlen (Temperatur, Luftfeuchte)
+ */
+body[data-fl-variant] {
+    --fl-wk-val: 17px;
+    --fl-wk-cell-temp: 26px;
+    --fl-wk-cell-min-h: 92px;
+    --fl-wk-trow-min-h: 46px;
+    --fl-wk-col-hum: 64px;
+    --fl-wk-col-temp: 70px;
+    --fl-wk-sum-big: 40px;
+    --fl-wk-hero: 34px;
+    --fl-wk-chart-h: 180px;
+    --fl-wk-chart-gap: 10px;
+    --fl-wk-seg-h: 30px;
+    --fl-wk-nav-h: 36px;
+    --fl-wk-col-stat: 64px;
+
+    --wk-ico-bg: var(--fl-wk-ico-bg, var(--text-secondary));
+    --wk-ico-out-bg: var(--fl-wk-ico-out-bg, var(--accent, #0a84ff));
+    --wk-ico-fg: var(--fl-wk-ico-fg, var(--widget-bg, #fff));
+    --wk-hum: var(--fl-wk-hum, #8aa8c8);
+}
+
+/* ── Seite ───────────────────────────────────────────────────────────── */
+/* kein eigener Seitenrand: den setzt --fl-page-x in facelift.css für alle Seiten gleich */
+/* erster Abschnitt: weniger Luft unter dem großen Seitentitel */
+body[data-fl-variant] .wk-page > .wk-section:first-child > .wk-section-head,
+body[data-fl-variant] .wk-d-home > .wk-section:first-child > .wk-section-head {
+    padding-top: var(--fl-gap-title);
+}
+body[data-fl-variant] .wk-foot--page {
+    padding-top: 14px;
+}
+
+/* ── Zeile (A, D) ────────────────────────────────────────────────────── */
+body[data-fl-variant] .wk-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--wk-ico-bg);
+    color: var(--wk-ico-fg);
+}
+body[data-fl-variant] .wk-ico--out {
+    background: var(--wk-ico-out-bg);
+}
+body[data-fl-variant] .wk-ico--floor {
+    background: var(--wk-ico-bg);
+}
+body[data-fl-variant] .wk-ico > svg {
+    stroke-width: 1.7;
+}
+body[data-fl-variant] .wk-row-title {
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-row-val {
+    flex-shrink: 0;
+    font-size: var(--fl-wk-val);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-row-val--avg {
+    color: var(--text-secondary);
+}
+
+/* ── B: Raster in der Karte ─────────────────────────────────────────── */
+body[data-fl-variant] .wk-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+body[data-fl-variant] .wk-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    min-height: var(--fl-wk-cell-min-h);
+    padding: 12px 14px 12px 16px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-cell:active {
+    background: var(--fl-soft);
+}
+/* Haarlinien: senkrecht zwischen den Spalten, waagerecht ab der zweiten Reihe */
+body[data-fl-variant] .wk-cell:nth-child(2n)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 1px;
+    background: var(--fl-line);
+    transform: scaleX(0.6);
+}
+body[data-fl-variant] .wk-cell:nth-child(n + 3)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 16px;
+    right: 0;
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .wk-cell:nth-child(2n + 3)::before {
+    right: 0;
+}
+body[data-fl-variant] .wk-cell:nth-child(2n + 4)::before {
+    left: 0;
+    right: var(--fl-sep-inset-r);
+}
+/* ungerade Anzahl: letzte Zelle über die volle Breite */
+body[data-fl-variant] .wk-grid--odd > .wk-cell:last-child {
+    grid-column: 1 / -1;
+}
+body[data-fl-variant] .wk-grid--odd > .wk-cell:last-child::before {
+    right: var(--fl-sep-inset-r);
+}
+body[data-fl-variant] .wk-cell-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-cell-ico {
+    flex-shrink: 0;
+}
+body[data-fl-variant] .wk-cell-name {
+    font-size: var(--fl-font-sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .wk-cell-temp {
+    font-size: var(--fl-wk-cell-temp);
+    font-weight: 500;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-cell-hum {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--fl-font-sub);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-cell-hum-ico {
+    color: var(--wk-hum);
+}
+
+/* ── C: Überblick und Tabelle ────────────────────────────────────────── */
+body[data-fl-variant] .wk-sum {
+    display: flex;
+    align-items: stretch;
+}
+body[data-fl-variant] .wk-sum-out {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    flex: 0 0 46%;
+    padding: 14px 12px 14px 16px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    color: var(--text-primary);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-sum-out:active {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wk-sum-out::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 1px;
+    background: var(--fl-line);
+    transform: scaleX(0.6);
+}
+body[data-fl-variant] .wk-sum-label {
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-sum-big {
+    font-size: var(--fl-wk-sum-big);
+    font-weight: 300;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wk-sum-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: var(--fl-font-sub);
+    color: var(--control-soft, var(--text-secondary));
+}
+body[data-fl-variant] .wk-sum-hint-chev {
+    flex-shrink: 0;
+}
+body[data-fl-variant] .wk-sum-in {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    padding: 14px 16px 14px 14px;
+}
+body[data-fl-variant] .wk-sum-line {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+body[data-fl-variant] .wk-sum-k {
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-sum-v {
+    font-size: var(--fl-font-meta);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+body[data-fl-variant] .wk-colhead {
+    display: inline-flex;
+    flex-shrink: 0;
+    font-size: var(--fl-font-sub);
+    font-weight: 400;
+    color: var(--text-secondary);
+    /* Spalten bündig mit den Werten der Karte: Zeile endet 16 px vor dem Kartenrand, der Kopf 18 px */
+    margin-right: calc(16px - var(--fl-title-pad-x));
+}
+body[data-fl-variant] .wk-colhead-hum {
+    width: var(--fl-wk-col-hum);
+    text-align: right;
+}
+body[data-fl-variant] .wk-colhead-temp {
+    width: var(--fl-wk-col-temp);
+    text-align: right;
+}
+body[data-fl-variant] .wk-trow {
+    min-height: var(--fl-wk-trow-min-h);
+    gap: 0;
+    padding-right: 16px;
+}
+/* Tabelle ohne Symbol: Trennlinie beginnt am Text */
+body[data-fl-variant] .wk-table > .wk-trow + .wk-trow::before {
+    left: 16px;
+}
+body[data-fl-variant] .wk-trow-name {
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-trow-hum,
+body[data-fl-variant] .wk-trow-temp {
+    flex-shrink: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wk-trow-hum {
+    width: var(--fl-wk-col-hum);
+    font-size: var(--fl-font-meta);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-trow-temp {
+    width: var(--fl-wk-col-temp);
+    font-size: var(--fl-wk-val);
+    color: var(--text-primary);
+}
+
+/* ── D: Unterseite einer Etage ───────────────────────────────────────── */
+body[data-fl-variant] .wk-subpage > .wk-section > .aura-fl-card {
+    margin-top: var(--fl-gap-title);
+}
+
+/* ── Raum-Unterseite (WohnklimaRoomDetails) ─── */
+body[data-fl-variant] .wk-detail {
+    display: flex;
+    flex-direction: column;
+}
+/* Momentanwerte oben, in den Farben der Linien (--wk-temp/--wk-hum-line setzt die Komponente aus
+   denselben Theme-Variablen, die auch das Diagramm bekommt) */
+body[data-fl-variant] .wk-detail-hero {
+    display: flex;
+    gap: 24px;
+    padding: 6px var(--fl-title-pad-x) 0;
+}
+body[data-fl-variant] .wk-detail-hero-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+body[data-fl-variant] .wk-detail-hero-label {
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-detail-hero-val {
+    font-size: var(--fl-wk-hero);
+    font-weight: 300;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-detail-hero-val--temp {
+    color: var(--wk-temp, var(--temp-color, var(--text-primary)));
+}
+body[data-fl-variant] .wk-detail-hero-val--hum {
+    color: var(--wk-hum-line, var(--wk-hum));
+}
+
+/* Verlauf: Karte mit Zeitraum, Blättern, Diagramm und Linien-Schaltern, alles mit Abstand zueinander */
+body[data-fl-variant] .wk-detail-chartcard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-wk-chart-gap);
+    padding: 12px;
+}
+/* Zeitraum: iOS-Segment-Schalter über die volle Breite */
+body[data-fl-variant] .wk-seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wk-seg-btn {
+    min-height: var(--fl-wk-seg-h);
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    font-weight: 500;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-seg-btn[data-on] {
+    background: var(--fl-wk-seg-on, var(--fl-line-strong));
+    font-weight: 600;
+}
+/* Blättern: Pfeil, Datum (öffnet die Auswahl), Pfeil, Heute */
+body[data-fl-variant] .wk-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+body[data-fl-variant] .wk-nav-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--fl-wk-nav-h);
+    height: var(--fl-wk-nav-h);
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-nav-arrow:active:not(:disabled),
+body[data-fl-variant] .wk-nav-date:active,
+body[data-fl-variant] .wk-nav-today:active:not(:disabled) {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .wk-nav-arrow:disabled {
+    opacity: 0.3;
+}
+body[data-fl-variant] .wk-nav-date {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    height: var(--fl-wk-nav-h);
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-nav-date-ico,
+body[data-fl-variant] .wk-nav-date-chev {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-nav-date-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wk-nav-today {
+    flex-shrink: 0;
+    height: var(--fl-wk-nav-h);
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--fl-font-meta);
+    color: var(--accent);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-nav-today:disabled {
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+body[data-fl-variant] .wk-chart {
+    position: relative;
+    height: var(--fl-wk-chart-h);
+    margin-top: 2px;
+}
+body[data-fl-variant] .wk-chart-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-chart-state-text {
+    font-size: var(--fl-font-sub);
+}
+/* Linien ein-/ausblenden: Punkt in Linienfarbe, ausgeblendet nur Umriss und blasser Text */
+body[data-fl-variant] .wk-legend {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+body[data-fl-variant] .wk-legend-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--fl-soft);
+    font: inherit;
+    font-size: var(--fl-font-sub);
+    color: var(--text-secondary);
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .wk-legend-btn[data-on] {
+    color: var(--text-primary);
+}
+body[data-fl-variant] .wk-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--wk-legend-color);
+    background: transparent;
+}
+body[data-fl-variant] .wk-legend-btn[data-on] .wk-legend-dot {
+    background: var(--wk-legend-color);
+}
+body[data-fl-variant] .wk-legend-btn--temp {
+    --wk-legend-color: var(--wk-temp, var(--temp-color, var(--text-primary)));
+}
+body[data-fl-variant] .wk-legend-btn--hum {
+    --wk-legend-color: var(--wk-hum-line, var(--wk-hum));
+}
+
+/* Kennzahlen: Spalte Temperatur und Spalte Luftfeuchte, Köpfe rechts im Abschnittstitel */
+body[data-fl-variant] .wk-statcols {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: calc(16px + 6px - var(--fl-title-pad-x));
+    font-size: var(--fl-font-sub);
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .wk-statcol {
+    width: var(--fl-wk-col-stat);
+    text-align: right;
+}
+body[data-fl-variant] .aura-fl-row.wk-detail-stat {
+    padding-right: 22px;
+}
+body[data-fl-variant] .wk-detail-stat-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--wk-ico-fg);
+    background: var(--wk-ico-bg);
+}
+body[data-fl-variant] .wk-detail-stat-ico--min {
+    background: var(--fl-wk-min, #7cbfa9);
+}
+body[data-fl-variant] .wk-detail-stat-ico--max {
+    background: var(--wk-temp, var(--temp-color, var(--accent-red)));
+}
+body[data-fl-variant] .wk-detail-stat-avg {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1;
+}
+body[data-fl-variant] .wk-detail-stat-val {
+    flex-shrink: 0;
+    width: var(--fl-wk-col-stat);
+    text-align: right;
+    font-size: var(--fl-wk-val);
+    font-variant-numeric: tabular-nums;
+}
+body[data-fl-variant] .wk-detail-stat-val--temp {
+    color: var(--wk-temp, var(--temp-color, var(--text-primary)));
+}
+body[data-fl-variant] .wk-detail-stat-val--hum {
+    color: var(--wk-hum-line, var(--wk-hum));
+}

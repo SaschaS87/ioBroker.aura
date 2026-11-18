@@ -18,7 +18,7 @@
 import { useMemo } from 'react';
 import { useDatapoint } from '../../../../hooks/useDatapoint';
 import { getStateDirect, setStateDirect } from '../../../../hooks/useIoBroker';
-import { parsePlan, parseScenes, parseSettings, DEFAULT_SETTINGS } from './planModel';
+import { parsePlan, parseScenes, parseSettings, removeSceneFromEntries, serializePlan, DEFAULT_SETTINGS } from './planModel';
 import type { PlanEntry, Scene, Settings } from './planModel';
 
 export interface RollPlanData {
@@ -90,13 +90,14 @@ export function useRollPlanData(root: string): RollPlanData {
         const current = await readScenesFresh(scenesId);
         const next = current.filter((s) => s.id !== id);
         setStateDirect(scenesId, JSON.stringify(next));
-        // Wochenplan-Einträge, die genau diese Szene ansteuern, würden sonst auf
-        // eine geloeschte Szene zeigen ("Szene gelöscht", siehe targetName in
-        // planModel.ts) — hier ebenso frisch lesen statt aus altem State löschen.
+        // Wochenplan-Einträge mit dieser Szene würden sonst auf eine geloeschte Szene
+        // zeigen ("Szene gelöscht", siehe targetName in planModel.ts) — hier ebenso frisch
+        // lesen statt aus altem State löschen. Nur das Ziel der Szene fällt weg, der
+        // Zeitpunkt nur, wenn danach kein Ziel mehr übrig ist.
         const currentEntries = await readEntriesFresh(entriesId);
-        const nextEntries = currentEntries.filter((e) => !(e.target.kind === 'scene' && e.target.sceneId === id));
-        if (nextEntries.length !== currentEntries.length) {
-            setStateDirect(entriesId, JSON.stringify(nextEntries));
+        const r = removeSceneFromEntries(currentEntries, id);
+        if (r.removed + r.shortened > 0) {
+            setStateDirect(entriesId, serializePlan(r.entries));
         }
     }
 
@@ -105,13 +106,13 @@ export function useRollPlanData(root: string): RollPlanData {
         const next = current.some((e) => e.id === entry.id)
             ? current.map((e) => (e.id === entry.id ? entry : e))
             : [...current, entry];
-        setStateDirect(entriesId, JSON.stringify(next));
+        setStateDirect(entriesId, serializePlan(next));
     }
 
     async function deleteEntry(id: string): Promise<void> {
         const current = await readEntriesFresh(entriesId);
         const next = current.filter((e) => e.id !== id);
-        setStateDirect(entriesId, JSON.stringify(next));
+        setStateDirect(entriesId, serializePlan(next));
     }
 
     async function saveSettings(partial: Partial<Settings>): Promise<void> {

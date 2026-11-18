@@ -10,101 +10,62 @@
  *   - Loeschen steht als rote Knopfzeile ganz unten und fragt nach
  * parts.tsx importiert von hier nur den Typ SheetView.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronRight, Minus, Plus } from 'lucide-react';
-import { IosActionSheet, IosButtonRow } from '../../../common/ios';
+import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { ChevronRight, Minus, Plus, X } from 'lucide-react';
+import {
+    IosActionSheet,
+    IosButtonRow,
+    IosLeaveSheet as LeaveSheet,
+    IosSaveButton as SaveButton,
+    useLeaveGuard,
+    useReportDirty,
+    type LeaveGuardRegister,
+} from '../../../common/ios';
 import {
     daysText,
-    devicesOfTarget,
+    entryNameOf,
     findCollisions,
     fmtDate,
     hhmm,
     dayLabel,
     newId,
     nextHoliday,
+    quietSplit,
+    resolveTargets,
+    sceneTargetText,
+    targetConflicts,
     triggerMinutes,
     triggerText,
     WD_SHORT,
     WEEKDAYS,
     type PlanEntry,
     type PlanModel,
+    type PlanDevice,
+    type PlanTarget,
     type Scene,
     type SceneIcon,
+    type TargetConflict,
     type TriggerKind,
 } from './planModel';
 import { Caption, closedWord, DayLetters, DeviceGlyph, SceneGlyph, SCENE_ICONS, Seg, Toggle } from './parts';
-import { sameEntry, sameSceneDraft, sceneDraftOf, type SceneTargets } from './editorDirty';
+import { sameEntry, sameSceneDraft, sceneDraftOf, sceneFromDraft, type SceneTargets } from './editorDirty';
+import { ShutterKindIcon } from '../ShutterKindIcon';
+import { SceneTargetSheet } from './SceneTargetSheet';
 
 /** Wohin ein Tipp in einem Editor fuehrt (Szene oeffnet Zeitpunkte; die Szene bleibt darunter eingehaengt). */
 export type SheetView =
     | { v: 'scene'; id: string | null }
     | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> };
 
-/** Anmeldung des Zurueck-Waechters bei der Seite: true = darf sofort zurueck, false = Editor fragt nach. */
-export type LeaveGuardRegister = (guard: (() => boolean) | null) => void;
-
-/** Meldet den Waechter an und aktuell, ohne bei jedem Rendern neu anzumelden. */
-function useLeaveGuard(register: LeaveGuardRegister | undefined, guard: () => boolean) {
-    const ref = useRef(guard);
-    ref.current = guard;
-    useEffect(() => {
-        register?.(() => ref.current());
-        return () => register?.(null);
-    }, [register]);
-}
-
-/** Meldet "ungesicherte Aenderungen" nach oben (der Stapel haelt dann den Entwurf beim Tab-Wechsel). */
-function useReportDirty(onDirtyChange: ((dirty: boolean) => void) | undefined, dirty: boolean) {
-    useEffect(() => {
-        onDirtyChange?.(dirty);
-    }, [onDirtyChange, dirty]);
-    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
-}
+// Zurück-Wächter, „ungesichert"-Meldung, „Sichern" im Kopf und die Rückfrage beim Zurück sind seit
+// 17.11.2026 gemeinsame Bausteine (common/ios/IosEditor.tsx), damit Rollläden und Garten dasselbe Muster teilen.
+export type { LeaveGuardRegister };
 
 interface EditorChrome {
     /** Platz rechts im Seitenkopf fuer "Sichern" (per Portal) */
     headSlot?: HTMLElement | null;
     registerLeaveGuard?: LeaveGuardRegister;
     onDirtyChange?: (dirty: boolean) => void;
-}
-
-/** "Sichern" im Kopf: fett, blau, grau solange nichts zu sichern ist. */
-function SaveButton({ slot, canSave, onSave }: { slot?: HTMLElement | null; canSave: boolean; onSave: () => void }) {
-    if (!slot) return null;
-    return createPortal(
-        <button type="button" className="ios-bar-text is-strong" onClick={onSave} disabled={!canSave}>
-            Sichern
-        </button>,
-        slot,
-    );
-}
-
-/** Rueckfrage beim Zurueck mit ungesicherten Aenderungen. */
-function LeaveSheet({
-    open,
-    canSave,
-    onDiscard,
-    onSave,
-    onStay,
-}: {
-    open: boolean;
-    canSave: boolean;
-    onDiscard: () => void;
-    onSave: () => void;
-    onStay: () => void;
-}) {
-    return (
-        <IosActionSheet
-            open={open}
-            actions={[
-                { key: 'discard', label: 'Änderungen verwerfen', tone: 'destructive', onSelect: onDiscard },
-                { key: 'save', label: 'Sichern', disabled: !canSave, onSelect: onSave },
-            ]}
-            cancelLabel="Weiter bearbeiten"
-            onCancel={onStay}
-        />
-    );
 }
 
 // ── Szenen-Editor ──────────────────────────────────────────────────────
@@ -118,11 +79,92 @@ const POS_CHIPS: { v: number | null; label: string }[] = [
     { v: 100, label: 'zu' },
 ];
 
-const SLAT_CHIPS: { v: number; label: string }[] = [
-    { v: 0, label: 'waagerecht' },
-    { v: 50, label: 'halb' },
-    { v: 90, label: 'geschlossen' },
-];
+/** Ziele-Block des Szenen-Editors: Liste je Etage, Antippen öffnet das Ziel-Pop-up. */
+function FaceliftSceneTargets({
+    model,
+    targets,
+    setTargets,
+    takeCurrent,
+}: {
+    model: PlanModel;
+    targets: SceneTargets;
+    setTargets: Dispatch<SetStateAction<SceneTargets>>;
+    takeCurrent: () => void;
+}) {
+    const [pick, setPick] = useState<string | null>(null);
+    const count = Object.keys(targets).length;
+    const m = Object.entries(targets).filter(([k, t]) => {
+        const d = model.deviceOf(k);
+        return t.quiet === true && !!d && d.hasSlow && !d.hasSlat;
+    }).length;
+    const device: PlanDevice | undefined = pick ? model.deviceOf(pick) : undefined;
+
+    return (
+        <>
+            <div className="rpp-section rpp-section--flush rpp-scene-head">
+                <div className="rpp-section-head">
+                    <span className="rpp-label">
+                        {count} {count === 1 ? 'Rollladen' : 'Rollläden'} beteiligt{m > 0 ? ` · ${m} leise` : ''}
+                    </span>
+                    <button type="button" className="rpp-textbtn" onClick={takeCurrent}>
+                        Aktuellen Stand übernehmen
+                    </button>
+                </div>
+                <div className="rpp-hint">Tippe auf einen Rollladen, um sein Ziel in dieser Szene festzulegen.</div>
+            </div>
+
+            {model.floors.map((floor) => (
+                <section key={floor} className="aura-fl-section">
+                    <div className="aura-fl-section-head">
+                        <h2 className="aura-fl-section-title">{floor}</h2>
+                    </div>
+                    <div className="aura-fl-card">
+                        {model.devices
+                            .filter((d) => d.floor === floor)
+                            .map((d) => {
+                                const t = targets[d.key];
+                                const text = sceneTargetText(t, d);
+                                return (
+                                    <button
+                                        key={d.key}
+                                        type="button"
+                                        className="aura-fl-row aura-fl-row--nav"
+                                        onClick={() => setPick(d.key)}
+                                        aria-label={`${d.label}: ${text}`}
+                                    >
+                                        <span className={`sf-ico is-${d.kind} aura-fl-row-icon`}>
+                                            <ShutterKindIcon kind={d.kind} closed={t ? t.closed : null} busy={false} />
+                                        </span>
+                                        <span className="aura-fl-row-main">
+                                            <span className="aura-fl-row-title">{d.label}</span>
+                                            <span className="aura-fl-row-sub">{text}</span>
+                                        </span>
+                                        <ChevronRight size={18} className="aura-fl-chev" />
+                                    </button>
+                                );
+                            })}
+                    </div>
+                </section>
+            ))}
+
+            {pick && device && (
+                <SceneTargetSheet
+                    device={device}
+                    value={targets[pick] ?? null}
+                    onApply={(v) =>
+                        setTargets((prev) => {
+                            const n = { ...prev };
+                            if (v) n[pick] = v;
+                            else delete n[pick];
+                            return n;
+                        })
+                    }
+                    onClose={() => setPick(null)}
+                />
+            )}
+        </>
+    );
+}
 
 export function SceneEditor({
     model,
@@ -156,38 +198,37 @@ export function SceneEditor({
     });
     useReportDirty(onDirtyChange, dirty);
 
-    const setPos = (key: string, v: number | null, hasSlat: boolean) =>
+    const takeCurrent = () => {
         setTargets((prev) => {
-            const next = { ...prev };
-            if (v === null) delete next[key];
-            else next[key] = { closed: v, slat: hasSlat ? (prev[key]?.slat ?? 0) : undefined };
+            const next: SceneTargets = {};
+            model.devices.forEach((d) => {
+                if (d.closed === null) return;
+                const quiet = prev[d.key]?.quiet ? { quiet: true as const } : {};
+                next[d.key] = {
+                    closed: Math.round(d.closed),
+                    slat: d.hasSlat ? (prev[d.key]?.slat ?? 0) : undefined,
+                    ...quiet,
+                };
+            });
             return next;
         });
-    const setSlat = (key: string, s: number) => setTargets((prev) => ({ ...prev, [key]: { ...prev[key], slat: s } }));
-
-    const takeCurrent = () => {
-        const next: Record<string, { closed: number; slat?: number }> = {};
-        model.devices.forEach((d) => {
-            if (d.closed !== null) next[d.key] = { closed: Math.round(d.closed / 5) * 5, slat: d.hasSlat ? 0 : undefined };
-        });
-        setTargets(next);
         model.showToast('Aktuelle Stellung aller Rollläden übernommen');
     };
 
     const save = () => {
-        const s: Scene = {
-            id: scene?.id ?? newId('s'),
-            name: name.trim() || 'Ohne Namen',
-            icon,
-            favorite,
-            targets: Object.entries(targets).map(([key, v]) => ({ key, closed: v.closed, slat: v.slat })),
-        };
+        const s = sceneFromDraft(scene?.id ?? newId('s'), { name, icon, favorite, targets });
         model.saveScene(s);
         setAskLeave(false);
         onDone();
     };
 
     const usedBy = scene ? model.entriesOfScene(scene.id) : [];
+    const onlyThis = usedBy.filter((e) => e.targets.every((t) => t.kind === 'scene' && t.sceneId === scene?.id)).length;
+    const shortened = usedBy.length - onlyThis;
+    const deleteParts: string[] = [];
+    if (onlyThis > 0) deleteParts.push(`${onlyThis === 1 ? 'Der Zeitpunkt' : `Die ${onlyThis} Zeitpunkte`} im Wochenplan, ${onlyThis === 1 ? 'der' : 'die'} nur diese Szene ${onlyThis === 1 ? 'fährt' : 'fahren'}, ${onlyThis === 1 ? 'wird' : 'werden'} mit gelöscht.`);
+    if (shortened > 0) deleteParts.push(`${shortened === 1 ? 'Aus einem Zeitpunkt' : `Aus ${shortened} Zeitpunkten`} mit weiteren Zielen wird nur diese Szene entfernt, die übrigen Ziele bleiben.`);
+    const deleteMessage = deleteParts.length ? deleteParts.join(' ') : undefined;
 
     return (
         <div className="rpp-editor">
@@ -216,80 +257,12 @@ export function SceneEditor({
                         </button>
                     ))}
                 </div>
-                <div className="rpp-kv">
-                    <span className="rpp-row-main">
-                        <span className="rpp-title">Favorit</span>
-                        <span className="rpp-sub">Als Schnellknopf auf der Kachel zeigen</span>
-                    </span>
+                <SwitchRow title="Favorit" sub="Als Schnellknopf auf der Kachel zeigen">
                     <Toggle on={favorite} onChange={setFavorite} label="Favorit" />
-                </div>
+                </SwitchRow>
             </div>
 
-            <div className="rpp-section rpp-section--flush">
-                <div className="rpp-section-head">
-                    <span className="rpp-label">
-                        {count} {count === 1 ? 'Rollladen' : 'Rollläden'} beteiligt
-                    </span>
-                    <button type="button" className="rpp-textbtn" onClick={takeCurrent}>
-                        Aktuellen Stand übernehmen
-                    </button>
-                </div>
-                <div className="rpp-hint">„—" heißt: fährt bei dieser Szene nicht mit. Zahlen = Prozent zu.</div>
-            </div>
-
-            {model.floors.map((floor) => (
-                <div key={floor} className="rpp-editor-floor">
-                    <Caption>{floor}</Caption>
-                    <div className="rpp-card">
-                        {model.devices
-                            .filter((d) => d.floor === floor)
-                            .map((d) => {
-                                const t = targets[d.key];
-                                return (
-                                    <div key={d.key} className={`rpp-dev${t ? '' : ' is-off'}`}>
-                                        <div className="rpp-dev-head">
-                                            <span className="rpp-row-icon">
-                                                <DeviceGlyph kind={d.kind} closed={t ? t.closed : d.closed} />
-                                            </span>
-                                            <span className="rpp-title rpp-grow">{d.label}</span>
-                                            <span className="rpp-sub">jetzt {d.closed === null ? '—' : closedWord(Math.round(d.closed))}</span>
-                                        </div>
-                                        <div className="rpp-chips">
-                                            {POS_CHIPS.map((c) => {
-                                                const active = c.v === null ? !t : t?.closed === c.v;
-                                                return (
-                                                    <button
-                                                        key={String(c.v)}
-                                                        type="button"
-                                                        className={`rpp-chip${active ? ' is-active' : ''}${c.v === null ? ' is-none' : ''}`}
-                                                        onClick={() => setPos(d.key, c.v, d.hasSlat)}
-                                                    >
-                                                        {c.label}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                        {d.hasSlat && t && (
-                                            <div className="rpp-chips rpp-chips--slat">
-                                                <span className="rpp-sub">Lamelle</span>
-                                                {SLAT_CHIPS.map((c) => (
-                                                    <button
-                                                        key={c.v}
-                                                        type="button"
-                                                        className={`rpp-chip rpp-chip--sm${t.slat === c.v ? ' is-active' : ''}`}
-                                                        onClick={() => setSlat(d.key, c.v)}
-                                                    >
-                                                        {c.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                    </div>
-                </div>
-            ))}
+            <FaceliftSceneTargets model={model} targets={targets} setTargets={setTargets} takeCurrent={takeCurrent} />
 
             {scene && (
                 // Kreis schliessen: Zeitpunkt antippen oder anlegen; die Szene bleibt darunter
@@ -321,7 +294,7 @@ export function SceneEditor({
                                 setView({
                                     v: 'entry',
                                     id: null,
-                                    preset: { target: { kind: 'scene', sceneId: scene.id } },
+                                    preset: { targets: [{ kind: 'scene', sceneId: scene.id }] },
                                 })
                             }
                         >
@@ -347,11 +320,7 @@ export function SceneEditor({
             <IosActionSheet
                 open={askDelete}
                 title={scene ? `„${scene.name}" löschen?` : undefined}
-                message={
-                    usedBy.length > 0
-                        ? `${usedBy.length === 1 ? 'Der Zeitpunkt' : `Die ${usedBy.length} Zeitpunkte`} im Wochenplan, ${usedBy.length === 1 ? 'der' : 'die'} diese Szene ${usedBy.length === 1 ? 'fährt' : 'fahren'}, ${usedBy.length === 1 ? 'wird' : 'werden'} mit gelöscht.`
-                        : undefined
-                }
+                message={deleteMessage}
                 actions={[
                     {
                         key: 'delete',
@@ -403,11 +372,179 @@ function ClampRow({ label, value, onChange, fallback }: { label: string; value: 
     );
 }
 
-/** Kopiert den Eintrag ohne das `quiet`-Feld, damit ein nicht sichtbarer
+/** Kopiert den Eintrag ohne `quiet` und `name` und setzt beide nur, wenn sie wirklich gelten
+ *  (leise nur mit keepQuiet, Name nur getrimmt und nicht leer), damit ein nicht sichtbarer
  *  Zustand nie mitgespeichert wird. */
-function omitQuiet(e: PlanEntry): PlanEntry {
-    const { quiet: _quiet, ...rest } = e;
-    return rest;
+function cleanEntry(e: PlanEntry, keepQuiet: boolean): PlanEntry {
+    const { quiet: _quiet, name: _name, ...rest } = e;
+    const out: PlanEntry = rest;
+    if (keepQuiet && e.quiet) out.quiet = true;
+    const name = e.name?.trim();
+    if (name) out.name = name;
+    return out;
+}
+
+function conflictLine(m: PlanModel, e: PlanEntry, c: TargetConflict): string {
+    const label = m.deviceOf(c.key)?.label ?? c.key;
+    const n = c.sources.length;
+    const count = n === 2 ? 'zwei' : n === 3 ? 'drei' : String(n);
+    const w = c.winner;
+    const pos = closedWord(Math.round(w.closed)) + (typeof w.slat === 'number' ? ` · Lamelle ${Math.round(w.slat)}°` : '');
+    const src = w.kind === 'device' ? 'einzeln gewählt' : `aus „${m.targetName(e.targets[w.from])}"`;
+    return `${label} steht in ${count} Zielen. Es gilt: ${pos} (${src}).`;
+}
+
+/** Liste der Ziele eines Zeitpunkts (Szenen und einzelne Rollläden), mit Hinzufügen und Entfernen. */
+function TargetListEditor({
+    model,
+    entry,
+    onChange,
+    conflicts,
+}: {
+    model: PlanModel;
+    entry: PlanEntry;
+    onChange: (t: PlanTarget[]) => void;
+    conflicts: TargetConflict[];
+}) {
+    const usedScenes = new Set(entry.targets.flatMap((t) => (t.kind === 'scene' ? [t.sceneId] : [])));
+    const usedDevices = new Set(entry.targets.flatMap((t) => (t.kind === 'device' ? [t.key] : [])));
+    const freeScenes = model.scenes.filter((s) => !usedScenes.has(s.id));
+    return (
+        <>
+            <div className="rpp-card rpp-tlist">
+                {entry.targets.length === 0 && (
+                    <div className="rpp-tlist-row">
+                        <span className="rpp-sub">Noch nichts gewählt. Füge unten eine Szene oder einen Rollladen hinzu.</span>
+                    </div>
+                )}
+                {entry.targets.map((t, i) => {
+                    const name = model.targetName(t);
+                    const dev = t.kind === 'device' ? model.deviceOf(t.key) : undefined;
+                    const n = model.targetCount(t);
+                    return (
+                        <div key={`${i}-${t.kind}-${t.kind === 'scene' ? t.sceneId : t.key}`} className="rpp-tlist-row">
+                            <div className="rpp-tlist-head">
+                                <span className="rpp-row-icon">
+                                    {t.kind === 'scene' ? (
+                                        <SceneGlyph icon={model.sceneOf(t.sceneId)?.icon ?? 'home'} size={16} />
+                                    ) : (
+                                        <DeviceGlyph kind={dev?.kind ?? 'fenster'} closed={t.closed} size={16} />
+                                    )}
+                                </span>
+                                <span className="rpp-title rpp-grow rpp-tlist-name">{name}</span>
+                                {t.kind === 'scene' && (
+                                    <span className="rpp-sub">
+                                        {n} {n === 1 ? 'Rollladen' : 'Rollläden'}
+                                    </span>
+                                )}
+                                <button
+                                    type="button"
+                                    className="rpp-tlist-del"
+                                    aria-label={`${name} entfernen`}
+                                    onClick={() => onChange(entry.targets.filter((_, j) => j !== i))}
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                            {t.kind === 'device' && (
+                                <div className="rpp-chips">
+                                    {POS_CHIPS.filter((c) => c.v !== null).map((c) => (
+                                        <button
+                                            key={String(c.v)}
+                                            type="button"
+                                            className={`rpp-chip${t.closed === c.v ? ' is-active' : ''}`}
+                                            onClick={() => onChange(entry.targets.map((x, j) => (j === i ? { ...t, closed: c.v as number } : x)))}
+                                        >
+                                            {c.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+                <div className="rpp-tlist-row">
+                    <div className="rpp-tlist-add">
+                        <select
+                            className="rpp-input rpp-tlist-pick"
+                            aria-label="Szene hinzufügen"
+                            value=""
+                            disabled={freeScenes.length === 0}
+                            onChange={(ev) => {
+                                if (ev.target.value) onChange([...entry.targets, { kind: 'scene', sceneId: ev.target.value }]);
+                            }}
+                        >
+                            <option value="">+ Szene</option>
+                            {(
+                                [
+                                    ['Favoriten', freeScenes.filter((s) => s.favorite)],
+                                    ['Weitere', freeScenes.filter((s) => !s.favorite)],
+                                ] as [string, Scene[]][]
+                            )
+                                .filter(([, list]) => list.length > 0)
+                                .map(([label, list]) => (
+                                    <optgroup key={label} label={label}>
+                                        {list.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                ))}
+                        </select>
+                        <select
+                            className="rpp-input rpp-tlist-pick"
+                            aria-label="Rollladen hinzufügen"
+                            value=""
+                            onChange={(ev) => {
+                                if (ev.target.value) onChange([...entry.targets, { kind: 'device', key: ev.target.value, closed: 0 }]);
+                            }}
+                        >
+                            <option value="">+ Rollladen</option>
+                            {model.floors.map((f) => (
+                                <optgroup key={f} label={f}>
+                                    {model.devices
+                                        .filter((d) => d.floor === f)
+                                        .map((d) => (
+                                            <option key={d.key} value={d.key} disabled={usedDevices.has(d.key)}>
+                                                {d.label}
+                                                {usedDevices.has(d.key) ? ' (schon gewählt)' : ''}
+                                            </option>
+                                        ))}
+                                </optgroup>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            </div>
+            {conflicts.length > 0 && (
+                <div className="rpp-hint rpp-tlist-hint" role="status">
+                    {conflicts.slice(0, 3).map((c) => (
+                        <span key={c.key} className="rpp-quiet-line">
+                            {conflictLine(model, entry, c)}
+                        </span>
+                    ))}
+                    {conflicts.length > 3 && <span className="rpp-quiet-line">+ {conflicts.length - 3} weitere</span>}
+                </div>
+            )}
+        </>
+    );
+}
+
+/**
+ * Schalterzeile: Der Schalter steht auf Höhe der Überschrift, der Erklärtext darunter über die volle Breite
+ * (so wie bei „Aktiv").
+ */
+function SwitchRow({ title, sub, children }: { title: string; sub?: ReactNode; children: ReactNode }) {
+    return (
+        <>
+            <div className="rpp-kv">
+                <span className="rpp-title">{title}</span>
+                {children}
+            </div>
+            {sub && <span className="rpp-sub rpp-switch-sub">{sub}</span>}
+        </>
+    );
 }
 
 export function EntryEditor({
@@ -424,16 +561,15 @@ export function EntryEditor({
     preset?: Partial<PlanEntry>;
     onDone: () => void;
 } & EditorChrome) {
-    // Ausgangsstand einmal beim Oeffnen (bei einem neuen Zeitpunkt die Vorbelegung)
+    // Ausgangsstand einmal beim Oeffnen (bei einem neuen Zeitpunkt die Vorbelegung).
+    // Die Ziel-Liste startet leer.
     const [base] = useState<PlanEntry>(
         () =>
             entry ?? {
                 id: newId('e'),
                 days: [true, true, true, true, true, false, false],
                 trigger: { kind: 'time', time: '07:00', offset: 0, earliest: null, latest: null },
-                target: model.scenes[0]
-                    ? { kind: 'scene', sceneId: model.scenes[0].id }
-                    : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
+                targets: [],
                 enabled: true,
                 ...preset,
             },
@@ -460,9 +596,20 @@ export function EntryEditor({
         [e, model.entries, model.scenes, model.sunFor, model.today],
     );
 
-    const quietKeys = useMemo(() => devicesOfTarget(e.target, model.scenes), [e.target, model.scenes]);
-    const slowCount = quietKeys.filter((k) => model.deviceOf(k)?.hasSlow).length;
-    const canSaveEntry = e.days.some(Boolean) && !(e.target.kind === 'scene' && !e.target.sceneId);
+    const resolved = useMemo(() => resolveTargets(e, model.scenes), [e, model.scenes]);
+    const slowCount = resolved.filter((r) => model.deviceOf(r.key)?.hasSlow).length;
+    const conflicts = useMemo(() => targetConflicts(e, model.scenes), [e, model.scenes]);
+    const sceneTargetCount = e.targets.filter((t) => t.kind === 'scene').length;
+    const onlyOneDevice = e.targets.length === 1 && e.targets[0].kind === 'device';
+    const allDevices = e.targets.length > 0 && e.targets.every((t) => t.kind === 'device');
+    const deviceOf = model.deviceOf;
+    // Wer fährt mit dem jetzigen Schalterstand leise, wer normal (Namen für den Hinweis)
+    const split = useMemo(
+        () => quietSplit(e, model.scenes, (k) => !!deviceOf(k)?.hasSlow),
+        [e, model.scenes, deviceOf],
+    );
+    const names = (keys: string[]) => keys.map((k) => deviceOf(k)?.label ?? k).join(', ');
+    const canSaveEntry = e.days.some(Boolean) && e.targets.length > 0 && e.targets.every((t) => t.kind !== 'scene' || !!t.sceneId);
     const dirty = !sameEntry(e, base);
     const canSave = dirty && canSaveEntry;
     useLeaveGuard(registerLeaveGuard, () => {
@@ -472,80 +619,45 @@ export function EntryEditor({
     });
     useReportDirty(onDirtyChange, dirty);
     const saveEntry = () => {
-        model.saveEntry(slowCount > 0 && e.quiet ? { ...e, quiet: true } : omitQuiet(e));
+        model.saveEntry(cleanEntry(e, slowCount > 0));
         setAskLeave(false);
         onDone();
     };
 
     return (
-        <div className="rpp-editor">
+        <div
+            className="rpp-editor"
+            // Tastatur einfahren, sobald woanders getippt oder gescrollt wird (sonst verdeckt sie am Handy Zurück/Sichern)
+            onPointerDown={(ev) => {
+                const a = document.activeElement;
+                if (a instanceof HTMLInputElement && a.id === 'rpp-entry-name' && ev.target !== a) a.blur();
+            }}
+        >
             <div className="rpp-section">
                 <span className="rpp-label">Was fährt?</span>
-                <Seg
-                    value={e.target.kind}
-                    options={[
-                        { value: 'scene', label: 'Eine Szene' },
-                        { value: 'device', label: 'Ein Rollladen' },
-                    ]}
-                    onChange={(k) =>
-                        set({
-                            target:
-                                k === 'scene'
-                                    ? { kind: 'scene', sceneId: model.scenes[0]?.id ?? '' }
-                                    : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
-                        })
-                    }
-                />
-                {e.target.kind === 'scene' ? (
-                    model.scenes.length === 0 ? (
-                        <span className="rpp-sub">Noch keine Szene angelegt.</span>
-                    ) : (
-                        <div className="rpp-chips rpp-chips--wrap">
-                            {model.scenes.map((s) => (
-                                <button
-                                    key={s.id}
-                                    type="button"
-                                    className={`rpp-chip rpp-chip--scene${e.target.kind === 'scene' && e.target.sceneId === s.id ? ' is-active' : ''}`}
-                                    onClick={() => set({ target: { kind: 'scene', sceneId: s.id } })}
-                                >
-                                    <SceneGlyph icon={s.icon} size={14} /> {s.name}
-                                </button>
-                            ))}
-                        </div>
-                    )
-                ) : (
-                    <>
-                        <select
-                            className="rpp-input"
-                            value={e.target.key}
-                            onChange={(ev) => set({ target: { kind: 'device', key: ev.target.value, closed: e.target.kind === 'device' ? e.target.closed : 0 } })}
-                        >
-                            {model.floors.map((f) => (
-                                <optgroup key={f} label={f}>
-                                    {model.devices
-                                        .filter((d) => d.floor === f)
-                                        .map((d) => (
-                                            <option key={d.key} value={d.key}>
-                                                {d.label}
-                                            </option>
-                                        ))}
-                                </optgroup>
-                            ))}
-                        </select>
-                        <div className="rpp-chips">
-                            {POS_CHIPS.filter((c) => c.v !== null).map((c) => (
-                                <button
-                                    key={String(c.v)}
-                                    type="button"
-                                    className={`rpp-chip${e.target.kind === 'device' && e.target.closed === c.v ? ' is-active' : ''}`}
-                                    onClick={() => e.target.kind === 'device' && set({ target: { ...e.target, closed: c.v as number } })}
-                                >
-                                    {c.label}
-                                </button>
-                            ))}
-                        </div>
-                    </>
-                )}
+                <TargetListEditor model={model} entry={e} onChange={(targets) => set({ targets })} conflicts={conflicts} />
+                <label className="rpp-label" htmlFor="rpp-entry-name">
+                    Name (freiwillig)
+                </label>
+                <div className="rpp-name-wrap">
+                    <input
+                        id="rpp-entry-name"
+                        className="rpp-input"
+                        maxLength={60}
+                        enterKeyHint="done"
+                        value={e.name ?? ''}
+                        placeholder={e.targets.length > 0 ? entryNameOf({ targets: e.targets }, model.targetName) : 'Name'}
+                        onChange={(ev) => set({ name: ev.target.value })}
+                        onKeyDown={(ev) => {
+                            if (ev.key === 'Enter') ev.currentTarget.blur();
+                        }}
+                    />
+                    {!!e.name && (
+                        <button type="button" className="rpp-name-clear" aria-label="Name löschen" onClick={() => set({ name: '' })}>
+                            <X size={16} />
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="rpp-section">
@@ -587,7 +699,13 @@ export function EntryEditor({
                     <span className="rpp-label">An welchen Tagen?</span>
                     <span className="rpp-presets">
                         {presets.map((p) => (
-                            <button key={p.label} type="button" className="rpp-textbtn" onClick={() => set({ days: p.days })}>
+                            <button
+                                key={p.label}
+                                type="button"
+                                aria-pressed={p.days.every((x, i) => x === e.days[i])}
+                                className={`rpp-textbtn rpp-preset${p.days.every((x, i) => x === e.days[i]) ? ' is-active' : ''}`}
+                                onClick={() => set({ days: p.days })}
+                            >
                                 {p.label}
                             </button>
                         ))}
@@ -615,7 +733,7 @@ export function EntryEditor({
                         Achtung: Es gibt schon einen Zeitpunkt, der dieselben Rollläden betrifft:{' '}
                         {collisions.slice(0, 2).map((c, i) => (
                             <span key={c.other.id}>
-                                {i > 0 ? ', ' : ''}„{model.targetName(c.other.target)}" ({triggerText(c.other.trigger)}, {daysText(c.other.days)}), betrifft{' '}
+                                {i > 0 ? ', ' : ''}„{model.entryName(c.other)}" ({triggerText(c.other.trigger)}, {daysText(c.other.days)}), betrifft{' '}
                                 {c.deviceKeys.map((k) => model.deviceOf(k)?.label ?? k).join(', ')}
                             </span>
                         ))}
@@ -626,22 +744,39 @@ export function EntryEditor({
 
             {slowCount > 0 && (
                 <div className="rpp-section">
-                    <div className="rpp-kv">
-                        <span className="rpp-row-main">
-                            <span className="rpp-title">Leise fahren</span>
-                            <span className="rpp-sub">
-                                {slowCount < quietKeys.length
-                                    ? `Leise bei ${slowCount} von ${quietKeys.length} Rollläden, die übrigen fahren normal`
-                                    : 'Langsamer und leiser, dauert etwa doppelt so lange'}
-                            </span>
-                        </span>
+                    <SwitchRow
+                        title="Leise fahren"
+                        sub={
+                            onlyOneDevice ? (
+                                'Langsamer und leiser, dauert etwa doppelt so lange'
+                            ) : (
+                                <>
+                                    <span className="rpp-quiet-line">
+                                        <b>
+                                            {e.quiet || sceneTargetCount === 0
+                                                ? 'Leise:'
+                                                : sceneTargetCount === 1
+                                                  ? 'Leise durch die Szene:'
+                                                  : 'Leise durch die Szenen:'}
+                                        </b>{' '}
+                                        {split.quiet.length > 0 ? names(split.quiet) : 'keiner'}
+                                    </span>
+                                    {split.normal.length > 0 && (
+                                        <span className="rpp-quiet-line">
+                                            <b>Nicht leise:</b> {names(split.normal)}
+                                        </span>
+                                    )}
+                                </>
+                            )
+                        }
+                    >
                         <Toggle on={!!e.quiet} onChange={(v) => set({ quiet: v })} label="Leise fahren" />
-                    </div>
+                    </SwitchRow>
                 </div>
             )}
-            {slowCount === 0 && e.target.kind === 'device' && (
+            {slowCount === 0 && allDevices && (
                 <div className="rpp-section">
-                    <span className="rpp-sub">Dieser Rollladen kann nicht leise fahren.</span>
+                    <span className="rpp-sub">{onlyOneDevice ? 'Dieser Rollladen kann nicht leise fahren.' : 'Diese Rollläden können nicht leise fahren.'}</span>
                 </div>
             )}
 

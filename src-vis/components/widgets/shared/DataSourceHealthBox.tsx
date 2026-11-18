@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useDashboardMobile } from '../../../contexts/DashboardMobileContext';
 import { useIoBroker, sendToDirect, getStateFromCache } from '../../../hooks/useIoBroker';
@@ -6,6 +6,7 @@ import { SEVERITY_COLOR } from '../../../utils/statusOverview';
 import { NS } from '../../../utils/namespace';
 import { localTime } from '../../../utils/formatTime';
 import type { ioBrokerState } from '../../../types';
+import { FaceliftStatusBox, type StatusAppearance, type StatusLevel } from '../../layout/facelift/FaceliftStatusBox';
 
 // ── Data-source health box (Variante D) — collapsible status card. Header
 // always shows a dot + short status ("alles aktuell" / "N Problem(e)"),
@@ -70,7 +71,17 @@ export function formatAgeShort(ts: number): string {
 
 type RestartPhase = 'restarting' | 'waiting' | 'done';
 
-export function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] }) {
+export function DataSourceHealthBox({
+    sources,
+    appearance = 'box',
+    footnote,
+}: {
+    sources: HealthSourceDef[];
+    /** 'box' = heutige Klapp-Box; 'row'/'page' nur in den Facelift-Entwürfen (FaceliftStatusBox) */
+    appearance?: StatusAppearance;
+    /** nur 'page': Begleittext unter der Karte */
+    footnote?: ReactNode;
+}) {
     const isMobile = useDashboardMobile();
     const { subscribe, getState } = useIoBroker();
     // Pre-fill from the socket cache (same pattern as useDatapoint.ts) so a source
@@ -205,6 +216,124 @@ export function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] })
         }, 120_000);
     };
 
+    // Inhalt der aufgeklappten Box; die Facelift-Entwürfe zeigen denselben Inhalt in eigener Hülle.
+    const body = (
+        <>
+            {rows.map((r) => (
+                <div key={r.id}>
+                    <div className="flex items-center aura-fl-dsrow" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
+                        <span
+                            style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: '50%',
+                                background: !r.isLoaded
+                                    ? 'var(--text-secondary)'
+                                    : r.healthy
+                                      ? SEVERITY_COLOR.ok
+                                      : SEVERITY_COLOR.crit,
+                                flexShrink: 0,
+                            }}
+                        />
+                        <span style={{ flex: 1, color: 'var(--text-primary)' }}>{r.label}</span>
+                        <span className="aura-fl-dsrow-age" style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                            {!r.isLoaded
+                                ? 'wird geprüft…'
+                                : r.ts > 0
+                                  ? `${r.healthy ? 'vor' : 'seit'} ${formatAgeShort(r.ts)}`
+                                  : 'keine Daten'}
+                        </span>
+                    </div>
+                    {r.detailDps && r.detailDps.length > 0 && (
+                        <div
+                            className="aura-fl-dsrow-detail"
+                            style={{
+                                padding: '0 0 6px 14px',
+                                marginLeft: 3,
+                                borderLeft: '2px solid var(--widget-border)',
+                                fontSize: 10.5,
+                                color: 'var(--text-secondary)',
+                                lineHeight: 1.5,
+                            }}
+                        >
+                            {(() => {
+                                const parts = r.detailDps!.map((d) => {
+                                    const v = states[d.dp]?.val;
+                                    return `${d.label} ${localTime(typeof v === 'string' ? v : null)} Uhr`;
+                                });
+                                if (!isMobile) return parts.join(' · ');
+                                return parts
+                                    .reduce<string[]>((lines, text, i) => {
+                                        if (i % 2 === 0) lines.push(text);
+                                        else lines[lines.length - 1] += ` · ${text}`;
+                                        return lines;
+                                    }, [])
+                                    .map((line, i) => <div key={i}>{line}</div>);
+                            })()}
+                        </div>
+                    )}
+                </div>
+            ))}
+            {rows
+                .filter((r) => r.isLoaded && !r.healthy && r.restartAdapterId)
+                .map((r) => {
+                    const phase = restartPhase[r.id];
+                    const label =
+                        phase === 'restarting'
+                            ? 'wird neu gestartet…'
+                            : phase === 'waiting'
+                              ? 'warte auf frische Daten…'
+                              : phase === 'done'
+                                ? '✓ erledigt'
+                                : `${r.label} neu starten`;
+                    return (
+                        <div key={r.id}>
+                            <button
+                                onClick={() => triggerRestart(r)}
+                                disabled={!!phase}
+                                className="inline-flex items-center aura-fl-statusbtn"
+                                style={{
+                                    marginTop: 6,
+                                    padding: '6px 12px',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    color: '#fff',
+                                    background: phase ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: phase ? 'default' : 'pointer',
+                                }}
+                            >
+                                {label}
+                            </button>
+                            {restartError[r.id] && (
+                                <div style={{ marginTop: 4, fontSize: 11, color: SEVERITY_COLOR.crit }}>
+                                    {restartError[r.id]}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+        </>
+    );
+
+    if (appearance !== 'box') {
+        const level: StatusLevel = !rows.some((r) => r.isLoaded) ? 'loading' : hasProblem ? 'crit' : 'ok';
+        return (
+            <FaceliftStatusBox
+                appearance={appearance}
+                level={level}
+                title="Datenquellen"
+                sub={hasProblem ? `${problemCount} ${problemCount === 1 ? 'Problem' : 'Probleme'}` : 'alles aktuell'}
+                expanded={expanded}
+                onToggle={() => setExpanded((e) => !e)}
+                foot={footnote}
+            >
+                {body}
+            </FaceliftStatusBox>
+        );
+    }
+
     return (
         <div
             style={{
@@ -233,7 +362,9 @@ export function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] })
                     width: '100%',
                     gap: 8,
                     padding: '9px 12px',
-                    background: hasProblem ? `color-mix(in srgb, ${SEVERITY_COLOR.crit} 12%, transparent)` : 'transparent',
+                    background: hasProblem
+                        ? `color-mix(in srgb, ${SEVERITY_COLOR.crit} 12%, transparent)`
+                        : 'transparent',
                     border: 'none',
                     cursor: 'pointer',
                     textAlign: 'left',
@@ -249,7 +380,8 @@ export function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] })
                     }}
                 />
                 <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Datenquellen · {hasProblem ? `${problemCount} ${problemCount === 1 ? 'Problem' : 'Probleme'}` : 'alles aktuell'}
+                    Datenquellen ·{' '}
+                    {hasProblem ? `${problemCount} ${problemCount === 1 ? 'Problem' : 'Probleme'}` : 'alles aktuell'}
                 </span>
                 <ChevronDown
                     size={14}
@@ -261,102 +393,7 @@ export function DataSourceHealthBox({ sources }: { sources: HealthSourceDef[] })
                 />
             </button>
             {expanded && (
-                <div style={{ padding: '2px 12px 12px', borderTop: '1px solid var(--widget-border)' }}>
-                    {rows.map((r) => (
-                        <div key={r.id}>
-                            <div className="flex items-center" style={{ gap: 8, padding: '6px 0', fontSize: 12 }}>
-                                <span
-                                    style={{
-                                        width: 6,
-                                        height: 6,
-                                        borderRadius: '50%',
-                                        background: !r.isLoaded
-                                            ? 'var(--text-secondary)'
-                                            : r.healthy
-                                              ? SEVERITY_COLOR.ok
-                                              : SEVERITY_COLOR.crit,
-                                        flexShrink: 0,
-                                    }}
-                                />
-                                <span style={{ flex: 1, color: 'var(--text-primary)' }}>{r.label}</span>
-                                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
-                                    {!r.isLoaded
-                                        ? 'wird geprüft…'
-                                        : r.ts > 0
-                                          ? `${r.healthy ? 'vor' : 'seit'} ${formatAgeShort(r.ts)}`
-                                          : 'keine Daten'}
-                                </span>
-                            </div>
-                            {r.detailDps && r.detailDps.length > 0 && (
-                                <div
-                                    style={{
-                                        padding: '0 0 6px 14px',
-                                        marginLeft: 3,
-                                        borderLeft: '2px solid var(--widget-border)',
-                                        fontSize: 10.5,
-                                        color: 'var(--text-secondary)',
-                                        lineHeight: 1.5,
-                                    }}
-                                >
-                                    {(() => {
-                                        const parts = r.detailDps!.map((d) => {
-                                            const v = states[d.dp]?.val;
-                                            return `${d.label} ${localTime(typeof v === 'string' ? v : null)} Uhr`;
-                                        });
-                                        if (!isMobile) return parts.join(' · ');
-                                        return parts
-                                            .reduce<string[]>((lines, text, i) => {
-                                                if (i % 2 === 0) lines.push(text);
-                                                else lines[lines.length - 1] += ` · ${text}`;
-                                                return lines;
-                                            }, [])
-                                            .map((line, i) => <div key={i}>{line}</div>);
-                                    })()}
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                    {rows
-                        .filter((r) => r.isLoaded && !r.healthy && r.restartAdapterId)
-                        .map((r) => {
-                            const phase = restartPhase[r.id];
-                            const label =
-                                phase === 'restarting'
-                                    ? 'wird neu gestartet…'
-                                    : phase === 'waiting'
-                                      ? 'warte auf frische Daten…'
-                                      : phase === 'done'
-                                        ? '✓ erledigt'
-                                        : `${r.label} neu starten`;
-                            return (
-                                <div key={r.id}>
-                                    <button
-                                        onClick={() => triggerRestart(r)}
-                                        disabled={!!phase}
-                                        className="inline-flex items-center"
-                                        style={{
-                                            marginTop: 6,
-                                            padding: '6px 12px',
-                                            fontSize: 12,
-                                            fontWeight: 600,
-                                            color: '#fff',
-                                            background: phase ? 'var(--text-secondary)' : 'var(--accent, #06b6d4)',
-                                            border: 'none',
-                                            borderRadius: 6,
-                                            cursor: phase ? 'default' : 'pointer',
-                                        }}
-                                    >
-                                        {label}
-                                    </button>
-                                    {restartError[r.id] && (
-                                        <div style={{ marginTop: 4, fontSize: 11, color: SEVERITY_COLOR.crit }}>
-                                            {restartError[r.id]}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                </div>
+                <div style={{ padding: '2px 12px 12px', borderTop: '1px solid var(--widget-border)' }}>{body}</div>
             )}
         </div>
     );

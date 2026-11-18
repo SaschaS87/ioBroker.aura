@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, ChevronRight } from 'lucide-react';
 import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
 import { PendingContext, PENDING_MAX_AGE_MS } from '../shuttershared/useShutterDevice';
@@ -12,8 +13,9 @@ import { useFavorites } from './useFavorites';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
 import { PlannerStack } from './planner/PlannerStack';
-import { PlanTiles } from './planner/PlanWindows';
+import { PlanTiles, type Tab } from './planner/PlanWindows';
 import './ShutterFloorsWidget.css';
+import './ShutterFloorsFacelift.css';
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
@@ -260,24 +262,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
             )}
         </>
     );
-    const footer = (
-        <>
-            {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
-                    Wetter-Tab, DataSourceHealthBox). Meldet den Zustand der
-                    Instanz auch im Normalfall, mit Neustart-Knopf im
-                    Stoerfall. `showFooter` stand schon in der Konfiguration. */}
-            {showFooter && <DataSourceHealthBox sources={healthSources} />}
-
-            {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
-                    TaHoma-Funk-States gebuendelt statt einer Zeile pro Sheet. */}
-            {signalBoxVisible && (
-                <div style={{ marginTop: showFooter ? 8 : 0 }}>
-                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
-                </div>
-            )}
-        </>
-    );
-
     const floorList = floors.map((floor) => (
         <FloorGroup
             key={floor.name}
@@ -306,14 +290,83 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
         />
     );
 
-    // Liste mit Etagen und Fuss. Mit Planer (showPlanner) steht darueber die Kopfgruppe Zeitplan/Szenen, und die
-    // Liste ist die unterste Seite des Stapels (Feature 30, Phase 2); ohne Planer bleibt es die Liste allein.
-    const listBody = (head?: React.ReactNode) => (
-        <div className={`sf${connected ? '' : ' is-offline'}`}>
-            {head}
-            {floorList}
-            <div className="sf-foot">{footer}</div>
+    // Facelift: vier Rubriken – Etagen, „Automatik" (Zeitplan, Szenen) und „Status". Datenquellen und
+    // Signalstärke stehen nicht mehr als zwei lose Boxen am Seitenende, sondern hinter EINER Zeile
+    // „Verbindung & Funk" ohne Unterzeile (ihr Symbol wird bei Warnung gelb, bei Störung rot); sie führt auf die Unterseite „Status" mit zwei Blöcken
+    // samt Begleittext. Ohne Planer-Stapel gibt es keine Unterseite, dann klappen die Zeilen in der Karte auf.
+    const hasHealth = showFooter && healthSources.length > 0;
+    const hasStatus = hasHealth || signalBoxVisible;
+    const faceliftBody = (head?: React.ReactNode, open?: (t: Tab) => void) => (
+        <div className={`sf aura-fl-scope${connected ? '' : ' is-offline'}`}>
+            <div className="aura-fl-stack sf-block sf-block--floors">{floorList}</div>
+            {head && (
+                <section className="aura-fl-section sf-block sf-block--plan">
+                    <div className="aura-fl-section-head sf-block-head">
+                        <h2 className="aura-fl-section-title sf-block-title">Automatik</h2>
+                    </div>
+                    {head}
+                </section>
+            )}
+            {hasStatus && (
+                <section className="aura-fl-section sf-block sf-block--status">
+                    <div className="aura-fl-section-head sf-block-head">
+                        <h2 className="aura-fl-section-title sf-block-title">Status</h2>
+                    </div>
+                    <div className="aura-fl-card sf-group sf-status-card">
+                        {open ? (
+                            <button
+                                type="button"
+                                className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav sf-status-row"
+                                onClick={() => open('status')}
+                            >
+                                <span className="sf-ico is-status aura-fl-row-icon">
+                                    <Activity size={16} />
+                                </span>
+                                <span className="sf-main aura-fl-row-main">
+                                    <span className="sf-name aura-fl-row-title">Verbindung &amp; Funk</span>
+                                    {/* unsichtbare Fühler: färben das Symbol bei Warnung gelb, bei Störung rot */}
+                                    {hasHealth && <DataSourceHealthBox sources={healthSources} appearance="probe" />}
+                                    {signalBoxVisible && (
+                                        <SignalStrengthBox
+                                            devices={signalDevices}
+                                            updateDp={updateDp}
+                                            appearance="probe"
+                                        />
+                                    )}
+                                </span>
+                                <ChevronRight size={18} className="sf-chev aura-fl-chev" />
+                            </button>
+                        ) : (
+                            <>
+                                {hasHealth && <DataSourceHealthBox sources={healthSources} appearance="row" />}
+                                {signalBoxVisible && (
+                                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} appearance="row" />
+                                )}
+                            </>
+                        )}
+                    </div>
+                </section>
+            )}
         </div>
+    );
+    const statusPage = (
+        <>
+            {hasHealth && (
+                <DataSourceHealthBox
+                    sources={healthSources}
+                    appearance="page"
+                    footnote={`Zeigt, ob der Adapter ${instanceLabel} läuft und mit der TaHoma-Box verbunden ist. Über ihn gehen alle Fahrbefehle an die Rollläden. Bei einer Störung lässt er sich hier neu starten.`}
+                />
+            )}
+            {signalBoxVisible && (
+                <SignalStrengthBox
+                    devices={signalDevices}
+                    updateDp={updateDp}
+                    appearance="page"
+                    footnote="Funkempfang jedes Antriebs von 0 bis 100, der schwächste steht oben. Rechts steht, seit wann sich der Wert nicht geändert hat. „Neu messen“ fragt alle Antriebe frisch ab."
+                />
+            )}
+        </>
     );
 
     return (
@@ -325,11 +378,15 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                         floors={floors}
                         root={effectivePlannerRoot}
                         render={(m) => (
-                            <PlannerStack m={m} list={(open) => listBody(<PlanTiles m={m} open={open} />)} />
+                            <PlannerStack
+                                m={m}
+                                statusPage={statusPage}
+                                list={(open) => faceliftBody(<PlanTiles m={m} open={open} />, open)}
+                            />
                         )}
                     />
                 ) : (
-                    listBody()
+                    faceliftBody()
                 )}
                 {sheet}
             </div>

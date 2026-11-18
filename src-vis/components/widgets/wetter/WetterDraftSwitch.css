@@ -1,0 +1,41 @@
+/* Entwurfs-Umschalter der Wetter-Seite (nur Dev-Vorschau, nie im Build): Kapsel mit gelbem, gestricheltem Rand,
+   rechts am Rand, gleiche Optik wie der frühere Umschalter. */
+.wx-devswitch {
+    position: fixed;
+    z-index: 9999;
+    top: 42%;
+    /* 30 px vom Rand: die äußersten 24 px sperrt index.html für Taps */
+    right: calc(30px + env(safe-area-inset-right));
+    display: flex;
+    flex-direction: row;
+    opacity: 0.85;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    border: 1.5px dashed var(--accent-yellow);
+    background: var(--app-surface);
+    font-size: 11px;
+}
+.wx-devswitch button {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 5px 8px;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+}
+.wx-devswitch-drafts {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+}
+.wx-devswitch .wx-devswitch-draft {
+    min-width: 28px;
+    padding: 5px 6px;
+    font-weight: 600;
+}
+.wx-devswitch .wx-devswitch-draft[data-sel] {
+    background: color-mix(in srgb, var(--accent-yellow) 45%, transparent);
+    color: var(--text-primary);
+}

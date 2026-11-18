@@ -1,0 +1,382 @@
+/*
+ * UI-Facelift – Kopf und Glas-Leiste.
+ *
+ * Einstellbar je Theme (alle optional, sonst greift die Rückfallkette):
+ *   --fl-glass-bg      Grundfarbe der Glas-Leiste   (sonst --nav-bg, sonst --app-surface)
+ *   --fl-head-bg       Grundfarbe des Kopfes        (sonst --app-bg)
+ *   --fl-glass-border  Rand der Glasflächen         (sonst --app-border)
+ *   --fl-glass-blur    Stärke der Unschärfe
+ *   --fl-title         Farbe großer/kleiner Titel   (sonst --header-text, sonst --text-primary)
+ *   --fl-tab           Farbe inaktiver Einträge     (sonst --text-secondary)
+ *   --fl-tab-active    Farbe des aktiven Eintrags   (sonst --text-primary)
+ *   --fl-tab-active-bg Fläche hinter dem aktiven Eintrag (sonst iOS-Füllgrau, hell/dunkel verschieden)
+ *
+ * Seitenrand: --fl-page-x aus dem Raster (facelift-blocks.css) gilt für ALLE Seiten (Tabs, Unterseiten,
+ * Einstellungen) und Pop-ups. Keine Seite rückt selbst noch einmal ein (Sascha, 13.11.2026).
+ */
+.aura-fl-stage {
+    --fl-bar-h: 48px;
+    --fl-bar-min: 38px;
+    --fl-bar-cur: var(--fl-bar-h);
+    --fl-large-h: 48px;
+    --fl-tabbar-h: 58px;
+    --fl-tabbar-gap: 10px;
+    --fl-tabbar-pad: 5px;
+    --fl-glass: color-mix(in srgb, var(--fl-glass-bg, var(--nav-bg, var(--app-surface))) 62%, transparent);
+    --fl-blur: blur(var(--fl-glass-blur, 18px)) saturate(170%);
+    /* Kopf: Glas in der Farbe des Seitenhintergrunds, damit Kopf, Notch und Seite eine Fläche sind */
+    --fl-head-glass: color-mix(in srgb, var(--fl-head-bg, var(--app-bg)) 72%, transparent);
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Inhalt scrollt unter Kopf und Leiste hindurch */
+.aura-fl-stage .aura-scroll.aura-scroll-touch {
+    padding-top: calc(var(--fl-bar-h) + var(--fl-large-h) + env(safe-area-inset-top) + 4px);
+    padding-bottom: calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom));
+    padding-left: max(var(--fl-page-x, 16px), env(safe-area-inset-left));
+    padding-right: max(var(--fl-page-x, 16px), env(safe-area-inset-right));
+    bottom: 0;
+}
+.aura-fl-stage .tab-footer-bar {
+    display: none;
+}
+
+/* ── Kopf ─────────────────────────────────────────────────────────────── */
+/* Zwei Zeilen: oben App-Name, Status und Einstellungen, darunter der große Titel. Scrollt der Inhalt
+   unter den Kopf, wandert der Titel klein in die Kopfzeile und die Kopfzeile wird niedriger.
+   .aura-fl-stage davor, damit die Abstände aus index.html (.aura-page .aura-header) nicht greifen. */
+.aura-fl-stage .aura-fl-header.aura-header {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 30;
+    margin: 0;
+    height: calc(var(--fl-bar-cur) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition:
+        height 0.22s ease,
+        opacity 0.2s;
+}
+/* Keine Linie: Der Kopf ist oben (Notch) deckend in der Seitenfarbe und läuft nach unten weich aus,
+   der Inhalt verschwimmt darunter. So wirken Notch, Kopf und Seite wie eine Fläche. */
+.aura-fl-header::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 -14px 0;
+    pointer-events: none;
+    background: linear-gradient(
+        to bottom,
+        var(--fl-head-bg, var(--app-bg)) 0,
+        var(--fl-head-bg, var(--app-bg)) env(safe-area-inset-top),
+        var(--fl-head-glass) 70%,
+        transparent 100%
+    );
+    -webkit-backdrop-filter: var(--fl-blur);
+    backdrop-filter: var(--fl-blur);
+    -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.aura-fl-stage[data-scrolled] .aura-fl-header::before {
+    opacity: 1;
+}
+/* Inhalt liegt unter dem Kopf: Kopfzeile niedriger, Knöpfe rechts etwas kleiner */
+.aura-fl-stage[data-collapsed] {
+    --fl-bar-cur: var(--fl-bar-min);
+}
+.aura-fl-header-left,
+.aura-fl-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.aura-fl-header-right {
+    flex: none;
+    transform-origin: right center;
+    transition: transform 0.22s ease;
+}
+.aura-fl-stage[data-collapsed] .aura-fl-header-right {
+    transform: scale(0.88);
+}
+/* Logo links; beim Schrumpfen des Kopfes etwas kleiner */
+.aura-fl-logo {
+    display: flex;
+    flex: none;
+    transform-origin: left center;
+    transition: transform 0.22s ease;
+}
+.aura-fl-logo:empty {
+    display: none;
+}
+.aura-fl-stage[data-collapsed] .aura-fl-logo {
+    transform: scale(0.88);
+}
+.aura-fl-title-compact {
+    min-width: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--fl-title, var(--header-text, var(--text-primary)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.18s;
+}
+.aura-fl-stage[data-collapsed] .aura-fl-title-compact {
+    opacity: 1;
+}
+
+.aura-fl-title-large {
+    position: absolute;
+    top: calc(var(--fl-bar-h) + env(safe-area-inset-top));
+    left: 16px;
+    right: 16px;
+    height: var(--fl-large-h);
+    margin: 0;
+    font-size: 30px;
+    line-height: var(--fl-large-h);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--fl-title, var(--header-text, var(--text-primary)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    /* hängt im Scroll-Container (Portal aus FaceliftChrome) und scrollt mit dem Inhalt, ohne Skript */
+}
+.aura-fl-stage[data-sub] .aura-fl-title-large {
+    visibility: hidden;
+}
+/* Kein Scrollbalken am Rand, wie in den iOS-Apps (Wunsch Sascha, 10.11.2026). Betrifft den selbst
+   gezeichneten Balken (TouchScrollbar) und den des Browsers. */
+.aura-fl-stage .aura-touch-scrollbar {
+    display: none;
+}
+.aura-fl-stage .aura-scroll.aura-scroll-touch,
+.aura-fl-stage .aura-fl-page-scroll {
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+}
+.aura-fl-stage .aura-scroll.aura-scroll-touch::-webkit-scrollbar,
+.aura-fl-stage .aura-fl-page-scroll::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+/* Abstandhalter am Seitenende, Höhe setzt das Einrasten in FaceliftChrome (nur bei kaum scrollbaren Seiten) */
+.aura-fl-snap-spacer {
+    height: 0;
+    flex: none;
+    pointer-events: none;
+}
+
+/* ── Schwebende Glas-Leiste ───────────────────────────────────────────── */
+.aura-fl-tabbar {
+    position: absolute;
+    z-index: 30;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--fl-tabbar-gap) + env(safe-area-inset-bottom));
+    width: calc(100% - 24px);
+    max-width: 460px;
+    height: var(--fl-tabbar-h);
+    box-sizing: border-box;
+    /* !important: .aura-tabs (Basis/Custom-CSS) setzt sonst den Seitenabstand auf 0 */
+    padding: var(--fl-tabbar-pad) !important;
+    gap: 2px;
+    display: flex;
+    align-items: stretch;
+    border-radius: calc(var(--fl-tabbar-h) / 2);
+    background: var(--fl-glass);
+    -webkit-backdrop-filter: var(--fl-blur);
+    backdrop-filter: var(--fl-blur);
+    border: 1px solid var(--fl-glass-border, var(--app-border));
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+.aura-fl-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    /* gleichlaufend zur Leiste: Außenrundung minus Innenabstand */
+    border-radius: calc(var(--fl-tabbar-h) / 2 - var(--fl-tabbar-pad));
+    color: var(--fl-tab, var(--text-secondary));
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        color 0.15s,
+        background-color 0.15s;
+}
+.aura-fl-tab-label {
+    max-width: 100%;
+    font-size: 11px;
+    line-height: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Bedienelemente schlicht statt in der Akzentfarbe (Wunsch Sascha, 10.11.2026), wie in iOS:
+     --control       Zurück und Textknöpfe im Kopf (Bearbeiten, Sichern): Textfarbe
+     --control-soft  Pfeile, Aufklapp-Winkel, „x weitere": zweitrangiges Grau
+   Bausteine lesen sie mit Rückfall auf die Akzentfarbe, in der Ansicht „Ist" bleibt also alles blau.
+   An body, weil Pop-ups außerhalb der Bühne hängen. Die Akzentfarbe bleibt für Auswahl und Hauptaktionen. */
+body:has(.aura-fl-stage) {
+    --control: var(--text-primary);
+    --control-soft: var(--text-secondary);
+}
+/* Bearbeiten (Sichern/Fertig im Kopf): Die Leiste fährt nach unten weg, damit ein Tipp auf einen anderen
+   Bereich keine ungesicherte Änderung verliert (Entscheidung Sascha, 10.11.2026). Jede Ansicht, in der
+   bearbeitet wird, setzt dafür data-ios-editing an ihren Knopf im Kopf; mehr braucht eine neue Ansicht nicht. */
+.aura-fl-stage:has([data-ios-editing]) .aura-fl-tabbar {
+    transform: translate(-50%, calc(100% + var(--fl-tabbar-gap) + env(safe-area-inset-bottom) + 8px));
+    opacity: 0;
+    pointer-events: none;
+}
+/* Aktiver Reiter in Grau statt in der Akzentfarbe (Wunsch Sascha, 10.11.2026): Schrift in der Textfarbe,
+   dahinter das Füllgrau von iOS (systemFill: 120/120/128, hell 20 %, dunkel 36 %). */
+.aura-fl-stage {
+    --fl-tab-fill: rgba(120, 120, 128, 0.2);
+}
+html.dark .aura-fl-stage {
+    --fl-tab-fill: rgba(120, 120, 128, 0.36);
+}
+.aura-fl-tab--active {
+    color: var(--fl-tab-active, var(--text-primary));
+    background: var(--fl-tab-active-bg, var(--fl-tab-fill));
+}
+
+/* Beim Runterscrollen schrumpft die Leiste auf Symbole, beim Hochscrollen wächst sie wieder */
+.aura-fl-tabbar {
+    transition:
+        transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 0.2s ease,
+        height 0.25s ease,
+        max-width 0.25s ease,
+        border-radius 0.25s ease;
+}
+.aura-fl-stage[data-min] .aura-fl-tabbar,
+.aura-fl-stage[data-sub] .aura-fl-tabbar {
+    --fl-tabbar-h: 46px;
+    --fl-tabbar-pad: 4px;
+    max-width: 290px;
+}
+.aura-fl-stage[data-min] .aura-fl-tab-label,
+.aura-fl-stage[data-sub] .aura-fl-tab-label {
+    display: none;
+}
+
+/* Viele Reiter: nur Symbole */
+.aura-fl-tabbar[data-icons-only] .aura-fl-tab-label {
+    display: none;
+}
+
+/* ── Unterseiten: ein Kopf statt zwei ─────────────────────────────────── */
+/* Der Kopf der Unterseite (Zurück · Titel · Aktion) ist der einzige Kopf. */
+.aura-fl-stage[data-sub] .aura-fl-header {
+    opacity: 0;
+    pointer-events: none;
+}
+.aura-fl-stage[data-sub] .aura-scroll.aura-scroll-touch {
+    padding-top: 0;
+}
+/* Deckend, kein Milchglas (Sascha, 13.11.2026, gilt für alle Unterseiten): Inhalt, der unter dem Kopf
+   durchläuft (z. B. bunte Diagramm-Balken), soll nicht durchschimmern. */
+.aura-fl-stage .ios-bar.is-sticky {
+    min-height: 44px;
+    padding-top: env(safe-area-inset-top);
+    background: var(--fl-head-bg, var(--app-bg));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+.aura-fl-stage .ios-bar-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--fl-title, var(--header-text, var(--text-primary)));
+}
+
+/* Knopf Einstellungen im Kopf */
+.aura-fl-settings-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--fl-tab, var(--text-secondary));
+    background: var(--fl-glass);
+    border: 1px solid var(--fl-glass-border, var(--app-border));
+}
+
+/* Eigene Unterseite über dem Inhalt (Einstellungen) */
+.aura-fl-page {
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    display: flex;
+    flex-direction: column;
+    background: var(--app-bg);
+    animation: aura-fl-push 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.aura-fl-page-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 max(var(--fl-page-x, 16px), env(safe-area-inset-right)) calc(var(--fl-tabbar-h) + var(--fl-tabbar-gap) * 2 + env(safe-area-inset-bottom))
+        max(var(--fl-page-x, 16px), env(safe-area-inset-left));
+}
+.aura-fl-page-inner {
+    max-width: 720px;
+    margin: 0 auto;
+}
+/* Unterseite der Einstellungen offen: deren Kopf ersetzt den Kopf der Seite */
+.aura-fl-page:has(.ios-stack.is-pushed) .aura-fl-page-bar,
+.aura-fl-page:has(.ios-stack.is-pushed) .aura-fl-settings-admin {
+    display: none;
+}
+/* verdeckte Seite des Stapels nimmt hier keinen Platz ein, sonst klafft eine Lücke vor der nächsten Gruppe */
+.aura-fl-settings .ios-stack-page.is-hidden {
+    display: none;
+}
+@keyframes aura-fl-push {
+    from {
+        transform: translateX(100%);
+    }
+}
+/* Schließen: fährt auf demselben Weg wieder hinaus (Dauer = PAGE_MS in FaceliftChrome.tsx) */
+.aura-fl-page[data-closing] {
+    animation: aura-fl-pop 0.42s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+    pointer-events: none;
+}
+@keyframes aura-fl-pop {
+    to {
+        transform: translateX(100%);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .aura-fl-page {
+        animation: none;
+    }
+    .aura-fl-page[data-closing] {
+        display: none;
+    }
+}
+
+/* Statusleiste der Homescreen-App (index.html, #aura-topedge): iOS färbt sie in der Farbe dieses
+   Randstreifens. Im Facelift ist das die Farbe der Seite, damit Notch und Kopf eine Fläche sind.
+   Pop-ups dunkeln den Hintergrund nicht ab (siehe .aura-scrim in index.css), die Notch bleibt also stehen. */
+body:has(.aura-fl-stage) #aura-topedge {
+    background-color: var(--fl-head-bg, var(--app-bg)) !important;
+}

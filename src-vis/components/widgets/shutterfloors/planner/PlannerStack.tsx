@@ -23,9 +23,10 @@ interface PlanPageProps {
     push: (r: Route) => void;
     pop: () => void;
     reportDirty: (uid: number, dirty: boolean) => void;
+    statusPage?: ReactNode;
 }
 
-function PlanPage({ route, parent, m, push, pop, reportDirty }: PlanPageProps) {
+function PlanPage({ route, parent, m, push, pop, reportDirty, statusPage }: PlanPageProps) {
     const [edit, setEdit] = useState(false);
     const [slot, setSlot] = useState<HTMLElement | null>(null);
     // Zurueck-Waechter des Editors: false = der Editor fragt nach, die Seite bleibt
@@ -66,7 +67,12 @@ function PlanPage({ route, parent, m, push, pop, reportDirty }: PlanPageProps) {
             </div>
         );
         right = (
-            <button type="button" className={`ios-bar-text${edit ? ' is-strong' : ''}`} onClick={() => setEdit(!edit)}>
+            <button
+                type="button"
+                className={`ios-bar-text${edit ? ' is-strong' : ''}`}
+                data-ios-editing={edit ? '' : undefined}
+                onClick={() => setEdit(!edit)}
+            >
                 {edit ? 'Fertig' : 'Bearbeiten'}
             </button>
         );
@@ -76,6 +82,8 @@ function PlanPage({ route, parent, m, push, pop, reportDirty }: PlanPageProps) {
                 <PlanSettings m={m} />
             </div>
         );
+    } else if (route.v === 'status') {
+        content = <div className="pw-home aura-fl-status-page">{statusPage}</div>;
     } else if (route.v === 'scene') {
         content = (
             <SceneEditor
@@ -118,7 +126,16 @@ function PlanPage({ route, parent, m, push, pop, reportDirty }: PlanPageProps) {
     );
 }
 
-export function PlannerStack({ m, list }: { m: PlanModel; list: (open: (t: Tab) => void) => ReactNode }) {
+export function PlannerStack({
+    m,
+    list,
+    statusPage,
+}: {
+    m: PlanModel;
+    list: (open: (t: Tab) => void) => ReactNode;
+    /** Inhalt der Unterseite „Status" (nur Facelift-Entwürfe, die den Status auf eine Unterseite legen) */
+    statusPage?: ReactNode;
+}) {
     const [stack, setStack] = useState<StackEntry[]>([]);
     const uid = useRef(0);
     const dirty = useRef(new Set<number>());
@@ -141,7 +158,10 @@ export function PlannerStack({ m, list }: { m: PlanModel; list: (open: (t: Tab) 
     }, [hidden]);
 
     const pages = [
-        { key: 'list', node: list((t) => push(t === 'plan' ? { v: 'plan' } : { v: 'scenes' })) },
+        {
+            key: 'list',
+            node: list((t) => push(t === 'plan' ? { v: 'plan' } : t === 'scenes' ? { v: 'scenes' } : { v: 'status' })),
+        },
         ...stack.map((r, i) => ({
             key: `p${r.uid}`,
             node: (
@@ -152,6 +172,7 @@ export function PlannerStack({ m, list }: { m: PlanModel; list: (open: (t: Tab) 
                     push={push}
                     pop={pop}
                     reportDirty={reportDirty}
+                    statusPage={statusPage}
                 />
             ),
         })),

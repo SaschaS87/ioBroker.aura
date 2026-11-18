@@ -39,10 +39,10 @@ const begrenzen = (wert: number, min: number, max: number) =>
  * geht deshalb ueber style statt ueber Tailwind-Groessenklassen: ihre Werte
  * stehen erst zur Laufzeit fest.
  */
-export function HeaderLogo() {
+export function HeaderLogo({ immer }: { /** UI-Facelift: Logo auch zeigen, wenn es im alten Kopf abgeschaltet ist */ immer?: boolean } = {}) {
     // Ganz abgeschaltet: nichts rendern, damit auch der Abstand zum Titel
     // (gap-3 der Kopfzeile) verschwindet und kein leerer Platzhalter bleibt.
-    if (!HEADER_LOGO_ANZEIGEN) return null;
+    if (!HEADER_LOGO_ANZEIGEN && !immer) return null;
 
     // Mit Kreis: exakt so gross wie die runden Knoepfe rechts in der Kopfzeile
     // (Theme-Umschalter und Admin-Link, beide w-8 h-8, Flaeche --app-bg, 1px

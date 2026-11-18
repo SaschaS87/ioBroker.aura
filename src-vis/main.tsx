@@ -160,6 +160,11 @@ if ('serviceWorker' in navigator && import.meta.env.PROD && !isScreenshotMode())
     });
 }
 
+// Die Facelift-Regeln (facelift-blocks.css und die Brücken-Dateien der Seiten) hängen an body[data-fl-variant] und
+// gelten überall: Bühne, Pop-ups, Seiten und Editor. Name und Wert stammen aus der Entwurfsphase und bleiben, damit
+// die rund 600 Selektoren unverändert bleiben können.
+document.body.setAttribute('data-fl-variant', 'neu');
+
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <ThemeProvider>

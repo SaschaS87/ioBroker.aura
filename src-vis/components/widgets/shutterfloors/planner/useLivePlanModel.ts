@@ -15,6 +15,8 @@ import {
     addDays,
     calcSun,
     effectiveWeekday,
+    entryNameOf,
+    entryUsesScene,
     parseHhmm,
     sameDay,
     triggerMinutes,
@@ -155,9 +157,10 @@ export function useLivePlanModel(
         [scenes],
     );
     const entriesOfScene = useCallback(
-        (sceneId: string) => entries.filter((e) => e.target.kind === 'scene' && e.target.sceneId === sceneId),
+        (sceneId: string) => entries.filter((e) => entryUsesScene(e, sceneId)),
         [entries],
     );
+    const entryName = useCallback((e: Pick<PlanEntry, 'targets' | 'name'>) => entryNameOf(e, targetName), [targetName]);
 
     const [toast, setToast] = useState<string | null>(null);
     const showToast = useCallback((text: string) => {
@@ -208,6 +211,7 @@ export function useLivePlanModel(
         targetName,
         targetCount,
         entriesOfScene,
+        entryName,
         setMaster,
         setPausedToday,
         setHolidayMode,

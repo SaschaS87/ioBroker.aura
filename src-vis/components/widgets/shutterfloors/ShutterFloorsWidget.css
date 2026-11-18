@@ -234,11 +234,11 @@
   font-size: 12.5px;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--sf-accent);
+  color: var(--control-soft, var(--sf-accent));
 }
 .sf-group-chev {
   flex-shrink: 0;
-  color: var(--sf-accent);
+  color: var(--control-soft, var(--sf-accent));
   transition: transform 0.2s ease;
 }
 .sf-group-chev.is-open {

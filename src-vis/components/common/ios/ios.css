@@ -133,7 +133,8 @@
     background: transparent;
     /* Schrift erbt wie in Feature 29: die dort notierten 16 px griffen nie (.ds-root button war staerker) */
     font: inherit;
-    color: var(--accent, #0a84ff);
+    /* --control: Farbe der Kopf-Bedienelemente, sonst Akzent (siehe facelift.css) */
+    color: var(--control, var(--accent, #0a84ff));
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
@@ -199,7 +200,7 @@
     background: transparent;
     font: inherit;
     font-size: 16px;
-    color: var(--accent, #0a84ff);
+    color: var(--control, var(--accent, #0a84ff));
     white-space: nowrap;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -239,14 +240,19 @@
     min-width: 0;
     padding: 0 var(--ios-inset, 0px);
 }
+/* wie in iOS: die alte Seite weicht nur ein Stück nach links und blendet aus */
 .ios-stack-page.is-left {
-    transform: translateX(-100%);
+    transform: translateX(-30%);
+    opacity: 0;
 }
 .ios-stack-page.is-right {
     transform: translateX(100%);
 }
+/* schnell hinein, weich auslaufen (Kurve der iOS-Navigation) */
 .ios-stack.is-moving .ios-stack-page {
-    transition: transform 280ms ease;
+    transition:
+        transform 420ms cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 420ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .ios-stack-page.is-hidden {
     visibility: hidden;
@@ -287,8 +293,7 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
-    animation: ios-as-fade 220ms ease-out;
+    /* Hintergrund: .aura-scrim in index.css */
 }
 .ios-as {
     box-sizing: border-box;
@@ -305,7 +310,7 @@
     overflow: hidden;
     border-radius: 14px;
     background: var(--app-surface, var(--widget-bg, #fff));
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+    /* Schatten und Kante: .aura-scrim in index.css */
 }
 .ios-as-head {
     padding: 14px 16px 12px;

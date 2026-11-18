@@ -10,46 +10,56 @@
  *
  * row(d, firstRest) zeichnet die Zeile; firstRest markiert den ersten
  * eingeblendeten Nicht-Favoriten (Trennlinie ueber volle Breite).
+ *
+ * Aufbau aus den gemeinsamen Facelift-Bausteinen (aura-fl-*). Der Aufklapp-Knopf
+ * „x weitere" sitzt rechts im Titel.
  */
 import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 
-export function FloorGroup({
-    floor,
-    isFav,
-    row,
-}: {
+interface FloorGroupProps {
     floor: ShutterFloorDef;
     isFav: (key: string) => boolean;
     row: (d: ShutterFloorDeviceDef, firstRest: boolean) => ReactNode;
-}) {
+}
+
+export function FloorGroup({ floor, isFav, row }: FloorGroupProps) {
     const [open, setOpen] = useState(false);
     const favs = floor.devices.filter((d) => isFav(d.key));
     const rest = floor.devices.filter((d) => !isFav(d.key));
-    const title = floor.name.toUpperCase();
+    const hasFold = favs.length > 0 && rest.length > 0;
+    const toggle = () => setOpen((x) => !x);
 
-    if (favs.length === 0 || rest.length === 0) {
-        return (
-            <section>
-                <div className="sf-group-head">{title}</div>
-                <div className="sf-group">{floor.devices.map((d) => row(d, false))}</div>
-            </section>
-        );
-    }
-
-    const toggle = () => setOpen((v) => !v);
+    const rows = hasFold
+        ? [...favs.map((d) => row(d, false)), ...(open ? rest.map((d, i) => row(d, i === 0)) : [])]
+        : floor.devices.map((d) => row(d, false));
+    const title = <h2 className="aura-fl-section-title sf-floor-title">{floor.name}</h2>;
     const label = open ? 'weniger' : `${rest.length} weitere`;
+    const fold = (
+        <>
+            <span className="aura-fl-fold-label sf-floor-fold-label">{label}</span>
+            <ChevronDown size={18} className={`aura-fl-fold-chev sf-floor-fold-chev${open ? ' is-open' : ''}`} />
+        </>
+    );
+
     return (
-        <section>
-            <button type="button" className="sf-group-head sf-group-head--fold" onClick={toggle} aria-expanded={open}>
-                <span>{title}</span>
-                <span className="sf-group-more">{label}</span>
-                <ChevronDown size={18} className={`sf-group-chev${open ? ' is-open' : ''}`} />
-            </button>
-            <div className="sf-group">
-                {favs.map((d) => row(d, false))}
-                {open && rest.map((d, i) => row(d, i === 0))}
+        <section className="aura-fl-section sf-floor">
+            {hasFold ? (
+                <button
+                    type="button"
+                    className="aura-fl-section-head aura-fl-section-head--fold sf-floor-head"
+                    onClick={toggle}
+                    aria-expanded={open}
+                >
+                    {title}
+                    <span className="aura-fl-fold sf-floor-fold">{fold}</span>
+                </button>
+            ) : (
+                <div className="aura-fl-section-head sf-floor-head">{title}</div>
+            )}
+            <div className="aura-fl-card sf-group sf-floor-card">
+                {rows}
             </div>
         </section>
     );

@@ -9,13 +9,12 @@
 .garten-sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  /* Hintergrund: .aura-scrim in index.css */
   display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 1000;
   color: var(--text-primary);
-  animation: garten-backdrop-in 280ms ease-out;
 }
 
 .garten-sheet {
@@ -27,7 +26,7 @@
   box-sizing: border-box;
   background: var(--g-surface);
   border-radius: 16px 16px 0 0;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  /* Schatten und Kante: .aura-scrim in index.css */
   padding-bottom: calc(env(safe-area-inset-bottom) + 14px);
   animation: garten-sheet-in 280ms ease-out;
 }

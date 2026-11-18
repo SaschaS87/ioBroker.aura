@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
+import { Suspense, useState, useMemo, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import ReactECharts from 'echarts-for-react';
 import {
     Sun,
@@ -28,6 +28,15 @@ import { useDatapoint } from '../../hooks/useDatapoint';
 import { formatNum } from '../../utils/formatValue';
 import { localTime } from '../../utils/formatTime';
 import type { WidgetProps } from '../../types';
+import { useDashboardMobile } from '../../contexts/DashboardMobileContext';
+import { lazyWithReload } from '../../utils/lazyWithReload';
+import { useWetterDraft } from './wetter/wetterDraft';
+
+// Wetter-Entwürfe: nur Dev-Vorschau, im Build ist beides null bzw. leer und samt Entwurfs-Code weg.
+const WetterFaceliftLazy = import.meta.env.DEV
+    ? lazyWithReload(() => import('./wetter/WetterFacelift').then((m) => ({ default: m.WetterFacelift })))
+    : null;
+const useWxDraft = import.meta.env.DEV ? useWetterDraft : () => null;
 
 /**
  * DWD-app-style forecast tile: one slim horizontally-swipeable day strip + a
@@ -38,7 +47,7 @@ import type { WidgetProps } from '../../types';
  * documentation before it was removed.
  */
 
-const DEFAULT_BASE = 'javascript.0.Wetter';
+export const DEFAULT_BASE = 'javascript.0.Wetter';
 
 // Exported (alongside buildCoreSeries/buildDualGridOption/CHART_HEIGHT/Pt below)
 // so a dev-only preview page can render this exact chart with fake data —
@@ -66,9 +75,9 @@ export const C = {
 // spread evenly across the widget's full width.
 export const CHART_PAD_X = 34;
 
-const asNum = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+export const asNum = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
-function weatherIcon(code: number | null): LucideIcon {
+export function weatherIcon(code: number | null): LucideIcon {
     if (code === null) return Cloud;
     if (code === 0) return Sun;
     if (code === 1 || code === 2) return CloudSun;
@@ -80,7 +89,7 @@ function weatherIcon(code: number | null): LucideIcon {
     if (code >= 95) return CloudLightning;
     return Cloud;
 }
-function weatherLabel(code: number | null): string {
+export function weatherLabel(code: number | null): string {
     if (code === null) return '–';
     if (code === 0) return 'Klar';
     if (code === 1) return 'Meist klar';
@@ -106,7 +115,7 @@ const MOOD_COLOR: Record<string, string> = {
     snow: '#5aa0e0',
     storm: '#8b5cf6',
 };
-function weatherMood(code: number | null): keyof typeof MOOD_COLOR {
+export function weatherMood(code: number | null): keyof typeof MOOD_COLOR {
     if (code === null) return 'cloudy';
     if (code === 0 || code === 1) return 'clear';
     if (code === 2 || code === 3) return 'cloudy';
@@ -118,14 +127,14 @@ function weatherMood(code: number | null): keyof typeof MOOD_COLOR {
 }
 
 const COMPASS = ['N', 'NNO', 'NO', 'ONO', 'O', 'OSO', 'SO', 'SSO', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-function compassLabel(deg: number | null): string {
+export function compassLabel(deg: number | null): string {
     if (deg === null) return '';
     const idx = Math.round((deg % 360) / 22.5) % 16;
     return COMPASS[idx];
 }
 
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-function dayLabel(i: number): string {
+export function dayLabel(i: number): string {
     if (i === 0) return 'Heute';
     if (i === 1) return 'Morgen';
     if (i === -1) return 'Gestern';
@@ -133,23 +142,23 @@ function dayLabel(i: number): string {
     d.setDate(d.getDate() + i);
     return WEEKDAYS[d.getDay()];
 }
-function dayDateStr(i: number): string {
+export function dayDateStr(i: number): string {
     const d = new Date();
     d.setDate(d.getDate() + i);
     return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
 }
-function localDateStr(offsetDays: number): string {
+export function localDateStr(offsetDays: number): string {
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function timeOnly(iso: string | null): string {
+export function timeOnly(iso: string | null): string {
     if (!iso) return '–';
     const idx = iso.indexOf('T');
     return idx >= 0 ? iso.slice(idx + 1, idx + 6) : iso;
 }
 
-interface HourlyBlob {
+export interface HourlyBlob {
     time: string[];
     temperature_2m?: number[];
     precipitation?: number[];
@@ -157,12 +166,12 @@ interface HourlyBlob {
     uv_index?: number[];
     [key: string]: unknown;
 }
-interface MinutelyBlob {
+export interface MinutelyBlob {
     time: string[];
     precipitation?: number[];
     [key: string]: unknown;
 }
-function parseJson<T>(raw: unknown): T | null {
+export function parseJson<T>(raw: unknown): T | null {
     if (typeof raw !== 'string' || !raw) return null;
     try {
         return JSON.parse(raw) as T;
@@ -170,7 +179,7 @@ function parseJson<T>(raw: unknown): T | null {
         return null;
     }
 }
-function currentHourIndex(hourly: HourlyBlob | null, nowMs: number): number {
+export function currentHourIndex(hourly: HourlyBlob | null, nowMs: number): number {
     if (!hourly?.time) return -1;
     const now = new Date(nowMs);
     const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
@@ -201,7 +210,7 @@ function currentHourIndex(hourly: HourlyBlob | null, nowMs: number): number {
 // the finest grid any consumer here needs (the nowcast bars ARE 15-minute
 // steps; the UV value only changes hourly).
 const QUARTER_HOUR_MS = 15 * 60000;
-function useNowTick(): number {
+export function useNowTick(): number {
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
         const tick = () =>
@@ -891,7 +900,7 @@ export function buildSingleGridOption(core: ReturnType<typeof buildCoreSeries>, 
 // -wahrscheinlichkeit) and the legend hides; at rest, title and legend look
 // exactly as before. Chosen after three rounds of dev-only mockups (see
 // pages/dev/WetterScrubPreview.tsx, Variante 11).
-function useChartScrub(points: Pt[]) {
+export function useChartScrub(points: Pt[]) {
     const chartRef = useRef<any>(null);
     const [idx, setIdx] = useState(0);
     const [scrubbing, setScrubbing] = useState(false);
@@ -1275,9 +1284,14 @@ function DataFooter({ base }: { base: string }) {
 // past days sit to the LEFT of "Heute", so the strip must be scrolled past
 // them on mount (see stripRef effect below), otherwise the widget would open
 // showing yesterday-before-yesterday instead of today.
-const DAY_INDICES = [-2, -1, 0, 1, 2, 3, 4, 5, 6];
+export const DAY_INDICES = [-2, -1, 0, 1, 2, 3, 4, 5, 6];
 
-export function WeatherForecastStripWidget({ config }: WidgetProps) {
+export function WeatherForecastStripWidget({ config, editMode }: WidgetProps) {
+    // Wetter-Entwürfe (nur Dev-Vorschau, sonst null): dieses Widget zeichnet dann die
+    // ganze Wetter-Seite neu (WetterFacelift), nur in der einspaltigen Handy-Ansicht.
+    const wxDraftRaw = useWxDraft();
+    const mobile = useDashboardMobile();
+    const wxDraft = mobile && !editMode && !config.options?.footerOnly ? wxDraftRaw : null;
     const base = (config.options?.basePath as string) || DEFAULT_BASE;
     const [active, setActive] = useState(0);
     const stripRef = useRef<HTMLDivElement>(null);
@@ -1339,7 +1353,8 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
             document.removeEventListener('visibilitychange', onVisibility);
             window.removeEventListener('pageshow', jumpToToday);
         };
-    }, []);
+        // wxDraft: nach dem Zurückschalten auf die heutige Seite hängt ein neues Wurzelelement im Baum
+    }, [wxDraft]);
 
     // footerOnly: a second, minimal instance of this same widget type that
     // renders just the data-provenance footer — used to pin it to the bottom
@@ -1347,6 +1362,13 @@ export function WeatherForecastStripWidget({ config }: WidgetProps) {
     if (config.options?.footerOnly) {
         return <DataFooter base={base} />;
     }
+
+    if (wxDraft && WetterFaceliftLazy)
+        return (
+            <Suspense fallback={null}>
+                <WetterFaceliftLazy draft={wxDraft} base={base} selfId={config.id} />
+            </Suspense>
+        );
 
     const showFooter = config.options?.showFooter !== false;
 

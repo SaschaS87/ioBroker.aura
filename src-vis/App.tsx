@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveHtmlAssets } from './utils/assetUrl';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings } from 'lucide-react';
@@ -34,6 +34,7 @@ import { loadConfigFromIoBroker, applyRaw } from './utils/configLoader';
 import { Dashboard } from './components/layout/Dashboard';
 import { FocusedWidgetContext } from './contexts/FocusedWidgetContext';
 import { TabBar } from './components/layout/TabBar';
+import { FaceliftStage } from './components/layout/facelift/FaceliftChrome';
 import { LayoutDrawer } from './components/layout/LayoutDrawer';
 import { HeaderLogo } from './components/common/HeaderLogo';
 import { useIframeStore } from './store/iframeStore';
@@ -61,6 +62,12 @@ import { setBreakdownTracking, recordBackendCall } from './utils/perfBreakdown';
 import { PinPrompt } from './components/common/PinPrompt';
 import { usePinStore, unlockedReader } from './store/pinStore';
 import { activePinKeys, pendingPinTarget, pinEscapeTarget, unlocksFor, type EscapeTarget } from './utils/pinLock';
+import { lazyWithReload } from './utils/lazyWithReload';
+
+// Entwurfs-Umschalter der Wetter-Seite: nur Dev-Vorschau, im Build null
+const WetterDraftSwitch = import.meta.env.DEV
+    ? lazyWithReload(() => import('./components/widgets/wetter/WetterDraftSwitch'))
+    : null;
 
 const STORE_REHYDRATORS: Record<string, () => void> = {
     'aura-dashboard': () => useDashboardStore.persist.rehydrate(),
@@ -951,6 +958,10 @@ export default function App() {
     const showBadge = effectiveSettings.showHeader && effectiveSettings.showConnectionBadge;
     const showClientIdBadge = useGlobalSettingsStore((s) => s.showClientIdBadge);
 
+    // UI-Facelift: Bühne mit Kopf und Leiste, sobald der Kopf an ist (nicht im Bearbeiten-Modus der Screenshot-Hilfe).
+    const facelift = effectiveSettings.showHeader && !shotEditMode;
+    const [flSettingsOpen, setFlSettingsOpen] = useState(false);
+
     const activeTabSlug = useMemo(() => {
         const t = tabs.find((t) => t.id === activeTabId);
         return t?.slug ?? null;
@@ -1146,17 +1157,61 @@ export default function App() {
         />
     ) : null;
 
+    const headerRight = (
+        <div className="flex items-center gap-3">
+            {effectiveSettings.headerDatapoint && (
+                <HeaderDatapoint
+                    id={effectiveSettings.headerDatapoint}
+                    template={effectiveSettings.headerDatapointTemplate || undefined}
+                />
+            )}
+            {effectiveSettings.headerClockEnabled && <HeaderClock f={effectiveSettings} />}
+            {showBadge && !facelift && <ConnectionBadge />}
+            {effectiveSettings.showMessageBell && <MessageBell />}
+            {facelift && (
+                <button
+                    type="button"
+                    className="aura-fl-settings-btn"
+                    aria-label="Einstellungen"
+                    title="Einstellungen"
+                    onClick={() => setFlSettingsOpen(true)}
+                >
+                    <Settings size={17} />
+                </button>
+            )}
+            {!facelift && effectiveSettings.showAdminLink && (
+                <a
+                    href="#/admin"
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
+                    style={{
+                        background: 'var(--app-bg)',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--app-border)',
+                    }}
+                    title="Admin"
+                >
+                    <Settings size={15} />
+                </a>
+            )}
+        </div>
+    );
+
     return (
         <div
             data-aura-app="frontend"
             className={`aura-page${layout?.slug ? ` aura-page-${layout.slug}` : ''}${activeTabSlug ? ` aura-${activeTabSlug}` : ''} h-full flex flex-col overflow-hidden`}
             style={{ background: 'var(--app-bg)', color: 'var(--text-primary)' }}
         >
-            <ConnectionIndicator showBadge={showBadge} />
+            <ConnectionIndicator showBadge={showBadge && !facelift} />
             <TabSleepHint />
             {showClientIdBadge && <ClientIdBadge />}
             <DpPopupTriggers layoutId={layout?.id} tabId={activeTabId} />
             <ToastLayer scope={messageScope} />
+            {WetterDraftSwitch && activeTabSlug === 'wetter' && effectiveSettings.showHeader && (
+                <Suspense fallback={null}>
+                    <WetterDraftSwitch />
+                </Suspense>
+            )}
             {drawerFloating && (
                 <LayoutDrawer
                     activeLayoutId={layout?.id}
@@ -1198,7 +1253,7 @@ export default function App() {
                     />
                 )}
                 <div className={drawerSidebar ? 'flex-1 min-w-0 flex flex-col' : 'contents'}>
-                    {effectiveSettings.showHeader && (
+                    {effectiveSettings.showHeader && !facelift && (
                         <header
                             className="aura-header flex items-center justify-between px-4 sm:px-6 py-4 shrink-0"
                             style={{ background: 'var(--app-surface)', borderBottom: '1px solid var(--app-border)' }}
@@ -1226,36 +1281,27 @@ export default function App() {
                                     {effectiveSettings.headerTitle || 'Aura'}
                                 </h1>
                             </div>
-                            <div className="flex items-center gap-3">
-                                {effectiveSettings.headerDatapoint && (
-                                    <HeaderDatapoint
-                                        id={effectiveSettings.headerDatapoint}
-                                        template={effectiveSettings.headerDatapointTemplate || undefined}
-                                    />
-                                )}
-                                {effectiveSettings.headerClockEnabled && <HeaderClock f={effectiveSettings} />}
-                                {showBadge && <ConnectionBadge />}
-                                {effectiveSettings.showMessageBell && <MessageBell />}
-                                {effectiveSettings.showAdminLink && (
-                                    <a
-                                        href="#/admin"
-                                        className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-80 transition-opacity"
-                                        style={{
-                                            background: 'var(--app-bg)',
-                                            color: 'var(--text-secondary)',
-                                            border: '1px solid var(--app-border)',
-                                        }}
-                                        title="Admin"
-                                    >
-                                        <Settings size={15} />
-                                    </a>
-                                )}
-                            </div>
+                            {headerRight}
                         </header>
                     )}
                     {drawerBarTop && sectionMenuBar}
-                    {!tabBarAtBottom && tabBarNode}
-                    <div className="flex-1 min-h-0 flex flex-col">
+                    {!tabBarAtBottom && !facelift && tabBarNode}
+                    <FaceliftStage
+                        enabled={facelift}
+                        settingsOpen={facelift && flSettingsOpen}
+                        onSettingsClose={() => setFlSettingsOpen(false)}
+                        adminHref={effectiveSettings.showAdminLink ? '#/admin' : undefined}
+                        title={activeTab?.name ?? ''}
+                        appTitle={effectiveSettings.headerTitle || 'Aura'}
+                        left={<HeaderLogo immer />}
+                        right={headerRight}
+                        tabs={sectionLocked ? [] : tabs}
+                        activeTabId={activeTabId}
+                        onTabClick={(tab) => {
+                            const slug = tab.slug ?? tab.id;
+                            navigate(viewBase ? `${viewBase}/tab/${slug}` : `/tab/${slug}`);
+                        }}
+                    >
                         {pinTarget ? (
                             <PinPrompt
                                 key={pinTarget.key}
@@ -1279,8 +1325,8 @@ export default function App() {
                                 />
                             </FocusedWidgetContext.Provider>
                         )}
-                    </div>
-                    {tabBarAtBottom && tabBarNode}
+                    </FaceliftStage>
+                    {tabBarAtBottom && !facelift && tabBarNode}
                     {drawerBarBottom && sectionMenuBar}
                 </div>
             </div>

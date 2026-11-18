@@ -25,6 +25,7 @@ import { verticalCompact } from '../../utils/gridCompact';
 import { groupRows } from '../../utils/groupLayout';
 import { reportMetric } from '../../utils/perfMetrics';
 import { measureRenderedWidgets, reportSignature, sendRenderReport } from '../../utils/renderReport';
+import { WohnklimaFacelift } from '../widgets/wohnklima/WohnklimaFacelift';
 
 // Default gap — overridden by config at runtime
 const DEFAULT_MARGIN = 10;
@@ -500,7 +501,10 @@ export function Dashboard({
                                                 className={`aura-tab aura-tab-${tab.slug}`}
                                                 style={{ display: isActive ? undefined : 'none' }}
                                             >
-                                                {isActive && tabWidgets.length === 0 && !fillTabWidget ? (
+                                                {tab.slug === 'wohnklima' && !editMode ? (
+                                                    // UI-Facelift: Wohnklima als Liste je Etage statt Einzelbalken (nur einspaltig)
+                                                    <WohnklimaFacelift widgets={sorted} />
+                                                ) : isActive && tabWidgets.length === 0 && !fillTabWidget ? (
                                                     <div
                                                         className="flex flex-col items-center justify-center flex-1 h-64 space-y-2"
                                                         style={{ color: 'var(--text-secondary)' }}

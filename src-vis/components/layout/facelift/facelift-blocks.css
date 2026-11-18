@@ -1,0 +1,400 @@
+/*
+ * UI-Facelift – gemeinsame Bausteine und Raster (Karte, Abschnittstitel, Zeile, Begleittext, Abstände,
+ * Schriftstufen) nach dem Vorbild der iOS-Einstellungen. Seitenneutral: Rollläden nutzt sie zuerst,
+ * Wohnklima, Heizung, Garten und Wetter folgen.
+ *
+ * Alles hängt an body[data-fl-variant]. Das Attribut setzt main.tsx immer, die Regeln gelten also überall
+ * (Bühne, Seiten, Pop-ups, Editor). Wert und Name stammen aus der Entwurfsphase und bleiben unverändert.
+ *
+ * Raster (Grundwerte, von Sascha am 11.11.2026 gewählt: Symbole kleiner, Rundung mittel, Titel 15 halbfett):
+ *   Schrift    --fl-font-section / --fl-weight-section / --fl-case-section / --fl-track-section / --fl-color-section
+ *              --fl-font-title / --fl-weight-title      Zeilentitel
+ *              --fl-font-sub                            Untertitel
+ *              --fl-font-meta                           Nebentext („x weitere", Werte rechts)
+ *              --fl-font-foot / --fl-color-foot         Begleittext unter einer Karte
+ *              --fl-font-label / --fl-weight-label / --fl-case-label   Feldnamen in Editoren
+ *   Zeile      --fl-row-min-h / --fl-row-pad / --fl-icon-size / --fl-icon-radius / --fl-icon-glyph
+ *              --fl-sep-inset (Linie beginnt am Text) / --fl-sep-inset-r (Linie endet vor dem Kartenrand)
+ *   Seite      --fl-page-x  Abstand jeder Karte zum Bildschirmrand: Seiten, Unterseiten und Pop-ups
+ *              (Seiten: facelift.css am Scroll-Bereich, Pop-ups: Baustein .aura-fl-sheet-body)
+ *   Abstände   --fl-gap-block (zwischen Blöcken) / --fl-head-top (über einem Abschnittstitel)
+ *              --fl-gap-title (Titel bis Karte) / --fl-title-pad-x (Einzug von Titel und Begleittext)
+ *   Karte      --fl-card-bg / --fl-card-border / --fl-card-border-w / --fl-card-radius / --fl-card-shadow
+ *   Linien     --fl-line / --fl-line-strong             Flächen  --fl-soft
+ *   Zustand    --fl-ok / --fl-warn / --fl-crit
+ * Farben kommen ausschließlich aus Theme-Variablen mit Rückfallkette und lassen sich je Theme überschreiben.
+ */
+
+/* ── Raster: Grundwerte ───────────────────────────────────────────────── */
+body[data-fl-variant] {
+    /* Abschnittstitel wie „Systemeinstellungen" in iOS: klein, halbfett, grau, normale Schreibweise */
+    --fl-font-section: 15px;
+    --fl-weight-section: 600;
+    --fl-case-section: none;
+    --fl-track-section: 0;
+    --fl-color-section: var(--text-secondary);
+    --fl-font-title: 17px;
+    --fl-weight-title: 400;
+    --fl-font-sub: 13px;
+    --fl-font-meta: 15px;
+    --fl-font-foot: 13px;
+    --fl-color-foot: var(--text-secondary);
+    --fl-font-label: 13px;
+    --fl-weight-label: 600;
+    --fl-case-label: none;
+
+    /* Sascha, 13.11.2026: überall gleich breit (Wohnklima maßgeblich) und jede Zeile gleich hoch
+       (wie „AT Haus"). Keine Seite und kein Pop-up setzt eigene Werte dafür. */
+    --fl-page-x: 16px;
+
+    --fl-row-min-h: 56px;
+    /* feste Zeilenhöhen der Schrift, damit ein- und zweizeilige Zeilen in --fl-row-min-h passen */
+    --fl-lh-title: 22px;
+    --fl-lh-sub: 18px;
+    --fl-row-pad: 6px 10px 6px 16px;
+    --fl-icon-size: 28px;
+    --fl-icon-radius: 7px;
+    --fl-icon-glyph: 0.84;
+    /* Trennlinie wie in iOS: beginnt am Text, endet mit Abstand vor dem Kartenrand */
+    --fl-sep-inset: calc(16px + var(--fl-icon-size) + 12px);
+    --fl-sep-inset-r: 16px;
+
+    --fl-gap-block: 0px;
+    --fl-head-top: 26px;
+    --fl-gap-title: 8px;
+    --fl-title-pad-x: 18px;
+
+    --fl-card-bg: var(--widget-bg, var(--app-surface));
+    --fl-card-border: var(--widget-border, var(--app-border));
+    --fl-card-border-w: var(--widget-border-width, 1px);
+    --fl-card-radius: 18px;
+    --fl-card-shadow: var(--widget-shadow, none);
+
+    --fl-line: color-mix(in srgb, var(--text-primary) 12%, transparent);
+    --fl-line-strong: color-mix(in srgb, var(--text-primary) 24%, transparent);
+    --fl-soft: color-mix(in srgb, var(--text-primary) 8%, transparent);
+
+    --fl-ok: var(--badge-ok, var(--accent-green));
+    --fl-warn: var(--badge-warn, var(--accent-yellow));
+    --fl-crit: var(--badge-crit, var(--accent-red));
+}
+
+/* ── Seite, Block, Abschnitt ──────────────────────────────────────────── */
+body[data-fl-variant] .aura-fl-scope,
+body[data-fl-variant] .aura-fl-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-gap-block);
+    min-width: 0;
+}
+body[data-fl-variant] .aura-fl-section {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+/* Kopf eines Abschnitts über der Karte: Titel links, optional Aufklapp-Knopf oder Kurzstand rechts.
+   Als <button> mindestens 44 px hoch (Tippfläche), der Text sitzt unten an der Karte. */
+body[data-fl-variant] .aura-fl-section-head {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: var(--fl-head-top) var(--fl-title-pad-x) var(--fl-gap-title);
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .aura-fl-section-head--fold {
+    min-height: 44px;
+    cursor: pointer;
+}
+body[data-fl-variant] .aura-fl-section-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--fl-font-section);
+    font-weight: var(--fl-weight-section);
+    text-transform: var(--fl-case-section);
+    letter-spacing: var(--fl-track-section);
+    line-height: 1.25;
+    color: var(--fl-color-section);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Begleittext unter einer Karte (wie unter „Fotografische Stile" in iOS) */
+body[data-fl-variant] .aura-fl-foot {
+    margin: 0;
+    padding: 8px var(--fl-title-pad-x) 0;
+    font-size: var(--fl-font-foot);
+    line-height: 1.35;
+    color: var(--fl-color-foot);
+}
+
+/* ── Pop-up-Inhalt ────────────────────────────────────────────────────── */
+/* Inhalt eines Pop-ups von unten: Karten mit demselben Rand wie auf der Seite */
+body[data-fl-variant] .aura-fl-sheet-body {
+    padding-left: max(var(--fl-page-x), env(safe-area-inset-left));
+    padding-right: max(var(--fl-page-x), env(safe-area-inset-right));
+}
+
+/* ── Karte ────────────────────────────────────────────────────────────── */
+body[data-fl-variant] .aura-fl-card {
+    background: var(--fl-card-bg);
+    border: var(--fl-card-border-w) solid var(--fl-card-border);
+    border-radius: var(--fl-card-radius);
+    box-shadow: var(--fl-card-shadow);
+    overflow: hidden;
+}
+
+/* ── Zeile ────────────────────────────────────────────────────────────── */
+body[data-fl-variant] .aura-fl-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: var(--fl-row-min-h);
+    padding: var(--fl-row-pad);
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .aura-fl-row--nav {
+    cursor: pointer;
+}
+body[data-fl-variant] .aura-fl-row--nav:active {
+    background: var(--fl-soft);
+}
+/* Haarlinie zwischen Zeilen: vom Text bis kurz vor den Kartenrand */
+body[data-fl-variant] .aura-fl-row + .aura-fl-row::before,
+body[data-fl-variant] .aura-fl-statusbox + .aura-fl-statusbox > .aura-fl-statusbox-head::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--fl-sep-inset);
+    right: var(--fl-sep-inset-r);
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .aura-fl-row-icon {
+    width: var(--fl-icon-size);
+    height: var(--fl-icon-size);
+    border-radius: var(--fl-icon-radius);
+    flex-shrink: 0;
+}
+body[data-fl-variant] .aura-fl-row-icon > svg {
+    transform: scale(var(--fl-icon-glyph));
+}
+body[data-fl-variant] .aura-fl-row-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+body[data-fl-variant] .aura-fl-row-title {
+    font-size: var(--fl-font-title);
+    line-height: var(--fl-lh-title);
+    font-weight: var(--fl-weight-title);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-row-sub {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-chev {
+    flex-shrink: 0;
+    margin-right: 4px;
+    color: color-mix(in srgb, var(--text-primary) 30%, transparent);
+}
+
+/* ── Aufklapp-Knopf („x weitere") ─────────────────────────────────────── */
+body[data-fl-variant] .aura-fl-fold {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--control-soft, var(--text-secondary));
+    -webkit-tap-highlight-color: transparent;
+}
+body[data-fl-variant] .aura-fl-fold-label {
+    font-size: var(--fl-font-meta);
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+}
+body[data-fl-variant] .aura-fl-fold-chev {
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+body[data-fl-variant] .aura-fl-fold-chev.is-open {
+    transform: rotate(180deg);
+}
+/* ── Status (FaceliftStatusBox) ───────────────────────────────────────── */
+body[data-fl-variant] .aura-fl-statusbox {
+    position: relative;
+}
+body[data-fl-variant] .aura-fl-statusbox-lead {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0;
+}
+body[data-fl-variant] .aura-fl-statusbox-dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+body[data-fl-variant] [data-level='ok'] > .aura-fl-statusbox-dot,
+body[data-fl-variant] [data-level='ok'] > .aura-fl-statusbox-head .aura-fl-statusbox-dot {
+    background: var(--fl-ok);
+}
+body[data-fl-variant] [data-level='warn'] > .aura-fl-statusbox-dot,
+body[data-fl-variant] [data-level='warn'] > .aura-fl-statusbox-head .aura-fl-statusbox-dot {
+    background: var(--fl-warn);
+}
+body[data-fl-variant] [data-level='crit'] > .aura-fl-statusbox-dot,
+body[data-fl-variant] [data-level='crit'] > .aura-fl-statusbox-head .aura-fl-statusbox-dot {
+    background: var(--fl-crit);
+}
+/* Kurzstand: Punkt + Text rechts im Titel eines Blocks der Unterseite; kürzt mit „…" */
+body[data-fl-variant] .aura-fl-statusbit {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: var(--fl-font-sub);
+    font-weight: 400;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+body[data-fl-variant] .aura-fl-statusbit-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-statusbit[data-level='crit'] {
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .aura-fl-statusbox-chev {
+    transition: transform 0.2s ease;
+}
+body[data-fl-variant] .aura-fl-statusbox-chev.is-open {
+    transform: rotate(180deg);
+}
+body[data-fl-variant] .aura-fl-statusbox-body {
+    padding: 6px 16px 12px;
+}
+body[data-fl-variant] .aura-fl-statusbox:not(.aura-fl-statusbox--page) > .aura-fl-statusbox-body {
+    border-top: 1px solid var(--fl-line);
+}
+/* auf der Unterseite steht die Erklärung als Begleittext unter der Karte, nicht mehr klein in der Box */
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbox-oldhint {
+    display: none;
+}
+
+/* Inhalt der Status-Blöcke im Raster. Die alten Boxen setzen 11/12 px inline, daher !important.
+   Auf der Unterseite sind Datenquelle und Signal normale Zeilen: Einzug links wie .aura-fl-row,
+   Höhe --fl-row-min-h, kein zusätzlicher Rand oben/unten in der Karte. */
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbox-body {
+    padding: 0 var(--fl-sep-inset-r) 0 16px;
+}
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow {
+    min-height: var(--fl-row-min-h);
+    font-size: var(--fl-font-meta) !important;
+}
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow-age,
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-dsrow-detail {
+    font-size: var(--fl-font-sub) !important;
+}
+body[data-fl-variant] .aura-fl-statusbox--page .aura-fl-statusbtn {
+    padding: 8px 14px !important;
+    border-radius: 10px !important;
+    font-size: var(--fl-font-meta) !important;
+    margin-bottom: 12px;
+}
+/* Signal-Zeile: Name, darunter Urteil und Alter; rechts Balken und Zahl */
+body[data-fl-variant] .aura-fl-sigrow {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: var(--fl-row-min-h);
+    padding: 6px 0;
+}
+body[data-fl-variant] .aura-fl-sigrow + .aura-fl-sigrow::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--fl-line);
+    transform: scaleY(0.6);
+}
+body[data-fl-variant] .aura-fl-sigrow-name {
+    font-size: var(--fl-font-meta);
+    line-height: var(--fl-lh-title);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-sigrow-sub {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+body[data-fl-variant] .aura-fl-sigrow-sub.is-crit {
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .aura-fl-sigrow-bar {
+    flex-shrink: 0;
+    width: 56px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--fl-soft);
+    overflow: hidden;
+}
+body[data-fl-variant] .aura-fl-sigrow-bar > span {
+    display: block;
+    height: 100%;
+}
+body[data-fl-variant] .aura-fl-sigrow-num {
+    flex-shrink: 0;
+    width: 30px;
+    text-align: right;
+    font-size: var(--fl-font-meta);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+/* Leere Karte samt Abschnitt ausblenden (z. B. Status ohne eingerichtete Quelle) */
+body[data-fl-variant] .aura-fl-card:empty,
+body[data-fl-variant] .aura-fl-section:has(> .aura-fl-card:empty) {
+    display: none;
+}

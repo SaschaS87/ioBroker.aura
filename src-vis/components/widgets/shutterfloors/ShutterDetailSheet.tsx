@@ -14,6 +14,8 @@
  *
  * Fahrlogik unveraendert wie im frueheren ShutterSheet: Schieber legen einen
  * Entwurf an, gefahren wird erst mit der Taste.
+ *
+ * Pill und Maße nutzt auch planner/SceneTargetSheet.tsx (Ziel einer Szene, fährt nicht).
  */
 import { useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
@@ -35,15 +37,15 @@ import type { ShutterFloorDeviceDef } from './types';
 import './ShutterDetailSheet.css';
 
 /** Hoehe beider Schieber – eine Zahl fuer Position UND Lamelle. */
-const H = 260;
+export const H = 260;
 /** Breite des Positions-Schiebers */
-const POS_W = 140;
+export const POS_W = 140;
 /** Breite der schmalen Lamelle (Raffstore) und Abstand zur Position */
-const SLAT_W = 30;
-const GAP = 16;
+export const SLAT_W = 30;
+export const GAP = 16;
 /** Breite der OK-Taste: Fenster wie der Schieber, Raffstore 200 px */
-const BTN_W_PLAIN = 140;
-const BTN_W_SLAT = 200;
+export const BTN_W_PLAIN = 140;
+export const BTN_W_SLAT = 200;
 const KIND_WORD = { fenster: 'Fenster', dachfenster: 'Dachfenster', raffstore: 'Raffstore' } as const;
 
 interface SliderProps {
@@ -63,7 +65,7 @@ function cls(...c: (string | false)[]) {
 }
 
 /** Senkrechter Schieber als Flaeche: Fuellung von oben = Anteil zu. */
-function Pill({ value, set, snaps, label, busy, unknown, stale, disabled, width }: SliderProps) {
+export function Pill({ value, set, snaps, label, busy, unknown, stale, disabled, width }: SliderProps) {
     const { handlers, isDragging } = useDragValue({ get: () => value, set, snapPoints: snaps, spanPx: H });
     return (
         <div
@@ -139,7 +141,8 @@ export function ShutterDetailSheet({
     const checkedTs = rs?.ts ?? 0;
     const sinceTs = rs?.lc ?? 0;
 
-    const { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose } = useSheetDismiss(onClose);
+    const { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose } =
+        useSheetDismiss(onClose);
 
     const closedNow = ctl.closed ?? 0;
     const shown = posDraft ?? closedNow;
@@ -300,7 +303,12 @@ export function ShutterDetailSheet({
     const running = busy && !hasDraft;
 
     return createPortal(
-        <div className="sds-backdrop" style={backdropStyle} onClick={onBackdropClick}>
+        <div
+            className="sds-backdrop aura-scrim"
+            data-scrim-closing={scrimClosing}
+            style={backdropStyle}
+            onClick={onBackdropClick}
+        >
             <div
                 className={cls('sds', `is-${device.kind}`)}
                 style={sheetStyle}

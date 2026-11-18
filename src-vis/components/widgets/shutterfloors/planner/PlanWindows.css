@@ -166,3 +166,26 @@ html.dark .pp-page .rpp-seg-btn.is-active { background: color-mix(in srgb, var(-
 :root .pp-page .rpp-toggle.is-on { background: var(--accent-green, #34c759); }
 :root .pp-page .rpp-toggle-knob { top: 2px; left: 2px; width: 27px; height: 27px; box-shadow: 0 2px 4px rgb(0 0 0 / 0.2); }
 :root .pp-page .rpp-toggle.is-on .rpp-toggle-knob { transform: translateX(20px); }
+
+/* Ziel-Liste im Zeitpunkt-Editor (mehrere Ziele) */
+:root .pp-page .rpp-tlist-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--pw-sep); }
+:root .pp-page .rpp-tlist-row:last-child { border-bottom: none; }
+:root .pp-page .rpp-tlist-head { display: flex; align-items: center; gap: 10px; min-height: 32px; }
+:root .pp-page .rpp-tlist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root .pp-page .rpp-tlist-del { flex-shrink: 0; width: 44px; height: 44px; margin: -6px -10px -6px 0; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; border-radius: 999px; color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:root .pp-page .rpp-tlist-del:not(:disabled):active { background: var(--rpp-fill); }
+:root .pp-page .rpp-tlist-del:disabled { opacity: 0.3; cursor: default; }
+:root .pp-page .rpp-tlist-add { display: flex; gap: 8px; }
+:root .pp-page .rpp-tlist-pick { flex: 1; min-width: 0; color: var(--rpp-accent); font-weight: 500; }
+:root .pp-page .rpp-tlist-hint .rpp-quiet-line { display: block; }
+/* Widerspruch zwischen Zielen: Signalfarbe Gelb */
+:root .pp-page .rpp-tlist-hint { padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--rpp-yellow); background: color-mix(in srgb, var(--rpp-yellow) 16%, transparent); color: var(--text-primary); }
+:root .pp-page .rpp-name-wrap { position: relative; }
+:root .pp-page .rpp-name-wrap .rpp-input { width: 100%; box-sizing: border-box; padding-right: 44px; }
+:root .pp-page .rpp-name-clear { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; border-radius: 999px; color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:root .pp-page .rpp-name-clear:active { background: var(--rpp-fill); }
+
+/* Feder „fährt leise" hinter dem Namen im Zeitplan. Ohne body[data-fl-variant] unsichtbar; das Attribut setzt main.tsx
+   immer (ShutterFloorsFacelift.css). */
+.pw-feder { display: none; }
+.pw-title--mark { display: flex; align-items: center; gap: 6px; }

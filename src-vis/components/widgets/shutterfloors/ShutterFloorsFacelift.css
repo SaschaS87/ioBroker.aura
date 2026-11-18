@@ -1,0 +1,245 @@
+/*
+ * Rollläden im Facelift.
+ *
+ * Brücke: bildet die vorhandenen Klassen der Rollladen-Seite (.sf-*), der Unterseiten (.pw-*, .rpp-*) und
+ * des Feinreglers (.sds-*) auf das gemeinsame Raster aus facelift-blocks.css ab. So sehen Hauptseite,
+ * Zeitplan, Szenen, Editoren, Status und Feinregler aus wie aus einem Guss.
+ *
+ * Jede Regel hängt an body[data-fl-variant]. Das Attribut setzt main.tsx immer.
+ * Den Schleier der Pop-ups (.aura-scrim) fasst diese Datei nicht an.
+ */
+
+/* ── Hauptseite ───────────────────────────────────────────────────────── */
+body[data-fl-variant] .sf.aura-fl-scope {
+    gap: var(--fl-gap-block);
+}
+/* erster Titel direkt unter dem Seitentitel: ohne den großen Abstand davor */
+body[data-fl-variant] .sf-block--floors > .sf-floor:first-child > .aura-fl-section-head {
+    padding-top: 8px;
+    min-height: 0;
+}
+/* Trennlinie der Geräte-Zeilen folgt dem Raster; auch über dem ersten eingeblendeten Nicht-Favoriten */
+body[data-fl-variant] .sf-row + .sf-row::before,
+body[data-fl-variant] .sf-row.sf-row--rest-first::before {
+    left: var(--fl-sep-inset) !important;
+    right: var(--fl-sep-inset-r);
+    background: var(--fl-line) !important;
+}
+/* Funk-Zeichen sitzt auf dem Kartengrund */
+body[data-fl-variant] .sf-ico .sf-radio-badge {
+    background: var(--fl-card-bg);
+}
+/* Karte: iPhone-Rundungs-Fix der Rollladen-Karte bleibt erhalten */
+body[data-fl-variant] .sf-group.aura-fl-card {
+    isolation: isolate;
+    transform: translateZ(0);
+}
+/* Pfeiltasten wie abgenommen: nur die Winkel in Textfarbe, ohne Fläche (ShutterRow.css). */
+
+/* Status-Symbol: grüne Fläche; meldet ein Fühler der Zeile eine Warnung, gelb, bei einer Störung rot */
+body[data-fl-variant] .sf-ico.is-status {
+    background: var(--sf-ico-status, var(--accent-green, #34c759));
+}
+body[data-fl-variant] .sf-status-row:has(.aura-fl-statusprobe[data-level='warn']) .sf-ico.is-status {
+    background: var(--fl-warn);
+}
+body[data-fl-variant] .sf-status-row:has(.aura-fl-statusprobe[data-level='crit']) .sf-ico.is-status {
+    background: var(--fl-crit);
+}
+/* Rollladen-Symbol mit dünnerem Strich, damit es nicht so wuchtig wirkt */
+body[data-fl-variant] .sf-kind-svg {
+    stroke-width: 1.7;
+}
+body[data-fl-variant] .sf-kind-svg .sf-kind-curtain path {
+    stroke-width: 1.6;
+}
+
+/* ── Unterseiten (Zeitplan, Einstellungen, Szenen, Editoren, Status) ──── */
+body[data-fl-variant] .pp-page .pw-gh,
+body[data-fl-variant] .pp-page .rpp-caption-text {
+    font-size: var(--fl-font-section);
+    font-weight: var(--fl-weight-section);
+    text-transform: var(--fl-case-section);
+    letter-spacing: var(--fl-track-section);
+    color: var(--fl-color-section);
+}
+body[data-fl-variant] .pp-page .pw-gh {
+    padding: var(--fl-head-top) var(--fl-title-pad-x) var(--fl-gap-title);
+}
+body[data-fl-variant] .pp-page .pw-home > .pw-gh:first-child,
+body[data-fl-variant] .pp-page .aura-fl-status-page > .aura-fl-section:first-child > .aura-fl-section-head {
+    padding-top: 8px;
+}
+body[data-fl-variant] .pp-page .rpp-caption {
+    padding-left: var(--fl-title-pad-x);
+    padding-right: var(--fl-title-pad-x);
+}
+body[data-fl-variant] .pp-page .rpp-label {
+    font-size: var(--fl-font-label);
+    font-weight: var(--fl-weight-label);
+    text-transform: var(--fl-case-label);
+}
+body[data-fl-variant] .pp-page .pw-title,
+body[data-fl-variant] .pp-page .rpp-title {
+    font-size: var(--fl-font-title);
+    font-weight: var(--fl-weight-title);
+    line-height: var(--fl-lh-title);
+}
+body[data-fl-variant] .pp-page .pw-sub,
+body[data-fl-variant] .pp-page .rpp-sub {
+    font-size: var(--fl-font-sub);
+    line-height: var(--fl-lh-sub);
+}
+body[data-fl-variant] .pp-page .pw-gf {
+    font-size: var(--fl-font-foot);
+    color: var(--fl-color-foot);
+    padding: 8px var(--fl-title-pad-x) 0;
+}
+body[data-fl-variant] .pp-page .rpp-hint {
+    font-size: var(--fl-font-foot);
+}
+/* gleiche Zeile wie .aura-fl-row: Höhe, Einzug und Rand oben/unten aus dem Raster */
+body[data-fl-variant] .pp-page .pw-row {
+    min-height: var(--fl-row-min-h);
+    padding: 6px 16px;
+}
+body[data-fl-variant] .pp-page .pw-group,
+body[data-fl-variant] .pp-page .rpp-card,
+body[data-fl-variant] .pp-page .rpp-section:not(.rpp-section--flush) {
+    background: var(--fl-card-bg);
+    border-radius: var(--fl-card-radius);
+    box-shadow: var(--fl-card-shadow);
+}
+body[data-fl-variant] .pp-page .pw-sq {
+    width: var(--fl-icon-size);
+    height: var(--fl-icon-size);
+    border-radius: var(--fl-icon-radius);
+}
+body[data-fl-variant] .pp-page .pw-sq > svg {
+    transform: scale(var(--fl-icon-glyph));
+}
+body[data-fl-variant] .pp-page .pw-row + .pw-row::before {
+    left: 16px;
+    right: var(--fl-sep-inset-r);
+    background: var(--fl-line);
+}
+body[data-fl-variant] .pp-page .pw-row + .pw-row:has(> .pw-sq, > .pw-add-ico)::before {
+    left: var(--fl-sep-inset);
+}
+body[data-fl-variant] .pp-page .pw-add-ico {
+    width: var(--fl-icon-size);
+}
+/* Szenen-Kacheln: Rundung passend zur Karte */
+body[data-fl-variant] .pp-page .pw-tile {
+    border-radius: max(14px, var(--fl-card-radius));
+}
+
+/* Status-Unterseite: zwei Blöcke mit Titel, Karte und Begleittext */
+body[data-fl-variant] .aura-fl-status-page {
+    padding-bottom: 12px;
+}
+
+/* ── Feinregler (Pop-up von unten) ────────────────────────────────────── */
+body[data-fl-variant] .sds .sds-sub {
+    font-size: var(--fl-font-sub);
+}
+
+/* ── Ziel-Pop-up im Szenen-Editor: Tasten „−" und „+" für jeden ganzen Prozentwert ── */
+body[data-fl-variant] .sds .sds-valrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+body[data-fl-variant] .sds .sds-valrow .sds-val {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+body[data-fl-variant] .sds .sds-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: 18px;
+    background: transparent;
+    color: var(--sf-sub);
+    font: inherit;
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: color 0.15s, transform 0.09s, opacity 0.15s;
+}
+body[data-fl-variant] .sds .sds-step:active:not(:disabled) {
+    transform: scale(0.9);
+    color: var(--sf-accent);
+}
+body[data-fl-variant] .sds .sds-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+body[data-fl-variant] .sds .sds-slot--steps {
+    gap: 0;
+}
+body[data-fl-variant] .sds .sds-col--slat .sds-word {
+    overflow: visible;
+}
+
+/* ── Szenen-Editor: Zähler-Zeile bündig mit den Abschnittstiteln, Knopf rutscht bei Platzmangel darunter ── */
+body[data-fl-variant] .pp-page .rpp-scene-head {
+    padding: 0 var(--fl-title-pad-x);
+}
+body[data-fl-variant] .pp-page .rpp-scene-head .rpp-section-head {
+    flex-wrap: wrap;
+}
+body[data-fl-variant] .pp-page .rpp-scene-head .rpp-label {
+    white-space: nowrap;
+}
+
+/* Schalterzeile: Erklärtext unter der Überschrift, volle Breite (SwitchRow in editors.tsx) */
+body[data-fl-variant] .pp-page .rpp-switch-sub {
+    display: block;
+}
+body[data-fl-variant] .pp-page .rpp-quiet-line {
+    display: block;
+}
+body[data-fl-variant] .pp-page .rpp-quiet-line + .rpp-quiet-line {
+    margin-top: 2px;
+}
+/* Hervorhebungen in Hinweistexten: halbfett im selben Grau, nie Schwarz (Sascha 12.11.2026) */
+body[data-fl-variant] .pp-page .rpp-quiet-line b,
+body[data-fl-variant] .pp-page .rpp-hint b,
+body[data-fl-variant] .pp-page .rpp-sub b {
+    font-weight: 600;
+    color: inherit;
+}
+
+/* Schnellauswahl der Tage: grau, blau nur wenn die Auswahl genau passt */
+body[data-fl-variant] .pp-page .rpp-preset {
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .pp-page .rpp-preset.is-active {
+    color: var(--rpp-accent);
+}
+
+/* Feder im Zeitplan: gefüllt = alle fahren leise, Umriss = ein Teil */
+body[data-fl-variant] .pp-page .pw-feder {
+    display: inline-flex;
+    flex-shrink: 0;
+    vertical-align: -2px;
+    margin-left: 6px;
+    color: var(--text-secondary);
+}
+body[data-fl-variant] .pp-page .pw-title--mark .pw-feder {
+    margin-left: 0;
+}
+body[data-fl-variant] .pp-page .pw-feder.is-all svg {
+    fill: currentColor;
+    fill-opacity: 0.85;
+}

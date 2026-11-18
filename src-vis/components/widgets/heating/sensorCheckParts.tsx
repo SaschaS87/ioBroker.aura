@@ -2,17 +2,20 @@
  * Gemeinsame Bausteine der Klappbox „Aussenfuehler-Check": Farben, Tooltip, Achsen-Helfer und der Rahmen mit
  * Perioden-Navigation, Lade- und Leerzustand.
  *
- * ECharts zeichnet in ein Canvas: Farben sind darum feste Hex-/rgba-Werte
- * (CSS-Variablen loest das Canvas nicht auf). Die Achsenfarben entsprechen
- * HeatingDetails/EChartWidget (#888 / #444 / #333).
+ * ECharts zeichnet in ein Canvas: Reihenfarben sind darum feste Hex-/rgba-Werte
+ * (CSS-Variablen loest das Canvas nicht auf). Achsen, Gitter und Beschriftung folgen seit 14.11.2026 dem
+ * Theme (useChartInk, Rueckfall #888 / #444 / #333); die Diagramme bekommen sie als `ink` uebergeben.
  */
-import { useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { BarChart2, Loader } from 'lucide-react';
 import { ChartPeriodNav } from '../ChartPeriodNav';
+import { HeizungPeriodNav } from './HeizungPeriodNav';
 import { formatNum } from '../../../utils/formatValue';
 import type { PeriodMode } from '../../../utils/chartPeriod';
 import { niceRange, type Grid } from '../../../utils/sensorCheck';
 import { useSensorCheckData, type SensorCheckDps, type SensorCheckModel } from './sensorCheckModel';
+import { useChartInk, type ChartInk } from './chartInk';
+import { HzDetailFrame, useHzSubpage, type HzStat } from './HzSubpage';
 
 export const C = {
     fuehler: '#e8873a',
@@ -38,8 +41,8 @@ export interface SensorCheckProps {
     dps: SensorCheckDps;
 }
 
-export const axisLabel = { color: C.axis, fontSize: 10 };
-export const axisLineStyle = { show: true, lineStyle: { color: C.axisLine } };
+export const axisLabelOf = (ink: ChartInk) => ({ color: ink.axis, fontSize: 10 });
+export const axisLineOf = (ink: ChartInk) => ({ show: true, lineStyle: { color: ink.axisLine } });
 
 export const tooltipBase = {
     backgroundColor: 'var(--app-surface, #1e1e1e)',
@@ -129,10 +132,10 @@ export function axisTooltip(m: SensorCheckModel, mode: PeriodMode) {
 
 export type LegendItem = { label: string; color: string; kind?: 'line' | 'thick' | 'dash' | 'area' | 'dot' };
 
-export function Legend({ items }: { items: LegendItem[] }) {
+export function Legend({ items, center }: { items: LegendItem[]; center?: boolean }) {
     return (
         <div
-            className="flex flex-wrap items-center"
+            className={`flex flex-wrap items-center${center ? ' justify-center' : ''}`}
             style={{ gap: '3px 10px', fontSize: 10, color: 'var(--text-secondary)' }}
         >
             {items.map((it) => (
@@ -180,16 +183,26 @@ export function SensorFrame({
     props: SensorCheckProps;
     height: number;
     legend: LegendItem[];
-    chart: (m: SensorCheckModel, mode: PeriodMode, offset: number) => ReactNode;
-    below?: (m: SensorCheckModel, mode: PeriodMode, offset: number) => ReactNode;
+    chart: (m: SensorCheckModel, mode: PeriodMode, offset: number, ink: ChartInk) => ReactNode;
+    below?: (m: SensorCheckModel, mode: PeriodMode, offset: number, ink: ChartInk) => ReactNode;
 }) {
     const [mode, setMode] = useState<PeriodMode>('day');
     const [offset, setOffset] = useState(0);
     const m = useSensorCheckData(mode, offset, props.historyInstance, props.dps);
-    const body = m.hasData ? chart(m, mode, offset) : null;
+    const inkRef = useRef<HTMLDivElement>(null);
+    const ink = useChartInk(inkRef);
+    const body = m.hasData ? chart(m, mode, offset, ink) : null;
+    const sub = useHzSubpage();
+    // Auf einer Unterseite: Zeitraum-Wahl in zwei Zeilen
+    const PeriodNav = sub ? HeizungPeriodNav : ChartPeriodNav;
+    const stats = useMemo(() => (sub && m.hasData ? sensorStats(m) : null), [sub, m]);
     return (
-        <div className="flex flex-col gap-2 w-full">
-            <ChartPeriodNav
+        <HzDetailFrame
+            innerRef={inkRef}
+            stats={stats}
+            after={m.hasData && below ? below(m, mode, offset, ink) : null}
+            nav={
+                <PeriodNav
                 mode={mode}
                 offset={offset}
                 onMode={(x) => {
@@ -198,7 +211,10 @@ export function SensorFrame({
                 }}
                 onOffset={setOffset}
             />
-            <Legend items={legend} />
+            }
+        >
+            {/* Facelift: Legende unter dem Diagramm wie bei den anderen Auswertungen (Sascha, 14.11.2026) */}
+            {!sub && <Legend items={legend} />}
             <div className="relative w-full" style={{ height }}>
                 {m.loading && !m.hasData && (
                     <div
@@ -219,7 +235,43 @@ export function SensorFrame({
                 )}
                 {body}
             </div>
-            {m.hasData && below ? below(m, mode, offset) : null}
-        </div>
+            {sub && <Legend items={legend} center />}
+        </HzDetailFrame>
     );
+}
+
+/** Kennzahlen der Unterseite (Facelift): Abweichung im Mittel und am größten, aus den Abschnitten des Modells. */
+function sensorStats(m: SensorCheckModel): HzStat[] {
+    let sum = 0;
+    let n = 0;
+    let big: number | null = null;
+    let bigI = -1;
+    for (let i = 0; i < m.count; i++) {
+        const d = m.abweichung[i];
+        if (typeof d !== 'number') continue;
+        sum += d;
+        n++;
+        if (big === null || Math.abs(d) > Math.abs(big)) {
+            big = d;
+            bigI = i;
+        }
+    }
+    const col = (v: number | null) => (v === null ? undefined : v >= 0 ? C.plus : C.minus);
+    const mean = n ? sum / n : null;
+    const word = (v: number | null) => (v === null ? undefined : v >= 0 ? 'Fühler zu warm' : 'Fühler zu kalt');
+    const at = bigI >= 0 ? new Date(m.start + bigI * m.stepMs) : null;
+    const atText =
+        at &&
+        (m.end - m.start <= 90_000_000
+            ? `um ${at.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
+            : `am ${at.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`);
+    return [
+        { label: 'Abweichung im Mittel', value: mean === null ? '–' : `${signed(mean)} K`, sub: word(mean), color: col(mean) },
+        {
+            label: 'Größte Abweichung',
+            value: big === null ? '–' : `${signed(big)} K`,
+            sub: atText ? `${word(big)}, ${atText}` : undefined,
+            color: col(big),
+        },
+    ];
 }

@@ -9,13 +9,21 @@
 // tahoma.1.* aufgerufen wird — es wird nur protokolliert, was JETZT SO
 // passieren wuerde.
 //
-// Leise fahren (Durchgang 3, C1-C3): ein PlanEntry kann quiet:true tragen
-// (siehe planModel.ts/Frontend-Editor "Leise fahren"). Ist das Zielgeraet
-// eines von 10 leisefaehigen Rollläden (GERAETE.*.slowPosDp gesetzt), faehrt
-// die Position dann auf den slow-Zieldatenpunkt (core:TargetClosureState:
-// slow) statt auf den normalen posDp - an der Lamelle aendert sich dabei
-// nichts. quiet gilt NUR fuer den Minutentakt (Wochenplan), Sofort-Befehle
-// fahren immer normal.
+// Leise fahren (Durchgang 3, C1-C3; Szenen-Ziele ab Version 0.4.0): Ein Rollladen faehrt leise,
+// wenn (PlanEntry quiet:true ODER Szenen-Ziel quiet:true) UND das Geraet einen slowPosDp hat
+// (GERAETE.*.slowPosDp gesetzt, "leise gewinnt", Entscheidung Sascha 11.11.2026). Die Position
+// faehrt dann auf den slow-Zieldatenpunkt (core:TargetClosureState:slow) statt auf den normalen
+// posDp - an der Lamelle aendert sich dabei nichts. PlanEntry-quiet gilt NUR im Minutentakt
+// (Wochenplan); Szenen-quiet gilt immer, auch beim Sofort-Befehl der Szene.
+//
+// Mehrere Ziele je Zeitpunkt (Wochenplan): Ein Eintrag hat ein Feld `target` (genau ein Ziel, alte
+// Form) ODER `targets` (Liste, mindestens eins). Die App speichert 1 Ziel weiter als `target`, ab 2
+// Zielen nur als `targets` - so ueberspringt ein aelterer Skriptstand solche Eintraege ganz, statt sie
+// halb zu fahren. Aufloeseregel (wie planModel.ts::resolveTargets, siehe zieleAusEintrag): Ziele in
+// Listenreihenfolge, jeder Rollladen genau einmal; ein Einzel-Ziel schlaegt jede Szene, bei zwei
+// Einzel-Zielen gewinnt das untere, bei Szenen untereinander die untere. Leise kommt vom gewinnenden
+// Ziel (Eintrag quiet ODER gewinnendes Szenen-Ziel quiet). Ein Abbruch ({"abort":"<sceneId>"}) trifft
+// den ganzen Lauf eines Zeitpunkts, der diese Szene enthaelt. Freiwilliger Name: Feld `name`.
 //
 // Sofort-Befehl und Abbruch (Feature 30, Phase 2, Version 0.3.0): `${ROOT}.Befehl` versteht
 //   - {"sceneId": "..."} bzw. ein reiner String = Szene sofort fahren (wie bisher)
@@ -92,7 +100,7 @@
 
 const ROOT = '0_userdata.0.Rollladen_Dev';
 const TROCKENLAUF = true;
-const VERSION = '0.3.0-dev';
+const VERSION = '0.4.0-dev';
 // Nur bei TROCKENLAUF === true wirksam: so lange "faehrt" ein Geraet zum Schein (Abbruch-Pruefung alle
 // 250 ms). Raffstore mit Lamelle: dieselbe Zeit noch einmal fuer die Lamelle. Im Dev-Betrieb dauert die
 // Bestaetigung eines Szenen-Befehls bei Raffstore-Szenen dadurch ueber 5 s - "Skript antwortet nicht"
@@ -201,14 +209,16 @@ let status = {
 };
 
 // ── Laeufe (Abbruch, Feature 30 Phase 2) ──────────────────────────────────
-// Jeder Fahrauftrag (fuehreAus) legt einen Lauf an. sceneId = die Szene (null bei einem Plan-Eintrag
-// mit einzelnem Geraet), quelle = 'plan' oder 'befehl'. Reine Funktionen, ohne ioBroker-Globals.
+// Jeder Fahrauftrag (fuehreZieleAus) legt einen Lauf an. sceneIds = alle Szenen des Laufs (leer bei einem
+// Plan-Eintrag nur mit Einzelgeraeten), sceneId = die erste davon (oder null), quelle = 'plan' oder
+// 'befehl'. Reine Funktionen, ohne ioBroker-Globals.
 
 let laufNr = 0;
 const laeufe = new Map();
 
-function neuerLauf(sceneId, quelle) {
-    const lauf = { nr: ++laufNr, sceneId: sceneId || null, abgebrochen: false, quelle: quelle || 'plan' };
+function neuerLauf(szenen, quelle) {
+    const ids = Array.isArray(szenen) ? szenen : szenen ? [szenen] : [];
+    const lauf = { nr: ++laufNr, sceneId: ids[0] || null, sceneIds: ids, abgebrochen: false, quelle: quelle || 'plan' };
     laeufe.set(lauf.nr, lauf);
     return lauf;
 }
@@ -221,11 +231,11 @@ function abgebrochen(lauf) {
     return !!lauf && lauf.abgebrochen === true;
 }
 
-// Markiert alle laufenden Laeufe der Szene als abgebrochen; liefert die getroffenen Laeufe.
+// Markiert alle laufenden Laeufe, die diese Szene enthalten (den ganzen Lauf), als abgebrochen; liefert die getroffenen Laeufe.
 function laeufeAbbrechen(sceneId) {
     const getroffen = [];
     for (const lauf of laeufe.values()) {
-        if (lauf.sceneId === sceneId && !lauf.abgebrochen) {
+        if (lauf.sceneIds.includes(sceneId) && !lauf.abgebrochen) {
             lauf.abgebrochen = true;
             getroffen.push(lauf);
         }
@@ -414,6 +424,7 @@ function zuSzenenZiel(v) {
     if (!istObjekt(v) || typeof v.key !== 'string' || typeof v.closed !== 'number') return null;
     const out = { key: v.key, closed: v.closed };
     if (typeof v.slat === 'number') out.slat = v.slat;
+    if (v.quiet === true) out.quiet = true;
     return out;
 }
 
@@ -456,14 +467,24 @@ function zuPlanZiel(v) {
     return null;
 }
 
+function zuPlanZiele(v) {
+    if (Array.isArray(v.targets)) {
+        const liste = v.targets.map(zuPlanZiel).filter((t) => t !== null);
+        return liste.length ? liste : null;
+    }
+    const t = zuPlanZiel(v.target);
+    return t ? [t] : null;
+}
+
 function zuPlanEintrag(v) {
     if (!istObjekt(v) || typeof v.id !== 'string' || typeof v.enabled !== 'boolean') return null;
     if (!Array.isArray(v.days) || v.days.length !== 7 || !v.days.every((d) => typeof d === 'boolean')) return null;
     const trigger = zuTrigger(v.trigger);
-    const target = zuPlanZiel(v.target);
-    if (!trigger || !target) return null;
-    const out = { id: v.id, days: v.days, trigger, target, enabled: v.enabled };
+    const targets = zuPlanZiele(v);
+    if (!trigger || !targets) return null;
+    const out = { id: v.id, days: v.days, trigger, targets, enabled: v.enabled };
     if (v.quiet === true) out.quiet = true;
+    if (typeof v.name === 'string' && v.name.trim()) out.name = v.name.trim();
     return out;
 }
 
@@ -603,7 +624,7 @@ function naechsteFahrtenAktualisieren() {
     if (settings.master && settings.pausedTodayDate !== heuteStr) {
         heuteListe = vorkommenAmTag(heute, 0)
             .filter((o) => o.min > nowMin)
-            .map((o) => ({ datum: heuteStr, uhrzeit: hhmm(o.min), geklemmt: o.geklemmt, eintragId: o.eintrag.id, ziel: zielBeschreibung(o.eintrag.target) }));
+            .map((o) => ({ datum: heuteStr, uhrzeit: hhmm(o.min), geklemmt: o.geklemmt, eintragId: o.eintrag.id, ziel: zielBeschreibungEintrag(o.eintrag) }));
     }
 
     const naechste3 = [];
@@ -612,7 +633,7 @@ function naechsteFahrtenAktualisieren() {
             const d = addTage(heute, i);
             for (const o of vorkommenAmTag(d, i)) {
                 if (naechste3.length >= 3) break;
-                naechste3.push({ datum: datumStr(d), uhrzeit: hhmm(o.min), geklemmt: o.geklemmt, eintragId: o.eintrag.id, ziel: zielBeschreibung(o.eintrag.target) });
+                naechste3.push({ datum: datumStr(d), uhrzeit: hhmm(o.min), geklemmt: o.geklemmt, eintragId: o.eintrag.id, ziel: zielBeschreibungEintrag(o.eintrag) });
             }
         }
     }
@@ -630,7 +651,38 @@ function zieleAusTarget(target, quiet) {
     if (target.kind === 'device') return [{ key: target.key, closed: target.closed, quiet: q }];
     const scene = scenes.find((s) => s.id === target.sceneId);
     if (!scene) return [];
-    return scene.targets.map((t) => ({ key: t.key, closed: t.closed, slat: t.slat, quiet: q }));
+    // "leise gewinnt": Plan-Eintrag ODER Szenen-Ziel leise (Wirkung erst mit slowPosDp, siehe fahreEinzelgeraet)
+    return scene.targets.map((t) => ({ key: t.key, closed: t.closed, slat: t.slat, quiet: q || t.quiet === true }));
+}
+
+// Ganzer Plan-Eintrag, gleiche Regel wie planModel.ts::resolveTargets ("Einzeln schlaegt Szene"):
+// Szenen in Listenreihenfolge, untere ueberschreibt obere; Einzel-Ziel gewinnt immer, bei zwei Einzel-Zielen
+// das untere; fehlende Szene wird uebergangen. Leise = Eintrag quiet ODER gewinnendes Szenen-Ziel quiet
+// (wirksam erst mit slowPosDp, siehe fahreEinzelgeraet). Jeder Rollladen genau einmal.
+function zieleAusEintrag(eintrag) {
+    const q = eintrag.quiet === true;
+    const reihe = [];
+    const ausSzene = new Map();
+    const einzeln = new Map();
+    const merke = (k) => { if (!reihe.includes(k)) reihe.push(k); };
+    eintrag.targets.forEach((t, i) => {
+        if (t.kind === 'device') { merke(t.key); einzeln.set(t.key, { key: t.key, closed: t.closed, quiet: q, von: i }); return; }
+        const s = scenes.find((x) => x.id === t.sceneId);
+        if (!s) return;
+        for (const st of s.targets) { merke(st.key); ausSzene.set(st.key, { key: st.key, closed: st.closed, slat: st.slat, quiet: q || st.quiet === true, von: i }); }
+    });
+    return reihe.map((k) => einzeln.get(k) || ausSzene.get(k));
+}
+
+function szenenVonEintrag(eintrag) {
+    return eintrag.targets.filter((t) => t.kind === 'scene').map((t) => t.sceneId);
+}
+
+function zielBeschreibungEintrag(eintrag) {
+    if (eintrag.name) return `"${eintrag.name}"`;
+    const erstes = zielBeschreibung(eintrag.targets[0]);
+    const n = eintrag.targets.length - 1;
+    return n === 0 ? erstes : `${erstes} + ${n} ${n === 1 ? 'weiteres' : 'weitere'}`;
 }
 
 async function wartenAufStillstand(geraet, timeoutMs, lauf) {
@@ -806,12 +858,12 @@ function letzte30Hinzufuegen(eintrag) {
 }
 
 // quelle: 'plan' (Minutentakt) oder 'befehl' (Sofort-Befehl); nur fuer den Lauf-Eintrag und das Log.
-async function fuehreAus(auslöser, target, callback, quiet = false, quelle = 'plan') {
-    const lauf = neuerLauf(target.kind === 'scene' ? target.sceneId : null, quelle);
+async function fuehreZieleAus(auslöser, szenen, zieleFn, callback, quelle) {
+    const lauf = neuerLauf(szenen, quelle);
     try {
-        const ziele = zieleAusTarget(target, quiet);
+        const ziele = zieleFn();
         if (!ziele.length) {
-            const eintrag = { zeit: isoJetzt(), auslöser, ziele: [], hinweis: 'Keine Ziel-Geräte (Szene leer oder unbekannt)', trockenlauf: TROCKENLAUF };
+            const eintrag = { zeit: isoJetzt(), auslöser, ziele: [], hinweis: 'Keine Ziel-Geräte (Szenen leer oder unbekannt)', trockenlauf: TROCKENLAUF };
             if (abgebrochen(lauf)) eintrag.abgebrochen = true;
             letzte30Hinzufuegen(eintrag);
             statusSchreiben();
@@ -828,6 +880,15 @@ async function fuehreAus(auslöser, target, callback, quiet = false, quelle = 'p
     } finally {
         laufBeenden(lauf);
     }
+}
+
+function fuehreAus(auslöser, target, callback, quiet = false, quelle = 'plan') {
+    return fuehreZieleAus(auslöser, target.kind === 'scene' ? [target.sceneId] : [], () => zieleAusTarget(target, quiet), callback, quelle);
+}
+
+// Ein ganzer Plan-Eintrag (ein oder mehrere Ziele), siehe zieleAusEintrag.
+function fuehreEintragAus(eintrag, callback) {
+    return fuehreZieleAus(`Plan ${eintrag.id} → ${zielBeschreibungEintrag(eintrag)}`, szenenVonEintrag(eintrag), () => zieleAusEintrag(eintrag), callback, 'plan');
 }
 
 // ── Minuetlicher Takt (Punkt 5) ────────────────────────────────────────────
@@ -855,7 +916,7 @@ function minuetlicherTakt() {
         if (heuteAusgefuehrt[merkerId]) continue;
         heuteAusgefuehrt[merkerId] = true;
 
-        fuehreAus(`Plan ${entry.id} → ${zielBeschreibung(entry.target)}`, entry.target, () => naechsteFahrtenAktualisieren(), entry.quiet === true);
+        fuehreEintragAus(entry, () => naechsteFahrtenAktualisieren());
     }
 }
 
@@ -894,6 +955,7 @@ function sofortBefehl(obj) {
         return;
     }
 
+    // quiet=false gilt nur fuer den Plan-Eintrag; leise Szenen-Ziele kommen ueber zieleAusTarget (Szenen-quiet gilt auch hier)
     fuehreAus(`Sofort-Befehl → Szene "${befehl.sceneId}"`, { kind: 'scene', sceneId: befehl.sceneId }, () => {
         // Nur bestaetigen, wenn .Befehl noch diesen Wert traegt: ein Abbruch dazwischen steht dort mit
         // ack:true und darf nicht von der spaeten Bestaetigung der Szene ueberschrieben werden.

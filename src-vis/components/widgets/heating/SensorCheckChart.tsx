@@ -15,8 +15,8 @@ import {
     C as COL,
     STATION_COLORS,
     SensorFrame,
-    axisLabel,
-    axisLineStyle,
+    axisLabelOf,
+    axisLineOf,
     axisTooltip,
     legendFor,
     devAxis,
@@ -26,6 +26,8 @@ import {
     tooltipBase,
     toKlx,
 } from './sensorCheckParts';
+import type { ChartInk } from './chartInk';
+import { HzSection, useHzSubpage } from './HzSubpage';
 
 type Opt = Record<string, unknown>;
 
@@ -54,17 +56,17 @@ const luxSeries = (m: SensorCheckModel, xAxisIndex: number, yAxisIndex: number):
     z: 1,
 });
 
-const timeAxis = (m: SensorCheckModel, gridIndex: number, showLabels: boolean): Opt => ({
+const timeAxis = (m: SensorCheckModel, gridIndex: number, showLabels: boolean, ink: ChartInk): Opt => ({
     type: 'time',
     gridIndex,
     min: m.start,
     max: m.end,
-    axisLabel: showLabels ? axisLabel : { show: false },
-    axisLine: axisLineStyle,
+    axisLabel: showLabels ? axisLabelOf(ink) : { show: false },
+    axisLine: axisLineOf(ink),
     splitLine: { show: false },
 });
 
-const tempY = (m: SensorCheckModel, gridIndex: number): Opt => {
+const tempY = (m: SensorCheckModel, gridIndex: number, ink: ChartInk): Opt => {
     const a = tempAxis(m);
     return {
         type: 'value',
@@ -72,13 +74,13 @@ const tempY = (m: SensorCheckModel, gridIndex: number): Opt => {
         min: a.min,
         max: a.max,
         interval: a.interval,
-        axisLabel: { ...axisLabel, formatter: '{value}°' },
-        axisLine: axisLineStyle,
-        splitLine: { show: true, lineStyle: { color: COL.grid } },
+        axisLabel: { ...axisLabelOf(ink), formatter: '{value}°' },
+        axisLine: axisLineOf(ink),
+        splitLine: { show: true, lineStyle: { color: ink.grid } },
     };
 };
 
-const luxY = (m: SensorCheckModel, gridIndex: number): Opt => {
+const luxY = (m: SensorCheckModel, gridIndex: number, ink: ChartInk): Opt => {
     const a = luxAxis(m.lux);
     return {
         type: 'value',
@@ -87,8 +89,8 @@ const luxY = (m: SensorCheckModel, gridIndex: number): Opt => {
         min: a.min,
         max: a.max,
         interval: a.interval,
-        axisLabel: { ...axisLabel, formatter: '{value}k' },
-        axisLine: axisLineStyle,
+        axisLabel: { ...axisLabelOf(ink), formatter: '{value}k' },
+        axisLine: axisLineOf(ink),
         splitLine: { show: false },
     };
 };
@@ -104,7 +106,7 @@ function tempLines(m: SensorCheckModel, yAxisIndex: number, xAxisIndex: number):
 
 /* ── Streifen: Linien oben, Abweichung unten ─────────────────────────────────────────────────── */
 
-function stripsOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
+function stripsOption(m: SensorCheckModel, mode: PeriodMode, ink: ChartInk): EChartsOption {
     const da = devAxis(m.abweichung);
     const bars = gridToSeries(m.abweichung, m.start, m.stepMs).map(([t, v]) =>
         v === null ? [t, null] : { value: [t, v], itemStyle: { color: v >= 0 ? COL.plus : COL.minus } },
@@ -116,19 +118,19 @@ function stripsOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
             { left: 40, right: 40, top: 6, height: 165 },
             { left: 40, right: 40, top: 186, height: 66 },
         ],
-        xAxis: [timeAxis(m, 0, false), timeAxis(m, 1, true)],
+        xAxis: [timeAxis(m, 0, false, ink), timeAxis(m, 1, true, ink)],
         yAxis: [
-            tempY(m, 0),
-            luxY(m, 0),
+            tempY(m, 0, ink),
+            luxY(m, 0, ink),
             {
                 type: 'value',
                 gridIndex: 1,
                 min: da.min,
                 max: da.max,
                 interval: da.interval,
-                axisLabel: { ...axisLabel, formatter: (v: number) => `${v > 0 ? '+' : ''}${v} K` },
-                axisLine: axisLineStyle,
-                splitLine: { show: true, lineStyle: { color: COL.grid } },
+                axisLabel: { ...axisLabelOf(ink), formatter: (v: number) => `${v > 0 ? '+' : ''}${v} K` },
+                axisLine: axisLineOf(ink),
+                splitLine: { show: true, lineStyle: { color: ink.grid } },
             },
         ],
         tooltip: axisTooltip(m, mode),
@@ -146,7 +148,7 @@ function stripsOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
                     silent: true,
                     symbol: 'none',
                     label: { show: false },
-                    lineStyle: { color: COL.axis, width: 1, type: 'solid' },
+                    lineStyle: { color: ink.zero, width: 1, type: 'solid' },
                     data: [{ yAxis: 0 }],
                 },
             },
@@ -154,8 +156,9 @@ function stripsOption(m: SensorCheckModel, mode: PeriodMode): EChartsOption {
     } as unknown as EChartsOption;
 }
 
-function StripsChart({ m, mode }: { m: SensorCheckModel; mode: PeriodMode }) {
-    const option = useMemo(() => stripsOption(m, mode), [m, mode]);
+function StripsChart({ m, mode, ink }: { m: SensorCheckModel; mode: PeriodMode; ink: ChartInk }) {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const option = useMemo(() => stripsOption(m, mode, ink), [m, mode, ink.axis, ink.axisLine, ink.grid, ink.zero]);
     return (
         <ReactECharts
             option={option}
@@ -184,7 +187,7 @@ function scatterPoints(m: SensorCheckModel): ScatterPt[] {
     return out;
 }
 
-function scatterOption(m: SensorCheckModel, mode: PeriodMode, pts: ScatterPt[]): EChartsOption {
+function scatterOption(m: SensorCheckModel, mode: PeriodMode, pts: ScatterPt[], ink: ChartInk): EChartsOption {
     const la = luxAxis(m.lux);
     const da = devAxis(pts.map((p) => p.dev));
     const t = (ts: number) => {
@@ -204,19 +207,19 @@ function scatterOption(m: SensorCheckModel, mode: PeriodMode, pts: ScatterPt[]):
             name: 'Helligkeit (klx)',
             nameLocation: 'middle',
             nameGap: 22,
-            nameTextStyle: { color: COL.axis, fontSize: 10 },
-            axisLabel: { ...axisLabel, formatter: '{value}k' },
-            axisLine: axisLineStyle,
-            splitLine: { show: true, lineStyle: { color: COL.grid } },
+            nameTextStyle: { color: ink.axis, fontSize: 10 },
+            axisLabel: { ...axisLabelOf(ink), formatter: '{value}k' },
+            axisLine: axisLineOf(ink),
+            splitLine: { show: true, lineStyle: { color: ink.grid } },
         },
         yAxis: {
             type: 'value',
             min: da.min,
             max: da.max,
             interval: da.interval,
-            axisLabel: { ...axisLabel, formatter: (v: number) => `${v > 0 ? '+' : ''}${v} K` },
-            axisLine: axisLineStyle,
-            splitLine: { show: true, lineStyle: { color: COL.grid } },
+            axisLabel: { ...axisLabelOf(ink), formatter: (v: number) => `${v > 0 ? '+' : ''}${v} K` },
+            axisLine: axisLineOf(ink),
+            splitLine: { show: true, lineStyle: { color: ink.grid } },
         },
         tooltip: {
             trigger: 'item',
@@ -241,7 +244,7 @@ function scatterOption(m: SensorCheckModel, mode: PeriodMode, pts: ScatterPt[]):
                     silent: true,
                     symbol: 'none',
                     label: { show: false },
-                    lineStyle: { color: COL.axis, width: 1, type: 'solid' },
+                    lineStyle: { color: ink.zero, width: 1, type: 'solid' },
                     data: [{ yAxis: 0 }],
                 },
             },
@@ -249,15 +252,24 @@ function scatterOption(m: SensorCheckModel, mode: PeriodMode, pts: ScatterPt[]):
     } as unknown as EChartsOption;
 }
 
-function ScatterBlock({ m, mode, offset }: { m: SensorCheckModel; mode: PeriodMode; offset: number }) {
+function ScatterBlock({
+    m,
+    mode,
+    offset,
+    ink,
+}: {
+    m: SensorCheckModel;
+    mode: PeriodMode;
+    offset: number;
+    ink: ChartInk;
+}) {
     const pts = useMemo(() => scatterPoints(m), [m]);
-    const option = useMemo(() => scatterOption(m, mode, pts), [m, mode, pts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const option = useMemo(() => scatterOption(m, mode, pts, ink), [m, mode, pts, ink.axis, ink.axisLine, ink.grid, ink.zero]);
     const w = periodWindow(mode, offset);
-    return (
-        <div className="flex flex-col gap-1">
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                {pts.length} Abschnitte mit beiden Werten · {periodLabel(mode, w)}
-            </div>
+    const sub = useHzSubpage();
+    const caption = `${pts.length} Abschnitte mit beiden Werten · ${periodLabel(mode, w)}`;
+    const chart = (
             <div style={{ height: 180 }}>
                 {pts.length > 0 ? (
                     <ReactECharts
@@ -276,6 +288,21 @@ function ScatterBlock({ m, mode, offset }: { m: SensorCheckModel; mode: PeriodMo
                     </div>
                 )}
             </div>
+    );
+    // UI-Facelift: eigener Abschnitt mit Titel, Erklärung als Begleittext darunter
+    if (sub)
+        return (
+            <HzSection
+                title="Helligkeit und Abweichung"
+                foot={`Jeder Punkt ist ein Abschnitt: weiter rechts heller, weiter oben misst der Fühler wärmer als die Stationen. ${caption}.`}
+            >
+                <div className="aura-fl-card hz-detail">{chart}</div>
+            </HzSection>
+        );
+    return (
+        <div className="flex flex-col gap-1">
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{caption}</div>
+            {chart}
         </div>
     );
 }
@@ -301,8 +328,8 @@ export function SensorCheckDetails({
             props={{ historyInstance, dps }}
             height={280}
             legend={legendFor(dps.netatmoDps.length)}
-            chart={(m, mode, offset) => <StripsChart key={`${mode}-${offset}`} m={m} mode={mode} />}
-            below={(m, mode, offset) => <ScatterBlock m={m} mode={mode} offset={offset} />}
+            chart={(m, mode, offset, ink) => <StripsChart key={`${mode}-${offset}`} m={m} mode={mode} ink={ink} />}
+            below={(m, mode, offset, ink) => <ScatterBlock m={m} mode={mode} offset={offset} ink={ink} />}
         />
     );
 }

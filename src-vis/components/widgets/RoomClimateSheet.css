@@ -3,12 +3,11 @@
 .rc-sheet-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    /* Hintergrund: .aura-scrim in index.css */
     display: flex;
     align-items: flex-end;
     justify-content: center;
     z-index: 300;
-    animation: rc-backdrop-in 280ms ease-out;
 }
 
 .rc-sheet {
@@ -24,7 +23,7 @@
     overscroll-behavior: contain;
     padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
     box-sizing: border-box;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+    /* Schatten und Kante: .aura-scrim in index.css */
     animation: rc-sheet-in 280ms ease-out;
 }
 

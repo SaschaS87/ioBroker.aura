@@ -1,6 +1,6 @@
 /**
  * iOS-Baustein (Feature 30): Navigations-Stapel. Seiten liegen in einem Rasterfeld übereinander,
- * die sichtbare schiebt von rechts herein (280 ms ease), verdeckte sind inert und aria-hidden.
+ * die sichtbare schiebt von rechts herein (420 ms, schnell hinein und weich auslaufend), verdeckte sind inert und aria-hidden.
  * sizing 'tallest': alle eingehängten Seiten bestimmen die Höhe (Geräte-Einstellungen, Optik wie Feature 29).
  * sizing 'current': nur die sichtbare Seite (beim Schieben zusätzlich die abgehende), verdeckte display:none.
  * manageScroll: Scrollstelle je Ebene im echten Scroll-Container (.aura-scroll aus Dashboard.tsx, sonst
@@ -28,7 +28,7 @@ export interface IosStackProps {
     rootRef?: Ref<HTMLDivElement>;
 }
 /** Muss zu ios.css (.ios-stack.is-moving) passen. */
-export const IOS_PUSH_MS = 280;
+export const IOS_PUSH_MS = 420;
 type Anim = { from: number; to: number; phase: 'prepare' | 'run'; shift: number; leaving?: IosStackPage };
 /** Mitlaufender Kopf der abgehenden Seite, festgehalten für die Dauer des Übergangs. */
 type Pin = { el: HTMLElement; top: number };

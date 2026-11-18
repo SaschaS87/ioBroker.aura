@@ -697,6 +697,41 @@ input[type='range']::-moz-range-thumb {
     --tab-footer-h: 38px;
 }
 
+/* ── Pop-ups von unten: EINE Quelle fuer die Abgrenzung zum Hintergrund ────
+   Entscheidung Sascha, 10.11.2026: kein dunkler Schleier mehr. Das Pop-up hebt sich durch einen knappen
+   Schlagschatten ab, im dunklen Modus zusaetzlich durch eine helle Kantenlinie. Grund: Die Statusleiste
+   des iPhones zeichnet iOS selbst; sie liess sich nicht ruckelfrei mit abdunkeln.
+   Jedes Pop-up haengt .aura-scrim an sein flaechiges Hintergrund-Element (faengt nur den Tipp daneben).
+   Schatten und Kante stehen nur hier, kein Pop-up setzt eigene Werte (prueft test/scrim.test.js).
+   Je Theme anpassbar: --aura-sheet-shadow, --aura-sheet-edge. */
+:root {
+    --aura-sheet-shadow: 0 -3px 10px rgba(0, 0, 0, 0.16), 0 -1px 2px rgba(0, 0, 0, 0.1);
+    --aura-sheet-edge: transparent;
+    /* Dauer des Herausfahrens; muss zu CLOSE_MS in useSheetDismiss.ts passen */
+    --aura-scrim-ms: 220ms;
+}
+html.dark {
+    --aura-sheet-shadow: 0 -3px 12px rgba(0, 0, 0, 0.5);
+    --aura-sheet-edge: color-mix(in srgb, white 26%, transparent);
+}
+.aura-scrim {
+    background: transparent;
+}
+/* das Fenster selbst: Kante oben, darunter der Schatten */
+.aura-scrim > :not(.ios-as):not(.aura-scrim-card) {
+    box-shadow:
+        0 -1px 0 var(--aura-sheet-edge),
+        var(--aura-sheet-shadow);
+}
+/* Auswahlmenue (IosActionSheet) und mittig schwebende Fenster (.aura-scrim-card, z. B. Datumsauswahl):
+   Kante rundum */
+.aura-scrim .ios-as-card,
+.aura-scrim .aura-scrim-card {
+    box-shadow:
+        0 0 0 1px var(--aura-sheet-edge),
+        0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
 .tab-footer-bar {
     position: absolute;
     left: 0;

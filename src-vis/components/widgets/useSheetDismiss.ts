@@ -13,6 +13,7 @@ const CLOSE_DISTANCE = 90;
 /** Downward flick speed (px/ms) that dismisses regardless of distance. */
 const CLOSE_VELOCITY = 0.5;
 /** Must match the transform transition below so onClose fires after the slide-out. */
+/** Also equals --aura-scrim-ms in index.css (checked by test/scrim.test.js). */
 const CLOSE_MS = 220;
 
 export function useSheetDismiss(onClose: () => void) {
@@ -110,11 +111,13 @@ export function useSheetDismiss(onClose: () => void) {
     const backdropStyle: React.CSSProperties | undefined = closing
         ? { opacity: 0, transition: `opacity ${CLOSE_MS}ms ease-out` }
         : undefined;
+    // Marker am Hintergrund-Element (.aura-scrim), solange das Fenster herausfaehrt.
+    const scrimClosing = closing ? '' : undefined;
 
     const onBackdropClick = (e: React.MouseEvent) => {
         // Close only if the backdrop itself was hit, not the sheet on top of it.
         if (e.target === e.currentTarget) startClose();
     };
 
-    return { sheetStyle, backdropStyle, dragHandlers, onBackdropClick, startClose };
+    return { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose };
 }
