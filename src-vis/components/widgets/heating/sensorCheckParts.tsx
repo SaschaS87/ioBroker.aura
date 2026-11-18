@@ -10,7 +10,6 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { BarChart2, Loader } from 'lucide-react';
 import { ChartPeriodNav } from '../ChartPeriodNav';
 import { HeizungPeriodNav } from './HeizungPeriodNav';
-import { useHeizungDraft } from './heizungDraft';
 import { formatNum } from '../../../utils/formatValue';
 import type { PeriodMode } from '../../../utils/chartPeriod';
 import { niceRange, type Grid } from '../../../utils/sensorCheck';
@@ -193,9 +192,9 @@ export function SensorFrame({
     const inkRef = useRef<HTMLDivElement>(null);
     const ink = useChartInk(inkRef);
     const body = m.hasData ? chart(m, mode, offset, ink) : null;
-    // UI-Facelift (nur Dev-Vorschau, sonst null): Zeitraum-Wahl in zwei Zeilen
-    const PeriodNav = useHeizungDraft() ? HeizungPeriodNav : ChartPeriodNav;
     const sub = useHzSubpage();
+    // Auf einer Unterseite: Zeitraum-Wahl in zwei Zeilen
+    const PeriodNav = sub ? HeizungPeriodNav : ChartPeriodNav;
     const stats = useMemo(() => (sub && m.hasData ? sensorStats(m) : null), [sub, m]);
     return (
         <HzDetailFrame

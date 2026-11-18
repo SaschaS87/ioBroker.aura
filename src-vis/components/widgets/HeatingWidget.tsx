@@ -5,7 +5,6 @@ import { formatNum } from '../../utils/formatValue';
 import { HeatingDetails } from './HeatingDetails';
 import type { EnergyDps } from './heating/energyModel';
 import { HeizungFacelift, type HzBox } from './heating/HeizungFacelift';
-import { useHeizungDraft } from './heating/heizungDraft';
 import type { WidgetProps } from '../../types';
 
 /**
@@ -166,7 +165,6 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
     const o = config.options ?? {};
     const dp = (k: DpKey) => (o[k] as string) || DEFAULT_DP[k];
     const historyInstance = (o.historyInstance as string) || 'influxdb.0';
-    const hzDraft = useHeizungDraft();
     const [openBox, setOpenBox] = useState<'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie' | null>(null);
     const toggleBox = (b: 'heizkreis' | 'betrieb' | 'warmwasser' | 'aussen' | 'energie') => {
         if (editMode) return;
@@ -246,9 +244,9 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
 
     const vlrl = vorlauf !== null && ruecklauf !== null ? `${formatNum(vorlauf, 1)} / ${formatNum(ruecklauf, 1)} °C` : '–';
 
-    // UI-Facelift, Entwurfsphase (nur Dev-Vorschau, sonst null): dieselben Werte und dieselben Auswertungen,
-    // neu angeordnet. Der bisherige Aufbau darunter bleibt unverändert.
-    if (hzDraft && !editMode) {
+    // UI-Facelift: dieselben Werte und dieselben Auswertungen, neu angeordnet. Der bisherige Aufbau darunter
+    // bleibt nur als Ansicht im Admin-Editor (editMode).
+    if (!editMode) {
         const chart = { historyInstance, vorlaufDp: dp('chartVorlaufDp'), ruecklaufDp: dp('chartRuecklaufDp') };
         const details = (b: HzBox) => {
             switch (b) {
@@ -304,7 +302,6 @@ export function HeatingWidget({ config, editMode }: WidgetProps) {
         };
         return (
             <HeizungFacelift
-                draft={hzDraft}
                 details={details}
                 m={{
                     mode,

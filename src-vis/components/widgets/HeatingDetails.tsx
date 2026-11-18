@@ -7,7 +7,6 @@ import { useMultiSeriesData, type EChartSeriesConfig } from '../../hooks/useMult
 import { formatNum } from '../../utils/formatValue';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import { HeizungPeriodNav } from './heating/HeizungPeriodNav';
-import { useHeizungDraft } from './heating/heizungDraft';
 import { periodWindow, type PeriodMode } from '../../utils/chartPeriod';
 import { SensorCheckDetails } from './heating/SensorCheckChart';
 import { EnergyDetails } from './heating/EnergyDetails';
@@ -232,10 +231,10 @@ function HeatingDetailsCharts({
     const { subscribe, getState, connected } = useIoBroker();
     const [mode, setMode] = useState<PeriodMode>(initialMode);
     const [offset, setOffset] = useState(0);
-    // UI-Facelift (nur Dev-Vorschau, sonst null): Zeitraum-Wahl in zwei Zeilen
-    const PeriodNav = useHeizungDraft() ? HeizungPeriodNav : ChartPeriodNav;
     // Unterseite im Facelift (sonst null): Begleittext, Kennzahlen, Variante der Soll-Linie
     const sub = useHzSubpage();
+    // Auf einer Unterseite: Zeitraum-Wahl in zwei Zeilen
+    const PeriodNav = sub ? HeizungPeriodNav : ChartPeriodNav;
     const inkRef = useRef<HTMLDivElement>(null);
     const ink = useChartInk(inkRef);
     // Facelift-Unterseite: Soll türkis, damit sie sich vom hellroten Rücklauf abhebt (Sascha, 14.11.2026)
