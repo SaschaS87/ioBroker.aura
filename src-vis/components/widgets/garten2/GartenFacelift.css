@@ -1,10 +1,10 @@
 /*
- * UI-Facelift, Brücken-Datei der Garten-Seite (Entwurfsphase, nur Dev-Vorschau).
+ * UI-Facelift, Brücken-Datei der Garten-Seite (Entwurf E).
  *
  * Nutzt die gemeinsamen Bausteine aus facelift-blocks.css (aura-fl-section, -card, -row, -foot …) und
  * ergänzt nur, was der Garten eigen hat (Klassen gf-*). Dazu bildet sie die vorhandenen Pop-ups (Termin:
  * garten-sheet*, Regensperre: garten2-sheet*) und den Schalter (garten-sw) auf das Raster ab. Jede Regel
- * hängt an body[data-fl-variant]; ohne das Attribut greift nichts. Farben nur über Theme-Variablen mit
+ * hängt an body[data-fl-variant]; das Attribut setzt main.tsx immer. Farben nur über Theme-Variablen mit
  * Rückfallkette. Seitenrand und Zeilenhöhe kommen aus dem Raster (--fl-page-x, --fl-row-min-h) und werden
  * hier nicht gesetzt.
  *
@@ -879,41 +879,4 @@ body[data-fl-variant] .garten2-sheet .garten-note {
     font-size: var(--fl-font-foot);
     line-height: 1.35;
     opacity: 1;
-}
-
-/* ── Leiste „Zustand zeigen" ─────────────────────────────────────────── */
-/* Nur Dev-Vorschau und kein Teil des Entwurfs, deshalb gelb gestrichelt wie der Entwurfs-Umschalter. */
-body[data-fl-variant] .gf-sim {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-top: var(--fl-gap-title);
-    padding: 3px 4px 3px 10px;
-    border: 1px dashed var(--accent-yellow);
-    border-radius: 12px;
-    font-size: 12px;
-    color: var(--text-secondary);
-}
-body[data-fl-variant] .gf-sim-label {
-    flex: 1;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-body[data-fl-variant] .gf-sim-btn {
-    flex-shrink: 0;
-    min-height: 30px;
-    padding: 0 9px;
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    font: inherit;
-    font-weight: 600;
-    color: var(--text-secondary);
-    -webkit-tap-highlight-color: transparent;
-}
-body[data-fl-variant] .gf-sim-btn[data-sel] {
-    background: color-mix(in srgb, var(--accent-yellow) 45%, transparent);
-    color: var(--text-primary);
 }

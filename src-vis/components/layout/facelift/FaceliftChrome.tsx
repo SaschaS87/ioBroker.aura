@@ -23,7 +23,6 @@ import {
     type FaceliftChoice,
     type FaceliftVariant,
 } from './faceliftVariant';
-import { GARTEN_DRAFTS, useGartenDraftStore } from '../../widgets/garten2/gartenDraft';
 import './facelift.css';
 import './facelift-blocks.css';
 
@@ -61,17 +60,10 @@ export function useFaceliftChoice(): [FaceliftChoice, (c: FaceliftChoice) => voi
 export function FaceliftSwitch({
     choice,
     onChange,
-    tabSlug,
 }: {
     choice: FaceliftChoice;
     onChange: (c: FaceliftChoice) => void;
-    /** Aktive Seite: Auf Wohnklima stehen bei „Neu" zusätzlich die Entwürfe der Seite (Entwurfsphase). */
-    tabSlug?: string | null;
 }) {
-    // Garten, Entwurfsphase: Buchstaben nur auf dem Garten-Tab
-    const gfDraft = useGartenDraftStore((s) => s.draft);
-    const setGfDraft = useGartenDraftStore((s) => s.setDraft);
-    const showGf = tabSlug === 'garten' && choice !== 'IST';
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             <button
@@ -82,23 +74,6 @@ export function FaceliftSwitch({
             >
                 {choice === 'IST' ? 'Ist' : 'Neu'}
             </button>
-            {showGf && (
-                <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Garten-Seite">
-                    {GARTEN_DRAFTS.map((d) => (
-                        <button
-                            key={d.key}
-                            type="button"
-                            className="aura-fl-switch-draft"
-                            data-sel={d.key === gfDraft || undefined}
-                            aria-pressed={d.key === gfDraft}
-                            title={d.name}
-                            onClick={() => setGfDraft(d.key)}
-                        >
-                            {d.label}
-                        </button>
-                    ))}
-                </span>
-            )}
         </div>
     );
 }

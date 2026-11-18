@@ -1,31 +1,18 @@
 /**
- * UI-Facelift, Entwurfsphase Garten (nur Dev-Vorschau, nur bei „Neu" im gelben Umschalter).
+ * UI-Facelift Garten (Entwurf E, Saschas Entscheidung vom 18.11.2026).
  *
- * Vier Entwürfe derselben Seite aus den gemeinsamen Bausteinen (aura-fl-section, -card, -row, -foot):
- *   A  Liste, Kreis als Unterseite   Kreise als Zeilen, ein Tipp schiebt die Seite des Kreises herein
- *   B  Alles auf einer Seite         je Kreis eine Karte mit Modus, Terminen und Handbetrieb
- *   C  Übersicht, Kreis als Pop-up   Kreise mit Bodenfeuchte rechts, ein Tipp öffnet ein Pop-up von unten
- *   D  Nach Aufgabe sortiert         „Von Hand gießen", „Automatik", „Zeitplan" (Unterseite), „Wetter und Boden"
- *   E  Runde 2 (Rückmeldung Sascha vom 17.11.2026): Kreise und Wetter wie C, aber Kreis, Termin und
- *      Einstellungen als Unterseiten wie bei den Rollläden („Sichern" im Kopf, Zurück fragt nach)
- *
- * Für alle gilt seit Runde 2: Die Kopf-Karte ist in Ruhe und bei laufendem Kreis gleich hoch, und auf der
- * Seite eines Kreises steht „Von Hand gießen" vor „Automatik".
+ * Aufbau aus den gemeinsamen Bausteinen (aura-fl-section, -card, -row, -foot): Kopf-Karte (in Ruhe und bei
+ * laufendem Kreis gleich hoch), Bewässerungskreise mit Bodenfeuchte rechts, Wetter, Einstellungen. Kreis,
+ * Termin, Einstellungen (Regensperre) und „Verdunstung und Regen" sind Unterseiten wie bei den Rollläden
+ * („Sichern" im Kopf, Zurück fragt nach). Auf der Seite eines Kreises steht „Von Hand gießen" vor „Automatik".
+ * Die Entwurfs-Varianten A bis D stehen im Vault, Feature 32 „Garten".
  *
  * Daten und Schreibwege sind die der heutigen Seite (Garten2Widget reicht sie herein): Kreise über
- * useSprinkleCircle, Wetter über useSprinkleWeather, Termine über useGartenPlanData. Termin-Pop-up
- * (GartenEventModal) und Regensperre (Garten2SettingsSheet) sind die vorhandenen Bausteine, nur über die
- * Brücken-Datei GartenFacelift.css im neuen Aussehen.
- *
- * Die gelbe Leiste „Zustand" (Echt / Beispiel / Läuft) gehört nicht zum Entwurf: Bei „Beispiel" und „Läuft"
- * werden Termine, Modus, Gießen und Stoppen nur in der Anzeige nachgespielt, nichts geht an den Pi.
+ * useSprinkleCircle, Wetter über useSprinkleWeather, Termine über useGartenPlanData.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import {
     AlertTriangle,
-    CalendarClock,
-    ChevronDown,
     ChevronRight,
     CloudRain,
     Droplets,
@@ -40,7 +27,6 @@ import {
     TrendingUp,
 } from 'lucide-react';
 import type { TimerEvent, TimerWeekday } from '../../../types';
-import { usePortalTarget } from '../../../contexts/PortalTargetContext';
 import { extendObjectDirect, getObjectDirect } from '../../../hooks/useIoBroker';
 import { DateTimeInput } from '../../common/DateTimeInput';
 import {
@@ -53,8 +39,6 @@ import {
     useReportDirty,
     useTabHidden,
 } from '../../common/ios';
-import { useSheetDismiss } from '../useSheetDismiss';
-import { GartenEventModal } from '../garten/GartenEventModal';
 import { eventTime } from '../garten/GartenScheduleList';
 import { GartenSwitch } from '../garten/GartenSwitch';
 import {
@@ -71,7 +55,6 @@ import type { CircleProbeData } from './Garten2Widget';
 import { countdownToSeconds, PLACEHOLDER_WATER_AMOUNT } from './Garten2Hero';
 import {
     clampThreshold,
-    Garten2SettingsSheet,
     MAX_THRESHOLD,
     MIN_THRESHOLD,
     STEP as THRESHOLD_STEP,
@@ -79,15 +62,11 @@ import {
 import { slotKeys, type GartenPlanEntry } from './gartenPlanModel';
 import type { GartenPlanData } from './useGartenPlanData';
 import type { SprinkleWeather } from './useSprinkleWeather';
-import { GARTEN_SCENES, useGartenSceneStore, type GartenDraft, type GartenScene } from './gartenDraft';
 import { HzSubpageProvider } from '../heating/HzSubpage';
 import { GartenSoilChart, GartenWeatherChart } from './GartenCharts';
 import './GartenFacelift.css';
 
-type Draft = Exclude<GartenDraft, 'ALT'>;
-
 export interface GartenFaceliftProps {
-    draft: Draft;
     instance: string;
     circles: CircleProbeData[];
     weather: SprinkleWeather;
@@ -103,7 +82,7 @@ export interface GartenFaceliftProps {
     devBlocked: boolean;
 }
 
-/** Ein Kreis, wie ihn die Entwürfe brauchen; bei „Beispiel" mit nachgespielten Aktionen. */
+/** Ein Kreis, wie ihn die Seite braucht. */
 interface GfCircle {
     name: string;
     label: string;
@@ -165,164 +144,21 @@ const num = (v: number, digits: number) => v.toLocaleString('de-DE', { maximumFr
 const mm = (v: number | null, digits = 1) => (v === null ? '–' : `${num(v, digits)} mm`);
 const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)} %`);
 
-// ── Zustand zum Ansehen (nur Dev-Vorschau) ───────────────────────────────────
-
-function sampleEntries(names: string[]): GartenPlanEntry[] {
-    const ev = (
-        id: string,
-        kreis: string | undefined,
-        hour: number,
-        minute: number,
-        minutes: number,
-        weekdays: TimerWeekday[],
-        extra: Partial<GartenPlanEntry> = {},
-    ): GartenPlanEntry[] =>
-        kreis
-            ? [
-                  {
-                      id: `bsp-${id}`,
-                      kreis,
-                      enabled: true,
-                      weekdays,
-                      trigger: { kind: 'time', hour, minute },
-                      filter: 'all-days',
-                      value: String(minutes),
-                      ...extra,
-                  },
-              ]
-            : [];
-    return [
-        ...ev('1', names[0], 6, 0, 10, ['mon', 'wed', 'fri']),
-        ...ev('2', names[0], 20, 30, 5, WEEKDAY_ORDER, { label: 'Nachguss', enabled: false }),
-        ...ev('3', names[1], 6, 0, 12, ['mon', 'wed', 'fri']),
-        ...ev('4', names[2], 5, 30, 8, ['tue', 'thu', 'sat']),
-    ];
-}
-
-interface Sim {
-    modes: Record<string, 'evaporation' | 'schedule'>;
-    run: { name: string; minutes: number; startMs: number } | null;
-    entries: GartenPlanEntry[];
-    scharf: Record<string, boolean>;
-    ansaat: Record<string, boolean>;
-}
-
-function freshSim(scene: GartenScene, names: string[]): Sim {
-    return {
-        modes: Object.fromEntries(names.map((n, i) => [n, i === 1 ? 'evaporation' : 'schedule'])),
-        run: scene === 'LAEUFT' && names[0] ? { name: names[0], minutes: 10, startMs: Date.now() - 150_000 } : null,
-        entries: sampleEntries(names),
-        scharf: {},
-        ansaat: {},
-    };
-}
-
-/**
- * Liefert Kreise und Zeitplan für die Anzeige. Bei „Echt" unverändert die Werte und Schreibwege der
- * heutigen Seite. Bei „Beispiel"/„Läuft" ein lokaler Stand, der nichts schreibt.
- */
-function useGartenView(p: GartenFaceliftProps): {
-    circles: GfCircle[];
-    plan: GartenPlanData;
-    plantInteractive: boolean;
-    interactive: boolean;
-    sim: boolean;
-} {
-    const scene = useGartenSceneStore((s) => s.scene);
-    const simOn = scene !== 'ECHT';
-    const names = p.circles.map((c) => c.sprinkleName);
-    const namesKey = names.join('|');
-    const [sim, setSim] = useState<Sim>(() => freshSim(scene, names));
-    // Sekundentakt nur, solange im Beispiel ein Kreis läuft
-    const [nowMs, setNowMs] = useState(() => Date.now());
-    useEffect(() => {
-        setNowMs(Date.now());
-        setSim(freshSim(scene, namesKey ? namesKey.split('|') : []));
-    }, [scene, namesKey]);
-    const simRunning = simOn && sim.run !== null;
-    useEffect(() => {
-        if (!simRunning) return;
-        const t = window.setInterval(() => setNowMs(Date.now()), 1000);
-        return () => window.clearInterval(t);
-    }, [simRunning]);
-    const left = sim.run
-        ? Math.min(
-              sim.run.minutes * 60,
-              Math.max(0, sim.run.minutes * 60 - Math.floor((nowMs - sim.run.startMs) / 1000)),
-          )
-        : 0;
-    useEffect(() => {
-        if (simRunning && left === 0) setSim((s) => ({ ...s, run: null }));
-    }, [simRunning, left]);
-
-    if (!simOn) {
-        return {
-            circles: p.circles.map((c) => ({
-                name: c.sprinkleName,
-                label: c.label,
-                mode: c.state.mode,
-                status: c.state.status,
-                countdown: c.state.countdown,
-                runningTime: c.state.runningTime,
-                soil: c.state.soilMoisture,
-                lastOn: c.state.lastOn,
-                setMode: c.state.setMode,
-                start: c.state.startManual,
-                stop: c.state.stop,
-            })),
-            plan: p.plan,
-            plantInteractive: p.plantInteractive,
-            interactive: p.interactive,
-            sim: false,
-        };
-    }
-
-    const circles: GfCircle[] = p.circles.map((c) => {
-        const running = sim.run?.name === c.sprinkleName;
-        return {
-            name: c.sprinkleName,
-            label: c.label,
-            mode: sim.modes[c.sprinkleName] ?? 'schedule',
-            status: running ? 'running' : 'idle',
-            countdown: running
-                ? `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`
-                : '',
-            runningTime: running ? String(sim.run?.minutes ?? '') : '00:00',
-            soil: c.state.soilMoisture,
-            lastOn: c.state.lastOn,
-            setMode: (next) => setSim((s) => ({ ...s, modes: { ...s.modes, [c.sprinkleName]: next } })),
-            start: (minutes) => {
-                setNowMs(Date.now());
-                setSim((s) => ({ ...s, run: { name: c.sprinkleName, minutes, startMs: Date.now() } }));
-            },
-            stop: () => setSim((s) => ({ ...s, run: null })),
-        };
-    });
-    const local = (change: (s: Sim) => Sim) => {
-        setSim(change);
-        return Promise.resolve();
-    };
-    const plan: GartenPlanData = {
-        ...p.plan,
-        entries: sim.entries,
-        entriesError: null,
-        scriptStale: false,
-        settingsLoaded: true,
-        settings: { aktiv: true, scharf: sim.scharf, ansaat: sim.ansaat },
-        saveEntry: (e) =>
-            local((s) => ({
-                ...s,
-                entries: s.entries.some((x) => x.id === e.id)
-                    ? s.entries.map((x) => (x.id === e.id ? e : x))
-                    : [...s.entries, e],
-            })),
-        deleteEntry: (id) => local((s) => ({ ...s, entries: s.entries.filter((x) => x.id !== id) })),
-        toggleEntry: (id) =>
-            local((s) => ({ ...s, entries: s.entries.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)) })),
-        setScharf: (k, v) => local((s) => ({ ...s, scharf: { ...s.scharf, [k]: v } })),
-        setAnsaat: (k, v) => local((s) => ({ ...s, ansaat: { ...s.ansaat, [k]: v } })),
-    };
-    return { circles, plan, plantInteractive: true, interactive: true, sim: true };
+/** Kreise, wie die Seite sie braucht, aus den Werten und Schreibwegen der Kreis-Sonden. */
+function circlesOf(p: GartenFaceliftProps): GfCircle[] {
+    return p.circles.map((c) => ({
+        name: c.sprinkleName,
+        label: c.label,
+        mode: c.state.mode,
+        status: c.state.status,
+        countdown: c.state.countdown,
+        runningTime: c.state.runningTime,
+        soil: c.state.soilMoisture,
+        lastOn: c.state.lastOn,
+        setMode: c.state.setMode,
+        start: c.state.startManual,
+        stop: c.state.stop,
+    }));
 }
 
 /** Regensperre der Adapter-Instanz, nur lesen (für den Wert in der Zeile; geändert wird im Pop-up). */
@@ -364,9 +200,9 @@ interface Ctx {
     termineLaufen: (c: GfCircle) => boolean;
     run: (job: Promise<void>) => void;
     edit: (c: GfCircle, entry: GartenPlanEntry | 'new') => void;
-    /** Nur E: Auswertungen auf eigenen Unterseiten (Verdunstung und Regen, Bodenfeuchte eines Kreises) */
-    openWeather?: () => void;
-    openSoil?: (c: GfCircle) => void;
+    /** Auswertungen auf eigenen Unterseiten (Verdunstung und Regen, Bodenfeuchte eines Kreises) */
+    openWeather: () => void;
+    openSoil: (c: GfCircle) => void;
 }
 
 /** Kurzstand eines Kreises für die Unterzeile. */
@@ -401,29 +237,23 @@ const PLAN_FOOT =
 
 // ── Seite ────────────────────────────────────────────────────────────────────
 
-/** Unterseiten im Stapel. „event" und „settings" gibt es nur in E (dort statt der Pop-ups von unten). */
+/** Unterseiten im Stapel */
 type Route =
     | { kind: 'circle'; name: string }
-    | { kind: 'plan' }
     | { kind: 'event'; circle: string; id: string | null }
     | { kind: 'settings' }
     | { kind: 'weather' }
     | { kind: 'soil'; name: string };
 
 export function GartenFacelift(p: GartenFaceliftProps) {
-    const { draft } = p;
-    const view = useGartenView(p);
-    const scene = useGartenSceneStore((s) => s.scene);
-    const setScene = useGartenSceneStore((s) => s.setScene);
+    const circles = circlesOf(p);
+    const plan = p.plan;
 
     const [stack, setStack] = useState<Route[]>([]);
     const setSub = (r: Route | null) => setStack(r ? [r] : []);
     const push = (r: Route) => setStack((s) => [...s, r]);
     const pop = () => setStack((s) => s.slice(0, -1));
-    const [sheet, setSheet] = useState<string | null>(null);
-    const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsSeen, setSettingsSeen] = useState(0);
-    const [editing, setEditing] = useState<{ c: GfCircle; entry: GartenPlanEntry | 'new' } | null>(null);
     const [saveError, setSaveError] = useState<string | null>(null);
     const threshold = useThresholdRain(p.instance, settingsSeen);
     // Ungesicherte Änderungen in einem Editor (Termin, Regensperre): dann bleibt die Seite beim Tab-Wechsel stehen
@@ -434,15 +264,11 @@ export function GartenFacelift(p: GartenFaceliftProps) {
 
     const rootRef = useRef<HTMLDivElement>(null);
     const hidden = useTabHidden(rootRef);
-    // Seite verlassen oder Entwurf gewechselt: wieder auf der Übersicht (wie bei den Rollläden: außer ein
-    // Editor hält ungesicherte Änderungen)
+    // Seite verlassen: wieder auf der Übersicht (wie bei den Rollläden: außer ein Editor hält ungesicherte
+    // Änderungen)
     useEffect(() => {
         if (hidden && !dirty.current) setStack([]);
     }, [hidden]);
-    useEffect(() => {
-        setStack([]);
-        setSheet(null);
-    }, [draft]);
 
     // Minutentakt für „nächster Lauf"
     const [now, setNow] = useState(() => new Date());
@@ -451,7 +277,6 @@ export function GartenFacelift(p: GartenFaceliftProps) {
         return () => window.clearInterval(t);
     }, []);
 
-    const { circles, plan } = view;
     // Kollisionserkennung wie auf der heutigen Seite: zwei aktive Termine zur selben Wochentag-Uhrzeit
     const collisions = useMemo(() => {
         const names = new Set(circles.map((c) => c.name));
@@ -470,8 +295,8 @@ export function GartenFacelift(p: GartenFaceliftProps) {
         circles,
         weather: p.weather,
         plan,
-        interactive: view.interactive,
-        plantInteractive: view.plantInteractive,
+        interactive: p.interactive,
+        plantInteractive: p.plantInteractive,
         confirm: p.confirmManualStart,
         minutes: p.manualDefaultMinutes || DEFAULT_MANUAL_MINUTES,
         showSoil: p.showSoilMoisture,
@@ -486,17 +311,13 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                 setSaveError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen'),
             );
         },
-        // E: Termin als Unterseite wie bei den Rollläden; sonst das Pop-up von unten
-        edit: (c, entry) =>
-            draft === 'E'
-                ? push({ kind: 'event', circle: c.name, id: entry === 'new' ? null : entry.id })
-                : setEditing({ c, entry }),
-        openWeather: draft === 'E' ? () => push({ kind: 'weather' }) : undefined,
-        openSoil: draft === 'E' ? (c) => push({ kind: 'soil', name: c.name }) : undefined,
+        // Termin als Unterseite wie bei den Rollläden
+        edit: (c, entry) => push({ kind: 'event', circle: c.name, id: entry === 'new' ? null : entry.id }),
+        openWeather: () => push({ kind: 'weather' }),
+        openSoil: (c) => push({ kind: 'soil', name: c.name }),
     };
 
     const running = circles.find((c) => c.status === 'running') ?? null;
-    const sheetCircle = sheet ? (circles.find((c) => c.name === sheet) ?? null) : null;
 
     const settingsSection = (
         <Section title="Einstellungen">
@@ -504,7 +325,7 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                 <button
                     type="button"
                     className="aura-fl-row aura-fl-row--nav gf-navrow"
-                    onClick={() => (draft === 'E' ? push({ kind: 'settings' }) : setSettingsOpen(true))}
+                    onClick={() => push({ kind: 'settings' })}
                 >
                     <span className="aura-fl-row-icon gf-ico">
                         <SlidersHorizontal size={20} />
@@ -522,22 +343,6 @@ export function GartenFacelift(p: GartenFaceliftProps) {
 
     const top = (
         <>
-            {/* Nur Dev-Vorschau, kein Teil des Entwurfs */}
-            <div className="gf-sim" role="group" aria-label="Zustand zeigen, nur Vorschau">
-                <span className="gf-sim-label">Zustand</span>
-                {GARTEN_SCENES.map((s) => (
-                    <button
-                        key={s.key}
-                        type="button"
-                        className="gf-sim-btn"
-                        data-sel={s.key === scene || undefined}
-                        aria-pressed={s.key === scene}
-                        onClick={() => setScene(s.key)}
-                    >
-                        {s.label}
-                    </button>
-                ))}
-            </div>
             <Section>
                 <Head running={running} x={x} />
             </Section>
@@ -547,172 +352,40 @@ export function GartenFacelift(p: GartenFaceliftProps) {
 
     const devNote = (
         <p className="aura-fl-foot gf-foot gf-devnote">
-            {view.sim
-                ? 'Beispiel: Termine, Modus, Gießen und Stoppen werden nur in der Vorschau nachgespielt. Wetter und Bodenfeuchte sind echt.'
-                : p.devBlocked
-                  ? 'Lokale Vorschau: Modus, Handbetrieb und die Regensperre sind hier ausgegraut, sie schalten erst auf dem Pi. Termine gehen nur in die Testdatenpunkte (Garten_Dev) und laufen dort im Trockenlauf.'
-                  : null}
+            {p.devBlocked
+                ? 'Lokale Vorschau: Modus, Handbetrieb und die Regensperre sind hier ausgegraut, sie schalten erst auf dem Pi. Termine gehen nur in die Testdatenpunkte (Garten_Dev) und laufen dort im Trockenlauf.'
+                : null}
         </p>
     );
 
-    let home: ReactNode;
-    if (draft === 'A') {
-        home = (
-            <div className="gf-home">
-                {top}
-                <Section title="Bewässerungskreise">
-                    <div className="aura-fl-card">
-                        {circles.map((c) => (
-                            <CircleNavRow
-                                key={c.name}
-                                c={c}
-                                x={x}
-                                onOpen={() => setSub({ kind: 'circle', name: c.name })}
-                            />
-                        ))}
-                    </div>
-                </Section>
-                <Section title="Wetter">
-                    <WeatherRows x={x} />
-                </Section>
-                {settingsSection}
-                {devNote}
-            </div>
-        );
-    } else if (draft === 'B') {
-        home = (
-            <div className="gf-home">
-                {top}
-                <Section title="Wetter">
-                    <WeatherTiles x={x} />
-                </Section>
-                {circles.map((c) => (
-                    <CircleInline key={c.name} c={c} x={x} />
-                ))}
-                {settingsSection}
-                {devNote}
-            </div>
-        );
-    } else if (draft === 'C') {
-        home = (
-            <div className="gf-home">
-                {top}
-                <Section title="Bewässerungskreise" foot={soilFoot(x)}>
-                    <div className="aura-fl-card">
-                        {circles.map((c) => (
-                            <CircleNavRow key={c.name} c={c} x={x} soilRight onOpen={() => setSheet(c.name)} />
-                        ))}
-                    </div>
-                </Section>
-                <Section title="Wetter">
-                    <WeatherCompact x={x} />
-                </Section>
-                {settingsSection}
-                {devNote}
-            </div>
-        );
-    } else if (draft === 'E') {
-        // Runde 2: Kreise und Wetter wie C, aber jeder Kreis, jeder Termin und die Einstellungen als Unterseite
-        home = (
-            <div className="gf-home">
-                {top}
-                <Section title="Bewässerungskreise" foot={soilFoot(x)}>
-                    <div className="aura-fl-card">
-                        {circles.map((c) => (
-                            <CircleNavRow
-                                key={c.name}
-                                c={c}
-                                x={x}
-                                soilRight
-                                onOpen={() => setSub({ kind: 'circle', name: c.name })}
-                            />
-                        ))}
-                    </div>
-                </Section>
-                <Section title="Wetter">
-                    <WeatherCompact x={x} />
-                </Section>
-                {settingsSection}
-                {devNote}
-            </div>
-        );
-    } else {
-        const total = plan.entries.filter((e) => circles.some((c) => c.name === e.kreis)).length;
-        const nexts = circles
-            .filter((c) => x.termineLaufen(c) && x.scharf(c.name))
-            .map((c) => ({ c, n: nextRun(x.eventsOf(c.name), now) }))
-            .filter((v): v is { c: GfCircle; n: { at: number; text: string } } => v.n !== null)
-            .sort((a, b) => a.n.at - b.n.at);
-        home = (
-            <div className="gf-home">
-                {top}
-                <Section title="Von Hand gießen" foot={PARALLEL_HINT}>
-                    <div className="aura-fl-card">
-                        {circles.map((c) => (
-                            <div key={c.name} className="aura-fl-row gf-manualrow" data-status={c.status}>
-                                <span className="aura-fl-row-main">
-                                    <span className="aura-fl-row-title gf-row-title">{c.label}</span>
-                                    <span className="aura-fl-row-sub">
-                                        {c.status === 'running'
-                                            ? `Läuft${c.countdown ? ` · noch ${c.countdown}` : ''}`
-                                            : c.status === 'waiting'
-                                              ? 'Wartet'
-                                              : c.lastOn
-                                                ? `Zuletzt ${c.lastOn}`
-                                                : 'Bereit'}
-                                    </span>
-                                </span>
-                                <Manual c={c} x={x} compact />
-                            </div>
-                        ))}
-                    </div>
-                </Section>
-                <Section title="Automatik">
-                    <div className="aura-fl-card">
-                        {circles.map((c) => (
-                            <div key={c.name} className="aura-fl-row gf-moderow">
-                                <span className="aura-fl-row-main">
-                                    <span className="aura-fl-row-title gf-row-title">{c.label}</span>
-                                </span>
-                                <ModeSeg c={c} x={x} small />
-                            </div>
-                        ))}
-                    </div>
-                </Section>
-                <Section title="Zeitplan">
-                    <div className="aura-fl-card">
-                        <button
-                            type="button"
-                            className="aura-fl-row aura-fl-row--nav gf-navrow"
-                            onClick={() => setSub({ kind: 'plan' })}
-                        >
-                            <span className="aura-fl-row-icon gf-ico">
-                                <CalendarClock size={20} />
-                            </span>
-                            <span className="aura-fl-row-main">
-                                <span className="aura-fl-row-title gf-row-title">Termine</span>
-                                <span className="aura-fl-row-sub">
-                                    {total === 1 ? '1 Termin' : `${total} Termine`}
-                                    {nexts[0] ? ` · nächster Lauf ${nexts[0].c.label}, ${nexts[0].n.text}` : ''}
-                                </span>
-                            </span>
-                            <ChevronRight size={18} className="aura-fl-chev" />
-                        </button>
-                    </div>
-                </Section>
-                <Section title="Wetter und Boden" foot={soilFoot(x)}>
-                    <WeatherRows x={x} withSoil />
-                </Section>
-                {settingsSection}
-                {devNote}
-            </div>
-        );
-    }
+    // Kreise und Wetter wie in der Übersicht, aber jeder Kreis, jeder Termin und die Einstellungen als Unterseite
+    const home = (
+        <div className="gf-home">
+            {top}
+            <Section title="Bewässerungskreise" foot={soilFoot(x)}>
+                <div className="aura-fl-card">
+                    {circles.map((c) => (
+                        <CircleNavRow
+                            key={c.name}
+                            c={c}
+                            x={x}
+                            soilRight
+                            onOpen={() => setSub({ kind: 'circle', name: c.name })}
+                        />
+                    ))}
+                </div>
+            </Section>
+            <Section title="Wetter">
+                <WeatherCompact x={x} />
+            </Section>
+            {settingsSection}
+            {devNote}
+        </div>
+    );
 
     const titleOf = (r: Route | undefined): string => {
         if (!r) return 'Garten';
         if (r.kind === 'circle') return circles.find((c) => c.name === r.name)?.label ?? 'Kreis';
-        if (r.kind === 'plan') return 'Zeitplan';
         if (r.kind === 'settings') return 'Einstellungen';
         if (r.kind === 'weather') return 'Verdunstung und Regen';
         if (r.kind === 'soil') return 'Bodenfeuchte';
@@ -779,34 +452,7 @@ export function GartenFacelift(p: GartenFaceliftProps) {
                 />
             );
         }
-        return (
-            <div className="ios-page gf-subpage">
-                <IosNavBar sticky title="Zeitplan" backLabel={back} backFallback="Zurück" onBack={pop} />
-                <Warnings plan={plan} saveError={saveError} />
-                {circles.map((c, i) => {
-                    const next = nextLabel(c, x);
-                    return (
-                        <Section
-                            key={c.name}
-                            title={c.label}
-                            right={next ? <span className="gf-headbit">{next}</span> : undefined}
-                            foot={
-                                i === circles.length - 1
-                                    ? `Zeitplan scharf: ${PLAN_FOOT}`
-                                    : x.termineLaufen(c)
-                                      ? undefined
-                                      : 'Verdunstungsmodus: Die Termine laufen erst im Zeitplan-Modus oder bei Neuansaat.'
-                            }
-                        >
-                            <div className="aura-fl-card">
-                                <PlanSwitches c={c} x={x} />
-                                <EventRows c={c} x={x} />
-                            </div>
-                        </Section>
-                    );
-                })}
-            </div>
-        );
+        return null;
     };
 
     const pages = [
@@ -819,63 +465,11 @@ export function GartenFacelift(p: GartenFaceliftProps) {
 
     return (
         <div
-            className={`aura-fl-scope gf-page gf-page--${draft.toLowerCase()}`}
-            data-gf-draft={draft}
+            className="aura-fl-scope gf-page gf-page--e"
+            data-gf-draft="E"
             data-widget-interactive
         >
             <IosStack rootRef={rootRef} pages={pages} depth={stack.length} sizing="current" manageScroll bleed={6} />
-
-            {sheetCircle && (
-                <Sheet title={sheetCircle.label} sub={circleSub(sheetCircle, x)} onClose={() => setSheet(null)}>
-                    <CircleDetail c={sheetCircle} x={x} />
-                </Sheet>
-            )}
-
-            {editing && (
-                <GartenEventModal
-                    initial={
-                        editing.entry === 'new'
-                            ? {
-                                  id: `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                                  enabled: true,
-                                  label: '',
-                                  weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
-                                  trigger: { kind: 'time', hour: 8, minute: 0 },
-                                  filter: 'all-days',
-                                  value: String(x.minutes),
-                              }
-                            : editing.entry
-                    }
-                    circleLabel={editing.c.label}
-                    onSave={(ev) => {
-                        // `kreis` immer neu setzen: der Dialog kennt das Feld nicht.
-                        x.run(plan.saveEntry({ ...ev, kreis: editing.c.name }));
-                        setEditing(null);
-                    }}
-                    onCancel={() => setEditing(null)}
-                    onDelete={
-                        editing.entry === 'new'
-                            ? undefined
-                            : () => {
-                                  x.run(plan.deleteEntry((editing.entry as GartenPlanEntry).id));
-                                  setEditing(null);
-                              }
-                    }
-                />
-            )}
-
-            {settingsOpen && (
-                <Garten2SettingsSheet
-                    instance={p.instance}
-                    anyRunning={p.circles.some((c) => c.state.valveOn === true)}
-                    // immer die echte Sperre: Die Regensperre wird nie nachgespielt
-                    plantInteractive={p.plantInteractive}
-                    onClose={() => {
-                        setSettingsOpen(false);
-                        setSettingsSeen((n) => n + 1);
-                    }}
-                />
-            )}
         </div>
     );
 }
@@ -1028,7 +622,7 @@ function Warnings({ plan, saveError }: { plan: GartenPlanData; saveError: string
     );
 }
 
-/** Zeile eines Kreises, die weiterführt (Unterseite in A, Pop-up in C). */
+/** Zeile eines Kreises, die auf seine Unterseite führt. */
 function CircleNavRow({ c, x, soilRight, onOpen }: { c: GfCircle; x: Ctx; soilRight?: boolean; onOpen: () => void }) {
     const sub = circleSub(c, x);
     return (
@@ -1050,7 +644,7 @@ function CircleNavRow({ c, x, soilRight, onOpen }: { c: GfCircle; x: Ctx; soilRi
     );
 }
 
-// ── Wetter: drei Formen ──────────────────────────────────────────────────────
+// ── Wetter ─────────────────────────────────────────────────────────────────────
 
 function Trend({ w }: { w: SprinkleWeather }) {
     if (w.etpTrend === 'up')
@@ -1060,93 +654,13 @@ function Trend({ w }: { w: SprinkleWeather }) {
     return null;
 }
 
-/** Schlichte Zeilen ohne Symbol (wie „Aktuelle Werte" der Heizung), auf Wunsch mit der Bodenfeuchte je Kreis. */
-function WeatherRows({ x, withSoil }: { x: Ctx; withSoil?: boolean }) {
-    const w = x.weather;
-    const rows: { key: string; label: string; sub?: string; text: ReactNode; soft?: boolean }[] = [
-        {
-            key: 'et0',
-            label: 'Verdunstung heute',
-            text: (
-                <>
-                    {mm(w.etpToday, 2)} <Trend w={w} />
-                </>
-            ),
-        },
-        { key: 'et1', label: 'Verdunstung gestern', text: mm(w.etpYesterday, 2) },
-        { key: 'r0', label: 'Regen heute', text: mm(w.rainToday) },
-        { key: 'r1', label: 'Regen gestern', sub: 'gemessen', text: mm(w.rainYesterday) },
-        { key: 'r2', label: 'Regen morgen', sub: 'Prognose', text: mm(w.rainTomorrow) },
-        ...(withSoil && x.showSoil
-            ? x.circles.map((c) => ({
-                  key: `s-${c.name}`,
-                  label: `Bodenfeuchte ${c.label}`,
-                  text: pct(c.soil),
-                  soft: c.mode === 'schedule',
-              }))
-            : []),
-    ];
-    return (
-        <div className="aura-fl-card">
-            {rows.map((r) => (
-                <div key={r.key} className="aura-fl-row gf-valrow gf-valrow--plain">
-                    <span className="aura-fl-row-main">
-                        <span className="aura-fl-row-title gf-row-title">{r.label}</span>
-                        {r.sub && <span className="aura-fl-row-sub">{r.sub}</span>}
-                    </span>
-                    <span className={`gf-row-val${r.soft ? ' gf-row-val--soft' : ''}`}>{r.text}</span>
-                </div>
-            ))}
-        </div>
-    );
-}
-
-/** Kacheln in einer Karte: oben Verdunstung (2), unten Regen (3). */
-function WeatherTiles({ x }: { x: Ctx }) {
-    const w = x.weather;
-    return (
-        <div className="aura-fl-card gf-tiles">
-            <div className="gf-tile gf-tile--half">
-                <span className="gf-tile-label">Verdunstung heute</span>
-                <span className="gf-tile-val">
-                    {mm(w.etpToday, 2)} <Trend w={w} />
-                </span>
-            </div>
-            <div className="gf-tile gf-tile--half">
-                <span className="gf-tile-label">Verdunstung gestern</span>
-                <span className="gf-tile-val">{mm(w.etpYesterday, 2)}</span>
-            </div>
-            <div className="gf-tile">
-                <span className="gf-tile-label">Regen heute</span>
-                <span className="gf-tile-val">{mm(w.rainToday)}</span>
-            </div>
-            <div className="gf-tile">
-                <span className="gf-tile-label">gestern</span>
-                <span className="gf-tile-val">{mm(w.rainYesterday)}</span>
-                <span className="gf-tile-note">gemessen</span>
-            </div>
-            <div className="gf-tile">
-                <span className="gf-tile-label">morgen</span>
-                <span className="gf-tile-val">{mm(w.rainTomorrow)}</span>
-                <span className="gf-tile-note">Prognose</span>
-            </div>
-        </div>
-    );
-}
-
-/** Zwei Zeilen mit Symbol: der heutige Wert rechts, gestern und morgen in der Unterzeile. In E führen beide
- *  Zeilen auf die Unterseite „Verdunstung und Regen". */
+/** Zwei Zeilen mit Symbol: der heutige Wert rechts, gestern und morgen in der Unterzeile. Beide Zeilen führen
+ *  auf die Unterseite „Verdunstung und Regen". */
 function WeatherCompact({ x }: { x: Ctx }) {
     const w = x.weather;
-    const open = x.openWeather;
-    const Row = open ? 'button' : 'div';
-    const rowProps = open
-        ? { type: 'button' as const, className: 'aura-fl-row aura-fl-row--nav gf-valrow gf-navval', onClick: open }
-        : { className: 'aura-fl-row gf-valrow' };
-    const chev = open ? <ChevronRight size={18} className="aura-fl-chev" /> : null;
     return (
         <div className="aura-fl-card">
-            <Row {...rowProps}>
+            <button type="button" className="aura-fl-row aura-fl-row--nav gf-valrow gf-navval" onClick={x.openWeather}>
                 <span className="aura-fl-row-icon gf-ico">
                     <SunMedium size={20} />
                 </span>
@@ -1157,9 +671,9 @@ function WeatherCompact({ x }: { x: Ctx }) {
                 <span className="gf-row-val">
                     {mm(w.etpToday, 2)} <Trend w={w} />
                 </span>
-                {chev}
-            </Row>
-            <Row {...rowProps}>
+                <ChevronRight size={18} className="aura-fl-chev" />
+            </button>
+            <button type="button" className="aura-fl-row aura-fl-row--nav gf-valrow gf-navval" onClick={x.openWeather}>
                 <span className="aura-fl-row-icon gf-ico">
                     <CloudRain size={20} />
                 </span>
@@ -1170,8 +684,8 @@ function WeatherCompact({ x }: { x: Ctx }) {
                     </span>
                 </span>
                 <span className="gf-row-val">{mm(w.rainToday)}</span>
-                {chev}
-            </Row>
+                <ChevronRight size={18} className="aura-fl-chev" />
+            </button>
         </div>
     );
 }
@@ -1473,7 +987,7 @@ function PlanBlock({ c, x }: { c: GfCircle; x: Ctx }) {
     );
 }
 
-/** Alles zu einem Kreis: Unterseite in A und E, Inhalt des Pop-ups in C. Von Hand gießen steht immer
+/** Alles zu einem Kreis: Inhalt der Kreis-Unterseite. Von Hand gießen steht immer
  *  zuerst, Automatik an zweiter Stelle (Rückmeldung Sascha, Runde 2). */
 function CircleDetail({ c, x }: { c: GfCircle; x: Ctx }) {
     return (
@@ -1529,79 +1043,7 @@ function CircleDetail({ c, x }: { c: GfCircle; x: Ctx }) {
     );
 }
 
-/** B: ein Kreis komplett in einer Karte, die Termine klappen in der Karte auf. */
-function CircleInline({ c, x }: { c: GfCircle; x: Ctx }) {
-    const [open, setOpen] = useState(false);
-    const events = x.eventsOf(c.name);
-    const next = nextLabel(c, x);
-    const status = c.status === 'running' ? `Läuft · ${c.countdown}` : c.status === 'waiting' ? 'Wartet' : null;
-    return (
-        <Section
-            title={c.label}
-            right={status ? <span className="gf-headbit gf-headbit--run">{status}</span> : undefined}
-            foot={
-                x.ansaat(c.name) && c.mode === 'evaporation'
-                    ? 'Neuansaat: Die Termine laufen auch im Verdunstungsmodus.'
-                    : undefined
-            }
-        >
-            <div className="aura-fl-card">
-                <div className="gf-segcard">
-                    <ModeSeg c={c} x={x} />
-                </div>
-                {x.showSoil && (
-                    <div className="aura-fl-row gf-valrow gf-valrow--plain gf-afterseg">
-                        <span className="aura-fl-row-main">
-                            <span className="aura-fl-row-title gf-row-title">Bodenfeuchte</span>
-                            {c.mode === 'schedule' && (
-                                <span className="aura-fl-row-sub">{TIMER_MODE_MOISTURE_HINT}</span>
-                            )}
-                        </span>
-                        <span className={`gf-row-val${c.mode === 'schedule' ? ' gf-row-val--soft' : ''}`}>
-                            {pct(c.soil)}
-                        </span>
-                    </div>
-                )}
-                <button
-                    type="button"
-                    className="aura-fl-row aura-fl-row--nav gf-valrow gf-valrow--plain gf-foldrow"
-                    onClick={() => setOpen((o) => !o)}
-                    aria-expanded={open}
-                >
-                    <span className="aura-fl-row-main">
-                        <span className="aura-fl-row-title gf-row-title">Termine</span>
-                        <span className="aura-fl-row-sub">
-                            {events.length === 0
-                                ? 'Keiner angelegt'
-                                : events.length === 1
-                                  ? '1 Termin'
-                                  : `${events.length} Termine`}
-                            {next
-                                ? ` · ${next === 'Pausiert' ? 'pausiert' : next === 'Kein Termin' ? 'keiner aktiv' : `nächster Lauf ${next}`}`
-                                : ''}
-                        </span>
-                    </span>
-                    <ChevronDown size={18} className={`aura-fl-chev gf-fold-chev${open ? ' is-open' : ''}`} />
-                </button>
-                {open && (
-                    <div className="gf-fold">
-                        <PlanSwitches c={c} x={x} />
-                        <EventRows c={c} x={x} />
-                    </div>
-                )}
-                <div className="aura-fl-row gf-valrow gf-valrow--plain gf-manualrow" data-status={c.status}>
-                    <span className="aura-fl-row-main">
-                        <span className="aura-fl-row-title gf-row-title">Gießen</span>
-                        {c.lastOn && <span className="aura-fl-row-sub">Zuletzt {c.lastOn}</span>}
-                    </span>
-                    <Manual c={c} x={x} compact />
-                </div>
-            </div>
-        </Section>
-    );
-}
-
-// ── Unterseiten zum Bearbeiten (E), Muster der Rollläden-Editoren ────────────
+// ── Unterseiten zum Bearbeiten, Muster der Rollläden-Editoren ────────────
 // „Sichern" rechts im Kopf (fett, grau, solange nichts zu sichern ist, mit data-ios-editing),
 // Zurück mit Änderungen fragt nach, Löschen als rote Knopfzeile ganz unten mit Rückfrage.
 
@@ -1637,7 +1079,7 @@ const eventKey = (ev: TimerEvent) =>
         (ev.label ?? '').trim(),
     ]);
 
-/** Termin eines Kreises als Unterseite (ersetzt in E das Termin-Pop-up). Felder wie im Pop-up. */
+/** Termin eines Kreises als Unterseite (Felder wie im früheren Termin-Pop-up). */
 function EventPage({
     c,
     x,
@@ -1902,7 +1344,7 @@ function EventPage({
 }
 
 /**
- * Einstellungen als Unterseite (E), bisher nur die Regensperre. Regeln wie im Pop-up Garten2SettingsSheet:
+ * Einstellungen als Unterseite, bisher nur die Regensperre. Regeln wie im früheren Einstellungen-Pop-up:
  * Wert der Adapter-Instanz (native.thresholdRain), vor dem Schreiben immer die Rückfrage „startet die
  * Bewässerungssteuerung neu", gesperrt, solange ein Kreis läuft, und in der Dev-Vorschau.
  */
@@ -2076,55 +1518,5 @@ function SettingsPage({
                 onStay={() => setAskLeave(false)}
             />
         </div>
-    );
-}
-
-// ── Pop-up von unten (C) ─────────────────────────────────────────────────────
-
-function Sheet({
-    title,
-    sub,
-    onClose,
-    children,
-}: {
-    title: string;
-    sub?: string;
-    onClose: () => void;
-    children: ReactNode;
-}) {
-    const adminTarget = usePortalTarget();
-    const target = document.querySelector('[data-aura-app="frontend"]') ?? adminTarget;
-    const { sheetStyle, backdropStyle, scrimClosing, dragHandlers, onBackdropClick, startClose } =
-        useSheetDismiss(onClose);
-    return createPortal(
-        <div
-            className="gf-sheet-backdrop aura-scrim"
-            data-scrim-closing={scrimClosing}
-            style={backdropStyle}
-            onClick={onBackdropClick}
-        >
-            <div className="gf-sheet" style={sheetStyle} role="dialog" aria-modal="true" aria-label={title}>
-                <div
-                    className="gf-sheet-drag"
-                    {...dragHandlers}
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Nach unten wischen zum Schließen"
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') startClose();
-                    }}
-                >
-                    <div className="gf-sheet-grip">
-                        <div className="gf-sheet-grip-handle" />
-                    </div>
-                    <div className="gf-sheet-header">
-                        <h2 className="gf-sheet-title">{title}</h2>
-                        {sub && <p className="gf-sheet-sub">{sub}</p>}
-                    </div>
-                </div>
-                <div className="gf-sheet-body aura-fl-sheet-body">{children}</div>
-            </div>
-        </div>,
-        target,
     );
 }
