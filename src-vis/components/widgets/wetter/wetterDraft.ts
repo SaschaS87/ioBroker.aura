@@ -1,13 +1,13 @@
 /**
- * UI-Facelift, Entwurfsphase Wetter (nur Dev-Vorschau): Welcher Entwurf der Wetter-Seite gezeigt wird.
- * Der gelbe Umschalter (FaceliftChrome) zeigt die Buchstaben nur auf der Wetter-Seite und nur bei „Neu".
- * „ALT" ist die heutige Seite (Statuskarte, Tagesstreifen, Kennzahlen-Blöcke, Regen-Karten) im neuen Rahmen.
- * Die Wahl liegt in localStorage.
+ * Wetter-Entwürfe (nur Dev-Vorschau, nie im Build): Welcher Entwurf der Wetter-Seite gezeigt wird.
+ * Der gelbe Umschalter (WetterDraftSwitch) zeigt die Buchstaben nur auf der Wetter-Seite. „ALT" ist die
+ * heutige Seite (Statuskarte, Tagesstreifen, Kennzahlen-Blöcke, Regen-Karten). Die Wahl liegt in
+ * localStorage.
  *
- * Nur `zustand` und `react` importieren, damit kein Import-Kreis über FaceliftChrome entsteht.
+ * Alle Verwender hängen hinter import.meta.env.DEV; im Build bleibt davon nichts übrig.
+ * Nur `zustand` importieren.
  */
 import { create } from 'zustand';
-import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 
 export type WetterDraft = 'ALT' | 'A' | 'B' | 'C' | 'D';
 
@@ -31,22 +31,22 @@ function read(): WetterDraft {
     }
 }
 
-export const useWetterDraftStore = create<{ draft: WetterDraft; setDraft: (d: WetterDraft) => void }>((set) => ({
-    draft: read(),
-    setDraft: (draft) => {
-        set({ draft });
-        try {
-            localStorage.setItem(KEY, draft);
-        } catch {
-            /* privater Modus */
-        }
-    },
-}));
+export const useWetterDraftStore = /* @__PURE__ */ create<{ draft: WetterDraft; setDraft: (d: WetterDraft) => void }>(
+    (set) => ({
+        draft: read(),
+        setDraft: (draft) => {
+            set({ draft });
+            try {
+                localStorage.setItem(KEY, draft);
+            } catch {
+                /* privater Modus */
+            }
+        },
+    }),
+);
 
-/** Aktiver Wetter-Entwurf; null bei „Ist", bei „Alt" und im Pi-Build. */
+/** Aktiver Wetter-Entwurf; null bei „Alt". */
 export function useWetterDraft(): Exclude<WetterDraft, 'ALT'> | null {
-    const flv = useFaceliftVariant();
     const draft = useWetterDraftStore((s) => s.draft);
-    if (!import.meta.env.DEV || !flv || draft === 'ALT') return null;
-    return draft;
+    return draft === 'ALT' ? null : draft;
 }

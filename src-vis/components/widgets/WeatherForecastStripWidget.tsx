@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
+import { Suspense, useState, useMemo, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import ReactECharts from 'echarts-for-react';
 import {
     Sun,
@@ -29,8 +29,14 @@ import { formatNum } from '../../utils/formatValue';
 import { localTime } from '../../utils/formatTime';
 import type { WidgetProps } from '../../types';
 import { useDashboardMobile } from '../../contexts/DashboardMobileContext';
-import { WetterFacelift } from './wetter/WetterFacelift';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { useWetterDraft } from './wetter/wetterDraft';
+
+// Wetter-Entwürfe: nur Dev-Vorschau, im Build ist beides null bzw. leer und samt Entwurfs-Code weg.
+const WetterFaceliftLazy = import.meta.env.DEV
+    ? lazyWithReload(() => import('./wetter/WetterFacelift').then((m) => ({ default: m.WetterFacelift })))
+    : null;
+const useWxDraft = import.meta.env.DEV ? useWetterDraft : () => null;
 
 /**
  * DWD-app-style forecast tile: one slim horizontally-swipeable day strip + a
@@ -1281,9 +1287,9 @@ function DataFooter({ base }: { base: string }) {
 export const DAY_INDICES = [-2, -1, 0, 1, 2, 3, 4, 5, 6];
 
 export function WeatherForecastStripWidget({ config, editMode }: WidgetProps) {
-    // UI-Facelift, Entwurfsphase Wetter (nur Dev-Vorschau, sonst null): dieses Widget zeichnet dann die
+    // Wetter-Entwürfe (nur Dev-Vorschau, sonst null): dieses Widget zeichnet dann die
     // ganze Wetter-Seite neu (WetterFacelift), nur in der einspaltigen Handy-Ansicht.
-    const wxDraftRaw = useWetterDraft();
+    const wxDraftRaw = useWxDraft();
     const mobile = useDashboardMobile();
     const wxDraft = mobile && !editMode && !config.options?.footerOnly ? wxDraftRaw : null;
     const base = (config.options?.basePath as string) || DEFAULT_BASE;
@@ -1357,7 +1363,12 @@ export function WeatherForecastStripWidget({ config, editMode }: WidgetProps) {
         return <DataFooter base={base} />;
     }
 
-    if (wxDraft) return <WetterFacelift draft={wxDraft} base={base} selfId={config.id} />;
+    if (wxDraft && WetterFaceliftLazy)
+        return (
+            <Suspense fallback={null}>
+                <WetterFaceliftLazy draft={wxDraft} base={base} selfId={config.id} />
+            </Suspense>
+        );
 
     const showFooter = config.options?.showFooter !== false;
 

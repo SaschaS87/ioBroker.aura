@@ -8,7 +8,6 @@ import type { RainStationDef } from './RainStationWidget';
 import { ChartPeriodNav } from './ChartPeriodNav';
 import type { PeriodMode } from '../../utils/chartPeriod';
 import { HeizungPeriodNav } from './heating/HeizungPeriodNav';
-import { useWetterDraft } from './wetter/wetterDraft';
 
 type RangeKey = '7d' | 'month' | 'day';
 
@@ -106,8 +105,8 @@ export function RainDailyWidget({
     config,
     onStats,
 }: WidgetProps & { onStats?: (s: RainDailyStats | null) => void }) {
-    // UI-Facelift (nur Dev-Vorschau): Zeitraum-Wahl zweizeilig wie auf den Heizungs-Unterseiten
-    const PeriodNav = useWetterDraft() ? HeizungPeriodNav : ChartPeriodNav;
+    // UI-Facelift: Zeitraum-Wahl zweizeilig wie auf den Heizungs-Unterseiten, wenn die Statistik in einer Unterseite steht
+    const PeriodNav = onStats ? HeizungPeriodNav : ChartPeriodNav;
     const o = config.options ?? {};
     const stations = (o.stations as RainStationDef[] | undefined) ?? [];
     const instance = (o.historyInstance as string) ?? 'influxdb.0';

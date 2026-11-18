@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveHtmlAssets } from './utils/assetUrl';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings } from 'lucide-react';
@@ -63,6 +63,12 @@ import { setBreakdownTracking, recordBackendCall } from './utils/perfBreakdown';
 import { PinPrompt } from './components/common/PinPrompt';
 import { usePinStore, unlockedReader } from './store/pinStore';
 import { activePinKeys, pendingPinTarget, pinEscapeTarget, unlocksFor, type EscapeTarget } from './utils/pinLock';
+import { lazyWithReload } from './utils/lazyWithReload';
+
+// Entwurfs-Umschalter der Wetter-Seite: nur Dev-Vorschau, im Build null
+const WetterDraftSwitch = import.meta.env.DEV
+    ? lazyWithReload(() => import('./components/widgets/wetter/WetterDraftSwitch'))
+    : null;
 
 const STORE_REHYDRATORS: Record<string, () => void> = {
     'aura-dashboard': () => useDashboardStore.persist.rehydrate(),
@@ -1205,6 +1211,11 @@ export default function App() {
             <ToastLayer scope={messageScope} />
             {import.meta.env.DEV && effectiveSettings.showHeader && (
                 <FaceliftSwitch choice={flChoice} onChange={setFlChoice} tabSlug={activeTabSlug} />
+            )}
+            {WetterDraftSwitch && activeTabSlug === 'wetter' && effectiveSettings.showHeader && (
+                <Suspense fallback={null}>
+                    <WetterDraftSwitch />
+                </Suspense>
             )}
             {drawerFloating && (
                 <LayoutDrawer

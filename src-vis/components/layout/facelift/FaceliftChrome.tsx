@@ -26,7 +26,6 @@ import {
 import { WOHNKLIMA_DRAFTS, useWohnklimaDraftStore } from '../../widgets/wohnklima/wohnklimaDraft';
 import { HEIZUNG_DRAFTS, HZ_PICK, useHeizungDraftStore } from '../../widgets/heating/heizungDraft';
 import { GARTEN_DRAFTS, useGartenDraftStore } from '../../widgets/garten2/gartenDraft';
-import { WETTER_DRAFTS, useWetterDraftStore } from '../../widgets/wetter/wetterDraft';
 import './facelift.css';
 import './facelift-blocks.css';
 
@@ -82,10 +81,6 @@ export function FaceliftSwitch({
     const gfDraft = useGartenDraftStore((s) => s.draft);
     const setGfDraft = useGartenDraftStore((s) => s.setDraft);
     const showGf = tabSlug === 'garten' && choice !== 'IST';
-    // Wetter, Entwurfsphase: Buchstaben nur auf dem Wetter-Tab
-    const wxDraft = useWetterDraftStore((s) => s.draft);
-    const setWxDraft = useWetterDraftStore((s) => s.setDraft);
-    const showWx = tabSlug === 'wetter' && choice !== 'IST';
     return (
         <div className="aura-fl-switch" title="Entwurfs-Umschalter, nur lokal">
             <button
@@ -141,23 +136,6 @@ export function FaceliftSwitch({
                             aria-pressed={d.key === hzDraft}
                             title={d.name}
                             onClick={() => setHzDraft(d.key)}
-                        >
-                            {d.label}
-                        </button>
-                    ))}
-                </span>
-            )}
-            {showWx && (
-                <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Wetter-Seite">
-                    {WETTER_DRAFTS.map((d) => (
-                        <button
-                            key={d.key}
-                            type="button"
-                            className="aura-fl-switch-draft"
-                            data-sel={d.key === wxDraft || undefined}
-                            aria-pressed={d.key === wxDraft}
-                            title={d.name}
-                            onClick={() => setWxDraft(d.key)}
                         >
                             {d.label}
                         </button>
