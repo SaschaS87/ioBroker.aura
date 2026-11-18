@@ -219,6 +219,12 @@ export function FaceliftStage({
     // Inhalt selbst mit. Früher lag er außerhalb und wurde per Skript nachgeführt; beim Zurückfedern nach
     // dem Überziehen (iOS) kam das Skript nicht Bild für Bild hinterher, der Titel ruckelte.
     const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
+    // Scrollposition je Tab. Auf dem Handy teilen sich alle Tabs einen Scroll-Container, nur der Inhalt
+    // wechselt; ohne das stand der neue Tab an der Stelle des alten (Sascha, 18.11.2026). Wie in iOS behält
+    // jeder Tab seine eigene Lage, ein noch nicht besuchter Tab beginnt oben.
+    const tabPos = useRef(new Map<string, number>());
+    const tabRef = useRef(activeTabId ?? '');
+    const restoring = useRef(false);
 
     useEffect(() => {
         const stage = stageRef.current;
@@ -292,6 +298,7 @@ export function FaceliftStage({
                     max: el.scrollHeight - el.clientHeight,
                     min: stage.hasAttribute('data-min') ? 1 : 0,
                 });
+            if (!restoring.current) tabPos.current.set(tabRef.current, el.scrollTop);
             apply(el.scrollTop, el.scrollHeight - el.clientHeight, el !== snapEl);
             snapEl = el;
             arm();
@@ -326,6 +333,43 @@ export function FaceliftStage({
             window.clearTimeout(idle);
             cancelAnimationFrame(raf);
         };
+    }, [activeTabId, enabled]);
+
+    // Tabwechsel: gemerkte Lage des neuen Tabs herstellen, bevor gemalt wird. Der Inhalt kann noch nachladen
+    // (Widgets, Daten); solange die Seite zu kurz ist, wird einige Bilder lang nachgezogen, bis der Finger
+    // die Seite berührt.
+    useLayoutEffect(() => {
+        const stage = stageRef.current;
+        const id = activeTabId ?? '';
+        tabRef.current = id;
+        if (!enabled || !stage) return;
+        const sc = Array.from(stage.querySelectorAll<HTMLElement>('.aura-scroll-touch')).find(
+            (el) => el.getClientRects().length > 0,
+        );
+        if (!sc) return;
+        const want = tabPos.current.get(id) ?? 0;
+        restoring.current = true;
+        sc.scrollTop = want;
+        let raf = 0;
+        let frames = 0;
+        const stop = () => {
+            restoring.current = false;
+            cancelAnimationFrame(raf);
+            sc.removeEventListener('touchstart', stop, true);
+        };
+        const pull = () => {
+            if (Math.abs(sc.scrollTop - want) > 1) sc.scrollTop = want;
+            if (Math.abs(sc.scrollTop - want) <= 1 || ++frames > 40) {
+                stop();
+                tabPos.current.set(id, sc.scrollTop);
+                return;
+            }
+            raf = requestAnimationFrame(pull);
+        };
+        sc.addEventListener('touchstart', stop, { passive: true, capture: true });
+        raf = requestAnimationFrame(pull);
+        if (import.meta.env.DEV) flTrace('tab', { id, want, now: Math.round(sc.scrollTop) });
+        return stop;
     }, [activeTabId, enabled]);
 
     // Unterseite offen (iOS-Stapel eine Ebene tiefer oder Einstellungsseite): Dann ist der Kopf der
