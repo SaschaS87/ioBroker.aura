@@ -1,5 +1,5 @@
 /**
- * UI-Facelift, Garten (nur Dev-Vorschau, Entwurf E): Auswertungen auf eigenen Unterseiten, nach denselben
+ * UI-Facelift, Garten (Entwurf E): Auswertungen auf eigenen Unterseiten, nach denselben
  * Regeln wie die Heizungs-Unterseiten (Sascha, 17.11.2026). Gleiche Bausteine: Zeitraum-Wahl
  * (HeizungPeriodNav), Karte mit Diagramm, Begleittext und „Im gewählten Zeitraum" (HzDetailFrame),
  * Theme-Farben (useChartInk), Zoom-Schieber auf Zeitachsen (useChartZoom).

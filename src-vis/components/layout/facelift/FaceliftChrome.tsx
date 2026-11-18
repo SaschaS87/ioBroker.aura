@@ -1,5 +1,5 @@
 /**
- * UI-Facelift (Entwurf): durchscheinender Kopf mit großem Titel darunter. Scrollt der Inhalt unter den
+ * UI-Facelift: durchscheinender Kopf mit großem Titel darunter. Scrollt der Inhalt unter den
  * Kopf, wandert der Titel klein in die Kopfzeile und die Kopfzeile wird niedriger. Unten schwebt die
  * Glas-Leiste. Der Inhalt scrollt unter beiden hindurch.
  *

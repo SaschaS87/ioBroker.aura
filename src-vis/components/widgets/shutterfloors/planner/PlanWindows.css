@@ -185,7 +185,7 @@ html.dark .pp-page .rpp-seg-btn.is-active { background: color-mix(in srgb, var(-
 :root .pp-page .rpp-name-clear { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; border-radius: 999px; color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 :root .pp-page .rpp-name-clear:active { background: var(--rpp-fill); }
 
-/* Feder „fährt leise" hinter dem Namen im Zeitplan. Bei „Ist" unsichtbar, sichtbar erst im
-   Facelift (ShutterFloorsFacelift.css). */
+/* Feder „fährt leise" hinter dem Namen im Zeitplan. Ohne body[data-fl-variant] unsichtbar; das Attribut setzt main.tsx
+   immer (ShutterFloorsFacelift.css). */
 .pw-feder { display: none; }
 .pw-title--mark { display: flex; align-items: center; gap: 6px; }

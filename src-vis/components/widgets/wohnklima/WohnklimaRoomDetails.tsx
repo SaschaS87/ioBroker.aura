@@ -1,5 +1,5 @@
 /**
- * UI-Facelift, Wohnklima (nur Dev-Vorschau): Inhalt des Raum-Pop-ups (RoomClimateSheet, look 'facelift').
+ * UI-Facelift, Wohnklima Inhalt der Raum-Unterseite (WohnklimaFacelift).
  *
  * Aufbau von oben nach unten:
  *   1. Temperatur und Luftfeuchte groß, in den Farben ihrer Linien im Diagramm

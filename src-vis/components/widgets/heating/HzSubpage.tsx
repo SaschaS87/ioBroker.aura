@@ -1,10 +1,10 @@
 /**
- * UI-Facelift, Heizung: Aufbau einer Auswertungs-Unterseite (nur Dev-Vorschau, Variante „Neu").
+ * UI-Facelift, Heizung: Aufbau einer Auswertungs-Unterseite.
  *
  * HeizungFacelift legt um den Inhalt einer Unterseite einen Kontext (HzSubpageProvider). Die Auswertungen
  * (HeatingDetails, SensorCheck, Energie) lesen ihn mit useHzSubpage(): ist er da, bauen sie sich aus den
- * Facelift-Bausteinen (Karte, Begleittext, Abschnitt mit Zeilen); ohne ihn bleibt alles wie auf der
- * heutigen Seite („Ist", „Alt", Pi-Build).
+ * Facelift-Bausteinen (Karte, Begleittext, Abschnitt mit Zeilen); ohne ihn (Heizungs-Klappboxen im
+ * Admin-Editor) bleibt der bisherige Aufbau.
  *
  *   Karte      Zeitraum, Diagramm
  *   Text       Begleittext (aura-fl-foot)

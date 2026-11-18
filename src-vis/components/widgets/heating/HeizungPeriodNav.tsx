@@ -1,9 +1,9 @@
 /**
- * UI-Facelift, Heizung (nur Dev-Vorschau): Zeitraum-Wahl über einem Diagramm in zwei Zeilen, wie im
+ * UI-Facelift, Heizung: Zeitraum-Wahl über einem Diagramm in zwei Zeilen, wie im
  * Wohnklima-Pop-up (Sascha, 13.11.2026: einzeilig überlagern sich die Knöpfe am iPhone).
  *   Zeile 1: Segment-Schalter Tag / 7 Tage / Monat über die volle Breite
  *   Zeile 2: zurück, Datum (öffnet die Auswahl), vor, Heute
- * Gleiche Angaben wie ChartPeriodNav, das bei „Ist" und „Alt" unverändert weiterläuft.
+ * Gleiche Angaben wie ChartPeriodNav, das außerhalb der Unterseiten weiterläuft.
  */
 import { useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';

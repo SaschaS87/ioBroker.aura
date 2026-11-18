@@ -3,7 +3,7 @@
  *
  * Nutzt die gemeinsamen Bausteine aus facelift-blocks.css (aura-fl-section, -card, -row, -foot …) und
  * ergänzt nur, was der Garten eigen hat (Klassen gf-*). Dazu bildet sie die vorhandenen Pop-ups (Termin:
- * garten-sheet*, Regensperre: garten2-sheet*) und den Schalter (garten-sw) auf das Raster ab. Jede Regel
+ * garten-sheet*, Regensperre: garten2-sheet*, früheres Pop-up, entfallen) und den Schalter (garten-sw) auf das Raster ab. Jede Regel
  * hängt an body[data-fl-variant]; das Attribut setzt main.tsx immer. Farben nur über Theme-Variablen mit
  * Rückfallkette. Seitenrand und Zeilenhöhe kommen aus dem Raster (--fl-page-x, --fl-row-min-h) und werden
  * hier nicht gesetzt.
