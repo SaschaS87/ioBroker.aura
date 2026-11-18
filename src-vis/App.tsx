@@ -34,8 +34,7 @@ import { loadConfigFromIoBroker, applyRaw } from './utils/configLoader';
 import { Dashboard } from './components/layout/Dashboard';
 import { FocusedWidgetContext } from './contexts/FocusedWidgetContext';
 import { TabBar } from './components/layout/TabBar';
-import { FaceliftStage, FaceliftSwitch, useFaceliftChoice } from './components/layout/facelift/FaceliftChrome';
-import { choiceToVariant } from './components/layout/facelift/faceliftVariant';
+import { FaceliftStage } from './components/layout/facelift/FaceliftChrome';
 import { LayoutDrawer } from './components/layout/LayoutDrawer';
 import { HeaderLogo } from './components/common/HeaderLogo';
 import { useIframeStore } from './store/iframeStore';
@@ -959,9 +958,8 @@ export default function App() {
     const showBadge = effectiveSettings.showHeader && effectiveSettings.showConnectionBadge;
     const showClientIdBadge = useGlobalSettingsStore((s) => s.showClientIdBadge);
 
-    // UI-Facelift (Entwurf): vorerst nur in der Dev-Vorschau, per gelbem Umschalter.
-    const [flChoice, setFlChoice] = useFaceliftChoice();
-    const facelift = import.meta.env.DEV && flChoice !== 'IST' && effectiveSettings.showHeader && !shotEditMode;
+    // UI-Facelift: Bühne mit Kopf und Leiste, sobald der Kopf an ist (nicht im Bearbeiten-Modus der Screenshot-Hilfe).
+    const facelift = effectiveSettings.showHeader && !shotEditMode;
     const [flSettingsOpen, setFlSettingsOpen] = useState(false);
 
     const activeTabSlug = useMemo(() => {
@@ -1209,9 +1207,6 @@ export default function App() {
             {showClientIdBadge && <ClientIdBadge />}
             <DpPopupTriggers layoutId={layout?.id} tabId={activeTabId} />
             <ToastLayer scope={messageScope} />
-            {import.meta.env.DEV && effectiveSettings.showHeader && (
-                <FaceliftSwitch choice={flChoice} onChange={setFlChoice} />
-            )}
             {WetterDraftSwitch && activeTabSlug === 'wetter' && effectiveSettings.showHeader && (
                 <Suspense fallback={null}>
                     <WetterDraftSwitch />
@@ -1293,7 +1288,6 @@ export default function App() {
                     {!tabBarAtBottom && !facelift && tabBarNode}
                     <FaceliftStage
                         enabled={facelift}
-                        variant={facelift ? choiceToVariant(flChoice) : null}
                         settingsOpen={facelift && flSettingsOpen}
                         onSettingsClose={() => setFlSettingsOpen(false)}
                         adminHref={effectiveSettings.showAdminLink ? '#/admin' : undefined}

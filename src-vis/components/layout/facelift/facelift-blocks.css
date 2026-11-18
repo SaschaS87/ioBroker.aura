@@ -3,8 +3,8 @@
  * Schriftstufen) nach dem Vorbild der iOS-Einstellungen. Seitenneutral: Rollläden nutzt sie zuerst,
  * Wohnklima, Heizung, Garten und Wetter folgen.
  *
- * Alles hängt an body[data-fl-variant] (gesetzt von FaceliftStage, nur Dev-Vorschau). Ohne das Attribut
- * greift keine Regel dieser Datei: „Ist" und der Pi-Build bleiben unverändert.
+ * Alles hängt an body[data-fl-variant]. Das Attribut setzt main.tsx immer, die Regeln gelten also überall
+ * (Bühne, Seiten, Pop-ups, Editor). Wert und Name stammen aus der Entwurfsphase und bleiben unverändert.
  *
  * Raster (Grundwerte, von Sascha am 11.11.2026 gewählt: Symbole kleiner, Rundung mittel, Titel 15 halbfett):
  *   Schrift    --fl-font-section / --fl-weight-section / --fl-case-section / --fl-track-section / --fl-color-section
@@ -397,20 +397,4 @@ body[data-fl-variant] .aura-fl-sigrow-num {
 body[data-fl-variant] .aura-fl-card:empty,
 body[data-fl-variant] .aura-fl-section:has(> .aura-fl-card:empty) {
     display: none;
-}
-
-/* ── Entwurfs-Umschalter ──────────────────────────────────────────────── */
-/* Bewusst ohne body[data-fl-variant]: Der Umschalter steht auch bei „Ist". Nur Dev-Vorschau.
-   Ein Kreis, ein Tipp wechselt zwischen „Ist" und „Neu". */
-.aura-fl-switch {
-    flex-direction: row;
-    /* 30 statt 28 px: Reserve gegen Rundung, die Randzone (24 px) sperrt index.html für Taps */
-    right: calc(30px + env(safe-area-inset-right));
-}
-.aura-fl-switch button {
-    min-width: 30px;
-    min-height: 30px;
-    padding: 5px 8px;
-    text-align: center;
-    white-space: nowrap;
 }

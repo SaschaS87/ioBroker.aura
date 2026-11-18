@@ -1,11 +1,11 @@
 /*
- * Rollläden im Facelift (nur Dev-Vorschau).
+ * Rollläden im Facelift.
  *
  * Brücke: bildet die vorhandenen Klassen der Rollladen-Seite (.sf-*), der Unterseiten (.pw-*, .rpp-*) und
  * des Feinreglers (.sds-*) auf das gemeinsame Raster aus facelift-blocks.css ab. So sehen Hauptseite,
  * Zeitplan, Szenen, Editoren, Status und Feinregler aus wie aus einem Guss.
  *
- * Jede Regel hängt an body[data-fl-variant]. Ohne das Attribut („Ist", Pi-Build) greift nichts.
+ * Jede Regel hängt an body[data-fl-variant]. Das Attribut setzt main.tsx immer.
  * Den Schleier der Pop-ups (.aura-scrim) fasst diese Datei nicht an.
  */
 

@@ -374,34 +374,6 @@ html.dark .aura-fl-stage {
     }
 }
 
-/* ── Entwurfs-Umschalter (nur Dev) ────────────────────────────────────── */
-.aura-fl-switch {
-    position: fixed;
-    z-index: 9999;
-    top: 42%;
-    /* 28 px vom Rand: die aeussersten 24 px sperrt index.html fuer Taps */
-    right: calc(28px + env(safe-area-inset-right));
-    display: flex;
-    flex-direction: column;
-    opacity: 0.85;
-    gap: 2px;
-    padding: 2px;
-    border-radius: 999px;
-    border: 1.5px dashed var(--accent-yellow);
-    background: var(--app-surface);
-    font-size: 11px;
-}
-.aura-fl-switch button {
-    padding: 6px 7px;
-    border-radius: 999px;
-    color: var(--text-secondary);
-}
-.aura-fl-switch button[data-on] {
-    background: var(--accent-yellow);
-    color: #000;
-    font-weight: 600;
-}
-
 /* Statusleiste der Homescreen-App (index.html, #aura-topedge): iOS färbt sie in der Farbe dieses
    Randstreifens. Im Facelift ist das die Farbe der Seite, damit Notch und Kopf eine Fläche sind.
    Pop-ups dunkeln den Hintergrund nicht ab (siehe .aura-scrim in index.css), die Notch bleibt also stehen. */
