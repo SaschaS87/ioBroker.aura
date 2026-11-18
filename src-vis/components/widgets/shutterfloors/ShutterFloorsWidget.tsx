@@ -14,7 +14,6 @@ import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
 import { PlannerStack } from './planner/PlannerStack';
 import { PlanTiles, type Tab } from './planner/PlanWindows';
-import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 import './ShutterFloorsWidget.css';
 import './ShutterFloorsFacelift.css';
 
@@ -66,9 +65,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Dev-/Live-Weiche wie der Planer. Vor dem fruehen Return unten, damit die
     // Reihenfolge der Hooks gleich bleibt.
     const fav = useFavorites(`${effectivePlannerRoot}.Favoriten`);
-
-    // Facelift-Entwurf (nur Dev-Vorschau, sonst null): bestimmt Aufbau und Platz des Status-Blocks
-    const flv = useFaceliftVariant();
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -266,24 +262,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
             )}
         </>
     );
-    const footer = (
-        <>
-            {/* Aufklappbare Status-Box statt Fusszeilen-Pille (Muster
-                    Wetter-Tab, DataSourceHealthBox). Meldet den Zustand der
-                    Instanz auch im Normalfall, mit Neustart-Knopf im
-                    Stoerfall. `showFooter` stand schon in der Konfiguration. */}
-            {showFooter && <DataSourceHealthBox sources={healthSources} />}
-
-            {/* Signalstaerke-Aufklappbox (Feature 16, 02.09.2026): alle
-                    TaHoma-Funk-States gebuendelt statt einer Zeile pro Sheet. */}
-            {signalBoxVisible && (
-                <div style={{ marginTop: showFooter ? 8 : 0 }}>
-                    <SignalStrengthBox devices={signalDevices} updateDp={updateDp} />
-                </div>
-            )}
-        </>
-    );
-
     const floorList = floors.map((floor) => (
         <FloorGroup
             key={floor.name}
@@ -310,16 +288,6 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
             fav={fav}
             onClose={handleCloseSheet}
         />
-    );
-
-    // Liste mit Etagen und Fuss. Mit Planer (showPlanner) steht darueber die Kopfgruppe Zeitplan/Szenen, und die
-    // Liste ist die unterste Seite des Stapels (Feature 30, Phase 2); ohne Planer bleibt es die Liste allein.
-    const classicBody = (head?: React.ReactNode) => (
-        <div className={`sf${connected ? '' : ' is-offline'}`}>
-            {head}
-            {floorList}
-            <div className="sf-foot">{footer}</div>
-        </div>
     );
 
     // Facelift: vier Rubriken – Etagen, „Automatik" (Zeitplan, Szenen) und „Status". Datenquellen und
@@ -381,7 +349,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
             )}
         </div>
     );
-    const statusPage = flv ? (
+    const statusPage = (
         <>
             {hasHealth && (
                 <DataSourceHealthBox
@@ -399,8 +367,7 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                 />
             )}
         </>
-    ) : undefined;
-    const listBody = flv ? faceliftBody : classicBody;
+    );
 
     return (
         <PendingContext.Provider value={pendingStore}>
@@ -414,12 +381,12 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                             <PlannerStack
                                 m={m}
                                 statusPage={statusPage}
-                                list={(open) => listBody(<PlanTiles m={m} open={open} />, open)}
+                                list={(open) => faceliftBody(<PlanTiles m={m} open={open} />, open)}
                             />
                         )}
                     />
                 ) : (
-                    listBody()
+                    faceliftBody()
                 )}
                 {sheet}
             </div>

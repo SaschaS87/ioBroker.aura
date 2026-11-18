@@ -49,7 +49,6 @@ import {
 } from './planModel';
 import { Caption, closedWord, DayLetters, DeviceGlyph, SceneGlyph, SCENE_ICONS, Seg, Toggle } from './parts';
 import { sameEntry, sameSceneDraft, sceneDraftOf, sceneFromDraft, type SceneTargets } from './editorDirty';
-import { useFaceliftVariant } from '../../../layout/facelift/faceliftVariant';
 import { ShutterKindIcon } from '../ShutterKindIcon';
 import { SceneTargetSheet } from './SceneTargetSheet';
 
@@ -80,100 +79,7 @@ const POS_CHIPS: { v: number | null; label: string }[] = [
     { v: 100, label: 'zu' },
 ];
 
-const SLAT_CHIPS: { v: number; label: string }[] = [
-    { v: 0, label: 'waagerecht' },
-    { v: 50, label: 'halb' },
-    { v: 90, label: 'geschlossen' },
-];
-
-/** Ziele-Block des Szenen-Editors in der Ist-Fassung (Chips je Rollladen), unverändert aus SceneEditor. */
-function ClassicSceneTargets({
-    model,
-    targets,
-    count,
-    setPos,
-    setSlat,
-    takeCurrent,
-}: {
-    model: PlanModel;
-    targets: SceneTargets;
-    count: number;
-    setPos: (key: string, v: number | null, hasSlat: boolean) => void;
-    setSlat: (key: string, s: number) => void;
-    takeCurrent: () => void;
-}) {
-    return (
-        <>
-            <div className="rpp-section rpp-section--flush">
-                <div className="rpp-section-head">
-                    <span className="rpp-label">
-                        {count} {count === 1 ? 'Rollladen' : 'Rollläden'} beteiligt
-                    </span>
-                    <button type="button" className="rpp-textbtn" onClick={takeCurrent}>
-                        Aktuellen Stand übernehmen
-                    </button>
-                </div>
-                <div className="rpp-hint">„—" heißt: fährt bei dieser Szene nicht mit. Zahlen = Prozent zu.</div>
-            </div>
-
-            {model.floors.map((floor) => (
-                <div key={floor} className="rpp-editor-floor">
-                    <Caption>{floor}</Caption>
-                    <div className="rpp-card">
-                        {model.devices
-                            .filter((d) => d.floor === floor)
-                            .map((d) => {
-                                const t = targets[d.key];
-                                return (
-                                    <div key={d.key} className={`rpp-dev${t ? '' : ' is-off'}`}>
-                                        <div className="rpp-dev-head">
-                                            <span className="rpp-row-icon">
-                                                <DeviceGlyph kind={d.kind} closed={t ? t.closed : d.closed} />
-                                            </span>
-                                            <span className="rpp-title rpp-grow">{d.label}</span>
-                                            <span className="rpp-sub">jetzt {d.closed === null ? '—' : closedWord(Math.round(d.closed))}</span>
-                                        </div>
-                                        <div className="rpp-chips">
-                                            {POS_CHIPS.map((c) => {
-                                                const active = c.v === null ? !t : t?.closed === c.v;
-                                                return (
-                                                    <button
-                                                        key={String(c.v)}
-                                                        type="button"
-                                                        className={`rpp-chip${active ? ' is-active' : ''}${c.v === null ? ' is-none' : ''}`}
-                                                        onClick={() => setPos(d.key, c.v, d.hasSlat)}
-                                                    >
-                                                        {c.label}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                        {d.hasSlat && t && (
-                                            <div className="rpp-chips rpp-chips--slat">
-                                                <span className="rpp-sub">Lamelle</span>
-                                                {SLAT_CHIPS.map((c) => (
-                                                    <button
-                                                        key={c.v}
-                                                        type="button"
-                                                        className={`rpp-chip rpp-chip--sm${t.slat === c.v ? ' is-active' : ''}`}
-                                                        onClick={() => setSlat(d.key, c.v)}
-                                                    >
-                                                        {c.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                    </div>
-                </div>
-            ))}
-        </>
-    );
-}
-
-/** Ziele-Block des Szenen-Editors im Facelift: Liste je Etage, Antippen öffnet das Ziel-Pop-up. */
+/** Ziele-Block des Szenen-Editors: Liste je Etage, Antippen öffnet das Ziel-Pop-up. */
 function FaceliftSceneTargets({
     model,
     targets,
@@ -282,7 +188,6 @@ export function SceneEditor({
     const [targets, setTargets] = useState<SceneTargets>(base.targets);
     const [askLeave, setAskLeave] = useState(false);
     const [askDelete, setAskDelete] = useState(false);
-    const flv = useFaceliftVariant();
     const count = Object.keys(targets).length;
     const dirty = !sameSceneDraft({ name, icon, favorite, targets }, base);
     const canSave = dirty && count > 0;
@@ -293,33 +198,17 @@ export function SceneEditor({
     });
     useReportDirty(onDirtyChange, dirty);
 
-    const setPos = (key: string, v: number | null, hasSlat: boolean) =>
-        setTargets((prev) => {
-            const next = { ...prev };
-            if (v === null) delete next[key];
-            else
-                next[key] = {
-                    closed: v,
-                    slat: hasSlat ? (prev[key]?.slat ?? 0) : undefined,
-                    ...(prev[key]?.quiet ? { quiet: true as const } : {}),
-                };
-            return next;
-        });
-    const setSlat = (key: string, s: number) => setTargets((prev) => ({ ...prev, [key]: { ...prev[key], slat: s } }));
-
     const takeCurrent = () => {
         setTargets((prev) => {
             const next: SceneTargets = {};
             model.devices.forEach((d) => {
                 if (d.closed === null) return;
                 const quiet = prev[d.key]?.quiet ? { quiet: true as const } : {};
-                if (flv)
-                    next[d.key] = {
-                        closed: Math.round(d.closed),
-                        slat: d.hasSlat ? (prev[d.key]?.slat ?? 0) : undefined,
-                        ...quiet,
-                    };
-                else next[d.key] = { closed: Math.round(d.closed / 5) * 5, slat: d.hasSlat ? 0 : undefined, ...quiet };
+                next[d.key] = {
+                    closed: Math.round(d.closed),
+                    slat: d.hasSlat ? (prev[d.key]?.slat ?? 0) : undefined,
+                    ...quiet,
+                };
             });
             return next;
         });
@@ -373,23 +262,7 @@ export function SceneEditor({
                 </SwitchRow>
             </div>
 
-            {flv ? (
-                <FaceliftSceneTargets
-                    model={model}
-                    targets={targets}
-                    setTargets={setTargets}
-                    takeCurrent={takeCurrent}
-                />
-            ) : (
-                <ClassicSceneTargets
-                    model={model}
-                    targets={targets}
-                    count={count}
-                    setPos={setPos}
-                    setSlat={setSlat}
-                    takeCurrent={takeCurrent}
-                />
-            )}
+            <FaceliftSceneTargets model={model} targets={targets} setTargets={setTargets} takeCurrent={takeCurrent} />
 
             {scene && (
                 // Kreis schliessen: Zeitpunkt antippen oder anlegen; die Szene bleibt darunter
@@ -659,22 +532,10 @@ function TargetListEditor({
 }
 
 /**
- * Schalterzeile. Im Facelift steht der Schalter immer auf Höhe der Überschrift, der Erklärtext
- * darunter über die volle Breite (so wie bei „Aktiv"). Bei „Ist" bleibt der alte Aufbau.
+ * Schalterzeile: Der Schalter steht auf Höhe der Überschrift, der Erklärtext darunter über die volle Breite
+ * (so wie bei „Aktiv").
  */
 function SwitchRow({ title, sub, children }: { title: string; sub?: ReactNode; children: ReactNode }) {
-    const flv = useFaceliftVariant();
-    if (!flv) {
-        return (
-            <div className="rpp-kv">
-                <span className="rpp-row-main">
-                    <span className="rpp-title">{title}</span>
-                    {sub && <span className="rpp-sub">{sub}</span>}
-                </span>
-                {children}
-            </div>
-        );
-    }
     return (
         <>
             <div className="rpp-kv">
@@ -700,22 +561,15 @@ export function EntryEditor({
     preset?: Partial<PlanEntry>;
     onDone: () => void;
 } & EditorChrome) {
-    const flv = useFaceliftVariant();
     // Ausgangsstand einmal beim Oeffnen (bei einem neuen Zeitpunkt die Vorbelegung).
-    // Neu: die Ziel-Liste startet leer. Ist: wie bisher mit der ersten Szene vorbelegt.
+    // Die Ziel-Liste startet leer.
     const [base] = useState<PlanEntry>(
         () =>
             entry ?? {
                 id: newId('e'),
                 days: [true, true, true, true, true, false, false],
                 trigger: { kind: 'time', time: '07:00', offset: 0, earliest: null, latest: null },
-                targets: flv
-                    ? []
-                    : [
-                          model.scenes[0]
-                              ? { kind: 'scene', sceneId: model.scenes[0].id }
-                              : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
-                      ],
+                targets: [],
                 enabled: true,
                 ...preset,
             },
@@ -726,9 +580,6 @@ export function EntryEditor({
     const [askLeave, setAskLeave] = useState(false);
     const [askDelete, setAskDelete] = useState(false);
 
-    const listMode = flv || base.targets.length !== 1; // Ist mit einem Ziel: Oberfläche exakt wie heute
-    const t0 = e.targets[0];
-    const setT0 = (t: PlanTarget) => set({ targets: [t] });
     const todaySun = model.sunFor(model.today);
     const todayRes = triggerMinutes(e.trigger, todaySun);
     const next = model.nextRunOf(e);
@@ -784,100 +635,29 @@ export function EntryEditor({
         >
             <div className="rpp-section">
                 <span className="rpp-label">Was fährt?</span>
-                {listMode ? (
-                    <>
-                        <TargetListEditor model={model} entry={e} onChange={(targets) => set({ targets })} conflicts={conflicts} />
-                        <label className="rpp-label" htmlFor="rpp-entry-name">
-                            Name (freiwillig)
-                        </label>
-                        <div className="rpp-name-wrap">
-                            <input
-                                id="rpp-entry-name"
-                                className="rpp-input"
-                                maxLength={60}
-                                enterKeyHint="done"
-                                value={e.name ?? ''}
-                                placeholder={e.targets.length > 0 ? entryNameOf({ targets: e.targets }, model.targetName) : 'Name'}
-                                onChange={(ev) => set({ name: ev.target.value })}
-                                onKeyDown={(ev) => {
-                                    if (ev.key === 'Enter') ev.currentTarget.blur();
-                                }}
-                            />
-                            {!!e.name && (
-                                <button type="button" className="rpp-name-clear" aria-label="Name löschen" onClick={() => set({ name: '' })}>
-                                    <X size={16} />
-                                </button>
-                            )}
-                        </div>
-                    </>
-                ) : (
-                    <>
-                    <Seg
-                        value={t0.kind}
-                        options={[
-                            { value: 'scene', label: 'Eine Szene' },
-                            { value: 'device', label: 'Ein Rollladen' },
-                        ]}
-                        onChange={(k) =>
-                            setT0(
-                                k === 'scene'
-                                    ? { kind: 'scene', sceneId: model.scenes[0]?.id ?? '' }
-                                    : { kind: 'device', key: model.devices[0]?.key ?? '', closed: 0 },
-                            )
-                        }
+                <TargetListEditor model={model} entry={e} onChange={(targets) => set({ targets })} conflicts={conflicts} />
+                <label className="rpp-label" htmlFor="rpp-entry-name">
+                    Name (freiwillig)
+                </label>
+                <div className="rpp-name-wrap">
+                    <input
+                        id="rpp-entry-name"
+                        className="rpp-input"
+                        maxLength={60}
+                        enterKeyHint="done"
+                        value={e.name ?? ''}
+                        placeholder={e.targets.length > 0 ? entryNameOf({ targets: e.targets }, model.targetName) : 'Name'}
+                        onChange={(ev) => set({ name: ev.target.value })}
+                        onKeyDown={(ev) => {
+                            if (ev.key === 'Enter') ev.currentTarget.blur();
+                        }}
                     />
-                    {t0.kind === 'scene' ? (
-                        model.scenes.length === 0 ? (
-                            <span className="rpp-sub">Noch keine Szene angelegt.</span>
-                        ) : (
-                            <div className="rpp-chips rpp-chips--wrap">
-                                {model.scenes.map((s) => (
-                                    <button
-                                        key={s.id}
-                                        type="button"
-                                        className={`rpp-chip rpp-chip--scene${t0.kind === 'scene' && t0.sceneId === s.id ? ' is-active' : ''}`}
-                                        onClick={() => setT0({ kind: 'scene', sceneId: s.id })}
-                                    >
-                                        <SceneGlyph icon={s.icon} size={14} /> {s.name}
-                                    </button>
-                                ))}
-                            </div>
-                        )
-                    ) : (
-                        <>
-                            <select
-                                className="rpp-input"
-                                value={t0.kind === 'device' ? t0.key : ''}
-                                onChange={(ev) => setT0({ kind: 'device', key: ev.target.value, closed: t0.kind === 'device' ? t0.closed : 0 })}
-                            >
-                                {model.floors.map((f) => (
-                                    <optgroup key={f} label={f}>
-                                        {model.devices
-                                            .filter((d) => d.floor === f)
-                                            .map((d) => (
-                                                <option key={d.key} value={d.key}>
-                                                    {d.label}
-                                                </option>
-                                            ))}
-                                    </optgroup>
-                                ))}
-                            </select>
-                            <div className="rpp-chips">
-                                {POS_CHIPS.filter((c) => c.v !== null).map((c) => (
-                                    <button
-                                        key={String(c.v)}
-                                        type="button"
-                                        className={`rpp-chip${t0.kind === 'device' && t0.closed === c.v ? ' is-active' : ''}`}
-                                        onClick={() => t0.kind === 'device' && setT0({ ...t0, closed: c.v as number })}
-                                    >
-                                        {c.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
+                    {!!e.name && (
+                        <button type="button" className="rpp-name-clear" aria-label="Name löschen" onClick={() => set({ name: '' })}>
+                            <X size={16} />
+                        </button>
                     )}
-                    </>
-                )}
+                </div>
             </div>
 
             <div className="rpp-section">
@@ -983,7 +763,7 @@ export function EntryEditor({
                                     </span>
                                     {split.normal.length > 0 && (
                                         <span className="rpp-quiet-line">
-                                            <b>{flv ? 'Nicht leise:' : 'Normal:'}</b> {names(split.normal)}
+                                            <b>Nicht leise:</b> {names(split.normal)}
                                         </span>
                                     )}
                                 </>

@@ -11,13 +11,11 @@
  * row(d, firstRest) zeichnet die Zeile; firstRest markiert den ersten
  * eingeblendeten Nicht-Favoriten (Trennlinie ueber volle Breite).
  *
- * Facelift (nur Dev-Vorschau, useFaceliftVariant): gleiche Regel, eigener
- * Aufbau aus den gemeinsamen Bausteinen. Der Aufklapp-Knopf „x weitere"
- * sitzt rechts im Titel.
+ * Aufbau aus den gemeinsamen Facelift-Bausteinen (aura-fl-*). Der Aufklapp-Knopf
+ * „x weitere" sitzt rechts im Titel.
  */
 import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { useFaceliftVariant } from '../../layout/facelift/faceliftVariant';
 import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 
 interface FloorGroupProps {
@@ -26,7 +24,7 @@ interface FloorGroupProps {
     row: (d: ShutterFloorDeviceDef, firstRest: boolean) => ReactNode;
 }
 
-function FaceliftFloorGroup({ floor, isFav, row }: FloorGroupProps) {
+export function FloorGroup({ floor, isFav, row }: FloorGroupProps) {
     const [open, setOpen] = useState(false);
     const favs = floor.devices.filter((d) => isFav(d.key));
     const rest = floor.devices.filter((d) => !isFav(d.key));
@@ -65,41 +63,4 @@ function FaceliftFloorGroup({ floor, isFav, row }: FloorGroupProps) {
             </div>
         </section>
     );
-}
-
-function ClassicFloorGroup({ floor, isFav, row }: FloorGroupProps) {
-    const [open, setOpen] = useState(false);
-    const favs = floor.devices.filter((d) => isFav(d.key));
-    const rest = floor.devices.filter((d) => !isFav(d.key));
-    const title = floor.name.toUpperCase();
-
-    if (favs.length === 0 || rest.length === 0) {
-        return (
-            <section>
-                <div className="sf-group-head">{title}</div>
-                <div className="sf-group">{floor.devices.map((d) => row(d, false))}</div>
-            </section>
-        );
-    }
-
-    const toggle = () => setOpen((v) => !v);
-    const label = open ? 'weniger' : `${rest.length} weitere`;
-    return (
-        <section>
-            <button type="button" className="sf-group-head sf-group-head--fold" onClick={toggle} aria-expanded={open}>
-                <span>{title}</span>
-                <span className="sf-group-more">{label}</span>
-                <ChevronDown size={18} className={`sf-group-chev${open ? ' is-open' : ''}`} />
-            </button>
-            <div className="sf-group">
-                {favs.map((d) => row(d, false))}
-                {open && rest.map((d, i) => row(d, i === 0))}
-            </div>
-        </section>
-    );
-}
-
-export function FloorGroup(props: FloorGroupProps) {
-    const v = useFaceliftVariant();
-    return v ? <FaceliftFloorGroup {...props} /> : <ClassicFloorGroup {...props} />;
 }
