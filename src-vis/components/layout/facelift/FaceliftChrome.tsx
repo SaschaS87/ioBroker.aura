@@ -23,7 +23,6 @@ import {
     type FaceliftChoice,
     type FaceliftVariant,
 } from './faceliftVariant';
-import { WOHNKLIMA_DRAFTS, useWohnklimaDraftStore } from '../../widgets/wohnklima/wohnklimaDraft';
 import { HEIZUNG_DRAFTS, HZ_PICK, useHeizungDraftStore } from '../../widgets/heating/heizungDraft';
 import { GARTEN_DRAFTS, useGartenDraftStore } from '../../widgets/garten2/gartenDraft';
 import './facelift.css';
@@ -70,9 +69,6 @@ export function FaceliftSwitch({
     /** Aktive Seite: Auf Wohnklima stehen bei „Neu" zusätzlich die Entwürfe der Seite (Entwurfsphase). */
     tabSlug?: string | null;
 }) {
-    const wkDraft = useWohnklimaDraftStore((s) => s.draft);
-    const setWkDraft = useWohnklimaDraftStore((s) => s.setDraft);
-    const showWk = tabSlug === 'wohnklima' && choice !== 'IST';
     const hzDraft = useHeizungDraftStore((s) => s.draft);
     const setHzDraft = useHeizungDraftStore((s) => s.setDraft);
     // Heizung entschieden (14.11.2026): Buchstaben abgeschaltet, mit HZ_PICK wieder sichtbar
@@ -91,23 +87,6 @@ export function FaceliftSwitch({
             >
                 {choice === 'IST' ? 'Ist' : 'Neu'}
             </button>
-            {showWk && (
-                <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Wohnklima-Seite">
-                    {WOHNKLIMA_DRAFTS.map((d) => (
-                        <button
-                            key={d.key}
-                            type="button"
-                            className="aura-fl-switch-draft"
-                            data-sel={d.key === wkDraft || undefined}
-                            aria-pressed={d.key === wkDraft}
-                            title={d.name}
-                            onClick={() => setWkDraft(d.key)}
-                        >
-                            {d.label}
-                        </button>
-                    ))}
-                </span>
-            )}
             {showGf && (
                 <span className="aura-fl-switch-drafts" role="group" aria-label="Entwürfe der Garten-Seite">
                     {GARTEN_DRAFTS.map((d) => (

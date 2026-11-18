@@ -1,9 +1,9 @@
 /*
- * UI-Facelift, Brücken-Datei der Wohnklima-Seite (Entwurfsphase, nur Dev-Vorschau).
+ * UI-Facelift, Brücken-Datei der Wohnklima-Seite.
  *
  * Nutzt die gemeinsamen Bausteine aus facelift-blocks.css (aura-fl-section, -card, -row, -foot …) und
- * ergänzt nur, was Wohnklima eigen ist (Klassen wk-*). Jede Regel hängt an body[data-fl-variant]; ohne das
- * Attribut greift nichts. Farben nur über Theme-Variablen mit Rückfallkette.
+ * ergänzt nur, was Wohnklima eigen ist (Klassen wk-*). Jede Regel hängt an body[data-fl-variant]; das Attribut
+ * setzt main.tsx immer. Farben nur über Theme-Variablen mit Rückfallkette.
  *
  * Eigene Maße (Wohnklima):
  *   --fl-wk-val          Temperatur rechts in der Zeile
@@ -308,30 +308,7 @@ body[data-fl-variant] .wk-subpage > .wk-section > .aura-fl-card {
     margin-top: var(--fl-gap-title);
 }
 
-/* ── Pop-up eines Raums (RoomClimateSheet, look 'facelift' → WohnklimaRoomDetails) ─── */
-/* Fläche wie die Seite (graue Gruppierung), Kopf ohne Linie, Titel wie ein Seitentitel */
-body[data-fl-variant] .wk-sheet {
-    background: var(--app-bg);
-    border-radius: var(--fl-card-radius) var(--fl-card-radius) 0 0;
-}
-body[data-fl-variant] .wk-sheet .rc-sheet-header {
-    border-bottom: 0;
-    /* Titel bündig mit dem Seitentitel: gleicher Rand wie die Karten */
-    padding: 2px var(--fl-page-x) 4px;
-}
-body[data-fl-variant] .wk-sheet .rc-sheet-title {
-    font-size: 20px;
-    font-weight: 600;
-}
-body[data-fl-variant] .wk-sheet .rc-sheet-grip-handle {
-    width: 36px;
-    height: 5px;
-    border-radius: 3px;
-    background: var(--fl-line-strong);
-}
-body[data-fl-variant] .wk-sheet .rc-sheet-body {
-    padding-bottom: 8px; /* seitlich: Baustein .aura-fl-sheet-body */
-}
+/* ── Raum-Unterseite (WohnklimaRoomDetails) ─── */
 body[data-fl-variant] .wk-detail {
     display: flex;
     flex-direction: column;
@@ -572,25 +549,4 @@ body[data-fl-variant] .wk-detail-stat-val--temp {
 }
 body[data-fl-variant] .wk-detail-stat-val--hum {
     color: var(--wk-hum-line, var(--wk-hum));
-}
-
-/* ── Entwurfs-Umschalter: Buchstaben der Wohnklima-Entwürfe ─────────────── */
-/* Nur Dev-Vorschau. Steht in derselben Kapsel wie „Neu" (FaceliftSwitch), rechts daneben; die Kapsel wächst
-   nach links, ihr Abstand zum rechten Rand und zum Messfenster-Punkt „M" darüber bleibt unverändert. */
-.aura-fl-switch-drafts {
-    display: inline-flex;
-    align-items: center;
-    gap: 1px;
-    margin-left: 2px;
-    padding-left: 3px;
-    border-left: 1px dashed var(--accent-yellow);
-}
-.aura-fl-switch .aura-fl-switch-draft {
-    min-width: 28px;
-    padding: 5px 6px;
-    font-weight: 600;
-}
-.aura-fl-switch .aura-fl-switch-draft[data-sel] {
-    background: color-mix(in srgb, var(--accent-yellow) 45%, transparent);
-    color: var(--text-primary);
 }

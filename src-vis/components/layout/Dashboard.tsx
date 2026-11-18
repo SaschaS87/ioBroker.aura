@@ -26,7 +26,6 @@ import { groupRows } from '../../utils/groupLayout';
 import { reportMetric } from '../../utils/perfMetrics';
 import { measureRenderedWidgets, reportSignature, sendRenderReport } from '../../utils/renderReport';
 import { WohnklimaFacelift } from '../widgets/wohnklima/WohnklimaFacelift';
-import { useWohnklimaDraft } from '../widgets/wohnklima/wohnklimaDraft';
 
 // Default gap — overridden by config at runtime
 const DEFAULT_MARGIN = 10;
@@ -427,9 +426,6 @@ export function Dashboard({
     // the editing canvas keeps its full height.
     const showTabFooter = !editMode;
 
-    // UI-Facelift, Entwurfsphase Wohnklima (nur Dev-Vorschau, sonst null)
-    const wkDraft = useWohnklimaDraft();
-
     // ── mobile: single-column stack ───────────────────────────────────────
     if (containerWidth > 0 && containerWidth < mobileBreakpoint) {
         return (
@@ -505,9 +501,9 @@ export function Dashboard({
                                                 className={`aura-tab aura-tab-${tab.slug}`}
                                                 style={{ display: isActive ? undefined : 'none' }}
                                             >
-                                                {wkDraft && tab.slug === 'wohnklima' && !editMode ? (
-                                                    // UI-Facelift, Entwurfsphase (nur Dev-Vorschau): Wohnklima-Entwurf statt Einzelbalken
-                                                    <WohnklimaFacelift widgets={sorted} draft={wkDraft} />
+                                                {tab.slug === 'wohnklima' && !editMode ? (
+                                                    // UI-Facelift: Wohnklima als Liste je Etage statt Einzelbalken (nur einspaltig)
+                                                    <WohnklimaFacelift widgets={sorted} />
                                                 ) : isActive && tabWidgets.length === 0 && !fillTabWidget ? (
                                                     <div
                                                         className="flex flex-col items-center justify-center flex-1 h-64 space-y-2"

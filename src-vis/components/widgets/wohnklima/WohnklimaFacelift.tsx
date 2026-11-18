@@ -1,32 +1,26 @@
 /**
- * UI-Facelift, Entwurfsphase Wohnklima (nur Dev-Vorschau, gelber Umschalter auf „Neu" und ein Buchstabe).
+ * UI-Facelift Wohnklima: Liste je Etage (Richtung A, Sascha 18.11.2026).
  *
- * Die Seite besteht heute aus 13 Einzel-Widgets (Überschriften + Raumbalken). Dashboard.tsx übergibt sie
- * hier in Reihenfolge; daraus entsteht ein Modell „Abschnitt → Räume", und die Entwürfe A bis D zeichnen es
- * aus den Facelift-Bausteinen (aura-fl-*) neu. Konfiguration bleibt die der Widgets: Titel, Symbol,
- * Datenpunkte, Nachkommastellen, Verlaufs-Instanz. Antippen öffnet für jeden Raum dasselbe Pop-up
- * (RoomClimateSheet, look 'facelift') mit denselben Werten wie heute.
+ * Die Seite besteht aus Einzel-Widgets (Überschriften + Raumbalken). Dashboard.tsx übergibt sie hier in
+ * Reihenfolge; daraus entsteht ein Modell „Abschnitt → Räume", das aus den Facelift-Bausteinen (aura-fl-*)
+ * gezeichnet wird. Konfiguration bleibt die der Widgets: Titel, Symbol, Datenpunkte, Nachkommastellen,
+ * Verlaufs-Instanz. Antippen öffnet den Raum als Unterseite von rechts (wie bei Heizung und Garten) mit
+ * denselben Werten wie das frühere Pop-up.
  *
  * Nur lesend: kein Schreibbefehl, kein Datenpunkt wird angelegt.
  */
-import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ChevronRight, Droplets, Layers, Thermometer } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ChevronRight, Thermometer } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { WidgetConfig } from '../../../types';
-import { lazyWithReload } from '../../../utils/lazyWithReload';
 import { getWidgetIcon } from '../../../utils/widgetIconMap';
 import { formatNum } from '../../../utils/formatValue';
 import { splitDpRef } from '../../../utils/dpRef';
 import { useGlobalSettingsStore } from '../../../store/globalSettingsStore';
 import { getStateFromCache, useIoBroker } from '../../../hooks/useIoBroker';
 import { IosNavBar, IosStack, useTabHidden } from '../../common/ios';
-import type { WohnklimaDraft } from './wohnklimaDraft';
 import { WohnklimaRoomDetails } from './WohnklimaRoomDetails';
 import './WohnklimaFacelift.css';
-
-const RoomClimateSheet = lazyWithReload(() =>
-    import('../RoomClimateSheet').then((m) => ({ default: m.RoomClimateSheet })),
-);
 
 // ── Modell ───────────────────────────────────────────────────────────────────
 
@@ -129,128 +123,76 @@ function useValues(refs: string[]): Map<string, number | null> {
 function fmt(v: number | null | undefined, decimals: number, unit: string): string {
     return typeof v === 'number' ? `${formatNum(v, decimals)}${unit}` : '–';
 }
-function span(vs: (number | null | undefined)[], decimals: number, unit: string): string {
-    const n = vs.filter((v): v is number => typeof v === 'number');
-    if (n.length === 0) return '–';
-    const lo = Math.min(...n);
-    const hi = Math.max(...n);
-    return lo === hi ? fmt(lo, decimals, unit) : `${formatNum(lo, decimals)}–${fmt(hi, decimals, unit)}`;
-}
-function mean(vs: (number | null | undefined)[]): number | null {
-    const n = vs.filter((v): v is number => typeof v === 'number');
-    return n.length ? n.reduce((a, b) => a + b, 0) / n.length : null;
-}
 
 // ── Seite ────────────────────────────────────────────────────────────────────
 
-export function WohnklimaFacelift({ widgets, draft }: { widgets: WidgetConfig[]; draft: Exclude<WohnklimaDraft, 'ALT'> }) {
+export function WohnklimaFacelift({ widgets }: { widgets: WidgetConfig[] }) {
     const { defaultDecimals } = useGlobalSettingsStore();
     const groups = useMemo(() => buildGroups(widgets, defaultDecimals), [widgets, defaultDecimals]);
     const refs = useMemo(() => groups.flatMap((g) => g.rooms.flatMap((r) => [r.tempDp, r.humDp])), [groups]);
     const vals = useValues(refs);
     const t = (r: Room) => vals.get(splitDpRef(r.tempDp).id) ?? null;
-    const h = (r: Room) => (r.humDp ? (vals.get(splitDpRef(r.humDp).id) ?? null) : null);
 
-    // Pop-up: frische Instanz bei jedem Öffnen (wie RoomClimateWidget)
-    const [sheet, setSheet] = useState<{ room: Room; seq: number } | null>(null);
-    const open = (room: Room) => setSheet((s) => ({ room, seq: (s?.seq ?? 0) + 1 }));
-
-    // Richtung A (gewählt): Raum als Unterseite von rechts wie bei Heizung und Garten (Sascha, 18.11.2026).
-    // Die anderen Entwürfe behalten bis zum Scharfschalten das Pop-up.
+    // Raum als Unterseite von rechts wie bei Heizung und Garten (Sascha, 18.11.2026).
     const [roomId, setRoomId] = useState<string | null>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     const hidden = useTabHidden(rootRef);
     useEffect(() => {
         if (hidden) setRoomId(null);
     }, [hidden]);
-    if (draft === 'A') {
-        const rooms = groups.flatMap((g) => g.rooms);
-        const sel = rooms.find((r) => r.id === roomId) ?? null;
-        const pages = [
-            { key: 'home', node: <DraftA groups={groups} t={t} h={h} open={(r) => setRoomId(r.id)} /> },
-            ...(sel
-                ? [
-                      {
-                          key: `r-${sel.id}`,
-                          node: (
-                              <div className="ios-page wk-subpage wk-roompage">
-                                  <IosNavBar
-                                      sticky
-                                      title={sel.title}
-                                      backLabel="Wohnklima"
-                                      backFallback="Zurück"
-                                      onBack={() => setRoomId(null)}
-                                  />
-                                  <WohnklimaRoomDetails
-                                      temperatureDp={sel.tempDp}
-                                      humidityDp={sel.humDp}
-                                      historyInstance={sel.historyInstance}
-                                      title={sel.title}
-                                      decimals={sel.decimals}
-                                      showLastChangeFooter={sel.lastChange}
-                                  />
-                              </div>
-                          ),
-                      },
-                  ]
-                : []),
-        ];
-        return (
-            <div className="aura-fl-scope wk-page wk-page--a" data-wk-draft={draft} data-widget-interactive>
-                <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />
-            </div>
-        );
-    }
-
-    const ctx: DraftCtx = { groups, t, h, open };
-    let body: ReactNode;
-    if (draft === 'B') body = <DraftB {...ctx} />;
-    else if (draft === 'C') body = <DraftC {...ctx} />;
-    else body = <DraftD {...ctx} />;
-
+    const rooms = groups.flatMap((g) => g.rooms);
+    const sel = rooms.find((r) => r.id === roomId) ?? null;
+    const pages = [
+        { key: 'home', node: <RoomList groups={groups} t={t} open={(r) => setRoomId(r.id)} /> },
+        ...(sel
+            ? [
+                  {
+                      key: `r-${sel.id}`,
+                      node: (
+                          <div className="ios-page wk-subpage wk-roompage">
+                              <IosNavBar
+                                  sticky
+                                  title={sel.title}
+                                  backLabel="Wohnklima"
+                                  backFallback="Zurück"
+                                  onBack={() => setRoomId(null)}
+                              />
+                              <WohnklimaRoomDetails
+                                  temperatureDp={sel.tempDp}
+                                  humidityDp={sel.humDp}
+                                  historyInstance={sel.historyInstance}
+                                  title={sel.title}
+                                  decimals={sel.decimals}
+                                  showLastChangeFooter={sel.lastChange}
+                              />
+                          </div>
+                      ),
+                  },
+              ]
+            : []),
+    ];
     return (
-        <div className={`aura-fl-scope wk-page wk-page--${draft.toLowerCase()}`} data-wk-draft={draft}>
-            {body}
-            {sheet && (
-                <Suspense fallback={null}>
-                    <RoomClimateSheet
-                        key={sheet.seq}
-                        look="facelift"
-                        title={sheet.room.title}
-                        temperatureDp={sheet.room.tempDp}
-                        humidityDp={sheet.room.humDp}
-                        historyInstance={sheet.room.historyInstance}
-                        decimals={sheet.room.decimals}
-                        currentTemp={t(sheet.room)}
-                        unit={sheet.room.unit}
-                        showHeaderValue={false}
-                        showLastChangeFooter={sheet.room.lastChange}
-                        onClose={() => setSheet(null)}
-                    />
-                </Suspense>
-            )}
+        <div className="aura-fl-scope wk-page wk-page--a" data-wk-draft="A" data-widget-interactive>
+            <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />
         </div>
     );
 }
 
-interface DraftCtx {
+interface ListProps {
     groups: Group[];
     t: (r: Room) => number | null;
-    h: (r: Room) => number | null;
     open: (r: Room) => void;
 }
 
-function Section({ title, right, children, foot }: { title: string; right?: ReactNode; children: ReactNode; foot?: ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
     return (
         <section className="aura-fl-section wk-section">
-            {(title || right) && (
+            {title && (
                 <div className="aura-fl-section-head wk-section-head">
                     <h2 className="aura-fl-section-title">{title}</h2>
-                    {right}
                 </div>
             )}
             {children}
-            {foot && <p className="aura-fl-foot wk-foot">{foot}</p>}
         </section>
     );
 }
@@ -272,8 +214,8 @@ function RoomRow({ room, t, open }: { room: Room; t: number | null; open: (r: Ro
     );
 }
 
-// ── A: Liste je Etage ────────────────────────────────────────────────────────
-function DraftA({ groups, t, open }: DraftCtx) {
+// ── Liste je Etage ───────────────────────────────────────────────────────────
+function RoomList({ groups, t, open }: ListProps) {
     return (
         <>
             {groups.map((g) => (
@@ -288,185 +230,4 @@ function DraftA({ groups, t, open }: DraftCtx) {
             <p className="aura-fl-foot wk-foot wk-foot--page">Raum antippen für Verlauf, Tiefst- und Höchstwert.</p>
         </>
     );
-}
-
-// ── B: Raster in der Karte ───────────────────────────────────────────────────
-function DraftB({ groups, t, h, open }: DraftCtx) {
-    return (
-        <>
-            {groups.map((g) => (
-                <Section key={g.id} title={g.title}>
-                    <div className={`aura-fl-card wk-grid${g.rooms.length % 2 ? ' wk-grid--odd' : ''}`}>
-                        {g.rooms.map((r) => {
-                            const Icon = r.Icon;
-                            return (
-                                <button key={r.id} type="button" className="wk-cell" onClick={() => open(r)}>
-                                    <span className="wk-cell-head">
-                                        <Icon size={15} className="wk-cell-ico" />
-                                        <span className="wk-cell-name">{r.title}</span>
-                                    </span>
-                                    <span className="wk-cell-temp">{fmt(t(r), r.decimals, r.unit)}</span>
-                                    {r.humDp && (
-                                        <span className="wk-cell-hum">
-                                            <Droplets size={12} className="wk-cell-hum-ico" />
-                                            {fmt(h(r), r.decimals, '%')}
-                                        </span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </Section>
-            ))}
-        </>
-    );
-}
-
-// ── C: Überblick und Tabelle ─────────────────────────────────────────────────
-function DraftC({ groups, t, h, open }: DraftCtx) {
-    const outdoor = groups.filter((g) => g.outdoor).flatMap((g) => g.rooms);
-    const indoorGroups = groups.filter((g) => !g.outdoor);
-    const indoor = indoorGroups.flatMap((g) => g.rooms);
-    const dec = indoor[0]?.decimals ?? outdoor[0]?.decimals ?? 1;
-    const unit = indoor[0]?.unit ?? '°C';
-    const out = outdoor[0];
-    return (
-        <>
-            <Section title="Überblick">
-                <div className="aura-fl-card wk-sum">
-                    {out && (
-                        <button type="button" className="wk-sum-out" onClick={() => open(out)}>
-                            <span className="wk-sum-label">{out.title}</span>
-                            <span className="wk-sum-big">{fmt(t(out), out.decimals, out.unit)}</span>
-                            <span className="wk-sum-hint">
-                                Verlauf
-                                <ChevronRight size={14} className="wk-sum-hint-chev" />
-                            </span>
-                        </button>
-                    )}
-                    <div className="wk-sum-in">
-                        <div className="wk-sum-line">
-                            <span className="wk-sum-k">Innen im Mittel</span>
-                            <span className="wk-sum-v">{fmt(mean(indoor.map(t)), dec, unit)}</span>
-                        </div>
-                        <div className="wk-sum-line">
-                            <span className="wk-sum-k">Spanne</span>
-                            <span className="wk-sum-v">{span(indoor.map(t), dec, unit)}</span>
-                        </div>
-                        <div className="wk-sum-line">
-                            <span className="wk-sum-k">Luftfeuchte</span>
-                            <span className="wk-sum-v">{span(indoor.map(h), dec, '%')}</span>
-                        </div>
-                    </div>
-                </div>
-            </Section>
-            {indoorGroups.map((g) => (
-                <Section
-                    key={g.id}
-                    title={g.title}
-                    right={
-                        <span className="wk-colhead">
-                            <span className="wk-colhead-hum">Feuchte</span>
-                            <span className="wk-colhead-temp">Temp.</span>
-                        </span>
-                    }
-                >
-                    <div className="aura-fl-card wk-table">
-                        {g.rooms.map((r) => (
-                            <button key={r.id} type="button" className="aura-fl-row aura-fl-row--nav wk-trow" onClick={() => open(r)}>
-                                <span className="aura-fl-row-main">
-                                    <span className="aura-fl-row-title wk-trow-name">{r.title}</span>
-                                </span>
-                                <span className="wk-trow-hum">{r.humDp ? fmt(h(r), r.decimals, '%') : ''}</span>
-                                <span className="wk-trow-temp">{fmt(t(r), r.decimals, r.unit)}</span>
-                            </button>
-                        ))}
-                    </div>
-                </Section>
-            ))}
-            <p className="aura-fl-foot wk-foot wk-foot--page">Mittel und Spannen aus den Innenräumen. Raum antippen für den Verlauf.</p>
-        </>
-    );
-}
-
-// ── D: Etagen als Unterseiten ────────────────────────────────────────────────
-function DraftD({ groups, t, h, open }: DraftCtx) {
-    const [floor, setFloor] = useState<string | null>(null);
-    const rootRef = useRef<HTMLDivElement>(null);
-    const hidden = useTabHidden(rootRef);
-    // Seite verlassen: beim Zurückkommen wieder auf der Übersicht
-    useEffect(() => {
-        if (hidden) setFloor(null);
-    }, [hidden]);
-
-    const outdoor = groups.filter((g) => g.outdoor);
-    const indoor = groups.filter((g) => !g.outdoor);
-    const sel = indoor.find((g) => g.id === floor) ?? null;
-
-    const home = (
-        <div className="wk-d-home">
-            {outdoor.map((g) => (
-                <Section key={g.id} title={g.title}>
-                    <div className="aura-fl-card wk-card">
-                        {g.rooms.map((r) => (
-                            <RoomRow key={r.id} room={r} t={t(r)} open={open} />
-                        ))}
-                    </div>
-                </Section>
-            ))}
-            <Section title="Räume" foot="Rechts das Mittel der Raumtemperaturen, darunter die Spanne der Luftfeuchte.">
-                <div className="aura-fl-card wk-card">
-                    {indoor.map((g) => {
-                        const d = g.rooms[0]?.decimals ?? 1;
-                        const u = g.rooms[0]?.unit ?? '°C';
-                        return (
-                            <button key={g.id} type="button" className="aura-fl-row aura-fl-row--nav wk-row wk-floorrow" onClick={() => setFloor(g.id)}>
-                                <span className="aura-fl-row-icon wk-ico wk-ico--floor">
-                                    <Layers size={20} />
-                                </span>
-                                <span className="aura-fl-row-main">
-                                    <span className="aura-fl-row-title wk-row-title">{g.title}</span>
-                                    <span className="aura-fl-row-sub wk-row-sub">
-                                        Luftfeuchte {span(g.rooms.map(h), d, '%')}
-                                    </span>
-                                </span>
-                                <span className="wk-row-val wk-row-val--avg">Ø {fmt(mean(g.rooms.map(t)), d, u)}</span>
-                                <ChevronRight size={18} className="aura-fl-chev wk-chev" />
-                            </button>
-                        );
-                    })}
-                </div>
-            </Section>
-        </div>
-    );
-
-    const pages = [
-        { key: 'home', node: home },
-        ...(sel
-            ? [
-                  {
-                      key: `f-${sel.id}`,
-                      node: (
-                          <div className="ios-page wk-subpage">
-                              <IosNavBar
-                                  sticky
-                                  title={sel.title}
-                                  backLabel="Wohnklima"
-                                  backFallback="Zurück"
-                                  onBack={() => setFloor(null)}
-                              />
-                              <Section title="" foot="Raum antippen für Verlauf, Tiefst- und Höchstwert.">
-                                  <div className="aura-fl-card wk-card">
-                                      {sel.rooms.map((r) => (
-                                          <RoomRow key={r.id} room={r} t={t(r)} open={open} />
-                                      ))}
-                                  </div>
-                              </Section>
-                          </div>
-                      ),
-                  },
-              ]
-            : []),
-    ];
-    return <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />;
 }
