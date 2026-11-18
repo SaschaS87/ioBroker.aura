@@ -224,7 +224,7 @@ export function FaceliftStage({
         const stage = stageRef.current;
         if (!enabled || !stage) return;
         let lastY = 0;
-        const apply = (raw: number, max: number) => {
+        const apply = (raw: number, max: number, fresh = false) => {
             // Gummiband von iOS: Über das Seitenende hinaus gezogen meldet scrollTop mehr als das Maximum
             // (am Anfang weniger als 0) und federt danach zurück. Dieses Zurückfedern sah für die Leiste wie
             // Hochscrollen aus, sie wurde wieder groß (Messung am iPhone 18.11.2026: Seitenende 61 px,
@@ -232,6 +232,15 @@ export function FaceliftStage({
             const y = Math.min(Math.max(raw, 0), Math.max(max, 0));
             stage.toggleAttribute('data-scrolled', y > 4);
             stage.toggleAttribute('data-collapsed', y > 34);
+            // Tabwechsel: Jeder Tab behält seine Scrollposition. Die neue Seite ist kein Scrollen; Leiste groß,
+            // Vergleichswert auf die neue Lage. Vorher stand lastY auf 0, eine gemerkte Lage von 61 px galt als
+            // Runterscrollen und die Leiste wurde klein (Messung am iPhone 18.11.2026).
+            if (fresh) {
+                if (import.meta.env.DEV && stage.hasAttribute('data-min')) flTrace('bar-big', { y, fresh: true });
+                stage.removeAttribute('data-min');
+                lastY = y;
+                return;
+            }
             // Leiste wie in iOS: beim Runterscrollen klein, beim Hochscrollen wieder groß
             const wasMin = import.meta.env.DEV && stage.hasAttribute('data-min');
             if (y <= 4 || y < lastY - 6) stage.removeAttribute('data-min');
@@ -283,7 +292,7 @@ export function FaceliftStage({
                     max: el.scrollHeight - el.clientHeight,
                     min: stage.hasAttribute('data-min') ? 1 : 0,
                 });
-            apply(el.scrollTop, el.scrollHeight - el.clientHeight);
+            apply(el.scrollTop, el.scrollHeight - el.clientHeight, el !== snapEl);
             snapEl = el;
             arm();
         };
@@ -303,8 +312,11 @@ export function FaceliftStage({
         stage.addEventListener('touchcancel', onTouchEnd, { passive: true, capture: true });
         // Tabwechsel: neuer Scroll-Container, Stand neu einlesen
         const raf = requestAnimationFrame(() => {
-            const sc = stage.querySelector<HTMLElement>('.aura-scroll-touch');
-            apply(sc?.scrollTop ?? 0, sc ? sc.scrollHeight - sc.clientHeight : 0);
+            const sc = Array.from(stage.querySelectorAll<HTMLElement>('.aura-scroll-touch')).find(
+                (el) => el.getClientRects().length > 0,
+            );
+            if (sc) snapEl = sc;
+            apply(sc?.scrollTop ?? 0, sc ? sc.scrollHeight - sc.clientHeight : 0, true);
         });
         return () => {
             stage.removeEventListener('scroll', onScroll, true);

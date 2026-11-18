@@ -21,6 +21,7 @@ import { useGlobalSettingsStore } from '../../../store/globalSettingsStore';
 import { getStateFromCache, useIoBroker } from '../../../hooks/useIoBroker';
 import { IosNavBar, IosStack, useTabHidden } from '../../common/ios';
 import type { WohnklimaDraft } from './wohnklimaDraft';
+import { WohnklimaRoomDetails } from './WohnklimaRoomDetails';
 import './WohnklimaFacelift.css';
 
 const RoomClimateSheet = lazyWithReload(() =>
@@ -154,10 +155,56 @@ export function WohnklimaFacelift({ widgets, draft }: { widgets: WidgetConfig[];
     const [sheet, setSheet] = useState<{ room: Room; seq: number } | null>(null);
     const open = (room: Room) => setSheet((s) => ({ room, seq: (s?.seq ?? 0) + 1 }));
 
+    // Richtung A (gewählt): Raum als Unterseite von rechts wie bei Heizung und Garten (Sascha, 18.11.2026).
+    // Die anderen Entwürfe behalten bis zum Scharfschalten das Pop-up.
+    const [roomId, setRoomId] = useState<string | null>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const hidden = useTabHidden(rootRef);
+    useEffect(() => {
+        if (hidden) setRoomId(null);
+    }, [hidden]);
+    if (draft === 'A') {
+        const rooms = groups.flatMap((g) => g.rooms);
+        const sel = rooms.find((r) => r.id === roomId) ?? null;
+        const pages = [
+            { key: 'home', node: <DraftA groups={groups} t={t} h={h} open={(r) => setRoomId(r.id)} /> },
+            ...(sel
+                ? [
+                      {
+                          key: `r-${sel.id}`,
+                          node: (
+                              <div className="ios-page wk-subpage wk-roompage">
+                                  <IosNavBar
+                                      sticky
+                                      title={sel.title}
+                                      backLabel="Wohnklima"
+                                      backFallback="Zurück"
+                                      onBack={() => setRoomId(null)}
+                                  />
+                                  <WohnklimaRoomDetails
+                                      temperatureDp={sel.tempDp}
+                                      humidityDp={sel.humDp}
+                                      historyInstance={sel.historyInstance}
+                                      title={sel.title}
+                                      decimals={sel.decimals}
+                                      showLastChangeFooter={sel.lastChange}
+                                  />
+                              </div>
+                          ),
+                      },
+                  ]
+                : []),
+        ];
+        return (
+            <div className="aura-fl-scope wk-page wk-page--a" data-wk-draft={draft} data-widget-interactive>
+                <IosStack rootRef={rootRef} pages={pages} depth={sel ? 1 : 0} sizing="current" manageScroll bleed={6} />
+            </div>
+        );
+    }
+
     const ctx: DraftCtx = { groups, t, h, open };
     let body: ReactNode;
-    if (draft === 'A') body = <DraftA {...ctx} />;
-    else if (draft === 'B') body = <DraftB {...ctx} />;
+    if (draft === 'B') body = <DraftB {...ctx} />;
     else if (draft === 'C') body = <DraftC {...ctx} />;
     else body = <DraftD {...ctx} />;
 
