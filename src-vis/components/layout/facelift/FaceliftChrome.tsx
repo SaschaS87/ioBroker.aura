@@ -9,6 +9,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { flTrace } from '../../../devtools/scrollTrace';
 import { Icon } from '@iconify/react';
 import { Wrench } from 'lucide-react';
 import type { WidgetProps } from '../../../types';
@@ -223,12 +224,20 @@ export function FaceliftStage({
         const stage = stageRef.current;
         if (!enabled || !stage) return;
         let lastY = 0;
-        const apply = (y: number) => {
+        const apply = (raw: number, max: number) => {
+            // Gummiband von iOS: Über das Seitenende hinaus gezogen meldet scrollTop mehr als das Maximum
+            // (am Anfang weniger als 0) und federt danach zurück. Dieses Zurückfedern sah für die Leiste wie
+            // Hochscrollen aus, sie wurde wieder groß (Messung am iPhone 18.11.2026: Seitenende 61 px,
+            // Ausrollen bis 127 px, zurück auf 61 px). Deshalb nur die Lage innerhalb der Seite auswerten.
+            const y = Math.min(Math.max(raw, 0), Math.max(max, 0));
             stage.toggleAttribute('data-scrolled', y > 4);
             stage.toggleAttribute('data-collapsed', y > 34);
             // Leiste wie in iOS: beim Runterscrollen klein, beim Hochscrollen wieder groß
+            const wasMin = import.meta.env.DEV && stage.hasAttribute('data-min');
             if (y <= 4 || y < lastY - 6) stage.removeAttribute('data-min');
             else if (y > 40 && y > lastY + 6) stage.setAttribute('data-min', '');
+            if (import.meta.env.DEV && wasMin !== stage.hasAttribute('data-min'))
+                flTrace(wasMin ? 'bar-big' : 'bar-min', { y: Math.round(y), lastY: Math.round(lastY) });
             if (Math.abs(y - lastY) > 6) lastY = y;
         };
         // Einrasten wie der große Titel in iOS: Bleibt die Seite so stehen, dass die Überschrift halb unter
@@ -240,6 +249,8 @@ export function FaceliftStage({
         let snapEl: HTMLElement | null = null;
         const snap = () => {
             const sc = snapEl;
+            if (import.meta.env.DEV)
+                flTrace('snap?', { y: sc ? Math.round(sc.scrollTop) : null, touching, sub: stage.hasAttribute('data-sub') });
             if (!sc || touching || !sc.isConnected || stage.hasAttribute('data-sub')) return;
             const rest = px('--fl-bar-h') + px('--fl-large-h') - px('--fl-bar-min');
             const y = sc.scrollTop;
@@ -255,6 +266,8 @@ export function FaceliftStage({
             const max = sc.scrollHeight - sc.clientHeight;
             const to = y < rest / 2 || max < rest ? 0 : rest;
             const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            if (import.meta.env.DEV)
+                flTrace('snap!', { y: Math.round(y), to, rest: Math.round(rest), max, spacer: spacer?.style.height });
             sc.scrollTo({ top: to, behavior: calm ? 'auto' : 'smooth' });
         };
         const arm = () => {
@@ -264,16 +277,24 @@ export function FaceliftStage({
         const onScroll = (e: Event) => {
             const el = e.target as HTMLElement;
             if (!el?.classList?.contains('aura-scroll-touch')) return;
-            apply(el.scrollTop);
+            if (import.meta.env.DEV)
+                flTrace('scroll', {
+                    y: Math.round(el.scrollTop * 10) / 10,
+                    max: el.scrollHeight - el.clientHeight,
+                    min: stage.hasAttribute('data-min') ? 1 : 0,
+                });
+            apply(el.scrollTop, el.scrollHeight - el.clientHeight);
             snapEl = el;
             arm();
         };
         const onTouchStart = () => {
+            if (import.meta.env.DEV) flTrace('touchstart');
             touching = true;
             window.clearTimeout(idle);
         };
         const onTouchEnd = (e: TouchEvent) => {
             touching = e.touches.length > 0;
+            if (import.meta.env.DEV) flTrace(e.type, { left: e.touches.length });
             if (!touching) arm();
         };
         stage.addEventListener('scroll', onScroll, true);
@@ -283,7 +304,7 @@ export function FaceliftStage({
         // Tabwechsel: neuer Scroll-Container, Stand neu einlesen
         const raf = requestAnimationFrame(() => {
             const sc = stage.querySelector<HTMLElement>('.aura-scroll-touch');
-            apply(sc?.scrollTop ?? 0);
+            apply(sc?.scrollTop ?? 0, sc ? sc.scrollHeight - sc.clientHeight : 0);
         });
         return () => {
             stage.removeEventListener('scroll', onScroll, true);
