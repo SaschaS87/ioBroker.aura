@@ -1685,12 +1685,33 @@ const GET_STATE_DIRECT_TIMEOUT_MS = 8000;
  *  GET_STATE_DIRECT_TIMEOUT_MS ohne Antwort `null` zurück, statt für immer zu
  *  warten (Schritt 4) — kein Wiederholversuch, der ist im Fahrplan als
  *  optional markiert und bewusst weggelassen. */
+/**
+ * Eine Einzelantwort vom Server übernehmen — und an ALLE Abonnenten dieser ID
+ * weitergeben, wenn sie vom Zwischenspeicher abweicht (wie ein `stateChange`).
+ *
+ * Warum (Fall 18./19.11.2026, in der Dev-Vorschau 3 von 3 nachgestellt): Ein
+ * Datenpunkt hat oft zwei Leser, etwa Planer-Probe und Rollladen-Zeile. Nach
+ * dem Aufwachen fragt der erste selbst nach, `subscribe()` markiert die ID als
+ * gepflegt, der zweite fragt deshalb nicht. Früher landete die Antwort nur im
+ * Zwischenspeicher und beim Fragenden. Kam die große Nachlese danach an, sah
+ * sie „keine Änderung“ und weckte niemanden: Die Zeile blieb auf dem alten
+ * Stand bis zum Neustart. Seit dem Dashboard-Umbau (ein Bereich, ~214 statt
+ * ~136 Werte in der Nachlese) verliert die Nachlese dieses Rennen regelmäßig.
+ * Mit dieser Regel ist die Reihenfolge der Antworten egal.
+ */
+function acceptFetchedState(id: string, state: ioBrokerState): void {
+    const prev = stateCache.get(id);
+    cacheState(id, state);
+    if (prev && prev.val === state.val && prev.ts === state.ts && prev.ack === state.ack) return;
+    subscribers.get(id)?.forEach((fn) => fn(state));
+}
+
 export function getStateDirect(id: string): Promise<ioBrokerState | null> {
     noteRescueFetch();
     if (devGetState) {
         const handled = devGetState(id);
         if (handled !== undefined) {
-            if (handled) cacheState(id, handled);
+            if (handled) acceptFetchedState(id, handled);
             return Promise.resolve(handled);
         }
     }
@@ -1705,7 +1726,7 @@ export function getStateDirect(id: string): Promise<ioBrokerState | null> {
             if (settled) return; // Timeout ist schon gelaufen, diese Antwort kommt zu spät
             settled = true;
             globalThis.clearTimeout(timer);
-            if (state) cacheState(id, state);
+            if (state) acceptFetchedState(id, state);
             resolve(state ?? null);
         });
     });
