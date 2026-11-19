@@ -564,6 +564,49 @@ const ohneVon = (z) => {
     check('S11) Gleichlauf: TS-resolveTargets und Skript-zieleAusEintrag liefern je Schlüssel dasselbe', gleich, detail);
 }
 
+// ── S12: Merker je Planminute (Fix 19.11.2026, Skript 0.4.1) ──
+// Saschas Fall: Eintrag "Test" fährt um 08:45, wird danach auf 08:59 verschoben und muss
+// am selben Tag noch einmal fahren. Dieselbe Planminute zweimal (Zeitumstellung im Oktober,
+// 02:00-03:00 doppelt) darf dagegen weiter nur einmal fahren. Die Uhr des Skripts wird dafür
+// nur während des Takts auf einen festen Zeitpunkt in der Vergangenheit gestellt.
+{
+    const sc = await start({ trockenlauf: true, fahrzeitMs: 100 });
+    sc.evalIn(`(() => {
+        const D0 = Date;
+        globalThis.__jetzt = null;
+        globalThis.Date = class extends D0 {
+            constructor(...a) { if (a.length === 0 && globalThis.__jetzt !== null) super(globalThis.__jetzt); else super(...a); }
+            static now() { return globalThis.__jetzt !== null ? globalThis.__jetzt : D0.now(); }
+        };
+    })()`);
+    const takt = async (hh, mm) => {
+        sc.evalIn(`globalThis.__jetzt = new Date(2026, 10, 19, ${hh}, ${mm}, 0).getTime(); try { minuetlicherTakt(); } finally { globalThis.__jetzt = null; }`);
+        await sleep(50);
+        await sc.idle();
+    };
+    const alleTage = [true, true, true, true, true, true, true];
+    const testEintrag = (time, closed) => plan([devT('Küchenfenster', closed)], {
+        id: 'p-s12', days: alleTage, name: 'Test', trigger: { kind: 'time', time, offset: 0, earliest: null, latest: null },
+    });
+    const laeufe = () => sc.status().letzte30.filter((e) => /^Plan p-s12 →/.test(e.auslöser));
+    const einst = { master: true, pausedTodayDate: null, holidayMode: 'normal' };
+
+    sc.reload({ plan: [testEintrag('08:45', 25)], einstellungen: einst });
+    await takt(8, 45);
+    check('S12) 08:45: Eintrag fährt', laeufe().length === 1, JSON.stringify(laeufe()));
+    await takt(8, 45);
+    check('S12) dieselbe Planminute ein zweites Mal (Zeitumstellung): kein zweiter Lauf', laeufe().length === 1, JSON.stringify(laeufe().length));
+
+    sc.reload({ plan: [testEintrag('08:59', 75)] });
+    await takt(8, 59);
+    const l = laeufe();
+    check('S12) derselbe Eintrag auf 08:59 verschoben: fährt am selben Tag noch einmal', l.length === 2, JSON.stringify(l.length));
+    check('S12) der zweite Lauf fährt den neuen Wert 75', l[0]?.ziele?.[0]?.position?.ziel === 75, JSON.stringify(l[0]?.ziele));
+    await takt(8, 59);
+    check('S12) 08:59 ein zweites Mal: kein dritter Lauf', laeufe().length === 2, JSON.stringify(laeufe().length));
+    check('S12) nichts auf tahoma.1.*', sc.tahomaWrites().length === 0);
+}
+
 const failed = results.filter((r) => !r.ok).length;
 console.log(`\n${results.length - failed}/${results.length} checks passed`);
 process.exit(failed ? 1 : 0);

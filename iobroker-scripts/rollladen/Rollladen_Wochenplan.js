@@ -100,7 +100,7 @@
 
 const ROOT = '0_userdata.0.Rollladen_Dev';
 const TROCKENLAUF = true;
-const VERSION = '0.4.0-dev';
+const VERSION = '0.4.1-dev';
 // Nur bei TROCKENLAUF === true wirksam: so lange "faehrt" ein Geraet zum Schein (Abbruch-Pruefung alle
 // 250 ms). Raffstore mit Lamelle: dieselbe Zeit noch einmal fuer die Lamelle. Im Dev-Betrieb dauert die
 // Bestaetigung eines Szenen-Befehls bei Raffstore-Szenen dadurch ueber 5 s - "Skript antwortet nicht"
@@ -182,15 +182,20 @@ const DEFAULT_SETTINGS = {
 let scenes = [];
 let entries = [];
 let settings = Object.assign({}, DEFAULT_SETTINGS);
-// Merker "hat entry.id an diesem Kalendertag schon ausgefuehrt" - bewusst
-// NICHT persistent (Auftrag: bei Skript-Neustart darf ein Eintrag im Zweifel
-// einmal doppelt oder einmal gar nicht laufen, im Trockenlauf tolerierbar).
-// WINTERZEIT-HINWEIS: der Schluessel ist EintragsID + Kalendertag (nicht
-// Uhrzeit). In der Nacht 24./25.10.2026 (Sommer- auf Winterzeit) kommt die
-// Stunde 02:00-03:00 doppelt vor - ein zeitbasierter Merker wuerde einen
-// Eintrag in dieser Stunde zweimal ausloesen. Weil hier nur EINMAL pro Tag
-// pro Eintrag gemerkt wird (unabhaengig davon, wie oft die Uhrzeit selbst
-// vorkommt), verhindert der Merker die doppelte Ausfuehrung trotzdem.
+// Merker "hat entry.id an diesem Kalendertag zu dieser Planminute schon
+// ausgefuehrt" - bewusst NICHT persistent (Auftrag: bei Skript-Neustart darf
+// ein Eintrag im Zweifel einmal doppelt oder einmal gar nicht laufen).
+// Schluessel: EintragsID + Kalendertag + Planminute (r.min aus triggerMinuten).
+// WINTERZEIT-HINWEIS: In der Nacht 24./25.10.2026 (Sommer- auf Winterzeit)
+// kommt die Stunde 02:00-03:00 doppelt vor. Die Planminute ist dabei beide
+// Male dieselbe (z. B. 02:30 = 150), also derselbe Schluessel - die doppelte
+// Ausfuehrung bleibt verhindert. Ein Merker mit echtem Zeitstempel wuerde das
+// NICHT leisten, deshalb die Planminute und nicht die Uhrzeit des Laufs.
+// Warum die Planminute im Schluessel steht (Fix 19.11.2026, Version 0.4.1):
+// vorher war der Schluessel nur EintragsID + Kalendertag. Sascha hat einen
+// Eintrag, der um 08:45 schon gefahren war, auf 08:59 verschoben - die App
+// zeigte 08:59 unter "heute", das Skript uebersprang ihn aber stumm. Jetzt
+// faehrt ein verschobener Eintrag am selben Tag noch einmal zur neuen Zeit.
 const heuteAusgefuehrt = {};
 
 // Fehler getrennt pro Quelle, damit eine reparierte Quelle ihren eigenen
@@ -912,7 +917,7 @@ function minuetlicherTakt() {
         const r = triggerMinuten(entry.trigger, sun);
         if (r.min !== nowMin) continue;
 
-        const merkerId = `${entry.id}@${heuteStr}`;
+        const merkerId = `${entry.id}@${heuteStr}@${r.min}`;
         if (heuteAusgefuehrt[merkerId]) continue;
         heuteAusgefuehrt[merkerId] = true;
 
