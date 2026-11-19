@@ -16,9 +16,10 @@
  *   npm run logo:build -- --kreis ja|nein       Aussehen der Kopfzeile mitaendern
  *                                               (wirkt nur, wenn "kopfzeile" gewaehlt ist)
  *   npm run logo:stil -- --kreis ja|nein        NUR das Aussehen, ohne Bilder anzufassen
- *   npm run logo:stil -- --logo-groesse 96      Motiv im Kreis groesser/kleiner (50-150 %)
- *                        --logo-x -1 --logo-y 1 Motiv im Kreis verschieben (-8 bis 8 px)
+ *   npm run logo:stil -- --logo-groesse 96      Motiv groesser/kleiner (50-150 %), mit und ohne Kreis
+ *                        --logo-x -1 --logo-y 1 Motiv verschieben (-8 bis 8 px)
  *   npm run logo:vorschau -- --logo-groesse 96  Vorschaubild erzeugen, ohne etwas zu aendern
+ *                        --kreis ja|nein        Vorschau mit/ohne Kreis (Standard: aktueller Stand)
  *   npm run logo:restore                        letztes Backup zurueckholen
  *   npm run logo:restore -- --liste             vorhandene Backups auflisten
  *   npm run logo:restore -- --backup <name>     ein bestimmtes Backup zurueckholen
@@ -541,19 +542,20 @@ function stilDateiSchreiben(aenderung) {
  *   true  = Logo sitzt in einem runden Chip, genau so gross wie die runden
  *           Knoepfe rechts in der Kopfzeile (32x32 px, Flaeche --app-bg,
  *           Rand --app-border), Motiv 28x28 px
- *   false = Logo steht frei in der Kopfzeile (Flaeche --app-surface, also die
- *           Farbe der Kopfzeile selbst), Motiv 40x40 px
+ *   false = Logo steht frei in der Kopfzeile (durchsichtig, ohne Flaeche
+ *           dahinter), Motiv bis 40x40 px
  *
  * HEADER_LOGO_ANZEIGEN
  *   false = gar kein Logo in der Kopfzeile, nur der Titel
  *
  * HEADER_LOGO_GROESSE / HEADER_LOGO_X / HEADER_LOGO_Y
- *   Feinstellung des Motivs INNERHALB des Kreises – wirkt nur mit Kreis.
- *   Der Kreis selbst bleibt immer 32x32, damit er zu den runden Knoepfen
- *   rechts in der Kopfzeile passt.
- *     GROESSE  Prozent der Kreisflaeche (${FEIN_GRENZEN.groesse[0]}-${FEIN_GRENZEN.groesse[1]}, Standard ${FEIN_STANDARD.groesse}).
- *              Ueber 100 ragt das Motiv ueber den Kreis hinaus und wird an
- *              der Rundung beschnitten – das ist der randfuellende Look.
+ *   Feinstellung des Motivs – wirkt mit und ohne Kreis.
+ *   Der Kreis bleibt immer 32x32, damit er zu den runden Knoepfen rechts in
+ *   der Kopfzeile passt. Ohne Kreis ist die freie Flaeche immer 40x40.
+ *     GROESSE  Prozent dieser Flaeche (${FEIN_GRENZEN.groesse[0]}-${FEIN_GRENZEN.groesse[1]}, Standard ${FEIN_STANDARD.groesse}).
+ *              100 = volle Flaeche, kleiner = kleineres Logo. Ueber 100 ragt
+ *              das Motiv im Kreis ueber den Kreis hinaus und wird an der
+ *              Rundung beschnitten – das ist der randfuellende Look.
  *     X        Verschiebung in Pixeln, negativ = nach links  (${FEIN_GRENZEN.x[0]} bis ${FEIN_GRENZEN.x[1]})
  *     Y        Verschiebung in Pixeln, negativ = nach oben   (${FEIN_GRENZEN.y[0]} bis ${FEIN_GRENZEN.y[1]})
  *   Aendern mit: npm run logo:stil -- --logo-groesse 96 --logo-x -1 --logo-y 0
@@ -749,19 +751,6 @@ function nurStilAendernMain() {
                 '--logo-groesse/--logo-x/--logo-y angegeben werden.',
         );
     }
-    // Die Feinstellung wirkt nur im Kreis. Wer sie ohne Kreis setzt, wuerde
-    // sonst bauen, ausrollen und sich wundern, dass sich nichts tut.
-    if (hatFeinstellung()) {
-        const kreisNachher = OPT.kreis ? KREIS_JA.includes(OPT.kreis) : stilLesen().mitKreis;
-        if (!kreisNachher) {
-            abbruch(
-                'Groesse und Position des Logos lassen sich nur einstellen, wenn das Logo\n' +
-                    'in einem Kreis sitzt. Ohne Kreis nutzt das Motiv immer die volle Flaeche.\n\n' +
-                    'Entweder den Kreis mit einschalten (--kreis ja) oder die Angaben\n' +
-                    '--logo-groesse/--logo-x/--logo-y weglassen.',
-            );
-        }
-    }
     console.log('\n=== Aura Logo-Werkstatt (nur Stil) ===\n');
     const bk = backupAnlegen({ schwarz: quelleFinden(OPT.quelle, 'logo-schwarz'), weiss: quelleFinden(OPT.quelle, 'logo-weiss'), hintergrund: quelleFinden(OPT.quelle, 'logo-hintergrund'), });
     if (bk.isNew) console.log(`  Backup angelegt: branding/backup/${path.basename(bk.ordner)}`);
@@ -778,7 +767,7 @@ function nurStilAendernMain() {
         console.log(`  Kreis-Einstellung geaendert: ${KREIS_JA.includes(OPT.kreis)}`);
     }
     const fein = feinstellungSchreiben();
-    if (fein) console.log(`  Logo im Kreis: ${fein.groesse} %, versetzt um x ${fein.x} px, y ${fein.y} px`);
+    if (fein) console.log(`  Logo in der Kopfzeile: ${fein.groesse} %, versetzt um x ${fein.x} px, y ${fein.y} px`);
 
     const state = stateLesen();
     if (OPT.kreis) state.kreis = KREIS_JA.includes(OPT.kreis);
@@ -1459,15 +1448,18 @@ async function vorschauMain() {
 
     // Genauso runden wie HeaderLogo.tsx, sonst zeigt die Lupe einen halben
     // Pixel mehr als die App spaeter wirklich rendert.
-    const motivKante = Math.round((32 * fein.groesse) / 100);
+    // Mit Kreis: 32 px Kreis. Ohne Kreis: 40 px freie Flaeche, durchsichtig.
+    const mitKreis = OPT.kreis ? KREIS_JA.includes(OPT.kreis) : stilLesen().mitKreis;
+    const rahmen = mitKreis ? 32 : 40;
+    const motivKante = Math.round((rahmen * fein.groesse) / 100);
     // Wird beim Rendern gefuellt – entweder aus den eingebauten Assets oder
     // frisch aus dem Eingangsordner.
     const motivUri = {};
     // Ein Chip in beliebigem Massstab. f=1 ist die echte Groesse in der App.
     const chip = (t, f) => `
-      <div style="width:${32 * f}px;height:${32 * f}px;border-radius:9999px;display:flex;align-items:center;
-                  justify-content:center;flex-shrink:0;overflow:hidden;
-                  background:${t.bg};border:${f}px solid ${t.border}">
+      <div style="width:${rahmen * f}px;height:${rahmen * f}px;${mitKreis ? 'border-radius:9999px;overflow:hidden;' : ''}display:flex;align-items:center;
+                  justify-content:center;flex-shrink:0;
+                  ${mitKreis ? `background:${t.bg};border:${f}px solid ${t.border}` : 'background:transparent;outline:1px dashed #9ca3af88;outline-offset:0'}">
         <img src="${motivUri[t.logo]}" style="width:${motivKante * f}px;height:${motivKante * f}px;
              object-fit:contain;flex-shrink:0;max-width:none;
              transform:translate(${fein.x * f}px, ${fein.y * f}px)">
@@ -1497,9 +1489,9 @@ async function vorschauMain() {
       <div id="blatt" style="display:inline-block;padding:26px 30px">
         <div style="font:700 17px system-ui;color:#111827">So sieht die Kopfzeile aus</div>
         <div style="font:400 13px system-ui;color:#6b7280;margin:6px 0 20px">
-          Logo im Kreis: ${fein.groesse}&#8202;% &nbsp;·&nbsp; waagerecht ${versatzText(fein.x, 'links', 'rechts')}
+          Logo ${mitKreis ? 'im Kreis' : 'ohne Kreis'}: ${fein.groesse}&#8202;% &nbsp;·&nbsp; waagerecht ${versatzText(fein.x, 'links', 'rechts')}
           &nbsp;·&nbsp; senkrecht ${versatzText(fein.y, 'oben', 'unten')}
-          <br>Links die echte Groesse – die beiden Kreise rechts daneben sind die Knoepfe der App als Massstab.
+          <br>Links die echte Groesse${mitKreis ? '' : ' (gestrichelt: die freie 40-px-Flaeche)'} – die beiden Kreise rechts daneben sind die Knoepfe der App als Massstab.
           Rechts dasselbe ${VORSCHAU_LUPE}-fach vergroessert.${ausEingang ? ' Gezeigt wird das neue Motiv aus dem Eingangsordner.' : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:18px">
@@ -1537,7 +1529,7 @@ async function vorschauMain() {
     } finally {
         await browser.close();
     }
-    console.log(`\nVorschau Kopfzeile: ${fein.groesse} %, x ${fein.x} px, y ${fein.y} px`);
+    console.log(`\nVorschau Kopfzeile (${mitKreis ? 'im Kreis' : 'ohne Kreis'}): ${fein.groesse} %, x ${fein.x} px, y ${fein.y} px`);
     console.log(`  ${VORSCHAU_BILD}`);
     console.log(gelb('  (nur ein Bild – es wurde nichts an der App geaendert)\n'));
 }

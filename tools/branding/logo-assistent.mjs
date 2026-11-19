@@ -323,12 +323,14 @@ function bildOeffnen(pfad) {
  * Laeuft erst NACH dem Erzeugen der Bilder: die Vorschau zeigt sonst noch das
  * alte Motiv.
  */
-async function feinjustage(start, ausEingang) {
+async function feinjustage(start, ausEingang, mitKreis) {
     let f = { ...start };
     for (;;) {
         f.groesse = await zahlFrage(
-            'Wie gross soll das Logo im Kreis sein?',
-            '100 = randfuellend (wird an der Rundung beschnitten), 88 = Normalgroesse, kleiner = mehr Luft.',
+            mitKreis ? 'Wie gross soll das Logo im Kreis sein?' : 'Wie gross soll das Logo in der Kopfzeile sein?',
+            mitKreis
+                ? '100 = randfuellend (wird an der Rundung beschnitten), 88 = Normalgroesse, kleiner = mehr Luft.'
+                : '100 = volle Hoehe der Kopfzeilen-Flaeche (40 px), 80 = etwas kleiner, 60 = deutlich kleiner.',
             f.groesse,
             FEIN_GRENZEN.groesse,
         );
@@ -349,7 +351,7 @@ async function feinjustage(start, ausEingang) {
         // Werden neue Bilder getauscht, zeigt die Vorschau das kommende Motiv
         // aus dem Eingangsordner statt des noch eingebauten.
         const r = still(
-            `npm run logo:vorschau -- --logo-groesse ${f.groesse} --logo-x ${f.x} --logo-y ${f.y}${ausEingang ? ' --aus-eingang' : ''}`,
+            `npm run logo:vorschau -- --logo-groesse ${f.groesse} --logo-x ${f.x} --logo-y ${f.y} --kreis ${mitKreis ? 'ja' : 'nein'}${ausEingang ? ' --aus-eingang' : ''}`,
         );
         if (r.code !== 0) {
             // Die Vorschau ist Komfort, kein Muss – der Rest laeuft trotzdem weiter.
@@ -441,7 +443,7 @@ if (stand.sichtbar.kopfzeile) {
     ausrichtung.push(
         stand.mitKreis
             ? `  Kopfzeilen-Logo   im Kreis, Motiv ${stand.fein.groesse} % davon, x ${stand.fein.x} px, y ${stand.fein.y} px`
-            : '  Kopfzeilen-Logo   ohne Kreis (Motiv nutzt die volle Flaeche, nichts einzustellen)',
+            : `  Kopfzeilen-Logo   ohne Kreis, Motiv ${stand.fein.groesse} % der freien Flaeche, x ${stand.fein.x} px, y ${stand.fein.y} px`,
     );
 }
 if (stand.sichtbar.app) {
@@ -453,6 +455,8 @@ if (ausrichtung.length) {
 }
 
 let ziele, sichtbar, kreis;
+/** Ob das Kopfzeilen-Logo (mit oder ohne Kreis) in Groesse und Lage eingestellt wird. */
+let kopfAusrichten = false;
 /** Groesse/Position des Motivs im Kreis – null heisst "nicht anfassen". */
 let fein = null;
 /** Dasselbe fuer das Homescreen-Symbol. */
@@ -499,6 +503,21 @@ if (NICHT_INTERAKTIV) {
         ? await jaNein('Soll das Logo in der Kopfzeile in einem runden Kreis sitzen?', stand.mitKreis)
         : null;
 
+    // Groesse und Lage des Kopfzeilen-Logos gehen mit und ohne Kreis. Bewusst
+    // als Vorfrage: Wer nur tauschen will, soll nicht jedes Mal durch drei Zahlen.
+    // Mit Kreis war die Einstellung bisher Pflicht – deshalb bleibt "ja" dort die Vorgabe.
+    if (sichtbar.includes('kopfzeile')) {
+        const mitKreisJetzt = kreis ?? stand.mitKreis;
+        console.log(
+            `\n  (Das Kopfzeilen-Logo steht jetzt auf ${stand.fein.groesse} % ${stand.mitKreis ? 'des Kreises' : 'der freien Flaeche'}, ` +
+                `${stand.fein.x === 0 && stand.fein.y === 0 ? 'mittig' : `x ${stand.fein.x} px, y ${stand.fein.y} px`}.)`,
+        );
+        kopfAusrichten = await jaNein(
+            `Das Logo in der Kopfzeile ${mitKreisJetzt ? 'im Kreis' : 'ohne Kreis'} in Groesse und Position einstellen?`,
+            mitKreisJetzt,
+        );
+    }
+
     // Das Homescreen-Symbol laesst sich ebenfalls ausrichten. Bewusst als
     // Ja/Nein-Vorfrage: Wer nur Bilder tauschen will, soll nicht jedes Mal
     // durch drei Zahlen und eine Vorschau muessen.
@@ -514,10 +533,10 @@ if (NICHT_INTERAKTIV) {
     // Die Eingabe bleibt offen, solange noch etwas zu fragen ist: die
     // Symbol-Ausrichtung kommt vor dem Erzeugen der Bilder, die Ausrichtung im
     // Kreis danach – erst dann zeigt die Vorschau das neue Motiv.
-    if (kreis !== true && !appAusrichten) rl.close();
+    if (!kopfAusrichten && !appAusrichten) rl.close();
 }
 
-if (!ziele.length && sichtbar === null && kreis === null && fein === null && appFein === null && !appAusrichten) {
+if (!ziele.length && sichtbar === null && kreis === null && fein === null && appFein === null && !appAusrichten && !kopfAusrichten) {
     ende('Nichts ausgewaehlt – es gibt nichts zu tun.', 0);
 }
 
@@ -525,18 +544,24 @@ if (!ziele.length && sichtbar === null && kreis === null && fein === null && app
 // hintereinander kommen und nicht durch die Ausgabe des Bildbaus getrennt
 // werden. Moeglich wird das, weil beide Vorschauen ihr Motiv notfalls selbst
 // aus dem Eingangsordner rendern, statt auf die gebauten Dateien zu warten.
-const anzahlJustagen = (kreis === true ? 1 : 0) + (appAusrichten ? 1 : 0);
+const anzahlJustagen = (kopfAusrichten ? 1 : 0) + (appAusrichten ? 1 : 0);
 if (anzahlJustagen > 1) {
     console.log(fett('\n=== Zwei Sachen zum Ausrichten ==='));
     console.log('Erst das Logo in der Kopfzeile, dann das App-Symbol.');
     console.log('Fuer beide gibt es ein eigenes Vorschaubild.');
 }
 
-if (kreis === true && !NICHT_INTERAKTIV) {
+if (kopfAusrichten && !NICHT_INTERAKTIV) {
+    const mitKreisJetzt = kreis ?? stand.mitKreis;
     console.log(fett(`\n--- ${anzahlJustagen > 1 ? '1 von 2: ' : ''}Logo in der Kopfzeile ausrichten ---`));
-    console.log('Der Kreis selbst bleibt unveraendert – er muss zu den Knoepfen rechts passen.');
-    console.log('Eingestellt wird nur das Motiv darin. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
-    fein = await feinjustage(stand.fein, ziele.includes('kopfzeile'));
+    if (mitKreisJetzt) {
+        console.log('Der Kreis selbst bleibt unveraendert – er muss zu den Knoepfen rechts passen.');
+        console.log('Eingestellt wird nur das Motiv darin. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
+    } else {
+        console.log('Ohne Kreis steht das Logo frei auf einer 40 px grossen, durchsichtigen Flaeche.');
+        console.log('Eingestellt wird, wie gross das Motiv darauf ist und wo es sitzt. Nach jedem Durchgang gibt es ein Bild zum Anschauen.');
+    }
+    fein = await feinjustage(stand.fein, ziele.includes('kopfzeile'), mitKreisJetzt);
 }
 
 if (appAusrichten) {
@@ -548,7 +573,7 @@ if (appAusrichten) {
 
 // Ab hier wird nichts mehr gefragt – die Eingabe darf zu, sonst haengt der
 // Assistent am Ende und beendet sich nicht.
-if (!NICHT_INTERAKTIV && (kreis === true || appAusrichten)) rl.close();
+if (!NICHT_INTERAKTIV && (kopfAusrichten || appAusrichten)) rl.close();
 
 // 2. Bilder erzeugen. Wurde nur die Ausrichtung geaendert, muss das App-Symbol
 // trotzdem neu entstehen – das Werkzeug erkennt das an der Ausrichtung selbst

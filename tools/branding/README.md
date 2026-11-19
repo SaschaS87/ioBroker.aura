@@ -13,15 +13,15 @@ Die Icons folgen automatisch dem Hell/Dunkel-Modus der App und des Browsers.
     npm run logo:stil -- --kreis ja --logo-groesse 96 --logo-x -1 --logo-y 1
     npm run logo:vorschau -- --logo-groesse 96 --logo-x -1 --logo-y 1
 
-## Logo im Kreis ausrichten
+## Logo in der Kopfzeile ausrichten
 
-Sitzt das Kopfzeilen-Logo in einem Kreis (`--kreis ja`), laesst sich das Motiv
-**darin** vergroessern und verschieben. Der Kreis selbst bleibt immer 32x32 px –
+Das Motiv laesst sich vergroessern, verkleinern und verschieben. Sitzt das Logo
+in einem Kreis (`--kreis ja`), gilt das **darin**. Der Kreis selbst bleibt immer 32x32 px –
 er muss zu den runden Knoepfen rechts in der Kopfzeile passen.
 
 | Angabe | Bedeutung | Bereich | Standard |
 |---|---|---|---|
-| `--logo-groesse` | Prozent der Kreisflaeche. Ueber 100 ragt das Motiv hinaus und wird an der Rundung beschnitten (randfuellend). | 50–150 | 88 |
+| `--logo-groesse` | Prozent der Kreisflaeche (ohne Kreis: der 40-px-Flaeche). Ueber 100 ragt das Motiv hinaus und wird an der Rundung beschnitten (randfuellend). | 50–150 | 88 |
 | `--logo-x` | Verschiebung in px, minus = links | −8 … 8 | 0 |
 | `--logo-y` | Verschiebung in px, minus = oben | −8 … 8 | 0 |
 
@@ -39,9 +39,13 @@ gerade neue Bilder getauscht werden: Dann soll die Vorschau das **kommende**
 Motiv zeigen, nicht das alte. Gerechnet wird dabei genauso wie beim Bauen
 (160 px, 6 % Rand), das Ergebnis ist also dasselbe.
 
-Ohne Kreis gibt es nichts einzustellen: das Motiv nutzt dort immer die volle
-Flaeche (40x40). Wer es trotzdem versucht, bekommt eine Fehlermeldung statt
-einer wirkungslosen Einstellung.
+**Auch ohne Kreis einstellbar (seit 18.11.2026).** Dann steht das Logo frei auf
+einer durchsichtigen 40x40-px-Flaeche, und `--logo-groesse` ist der Anteil davon:
+100 = volle Flaeche, 70 = deutlich kleiner. Verschiebung wie im Kreis. Die
+Vorschau zeigt dort die 40-px-Flaeche gestrichelt; mit `--kreis ja|nein` laesst
+sich festlegen, welche Variante sie zeigt (sonst der aktuelle Stand). Die Werte
+gelten fuer beide Varianten gemeinsam – beim Wechsel mit/ohne Kreis also die
+Groesse neu pruefen.
 
 ## Homescreen-Symbol ausrichten
 
