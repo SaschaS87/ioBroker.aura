@@ -1,0 +1,95 @@
+/* „Letzte Fahrten" – Entwürfe (nur Dev-Vorschau, geladen über FahrtenDraftSwitch, nie im Build).
+   Nur Raster-Maße (--fl-*) und Theme-Variablen, keine eigenen Ränder oder Zeilenhöhen. */
+
+body[data-fl-variant] .lf-ico.is-log {
+    background: var(--accent, var(--fl-ok));
+}
+body[data-fl-variant] .lf-ico.is-fehler {
+    background: var(--fl-crit);
+}
+body[data-fl-variant] .lf-ico.is-warn {
+    background: var(--fl-warn);
+}
+body[data-fl-variant] .lf-sub-fehler {
+    color: var(--fl-crit);
+}
+
+/* Häkchen / Strich / Warnung rechts in einer Rollladen-Zeile */
+body[data-fl-variant] .lf-mark {
+    flex-shrink: 0;
+    margin-right: 6px;
+}
+body[data-fl-variant] .lf-mark.is-ok {
+    color: var(--fl-ok);
+}
+body[data-fl-variant] .lf-mark.is-idle {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+body[data-fl-variant] .lf-mark.is-fehler {
+    color: var(--fl-crit);
+}
+body[data-fl-variant] .lf-mark.is-warn {
+    color: var(--fl-warn);
+}
+
+/* Wert rechts in einer Überblick-Zeile (Nebentext 15 px) */
+body[data-fl-variant] .lf-val {
+    flex-shrink: 0;
+    max-width: 62%;
+    margin-right: 6px;
+    font-size: var(--fl-font-meta);
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+/* „n weitere" rechts im Abschnittstitel */
+body[data-fl-variant] .lf-head {
+    justify-content: space-between;
+}
+body[data-fl-variant] .lf-all {
+    color: var(--text-secondary);
+}
+
+/* B: aufklappbare Zeile */
+body[data-fl-variant] .lf-fold-chev {
+    transition: transform 0.2s ease;
+}
+body[data-fl-variant] .lf-fold.is-open .lf-fold-chev {
+    transform: rotate(180deg);
+}
+body[data-fl-variant] .lf-fold-body {
+    background: var(--fl-soft);
+}
+body[data-fl-variant] .lf-fold-floor {
+    padding: 8px 0 2px var(--fl-sep-inset);
+    font-size: var(--fl-font-label);
+    font-weight: var(--fl-weight-label);
+    color: var(--text-secondary);
+}
+
+body[data-fl-variant] .lf-fold-rest {
+    padding-top: 6px;
+    padding-bottom: 10px;
+    padding-right: var(--fl-sep-inset-r);
+    font-weight: 400;
+}
+
+/* C: Reiter über der Liste */
+body[data-fl-variant] .lf-seg {
+    margin-top: 12px;
+}
+
+/* C: Pop-up mit langer Liste */
+body[data-fl-variant] .lf-sheet-scroll {
+    max-height: 62vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+}
+body[data-fl-variant] .lf-sheet-sum {
+    margin: 4px 0 0;
+    padding: 0 var(--fl-title-pad-x);
+    font-size: var(--fl-font-meta);
+    color: var(--text-secondary);
+}

@@ -24,9 +24,13 @@ interface PlanPageProps {
     pop: () => void;
     reportDirty: (uid: number, dirty: boolean) => void;
     statusPage?: ReactNode;
+    draftPage?: DraftPage;
 }
 
-function PlanPage({ route, parent, m, push, pop, reportDirty, statusPage }: PlanPageProps) {
+/** Inhalt einer Entwurfs-Seite (nur Dev-Vorschau) */
+export type DraftPage = (r: Extract<Route, { v: 'draft' }>, push: (r: Route) => void) => ReactNode;
+
+function PlanPage({ route, parent, m, push, pop, reportDirty, statusPage, draftPage }: PlanPageProps) {
     const [edit, setEdit] = useState(false);
     const [slot, setSlot] = useState<HTMLElement | null>(null);
     // Zurueck-Waechter des Editors: false = der Editor fragt nach, die Seite bleibt
@@ -84,6 +88,8 @@ function PlanPage({ route, parent, m, push, pop, reportDirty, statusPage }: Plan
         );
     } else if (route.v === 'status') {
         content = <div className="pw-home aura-fl-status-page">{statusPage}</div>;
+    } else if (route.v === 'draft') {
+        content = <div className="pw-home aura-fl-scope">{draftPage?.(route, push)}</div>;
     } else if (route.v === 'scene') {
         content = (
             <SceneEditor
@@ -130,9 +136,12 @@ export function PlannerStack({
     m,
     list,
     statusPage,
+    draftPage,
 }: {
     m: PlanModel;
-    list: (open: (t: Tab) => void) => ReactNode;
+    list: (open: (t: Tab) => void, push: (r: Route) => void) => ReactNode;
+    /** Seiten der Dev-Entwürfe (nur Dev-Vorschau) */
+    draftPage?: DraftPage;
     /** Inhalt der Unterseite „Status" (nur Facelift-Entwürfe, die den Status auf eine Unterseite legen) */
     statusPage?: ReactNode;
 }) {
@@ -160,7 +169,10 @@ export function PlannerStack({
     const pages = [
         {
             key: 'list',
-            node: list((t) => push(t === 'plan' ? { v: 'plan' } : t === 'scenes' ? { v: 'scenes' } : { v: 'status' })),
+            node: list(
+                (t) => push(t === 'plan' ? { v: 'plan' } : t === 'scenes' ? { v: 'scenes' } : { v: 'status' }),
+                push,
+            ),
         },
         ...stack.map((r, i) => ({
             key: `p${r.uid}`,
@@ -173,6 +185,7 @@ export function PlannerStack({
                     pop={pop}
                     reportDirty={reportDirty}
                     statusPage={statusPage}
+                    draftPage={draftPage}
                 />
             ),
         })),

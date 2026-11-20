@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ChevronRight } from 'lucide-react';
 import type { WidgetProps } from '../../../types';
 import type { PendingState } from '../shuttershared/useShutterDevice';
@@ -14,8 +14,28 @@ import type { ShutterFloorDef, ShutterFloorDeviceDef } from './types';
 import { RollPlanTile } from './planner/RollPlanTile';
 import { PlannerStack } from './planner/PlannerStack';
 import { PlanTiles, type Tab } from './planner/PlanWindows';
+import type { Route } from './planner/routes';
+import type { DraftPage } from './planner/PlannerStack';
+import { useTabHidden } from '../../common/ios';
+// „Letzte Fahrten"-Entwürfe: nur Dev-Vorschau. Alle Verwender hängen hinter import.meta.env.DEV,
+// im Build fällt der Code weg (siehe Steuerung/Entwurfs-Umschalter in der Dev-Vorschau).
+import { useFahrtenDraftStore, type FahrtenDraft } from './preview/fahrtenDraft';
+import { useFahrtenLog, type Lauf } from './preview/fahrtenModel';
+import {
+    FahrtenAutomatikRow,
+    FahrtenPageA,
+    FahrtenPageB,
+    FahrtenPageC,
+    FahrtenSectionB,
+    LaufPageA,
+} from './preview/FahrtenDrafts';
 import './ShutterFloorsWidget.css';
 import './ShutterFloorsFacelift.css';
+
+const FahrtenDraftSwitch = import.meta.env.DEV ? lazy(() => import('./preview/FahrtenDraftSwitch')) : null;
+const useFahrtenDraft = import.meta.env.DEV ? () => useFahrtenDraftStore((s) => s.draft) : (): FahrtenDraft => 'IST';
+const NO_LOG = { laeufe: [] as Lauf[], geladen: false };
+const useLog = import.meta.env.DEV ? useFahrtenLog : (_f: ShutterFloorDef[]) => NO_LOG;
 
 interface ShutterFloorsOptions {
     floors?: ShutterFloorDef[];
@@ -65,6 +85,12 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // Dev-/Live-Weiche wie der Planer. Vor dem fruehen Return unten, damit die
     // Reihenfolge der Hooks gleich bleibt.
     const fav = useFavorites(`${effectivePlannerRoot}.Favoriten`);
+
+    // Dev-Entwürfe „Letzte Fahrten" (im Build: immer 'IST', kein Lesen)
+    const draft = useFahrtenDraft();
+    const log = useLog(floors);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const tabHidden = useTabHidden(rootRef);
 
     // Sheet-State
     const [sheetDevice, setSheetDevice] = useState<ShutterFloorDeviceDef | null>(null);
@@ -296,7 +322,26 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
     // samt Begleittext. Ohne Planer-Stapel gibt es keine Unterseite, dann klappen die Zeilen in der Karte auf.
     const hasHealth = showFooter && healthSources.length > 0;
     const hasStatus = hasHealth || signalBoxVisible;
-    const faceliftBody = (head?: React.ReactNode, open?: (t: Tab) => void) => (
+    const openLog = (push: (r: Route) => void) => () => push({ v: 'draft', title: 'Letzte Fahrten', page: 'list' });
+    const draftRow = (push: (r: Route) => void) =>
+        import.meta.env.DEV && (draft === 'A' || draft === 'C') ? (
+            <FahrtenAutomatikRow laeufe={log.laeufe} onOpen={openLog(push)} />
+        ) : null;
+    const draftPage: DraftPage | undefined = import.meta.env.DEV
+        ? (r, push) => {
+              if (r.page === 'run') return <LaufPageA l={log.laeufe.find((x) => x.id === r.id)} floors={floors} />;
+              if (draft === 'B') return <FahrtenPageB laeufe={log.laeufe} geladen={log.geladen} />;
+              if (draft === 'C') return <FahrtenPageC laeufe={log.laeufe} geladen={log.geladen} floors={floors} />;
+              return (
+                  <FahrtenPageA
+                      laeufe={log.laeufe}
+                      geladen={log.geladen}
+                      onRun={(l) => push({ v: 'draft', title: l.titel, page: 'run', id: l.id })}
+                  />
+              );
+          }
+        : undefined;
+    const faceliftBody = (head?: React.ReactNode, open?: (t: Tab) => void, push?: (r: Route) => void) => (
         <div className={`sf aura-fl-scope${connected ? '' : ' is-offline'}`}>
             <div className="aura-fl-stack sf-block sf-block--floors">{floorList}</div>
             {head && (
@@ -306,6 +351,9 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                     </div>
                     {head}
                 </section>
+            )}
+            {import.meta.env.DEV && draft === 'B' && push && (
+                <FahrtenSectionB laeufe={log.laeufe} geladen={log.geladen} onAll={openLog(push)} />
             )}
             {hasStatus && (
                 <section className="aura-fl-section sf-block sf-block--status">
@@ -371,7 +419,12 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
 
     return (
         <PendingContext.Provider value={pendingStore}>
-            <div className="shutter-floors-widget">
+            <div className="shutter-floors-widget" ref={rootRef}>
+                {FahrtenDraftSwitch && showPlanner && !tabHidden && (
+                    <Suspense fallback={null}>
+                        <FahrtenDraftSwitch />
+                    </Suspense>
+                )}
                 {banner}
                 {showPlanner ? (
                     <RollPlanTile
@@ -381,7 +434,10 @@ export const ShutterFloorsWidget: React.FC<WidgetProps> = ({ config }) => {
                             <PlannerStack
                                 m={m}
                                 statusPage={statusPage}
-                                list={(open) => faceliftBody(<PlanTiles m={m} open={open} />, open)}
+                                draftPage={draftPage}
+                                list={(open, push) =>
+                                    faceliftBody(<PlanTiles m={m} open={open} extra={draftRow(push)} />, open, push)
+                                }
                             />
                         )}
                     />

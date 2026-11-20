@@ -765,25 +765,31 @@ export function ScenesHome({ m, setView, edit }: W & { edit: boolean }) {
 // ── Kopfgruppe der Liste ───────────────────────────────────────────────
 
 /** Kopfgruppe der Liste: zwei Zeilen „Zeitplan" und „Szenen". */
-export function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void }) {
+export function PlanTiles({ m, open, extra }: { m: PlanModel; open: (t: Tab) => void; extra?: ReactNode }) {
     const n = nextRun(m);
     return (
         <div className="sf-group aura-fl-card">
-            <button type="button" className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav" onClick={() => open('plan')}>
+            <button
+                type="button"
+                className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav"
+                onClick={() => open('plan')}
+            >
                 <span className="sf-ico is-orange aura-fl-row-icon">
                     <CalendarClock size={16} />
                 </span>
                 <span className="sf-main aura-fl-row-main">
                     <span className="sf-name aura-fl-row-title">Zeitplan</span>
                     <span className="sf-val aura-fl-row-sub">
-                        {n
-                            ? `${statusText(m)} · ${dayLabel(n.date, m.today)} ${hhmm(n.occ.min)}`
-                            : statusText(m)}
+                        {n ? `${statusText(m)} · ${dayLabel(n.date, m.today)} ${hhmm(n.occ.min)}` : statusText(m)}
                     </span>
                 </span>
                 <ChevronRight size={18} className="sf-chev aura-fl-chev" />
             </button>
-            <button type="button" className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav" onClick={() => open('scenes')}>
+            <button
+                type="button"
+                className="sf-row sf-row--nav aura-fl-row aura-fl-row--nav"
+                onClick={() => open('scenes')}
+            >
                 <span className="sf-ico is-purple aura-fl-row-icon">
                     <Layers size={16} />
                 </span>
@@ -793,6 +799,7 @@ export function PlanTiles({ m, open }: { m: PlanModel; open: (t: Tab) => void })
                 </span>
                 <ChevronRight size={18} className="sf-chev aura-fl-chev" />
             </button>
+            {extra}
         </div>
     );
 }

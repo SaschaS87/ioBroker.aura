@@ -8,7 +8,9 @@ export type Route =
     /** Status-Unterseite (Datenquellen, Signalstärke); nur in Facelift-Entwürfen erreichbar */
     | { v: 'status' }
     | { v: 'scene'; id: string | null }
-    | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> };
+    | { v: 'entry'; id: string | null; preset?: Partial<PlanEntry> }
+    /** Seite aus einem Dev-Entwurf (nur Dev-Vorschau); Titel und Inhalt liefert der Entwurf */
+    | { v: 'draft'; title: string; page: string; id?: string };
 /** Eintrag im Stapel; uid macht den Schlüssel auch bei erneutem Öffnen derselben Seite eindeutig. */
 export type StackEntry = Route & { uid: number };
 
@@ -23,6 +25,8 @@ export function pageTitle(r: Route, m: PlanModel): string {
             return 'Einstellungen';
         case 'status':
             return 'Status';
+        case 'draft':
+            return r.title;
         case 'scene':
             return (r.id && m.sceneOf(r.id)?.name) || 'Neue Szene';
         case 'entry': {
