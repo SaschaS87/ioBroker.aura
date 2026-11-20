@@ -77,7 +77,7 @@ async function until(cond, ms = 6000, what = '') {
 }
 
 /** Skripttext fuer den Test: nur Konstanten werden ersetzt (und geprueft, dass sie existieren). */
-function patched({ trockenlauf, reaktionMs = 400, pauseMs = 150, fahrzeitMs = 600 }) {
+function patched({ trockenlauf, reaktionMs = 400, pauseMs = 150, fahrzeitMs = 600, stillstandMs = 800 }) {
     let s = SCRIPT;
     const sub = (re, to, min = 1) => {
         const n = (s.match(re) || []).length;
@@ -90,6 +90,7 @@ function patched({ trockenlauf, reaktionMs = 400, pauseMs = 150, fahrzeitMs = 60
     sub(/const REAKTION_MS = \d+;/, `const REAKTION_MS = ${reaktionMs};`);
     sub(/const PAUSE_MS = \d+;/, `const PAUSE_MS = ${pauseMs};`);
     sub(/const TROCKENLAUF_FAHRZEIT_MS = \d+;/, `const TROCKENLAUF_FAHRZEIT_MS = ${fahrzeitMs};`);
+    sub(/const STILLSTAND_MS = \d+;/, `const STILLSTAND_MS = ${stillstandMs};`);
     sub(/setTimeout\(r, 1000\)/g, 'setTimeout(r, 40)', 2);
     return s;
 }
@@ -127,6 +128,16 @@ async function start(opts) {
         }
         // Der Leise-Datenpunkt (TargetClosureState:slow) bewegt denselben Antrieb wie ClosureState
         const real = dp.replace(/TargetClosureState:slow$/, 'ClosureState');
+        if (o.raffProfil && real === RAFF) {
+            // eigener Fahrverlauf fuer den Raffstore: [ms nach dem Befehl, {pos?, moving?}]
+            for (const [ms, e] of o.raffProfil) {
+                setTimeout(() => {
+                    if (e.pos !== undefined) put(RAFF, e.pos, true);
+                    if (e.moving !== undefined) put(RAFF_MOVING, e.moving, true);
+                }, ms);
+            }
+            return;
+        }
         setTimeout(() => put(real, val, true), 30);
         if (/ClosureState$/.test(real)) {
             const moving = real.replace(/ClosureState$/, 'MovingState');
@@ -381,6 +392,49 @@ const SZENE_ABBRUCH = JSON.stringify({ abort: 's-test' });
     sc.extern(BEFEHL, JSON.stringify({ sceneId: 's-leise1' }));
     await sc.idle();
     check('8) live s-leise1: geschrieben wird auf …TargetClosureState:slow', sc.writesTo(WOHNZ_SLOW).length >= 1 && sc.writesTo(WOHNZ).length === 0, JSON.stringify(sc.tahomaWrites().map((x) => x.id)));
+}
+
+// ── (9) Lamelle erst nach der Ankunft (Fix 20.11.2026): kurzes falsches "steht" mitten in der Fahrt ──
+// Nachbau des Verlaufs vom 20.11.2026 18:57 MEZ (zeitlich verkleinert): fährt, 30 ms später "steht" bei 4 %,
+// dann wieder "fährt", erst danach Ankunft bei 100 % und "steht".
+{
+    const sc = await start({
+        trockenlauf: false,
+        raffProfil: [
+            [30, { moving: true }],
+            [60, { pos: 4, moving: false }],
+            [400, { moving: true }],
+            [700, { pos: 50 }],
+            [1000, { pos: 100 }],
+            [1300, { moving: false }],
+        ],
+    });
+    sc.extern(BEFEHL, SZENE_FAHREN);
+    await sc.idle();
+    const pos = sc.writesTo(RAFF)[0];
+    const slat = sc.writesTo(RAFF_SLAT);
+    check('9) kurzes "steht" bei 4 %: die Lamelle kommt erst nach der Ankunft', slat.length === 1 && slat[0].t - pos.t >= 1300, JSON.stringify({ pos: pos && pos.t, slat }));
+    const r = sc.status().letzte30[0].ziele.find((z) => z.key === 'Raffstore_(Garten)');
+    check('9) letzte30 nennt den Grund: wartenBis "am Ziel"', r.lamelle.wartenBis === 'am Ziel', JSON.stringify(r.lamelle));
+}
+
+// ── (10) Raffstore bleibt unterwegs stehen (von Hand gestoppt): Lamelle nach STILLSTAND_MS trotzdem ──
+{
+    const sc = await start({
+        trockenlauf: false,
+        raffProfil: [
+            [30, { moving: true }],
+            [200, { pos: 40 }],
+            [300, { moving: false }],
+        ],
+    });
+    sc.extern(BEFEHL, SZENE_FAHREN);
+    await sc.idle();
+    const pos = sc.writesTo(RAFF)[0];
+    const slat = sc.writesTo(RAFF_SLAT);
+    check('10) unterwegs angehalten: die Lamelle kommt erst nach der Ruhezeit (300 + 800 ms)', slat.length === 1 && slat[0].t - pos.t >= 1100, JSON.stringify({ pos: pos && pos.t, slat }));
+    const r = sc.status().letzte30[0].ziele.find((z) => z.key === 'Raffstore_(Garten)');
+    check('10) letzte30 nennt den Grund: wartenBis "steht still"', r.lamelle.wartenBis === 'steht still', JSON.stringify(r.lamelle));
 }
 
 const failed = results.filter((r) => !r.ok).length;

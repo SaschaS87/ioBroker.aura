@@ -100,7 +100,7 @@
 
 const ROOT = '0_userdata.0.Rollladen_Dev';
 const TROCKENLAUF = true;
-const VERSION = '0.4.1-dev';
+const VERSION = '0.4.2-dev';
 // Nur bei TROCKENLAUF === true wirksam: so lange "faehrt" ein Geraet zum Schein (Abbruch-Pruefung alle
 // 250 ms). Raffstore mit Lamelle: dieselbe Zeit noch einmal fuer die Lamelle. Im Dev-Betrieb dauert die
 // Bestaetigung eines Szenen-Befehls bei Raffstore-Szenen dadurch ueber 5 s - "Skript antwortet nicht"
@@ -690,15 +690,40 @@ function zielBeschreibungEintrag(eintrag) {
     return n === 0 ? erstes : `${erstes} + ${n} ${n === 1 ? 'weiteres' : 'weitere'}`;
 }
 
-async function wartenAufStillstand(geraet, timeoutMs, lauf) {
+// Warten vor der Lamelle (Fix 20.11.2026, Version 0.4.2): Ein Lamellenbefehl unterbricht beim Raffstore
+// die laufende Fahrt. Frueher genuegte ein einziges MovingState=false, um die Lamelle zu schicken. Die
+// TaHoma-Box meldet waehrend der Fahrt aber manchmal fuer Sekundenbruchteile "steht" (gemessen
+// 20.11.2026 18:57:56 MEZ: true, 93 ms spaeter false, 5 s spaeter wieder true) - beide Raffstores
+// blieben so bei 9 % und 18 % stehen. Jetzt gilt die Fahrt erst als beendet, wenn
+//   (a) MovingState false ist UND die Box (ack:true, nach dem Senden) die Zielposition +-3 meldet, oder
+//   (b) MovingState false ist UND sich weder MovingState noch die Position seit STILLSTAND_MS geaendert
+//       haben (Raffstore unterwegs angehalten, z. B. von Hand oder Hindernis), oder
+//   (c) timeoutMs abgelaufen ist.
+// Es wird dabei nichts bei der Box abgefragt: das Skript liest jede Sekunde nur die Werte, die tahoma.1
+// ohnehin etwa alle 5 s schreibt. Rueckgabe: 'am Ziel' | 'steht still' | 'Zeitlimit' | 'ohne MovingState'
+// | 'abgebrochen' (landet als wartenBis im Lamellen-Ergebnis von letzte30).
+const STILLSTAND_MS = 15000;
+
+function posAmZielGemeldet(geraet, zielPos, tSeit) {
+    const s = getState(geraet.posDp);
+    return !!s && s.ack === true && s.ts > tSeit && typeof s.val === 'number' && Math.abs(Math.round(s.val) - Math.round(zielPos)) <= 3;
+}
+
+async function wartenAufStillstand(geraet, zielPos, tSeit, timeoutMs, lauf) {
     // Nur im Live-Betrieb (TROCKENLAUF=false) tatsaechlich genutzt. Abbruch: kehrt in jedem Takt sofort zurueck.
     const movingDp = geraet.posDp.replace(/states\.core:ClosureState$/, 'states.core:MovingState');
     const start = Date.now();
     while (true) {
-        if (abgebrochen(lauf)) return;
-        if (!existsState(movingDp)) return;
+        if (abgebrochen(lauf)) return 'abgebrochen';
+        if (!existsState(movingDp)) return 'ohne MovingState';
+        if (Date.now() - start > timeoutMs) return 'Zeitlimit';
         const moving = getState(movingDp);
-        if (!moving || moving.val === false || Date.now() - start > timeoutMs) return;
+        if (!moving || moving.val === false) {
+            if (posAmZielGemeldet(geraet, zielPos, tSeit)) return 'am Ziel';
+            const pos = getState(geraet.posDp);
+            const letzteAenderung = Math.max(tSeit, moving ? moving.lc || 0 : 0, pos ? pos.lc || 0 : 0);
+            if (Date.now() - letzteAenderung >= STILLSTAND_MS) return 'steht still';
+        }
         await new Promise((r) => setTimeout(r, 1000));
     }
 }
@@ -794,6 +819,7 @@ async function fahreEinzelgeraet(ziel, lauf) {
 
     let posErgebnis;
     let posGesendet = false;
+    let posGesendetSeit = 0;
     if (posAmZiel) {
         posErgebnis = { aktion: 'position', ziel: ziel.closed, ist: istPos, ergebnis: 'bereits am Ziel', leise, dp: posZielDp };
     } else if (TROCKENLAUF) {
@@ -802,6 +828,7 @@ async function fahreEinzelgeraet(ziel, lauf) {
         const text = abbruch ? 'abgebrochen' : leise ? 'würde leise fahren (Trockenlauf)' : 'würde fahren (Trockenlauf)';
         posErgebnis = { aktion: 'position', ziel: ziel.closed, ist: istPos, ergebnis: text, leise, dp: posZielDp };
     } else {
+        posGesendetSeit = Date.now();
         const r = await sendeMitWiederholung(geraet, posZielDp, ziel.closed, geraet.posDp, lauf);
         if (r.abgebrochen) {
             // Abbruch ist kein Fehler: kein setzeQuellenFehler
@@ -816,8 +843,9 @@ async function fahreEinzelgeraet(ziel, lauf) {
         }
     }
 
+    let wartenBis = null;
     if (posGesendet && geraet.slatDp && typeof ziel.slat === 'number') {
-        await wartenAufStillstand(geraet, 90000, lauf);
+        wartenBis = await wartenAufStillstand(geraet, ziel.closed, posGesendetSeit, 90000, lauf);
     }
 
     let lamelleErgebnis = null;
@@ -839,6 +867,7 @@ async function fahreEinzelgeraet(ziel, lauf) {
                 lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: 'abgebrochen' };
             } else if (r.ok) {
                 lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: `gesendet (Versuch ${r.versuche})` };
+                if (wartenBis) lamelleErgebnis.wartenBis = wartenBis;
                 loescheQuellenFehler('Fahrt');
             } else {
                 lamelleErgebnis = { aktion: 'lamelle', ziel: ziel.slat, ist: istSlat, ergebnis: `fehlgeschlagen nach 3 Versuchen: ${r.meldung}` };
